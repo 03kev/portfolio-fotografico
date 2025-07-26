@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePhotos } from '../contexts/PhotoContext';
-import { useInView } from 'react-intersection-observer';
 import { IMAGES_BASE_URL } from '../utils/constants';
 
 const GallerySection = styled(motion.section)`
@@ -245,10 +244,6 @@ const Gallery = () => {
   const { photos, filteredPhotos, loading, actions } = usePhotos();
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
-  const { ref, inView } = useInView({
-    threshold: 0.1,
-    triggerOnce: true
-  });
 
   // Estrai tutti i tag unici dalle foto - gestisci il caso in cui tags non sia un array
   const allTags = [...new Set(photos.flatMap(photo => {
@@ -325,18 +320,13 @@ const Gallery = () => {
   }
 
   return (
-    <GallerySection
-      ref={ref}
-      variants={sectionVariants}
-      initial="hidden"
-      animate={inView ? "visible" : "hidden"}
-    >
+    <GallerySection>
       <Container>
-        <SectionTitle variants={itemVariants}>
+        <SectionTitle>
           Galleria Fotografica
         </SectionTitle>
 
-        <SearchContainer variants={itemVariants}>
+        <SearchContainer>
           <SearchInput
             type="text"
             placeholder="Cerca per titolo, luogo o descrizione..."
@@ -346,16 +336,12 @@ const Gallery = () => {
           <SearchIcon>🔍</SearchIcon>
         </SearchContainer>
 
-        <FilterContainer variants={itemVariants}>
+        <FilterContainer>
           {filters.map((filter, index) => (
             <FilterButton
               key={filter}
               active={activeFilter === filter}
               onClick={() => handleFilterClick(filter)}
-              variants={itemVariants}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              style={{ animationDelay: `${index * 0.1}s` }}
             >
               {filter === 'all' ? 'Tutti' : filter}
             </FilterButton>
@@ -376,22 +362,16 @@ const Gallery = () => {
           ) : (
             <GalleryGrid
               key="gallery-grid"
-              variants={sectionVariants}
-              initial="hidden"
-              animate="visible"
             >
               {filteredPhotos.map((photo, index) => (
                 <PhotoCard
                   key={photo.id}
-                  variants={cardVariants}
-                  whileHover="hover"
                   onClick={() => handlePhotoClick(photo)}
-                  style={{ animationDelay: `${index * 0.1}s` }}
                 >
                   <PhotoImage
                     src={`${IMAGES_BASE_URL}${photo.image || photo.thumbnail}`}
                     alt={photo.title}
-                    loading="lazy"
+                    loading="eager"
                     onError={(e) => {
                       e.target.src = `https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop`;
                     }}

@@ -10,8 +10,19 @@ const photoRoutes = require('./routes/photos');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware di sicurezza
-app.use(helmet());
+// Middleware di sicurezza con configurazione personalizzata
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "blob:", "*"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      connectSrc: ["'self'"],
+    },
+  },
+}));
 
 // Rate limiting
 const limiter = rateLimit({
@@ -51,8 +62,15 @@ app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Servire file statici (immagini)
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+// Servire file statici (immagini) con header CORP
+app.use('/uploads', (req, res, next) => {
+  // Configura header per Cross-Origin Resource Policy
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET');
+  res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  next();
+}, express.static(path.join(__dirname, '../uploads')));
 
 // Routes
 app.use('/api/photos', photoRoutes);

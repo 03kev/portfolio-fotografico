@@ -63,6 +63,7 @@ router.get('/', async (req, res) => {
         try {
           settings = JSON.parse(photo.settings);
         } catch (e) {
+          console.warn('Errore nel parsing settings per foto', photo.id, ':', e);
           settings = {};
         }
       } else {
@@ -191,8 +192,13 @@ router.post('/', upload.single('image'), async (req, res) => {
       lens: lens || '',
       settings: (() => {
         try {
-          return typeof settings === 'string' ? JSON.parse(settings) : (settings || {});
+          if (typeof settings === 'string') {
+            const parsed = JSON.parse(settings);
+            return parsed;
+          }
+          return settings || {};
         } catch (e) {
+          console.warn('Errore nel parsing settings durante il salvataggio:', e);
           return {};
         }
       })(),
