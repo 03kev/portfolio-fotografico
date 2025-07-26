@@ -7,6 +7,33 @@ const Photo = require('../models/Photo');
 
 const router = express.Router();
 
+// File JSON per persistenza temporanea
+const PHOTOS_DB_PATH = path.join(__dirname, '../../data/photos.json');
+
+// Utility per leggere/scrivere il database JSON
+const readPhotosDB = async () => {
+  try {
+    const data = await fs.readFile(PHOTOS_DB_PATH, 'utf8');
+    return JSON.parse(data);
+  } catch (error) {
+    // Se il file non esiste, restituisci array vuoto
+    return [];
+  }
+};
+
+const writePhotosDB = async (photos) => {
+  try {
+    // Crea la directory data se non esiste
+    const dataDir = path.join(__dirname, '../../data');
+    await fs.mkdir(dataDir, { recursive: true });
+    
+    await fs.writeFile(PHOTOS_DB_PATH, JSON.stringify(photos, null, 2));
+  } catch (error) {
+    console.error('Errore nella scrittura del database:', error);
+    throw error;
+  }
+};
+
 // Configurazione multer per upload immagini
 const storage = multer.memoryStorage();
 const upload = multer({
@@ -26,134 +53,52 @@ const upload = multer({
 // GET - Ottieni tutte le foto
 router.get('/', async (req, res) => {
   try {
-    // Per ora usiamo dati mock, poi potrai integrare con database
-    const mockPhotos = [
-      {
-        id: 1,
-        title: "Tramonto in Toscana",
-        location: "Val d'Orcia, Toscana, Italia",
-        lat: 43.0759,
-        lng: 11.6776,
-        image: "/uploads/toscana.jpg",
-        thumbnail: "/uploads/thumbnails/toscana_thumb.jpg",
-        description: "Un magnifico tramonto sui colli toscani durante la golden hour",
-        date: "2024-06-15T18:30:00Z",
-        camera: "Canon EOS R5",
-        lens: "RF 24-70mm f/2.8L IS USM",
-        settings: {
-          aperture: "f/8",
-          shutter: "1/125s",
-          iso: "100",
-          focal: "35mm"
-        },
-        tags: ["paesaggio", "tramonto", "toscana", "natura"]
-      },
-      {
-        id: 2,
-        title: "Aurora Boreale Lofoten",
-        location: "Isole Lofoten, Norvegia",
-        lat: 68.0851,
-        lng: 13.6093,
-        image: "/uploads/aurora.jpg",
-        thumbnail: "/uploads/thumbnails/aurora_thumb.jpg",
-        description: "Spettacolare aurora boreale che danza sopra i fiordi norvegesi",
-        date: "2024-03-20T23:45:00Z",
-        camera: "Sony A7R IV",
-        lens: "FE 16-35mm f/2.8 GM",
-        settings: {
-          aperture: "f/2.8",
-          shutter: "15s",
-          iso: "1600",
-          focal: "16mm"
-        },
-        tags: ["aurora", "notturna", "norvegia", "natura"]
-      },
-      {
-        id: 3,
-        title: "Skyline Tokyo Notturno",
-        location: "Shibuya, Tokyo, Giappone",
-        lat: 35.6598,
-        lng: 139.7006,
-        image: "/uploads/tokyo.jpg",
-        thumbnail: "/uploads/thumbnails/tokyo_thumb.jpg",
-        description: "Il pulsante cuore di Tokyo illuminato dalle luci al neon",
-        date: "2024-04-10T21:00:00Z",
-        camera: "Fujifilm X-T5",
-        lens: "XF 50-140mm f/2.8 R LM OIS WR",
-        settings: {
-          aperture: "f/4",
-          shutter: "1/60s",
-          iso: "800",
-          focal: "85mm"
-        },
-        tags: ["urbano", "notturna", "tokyo", "luci"]
-      },
-      {
-        id: 4,
-        title: "Ghiacciaio Islandese",
-        location: "Vatnajökull, Islanda",
-        lat: 64.4208,
-        lng: -16.8731,
-        image: "/uploads/iceland.jpg",
-        thumbnail: "/uploads/thumbnails/iceland_thumb.jpg",
-        description: "Le infinite sfumature di blu del ghiacciaio più grande d'Europa",
-        date: "2024-02-28T14:20:00Z",
-        camera: "Nikon Z9",
-        lens: "NIKKOR Z 24-120mm f/4 S",
-        settings: {
-          aperture: "f/11",
-          shutter: "1/250s",
-          iso: "200",
-          focal: "50mm"
-        },
-        tags: ["ghiaccio", "paesaggio", "islanda", "natura"]
-      },
-      {
-        id: 5,
-        title: "Safari Serengeti",
-        location: "Parco Nazionale Serengeti, Tanzania",
-        lat: -2.3333,
-        lng: 34.8333,
-        image: "/uploads/safari.jpg",
-        thumbnail: "/uploads/thumbnails/safari_thumb.jpg",
-        description: "Leoni durante l'ora dorata nella savana africana",
-        date: "2024-01-12T17:45:00Z",
-        camera: "Canon EOS R6 Mark II",
-        lens: "RF 100-500mm f/4.5-7.1L IS USM",
-        settings: {
-          aperture: "f/6.3",
-          shutter: "1/500s",
-          iso: "400",
-          focal: "400mm"
-        },
-        tags: ["wildlife", "africa", "safari", "animali"]
-      },
-      {
-        id: 6,
-        title: "Montagne Rocciose",
-        location: "Banff National Park, Canada",
-        lat: 51.1784,
-        lng: -115.5708,
-        image: "/uploads/banff.jpg",
-        thumbnail: "/uploads/thumbnails/banff_thumb.jpg",
-        description: "Riflessi perfetti sul Lago Louise al sorgere del sole",
-        date: "2024-05-05T06:30:00Z",
-        camera: "Canon EOS R5",
-        lens: "RF 15-35mm f/2.8L IS USM",
-        settings: {
-          aperture: "f/11",
-          shutter: "1/15s",
-          iso: "100",
-          focal: "24mm"
-        },
-        tags: ["montagne", "lago", "canada", "riflessi"]
+    const rawPhotos = await readPhotosDB();
+    
+    // Normalizza le foto per assicurare che abbiano tutti i campi necessari
+    const photos = rawPhotos.map(photo => {
+      // Gestisci settings che potrebbero essere stringhe JSON
+      let settings = {};
+      if (typeof photo.settings === 'string') {
+        try {
+          settings = JSON.parse(photo.settings);
+        } catch (e) {
+          settings = {};
+        }
+      } else {
+        settings = photo.settings || {};
       }
-    ];
-
+      
+      // Gestisci tags che potrebbero essere stringhe JSON
+      let tags = [];
+      if (typeof photo.tags === 'string') {
+        try {
+          tags = JSON.parse(photo.tags);
+        } catch (e) {
+          tags = [];
+        }
+      } else {
+        tags = Array.isArray(photo.tags) ? photo.tags : [];
+      }
+      
+      return {
+        ...photo,
+        title: photo.title || 'Foto senza titolo',
+        location: photo.location || 'Posizione sconosciuta',
+        description: photo.description || '',
+        camera: photo.camera || '',
+        lens: photo.lens || '',
+        lat: photo.lat || 0,
+        lng: photo.lng || 0,
+        settings,
+        tags
+      };
+    });
+    
     res.json({
       success: true,
-      data: mockPhotos,
-      total: mockPhotos.length
+      data: photos,
+      total: photos.length
     });
   } catch (error) {
     console.error('Errore nel recupero foto:', error);
@@ -168,9 +113,8 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    // Mock data per ora
-    const mockPhotos = []; // Inserisci qui gli stessi dati mock di sopra
-    const photo = mockPhotos.find(p => p.id === parseInt(id));
+    const photos = await readPhotosDB();
+    const photo = photos.find(p => p.id === parseInt(id));
     
     if (!photo) {
       return res.status(404).json({
@@ -232,22 +176,40 @@ router.post('/', upload.single('image'), async (req, res) => {
     await fs.writeFile(path.join(uploadsDir, filename), processedImage);
     await fs.writeFile(path.join(thumbnailsDir, thumbnailFilename), thumbnail);
 
-    // Crea oggetto foto
+    // Crea oggetto foto con valori di default
     const newPhoto = {
       id: timestamp, // Usa timestamp come ID temporaneo
-      title,
-      location,
-      lat: parseFloat(lat),
-      lng: parseFloat(lng),
+      title: title || 'Foto senza titolo',
+      location: location || 'Posizione sconosciuta',
+      lat: lat ? parseFloat(lat) : 0,
+      lng: lng ? parseFloat(lng) : 0,
       image: `/uploads/${filename}`,
       thumbnail: `/uploads/thumbnails/${thumbnailFilename}`,
-      description,
+      description: description || '',
       date: date || new Date().toISOString(),
-      camera,
-      lens,
-      settings: typeof settings === 'string' ? JSON.parse(settings) : settings,
-      tags: typeof tags === 'string' ? JSON.parse(tags) : tags || []
+      camera: camera || '',
+      lens: lens || '',
+      settings: (() => {
+        try {
+          return typeof settings === 'string' ? JSON.parse(settings) : (settings || {});
+        } catch (e) {
+          return {};
+        }
+      })(),
+      tags: (() => {
+        try {
+          const parsedTags = typeof tags === 'string' ? JSON.parse(tags) : tags;
+          return Array.isArray(parsedTags) ? parsedTags : [];
+        } catch (e) {
+          return [];
+        }
+      })()
     };
+
+    // Salva nel database JSON
+    const photos = await readPhotosDB();
+    photos.unshift(newPhoto); // Aggiungi all'inizio dell'array
+    await writePhotosDB(photos);
 
     res.status(201).json({
       success: true,
@@ -268,8 +230,34 @@ router.post('/', upload.single('image'), async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    const photos = await readPhotosDB();
+    const photoIndex = photos.findIndex(p => p.id === parseInt(id));
     
-    // Per ora solo mock response
+    if (photoIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'Foto non trovata'
+      });
+    }
+
+    // Rimuovi la foto dall'array
+    const deletedPhoto = photos.splice(photoIndex, 1)[0];
+    await writePhotosDB(photos);
+
+    // Opzionale: elimina i file fisici
+    try {
+      if (deletedPhoto.image) {
+        const imagePath = path.join(__dirname, '../../', deletedPhoto.image);
+        await fs.unlink(imagePath);
+      }
+      if (deletedPhoto.thumbnail) {
+        const thumbPath = path.join(__dirname, '../../', deletedPhoto.thumbnail);
+        await fs.unlink(thumbPath);
+      }
+    } catch (fileError) {
+      console.warn('Errore nell\'eliminazione file:', fileError);
+    }
+    
     res.json({
       success: true,
       message: 'Foto eliminata con successo'

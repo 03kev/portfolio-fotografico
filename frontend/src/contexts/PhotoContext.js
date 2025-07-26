@@ -113,7 +113,8 @@ export function PhotoProvider({ children }) {
       try {
         dispatch({ type: ACTIONS.SET_LOADING, payload: true });
         const response = await photoService.getAll();
-        dispatch({ type: ACTIONS.SET_PHOTOS, payload: response.data });
+        const photos = response.data?.data || response.data || [];
+        dispatch({ type: ACTIONS.SET_PHOTOS, payload: photos });
       } catch (error) {
         console.error('Error fetching photos:', error);
         dispatch({ type: ACTIONS.SET_ERROR, payload: 'Errore nel caricamento delle foto' });
@@ -152,11 +153,14 @@ export function PhotoProvider({ children }) {
     // Add new photo
     addPhoto: async (photoData) => {
       try {
+        dispatch({ type: ACTIONS.SET_LOADING, payload: true });
         const response = await photoService.upload(photoData);
-        dispatch({ type: ACTIONS.ADD_PHOTO, payload: response.data });
-        return response.data;
+        // Ricarica tutte le foto per sincronizzare con il backend
+        await actions.fetchPhotos();
+        return response.data?.data || response.data;
       } catch (error) {
         console.error('Error adding photo:', error);
+        dispatch({ type: ACTIONS.SET_ERROR, payload: 'Errore durante il caricamento della foto' });
         throw error;
       }
     },
@@ -195,6 +199,11 @@ export function PhotoProvider({ children }) {
   const filteredPhotos = state.photos.filter(photo => {
     const { search, tags, location } = state.filters;
     
+    // Assicurati che photo abbia tutte le proprietà necessarie
+    if (!photo.title || !photo.description || !photo.location) {
+      return false;
+    }
+    
     // Search filter
     if (search && !photo.title.toLowerCase().includes(search.toLowerCase()) &&
         !photo.description.toLowerCase().includes(search.toLowerCase()) &&
@@ -202,9 +211,12 @@ export function PhotoProvider({ children }) {
       return false;
     }
     
-    // Tags filter
-    if (tags.length > 0 && !tags.some(tag => photo.tags.includes(tag))) {
-      return false;
+    // Tags filter - assicurati che photo.tags sia un array
+    if (tags.length > 0) {
+      const photoTags = Array.isArray(photo.tags) ? photo.tags : [];
+      if (!tags.some(tag => photoTags.includes(tag))) {
+        return false;
+      }
     }
     
     // Location filter

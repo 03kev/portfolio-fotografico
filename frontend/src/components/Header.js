@@ -143,7 +143,33 @@ const MobileNavLink = styled(motion.li)`
   }
 `;
 
-const Header = () => {
+const UploadButton = styled(motion.button)`
+  background: var(--primary-gradient);
+  border: none;
+  color: white;
+  padding: 12px 20px;
+  border-radius: 25px;
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+  transition: all var(--transition-normal);
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+  }
+
+  @media (max-width: 768px) {
+    padding: 10px 16px;
+    font-size: var(--font-size-xs);
+  }
+`;
+
+const Header = ({ onOpenUpload }) => {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -218,31 +244,46 @@ const Header = () => {
           ))}
         </NavLinks>
 
-        <MobileMenuButton
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          whileTap={{ scale: 0.9 }}
-        >
-          <MenuLine
-            animate={{
-              rotate: mobileMenuOpen ? 45 : 0,
-              y: mobileMenuOpen ? 8 : 0
-            }}
-            transition={{ duration: 0.3 }}
-          />
-          <MenuLine
-            animate={{
-              opacity: mobileMenuOpen ? 0 : 1
-            }}
-            transition={{ duration: 0.3 }}
-          />
-          <MenuLine
-            animate={{
-              rotate: mobileMenuOpen ? -45 : 0,
-              y: mobileMenuOpen ? -8 : 0
-            }}
-            transition={{ duration: 0.3 }}
-          />
-        </MobileMenuButton>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          {onOpenUpload && (
+            <UploadButton
+              onClick={onOpenUpload}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.4, delay: 0.4 }}
+            >
+              📸 Carica Foto
+            </UploadButton>
+          )}
+
+          <MobileMenuButton
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            whileTap={{ scale: 0.9 }}
+          >
+            <MenuLine
+              animate={{
+                rotate: mobileMenuOpen ? 45 : 0,
+                y: mobileMenuOpen ? 8 : 0
+              }}
+              transition={{ duration: 0.3 }}
+            />
+            <MenuLine
+              animate={{
+                opacity: mobileMenuOpen ? 0 : 1
+              }}
+              transition={{ duration: 0.3 }}
+            />
+            <MenuLine
+              animate={{
+                rotate: mobileMenuOpen ? -45 : 0,
+                y: mobileMenuOpen ? -8 : 0
+              }}
+              transition={{ duration: 0.3 }}
+            />
+          </MobileMenuButton>
+        </div>
       </Nav>
 
       <AnimatePresence>
@@ -254,12 +295,31 @@ const Header = () => {
             transition={{ duration: 0.3 }}
           >
             <MobileNavLinks>
+              {onOpenUpload && (
+                <MobileNavLink
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.3, delay: 0 }}
+                >
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      onOpenUpload();
+                      setMobileMenuOpen(false);
+                    }}
+                    style={{ color: 'var(--color-accent)' }}
+                  >
+                    📸 Carica Foto
+                  </a>
+                </MobileNavLink>
+              )}
               {navItems.map((item, index) => (
                 <MobileNavLink
                   key={item.id}
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.3, delay: index * 0.1 }}
+                  transition={{ duration: 0.3, delay: (index + 1) * 0.1 }}
                 >
                   <a
                     href={`#${item.id}`}

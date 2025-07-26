@@ -191,12 +191,18 @@ const WorldMap = () => {
     actions.openPhotoModal(photo);
   };
 
-  // Calcola statistiche
+  // Calcola statistiche - con protezioni per dati mancanti
+  const validPhotos = photos.filter(p => p && p.location && p.lat && p.lng);
+  
   const stats = {
-    totalPhotos: photos.length,
-    countries: [...new Set(photos.map(p => p.location.split(',').pop().trim()))].length,
-    continents: [...new Set(photos.map(p => {
-      const country = p.location.split(',').pop().trim();
+    totalPhotos: validPhotos.length,
+    countries: [...new Set(validPhotos.map(p => {
+      const parts = p.location.split(',');
+      return parts.length > 0 ? parts[parts.length - 1].trim() : 'Sconosciuto';
+    }).filter(Boolean))].length,
+    continents: [...new Set(validPhotos.map(p => {
+      const parts = p.location.split(',');
+      const country = parts.length > 0 ? parts[parts.length - 1].trim() : '';
       // Semplificata mappatura continenti
       if (['Italia', 'Francia', 'Germania', 'Spagna', 'Norvegia', 'Svezia', 'Finlandia', 'Islanda'].includes(country)) return 'Europa';
       if (['Giappone', 'Cina', 'India', 'Thailandia'].includes(country)) return 'Asia';
@@ -205,8 +211,11 @@ const WorldMap = () => {
       if (['Sud Africa', 'Kenya', 'Tanzania', 'Marocco'].includes(country)) return 'Africa';
       if (['Australia', 'Nuova Zelanda'].includes(country)) return 'Oceania';
       return 'Altro';
-    }))].length,
-    cities: [...new Set(photos.map(p => p.location.split(',')[0].trim()))].length
+    }).filter(Boolean))].length,
+    cities: [...new Set(validPhotos.map(p => {
+      const parts = p.location.split(',');
+      return parts.length > 0 ? parts[0].trim() : 'Sconosciuto';
+    }).filter(Boolean))].length
   };
 
   const sectionVariants = {
@@ -274,7 +283,7 @@ const WorldMap = () => {
               maxZoom={19}
             />
 
-            {photos.map((photo) => (
+            {validPhotos.map((photo) => (
               <Marker
                 key={photo.id}
                 position={[photo.lat, photo.lng]}

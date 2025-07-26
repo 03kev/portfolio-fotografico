@@ -249,24 +249,21 @@ const Gallery = () => {
     triggerOnce: true
   });
 
-  // Estrai tutti i tag unici dalle foto
-  const allTags = [...new Set(photos.flatMap(photo => photo.tags || []))];
+  // Estrai tutti i tag unici dalle foto - gestisci il caso in cui tags non sia un array
+  const allTags = [...new Set(photos.flatMap(photo => {
+    return Array.isArray(photo.tags) ? photo.tags : [];
+  }))];
   const filters = ['all', ...allTags];
 
   useEffect(() => {
     // Applica filtri
+    // NB: 'actions' viene dal context e non cambia mai, quindi NON va messo tra le dipendenze
     const filterData = {};
-    
-    if (searchTerm) {
-      filterData.search = searchTerm;
-    }
-    
-    if (activeFilter !== 'all') {
-      filterData.tags = [activeFilter];
-    }
-    
+    if (searchTerm) filterData.search = searchTerm;
+    if (activeFilter !== 'all') filterData.tags = [activeFilter];
     actions.setFilter(filterData);
-  }, [activeFilter, searchTerm, actions]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFilter, searchTerm]);
 
   const handleFilterClick = (filter) => {
     setActiveFilter(filter);
@@ -399,7 +396,7 @@ const Gallery = () => {
                     <PhotoTitle>{photo.title}</PhotoTitle>
                     <PhotoLocation>{photo.location}</PhotoLocation>
                     <PhotoDescription>{photo.description}</PhotoDescription>
-                    {photo.tags && photo.tags.length > 0 && (
+                    {Array.isArray(photo.tags) && photo.tags.length > 0 && (
                       <PhotoTags>
                         {photo.tags.slice(0, 3).map(tag => (
                           <Tag key={tag}>{tag}</Tag>
