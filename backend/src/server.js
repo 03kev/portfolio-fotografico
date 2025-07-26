@@ -21,12 +21,31 @@ const limiter = rateLimit({
 app.use(limiter);
 
 // CORS
-app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://tuodominio.com'] 
-    : ['http://localhost:3000'],
-  credentials: true
-}));
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Consenti richieste senza origine (es. app mobili)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = process.env.NODE_ENV === 'production'
+      ? (process.env.CORS_ORIGINS || '').split(',')
+      : ['http://localhost:3000', 'http://localhost:3001'];
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.log('CORS blocked origin:', origin);
+      callback(new Error('Non consentito da CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-requested-with']
+};
+
+app.use(cors(corsOptions));
+
+// Gestione preflight requests
+app.options('*', cors(corsOptions));
 
 // Body parsing
 app.use(express.json({ limit: '10mb' }));
@@ -64,6 +83,9 @@ app.use('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Server in esecuzione su porta ${PORT}`);
   console.log(`📸 Portfolio API pronta su http://localhost:${PORT}/api`);
+  console.log(`🌐 CORS abilitato per:`, process.env.NODE_ENV === 'production' 
+    ? (process.env.CORS_ORIGINS || '').split(',')
+    : ['http://localhost:3000', 'http://localhost:3001']);
 });
 
 module.exports = app;

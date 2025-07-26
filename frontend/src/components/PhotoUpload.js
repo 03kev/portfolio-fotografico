@@ -3,7 +3,7 @@ import { usePhotos } from '../contexts/PhotoContext';
 import { uploadUtils } from '../utils/api';
 import './PhotoUpload.css';
 
-const PhotoUpload = ({ onUploadSuccess, onClose }) => {
+const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
   const { actions } = usePhotos();
   
   const [formData, setFormData] = useState({
@@ -206,7 +206,12 @@ const PhotoUpload = ({ onUploadSuccess, onClose }) => {
       }
 
     } catch (err) {
-      setError(err.message || 'Errore durante l\'upload');
+      const errorMessage = err.message || 'Errore durante l\'upload';
+      setError(errorMessage);
+      
+      if (onUploadError) {
+        onUploadError(err);
+      }
     } finally {
       setLoading(false);
     }

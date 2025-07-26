@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePhotos } from '../contexts/PhotoContext';
+import { IMAGES_BASE_URL } from '../utils/constants';
 
 const ModalOverlay = styled(motion.div)`
   position: fixed;
@@ -353,11 +354,14 @@ const PhotoModal = () => {
 
             <ImageContainer>
               <ModalImage
-                src={`https://images.unsplash.com/photo-${selectedPhoto.id > 3 ? '1516426122078-c23e76319801' : '1506905925346-21bda4d32df4'}?w=1200&h=900&fit=crop`}
+                src={`${IMAGES_BASE_URL}${selectedPhoto.image}`}
                 alt={selectedPhoto.title}
                 initial={{ scale: 1.1 }}
                 animate={{ scale: 1 }}
                 transition={{ duration: 0.4 }}
+                onError={(e) => {
+                  e.target.src = `https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1200&h=900&fit=crop`;
+                }}
               />
             </ImageContainer>
 

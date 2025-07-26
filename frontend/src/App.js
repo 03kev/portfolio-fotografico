@@ -8,6 +8,7 @@ import Gallery from './components/Gallery';
 import PhotoModal from './components/PhotoModal';
 import PhotoUpload from './components/PhotoUpload';
 import Footer from './components/Footer';
+import ToastProvider, { useToast } from './components/Toast';
 import GlobalStyles from './styles/GlobalStyles';
 import './styles/leaflet-custom.css';
 
@@ -15,11 +16,16 @@ import './styles/leaflet-custom.css';
 function AppContent() {
   const [showUpload, setShowUpload] = useState(false);
   const { actions } = usePhotos();
+  const toast = useToast();
 
   const handleUploadSuccess = async (newPhoto) => {
     setShowUpload(false);
-    // Il PhotoContext si occupa già di ricaricare le foto
+    toast.success('Foto caricata con successo! 📸');
     console.log('Foto caricata con successo:', newPhoto);
+  };
+
+  const handleUploadError = (error) => {
+    toast.error(`Errore durante il caricamento: ${error.message || error}`);
   };
 
   return (
@@ -47,9 +53,11 @@ function AppContent() {
         {showUpload && (
           <PhotoUpload 
             onUploadSuccess={handleUploadSuccess}
+            onUploadError={handleUploadError}
             onClose={() => setShowUpload(false)}
           />)
         }
+        <ToastProvider toasts={toast.toasts} onRemove={toast.removeToast} />
       </div>
     </Router>
   );

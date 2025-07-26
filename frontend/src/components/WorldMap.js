@@ -5,6 +5,7 @@ import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import { usePhotos } from '../contexts/PhotoContext';
 import { useInView } from 'react-intersection-observer';
+import { IMAGES_BASE_URL } from '../utils/constants';
 
 const MapSection = styled(motion.section)`
   padding: var(--spacing-4xl) 0;
@@ -289,13 +290,16 @@ const WorldMap = () => {
                 position={[photo.lat, photo.lng]}
                 icon={createCustomIcon()}
                 eventHandlers={{
-                  click: () => handleMarkerClick(photo),
+                  click: (e) => {
+                    e.originalEvent.stopPropagation();
+                    handleMarkerClick(photo);
+                  },
                 }}
               >
                 <Popup className="custom-popup">
                   <div style={{ textAlign: 'center', minWidth: '200px' }}>
                     <img
-                      src={`https://images.unsplash.com/photo-${photo.id > 3 ? '1516426122078-c23e76319801' : '1506905925346-21bda4d32df4'}?w=200&h=150&fit=crop`}
+                      src={`${IMAGES_BASE_URL}${photo.thumbnail || photo.image}`}
                       alt={photo.title}
                       style={{
                         width: '200px',
@@ -303,6 +307,9 @@ const WorldMap = () => {
                         objectFit: 'cover',
                         borderRadius: '8px',
                         marginBottom: '10px'
+                      }}
+                      onError={(e) => {
+                        e.target.src = `https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=200&h=150&fit=crop`;
                       }}
                     />
                     <h3 style={{ color: '#4facfe', margin: '0 0 5px 0', fontSize: '16px' }}>

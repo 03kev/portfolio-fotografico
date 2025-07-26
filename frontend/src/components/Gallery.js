@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePhotos } from '../contexts/PhotoContext';
 import { useInView } from 'react-intersection-observer';
+import { IMAGES_BASE_URL } from '../utils/constants';
 
 const GallerySection = styled(motion.section)`
   padding: var(--spacing-4xl) 0;
@@ -388,9 +389,12 @@ const Gallery = () => {
                   style={{ animationDelay: `${index * 0.1}s` }}
                 >
                   <PhotoImage
-                    src={`https://images.unsplash.com/photo-${photo.id > 3 ? '1516426122078-c23e76319801' : '1506905925346-21bda4d32df4'}?w=800&h=600&fit=crop`}
+                    src={`${IMAGES_BASE_URL}${photo.image || photo.thumbnail}`}
                     alt={photo.title}
                     loading="lazy"
+                    onError={(e) => {
+                      e.target.src = `https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop`;
+                    }}
                   />
                   <PhotoOverlay>
                     <PhotoTitle>{photo.title}</PhotoTitle>

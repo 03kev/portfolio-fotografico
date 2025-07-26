@@ -155,9 +155,18 @@ export function PhotoProvider({ children }) {
       try {
         dispatch({ type: ACTIONS.SET_LOADING, payload: true });
         const response = await photoService.upload(photoData);
-        // Ricarica tutte le foto per sincronizzare con il backend
-        await actions.fetchPhotos();
-        return response.data?.data || response.data;
+        const newPhoto = response.data?.data || response.data;
+        
+        // Aggiungi immediatamente la foto allo stato locale
+        dispatch({ type: ACTIONS.ADD_PHOTO, payload: newPhoto });
+        dispatch({ type: ACTIONS.SET_LOADING, payload: false });
+        
+        // Poi ricarica tutte le foto in background per sicurezza
+        setTimeout(() => {
+          actions.fetchPhotos();
+        }, 1000);
+        
+        return newPhoto;
       } catch (error) {
         console.error('Error adding photo:', error);
         dispatch({ type: ACTIONS.SET_ERROR, payload: 'Errore durante il caricamento della foto' });
