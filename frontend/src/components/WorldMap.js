@@ -162,6 +162,7 @@ const WorldMap = () => {
   const { photos, loading, actions } = usePhotos();
   const mapRef = useRef(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [mapInstance, setMapInstance] = useState(null);
   const { ref, inView } = useInView({
     threshold: 0.1,
     triggerOnce: true
@@ -172,19 +173,22 @@ const WorldMap = () => {
     return divIcon({
       className: 'custom-marker',
       html: `<div style="
-        width: 16px;
-        height: 16px;
+        width: 20px;
+        height: 20px;
         background: ${isActive ? 
           'linear-gradient(135deg, #4facfe, #00f2fe)' : 
           'linear-gradient(135deg, #667eea, #764ba2)'};
-        border: 3px solid white;
+        border: 2px solid white;
         border-radius: 50%;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        transition: all 0.3s ease;
-        ${isActive ? 'transform: scale(1.2);' : ''}
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) ${isActive ? 'scale(1.2)' : 'scale(1)'};
       "></div>`,
-      iconSize: [22, 22],
-      iconAnchor: [11, 11]
+      iconSize: [24, 24],
+      iconAnchor: [12, 12],
+      popupAnchor: [0, -12]
     });
   };
 
@@ -194,6 +198,15 @@ const WorldMap = () => {
 
   // Calcola statistiche - con protezioni per dati mancanti
   const validPhotos = photos.filter(p => p && p.location && p.lat && p.lng);
+
+  // Forza il refresh della mappa quando i dati cambiano
+  useEffect(() => {
+    if (mapInstance && validPhotos.length > 0) {
+      setTimeout(() => {
+        mapInstance.invalidateSize();
+      }, 100);
+    }
+  }, [mapInstance, validPhotos.length]);
   
   const stats = {
     totalPhotos: validPhotos.length,
@@ -274,7 +287,10 @@ const WorldMap = () => {
             scrollWheelZoom={true}
             zoomControl={true}
             ref={mapRef}
-            whenCreated={() => setMapLoaded(true)}
+            whenCreated={(map) => {
+              setMapLoaded(true);
+              setMapInstance(map);
+            }}
             style={{ height: '100%', width: '100%' }}
           >
             <TileLayer

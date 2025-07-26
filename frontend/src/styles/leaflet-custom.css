@@ -131,16 +131,29 @@
 
 /* Custom marker styles */
 .custom-marker {
-  background: linear-gradient(135deg, #667eea, #764ba2) !important;
-  border: 3px solid white !important;
+  position: relative !important;
+  display: block !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  width: 24px !important;
+  height: 24px !important;
+}
+
+.custom-marker div {
+  position: absolute !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
   border-radius: 50% !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
   transition: all 0.3s ease !important;
+  cursor: pointer !important;
 }
 
-.custom-marker:hover {
-  transform: scale(1.2) !important;
-  background: linear-gradient(135deg, #4facfe, #00f2fe) !important;
+.custom-marker:hover div {
+  transform: translate(-50%, -50%) scale(1.2) !important;
   box-shadow: 0 6px 20px rgba(79, 172, 254, 0.4) !important;
 }
 
