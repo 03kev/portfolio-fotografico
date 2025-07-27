@@ -273,39 +273,40 @@ const Gallery = () => {
     actions.openPhotoModal(photo);
   };
 
-  const sectionVariants = {
-    hidden: { opacity: 0, y: 50 },
-    visible: {
-      opacity: 1,
-      y: 0,
-      transition: {
-        duration: 0.8,
-        staggerChildren: 0.2
-      }
-    }
-  };
+  // Varianti di animazione rimosse temporaneamente perché non utilizzate
+  // const sectionVariants = {
+  //   hidden: { opacity: 0, y: 50 },
+  //   visible: {
+  //     opacity: 1,
+  //     y: 0,
+  //     transition: {
+  //       duration: 0.8,
+  //       staggerChildren: 0.2
+  //     }
+  //   }
+  // };
 
-  const itemVariants = {
-    hidden: { opacity: 0, y: 30 },
-    visible: {
-      opacity: 1,
-      y: 0,
-      transition: { duration: 0.6 }
-    }
-  };
+  // const itemVariants = {
+  //   hidden: { opacity: 0, y: 30 },
+  //   visible: {
+  //     opacity: 1,
+  //     y: 0,
+  //     transition: { duration: 0.6 }
+  //   }
+  // };
 
-  const cardVariants = {
-    hidden: { opacity: 0, scale: 0.8 },
-    visible: {
-      opacity: 1,
-      scale: 1,
-      transition: { duration: 0.4 }
-    },
-    hover: {
-      y: -10,
-      transition: { duration: 0.3 }
-    }
-  };
+  // const cardVariants = {
+  //   hidden: { opacity: 0, scale: 0.8 },
+  //   visible: {
+  //     opacity: 1,
+  //     scale: 1,
+  //     transition: { duration: 0.4 }
+  //   },
+  //   hover: {
+  //     y: -10,
+  //     transition: { duration: 0.3 }
+  //   }
+  // };
 
   if (loading) {
     return (

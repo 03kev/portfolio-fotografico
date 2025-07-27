@@ -161,10 +161,7 @@ export function PhotoProvider({ children }) {
         dispatch({ type: ACTIONS.ADD_PHOTO, payload: newPhoto });
         dispatch({ type: ACTIONS.SET_LOADING, payload: false });
         
-        // Poi ricarica tutte le foto in background per sicurezza
-        setTimeout(() => {
-          actions.fetchPhotos();
-        }, 1000);
+        // Nota: non ricarichiamo tutte le foto per evitare chiamate duplicate
         
         return newPhoto;
       } catch (error) {
@@ -201,7 +198,19 @@ export function PhotoProvider({ children }) {
 
   // Load photos on mount
   useEffect(() => {
-    actions.fetchPhotos();
+    const fetchPhotos = async () => {
+      try {
+        dispatch({ type: ACTIONS.SET_LOADING, payload: true });
+        const response = await photoService.getAll();
+        const photos = response.data?.data || response.data || [];
+        dispatch({ type: ACTIONS.SET_PHOTOS, payload: photos });
+      } catch (error) {
+        console.error('Error fetching photos:', error);
+        dispatch({ type: ACTIONS.SET_ERROR, payload: 'Errore nel caricamento delle foto' });
+      }
+    };
+
+    fetchPhotos();
   }, []);
 
   // Filtered photos based on current filters

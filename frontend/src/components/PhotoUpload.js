@@ -32,7 +32,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
   const [tagInput, setTagInput] = useState('');
   
   const fileInputRef = useRef(null);
-  const mapRef = useRef(null);
+  // const mapRef = useRef(null); // Rimosso perché non utilizzato
 
   // Gestione selezione file
   const handleFileSelect = useCallback((event) => {

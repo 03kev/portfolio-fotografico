@@ -302,7 +302,7 @@ const Header = ({ onOpenUpload }) => {
                   transition={{ duration: 0.3, delay: 0 }}
                 >
                   <a
-                    href="#"
+                    href="#upload"
                     onClick={(e) => {
                       e.preventDefault();
                       onOpenUpload();

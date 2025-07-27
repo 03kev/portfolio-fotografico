@@ -15,7 +15,7 @@ import './styles/leaflet-custom.css';
 // Componente interno che usa il PhotoContext
 function AppContent() {
   const [showUpload, setShowUpload] = useState(false);
-  const { actions } = usePhotos();
+  // const { actions } = usePhotos(); // Rimosso perché non usato
   const toast = useToast();
 
   const handleUploadSuccess = async (newPhoto) => {
