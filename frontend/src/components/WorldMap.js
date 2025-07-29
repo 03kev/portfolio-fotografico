@@ -291,39 +291,61 @@ const latLngToVector3 = useCallback((lat, lng, radius = GLOBE_RADIUS) => {    co
     );
 }, []);
 
-// Creates a 3D marker for a photo
-const createMarker = useCallback((position, photo) => {
+// Creates a 3D marker for a photo or cluster
+const createMarker = useCallback((position, photo, isCluster = false) => {
     const markerGroup = new THREE.Group();
     markerGroup.position.copy(position);
     markerGroup.userData = photo;
     
-    // sphere
-    const dotGeometry = new THREE.SphereGeometry(0.035, 16, 16);
+    // sphere with different styles for clusters
+    const size = isCluster ? 0.045 : 0.035;
+    const dotGeometry = new THREE.SphereGeometry(size, 16, 16);
     const dotMaterial = new THREE.MeshLambertMaterial({ 
-        color: 0xff5050,
+        color: isCluster ? 0x4facfe : 0xff5050, // blu per cluster, rosso per singole
         transparent: true,
         opacity: 0.95
     });
     const dot = new THREE.Mesh(dotGeometry, dotMaterial);
     dot.userData = photo;
-    // dot.position.y = 0.035;
+    
     // Move dot slightly outward along the normal
     const normal = position.clone().normalize();
-    dot.translateOnAxis(normal, 0.015); // keep the dot nearly flush with the surface
+    dot.translateOnAxis(normal, 0.015);
     markerGroup.add(dot);
+
+    // Add a ring for clusters to make them more visible
+    if (isCluster) {
+        const ringGeometry = new THREE.RingGeometry(size * 1.3, size * 1.5, 16);
+        const ringMaterial = new THREE.MeshBasicMaterial({
+            color: 0x4facfe,
+            transparent: true,
+            opacity: 0.4,
+            side: THREE.DoubleSide
+        });
+        const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+        ring.translateOnAxis(normal, 0.02);
+        ring.lookAt(position.clone().add(normal.clone().multiplyScalar(2)));
+        markerGroup.add(ring);
+        markerGroup.ring = ring;
+    }
 
     // states
     markerGroup.isHovered  = false;
     markerGroup.baseScale  = 1;
     markerGroup.dot        = dot;
+    markerGroup.isCluster  = isCluster;
 
     // animation – scales dot depending on zoom + hover
     markerGroup.pulseScale = (time, scaleFactor) => {
+      const baseScale = isCluster ? 1.1 : 1;
       const targetScale = markerGroup.isHovered
-        ? scaleFactor * (1.2 + Math.sin(time * 3) * 0.1) // pulsazione leggera
-        : scaleFactor;
+        ? scaleFactor * baseScale * (1.2 + Math.sin(time * 3) * 0.1) // pulsazione leggera
+        : scaleFactor * baseScale;
 
       markerGroup.dot.scale.setScalar(targetScale);
+      if (markerGroup.ring) {
+        markerGroup.ring.scale.setScalar(targetScale * 0.9);
+      }
     };
     
     // Orienta il marker
@@ -387,8 +409,10 @@ const createMarker = useCallback((position, photo) => {
           cluster.center[1],
           GLOBE_RADIUS
         );
-        const marker = createMarker(pos, cluster.photos[0]); // riusa foto 0
+        const isCluster = cluster.photos.length > 1;
+        const marker = createMarker(pos, cluster.photos[0], isCluster); // riusa foto 0
         marker.userData.photos = cluster.photos;             // array completo
+        marker.userData.isCluster = isCluster; // indica se è un cluster
         sceneRef.current.add(marker);
         markersRef.current.push(marker);
         marker.traverse(child => {
@@ -818,7 +842,20 @@ useEffect(() => {
                     const prev = markersRef.current.find(m => m.userData === hoveredMarker);
                     if (prev) prev.isHovered = false;
                 }
-                setHoveredMarker(hoveredData);
+                
+                // Trova il marker completo per ottenere le informazioni del cluster
+                const fullMarker = markersRef.current.find(m => m.userData === hoveredData);
+                if (fullMarker) {
+                    const enhancedData = {
+                        ...hoveredData,
+                        isCluster: fullMarker.userData.isCluster,
+                        photos: fullMarker.userData.photos || [hoveredData],
+                        photoCount: fullMarker.userData.photos ? fullMarker.userData.photos.length : 1
+                    };
+                    setHoveredMarker(enhancedData);
+                } else {
+                    setHoveredMarker(hoveredData);
+                }
             }
             
             // cursore sempre pointer mentre siamo sopra QUALSIASI marker
@@ -1256,7 +1293,7 @@ const stats = useMemo(() => {
         </Controls>
         
         {/* Popup informativo per marker in hover */}
-        {/*hoveredMarker && (
+        {hoveredMarker && (
             <InfoPopup
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -1266,13 +1303,21 @@ const stats = useMemo(() => {
                 top: mousePosition.y - 80
             }}
             >
-            <h4>{hoveredMarker.title}</h4>
-            <p>{hoveredMarker.location}</p>
+            <h4>
+                {hoveredMarker.isCluster 
+                    ? `${hoveredMarker.photoCount} foto in zona`
+                    : hoveredMarker.title
+                }
+            </h4>
+            <p>📍 {hoveredMarker.location}</p>
             <p style={{ fontSize: '0.75rem', opacity: 0.6 }}>
-            Clicca per vedere la foto
+                {hoveredMarker.isCluster 
+                    ? `Clicca per vedere tutte le ${hoveredMarker.photoCount} foto`
+                    : 'Clicca per vedere la foto'
+                }
             </p>
             </InfoPopup>
-        )*/}
+        )}
         
         <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
         </GlobeWrapper>

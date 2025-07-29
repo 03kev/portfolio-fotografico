@@ -6,6 +6,7 @@ import Hero from './components/Hero';
 import WorldMap from './components/WorldMap';
 import Gallery from './components/Gallery';
 import PhotoModal from './components/PhotoModal';
+import GalleryModal from './components/GalleryModal';
 import PhotoUpload from './components/PhotoUpload';
 import Footer from './components/Footer';
 import ToastProvider, { useToast } from './components/Toast';
@@ -50,6 +51,7 @@ function AppContent() {
         </main>
         <Footer />
         <PhotoModal />
+        <GalleryModal />
         {showUpload && (
           <PhotoUpload 
             onUploadSuccess={handleUploadSuccess}

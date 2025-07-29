@@ -1,5 +1,20 @@
 [
   {
+    "id": 1753818943639,
+    "title": "a",
+    "location": "Vezzano sul Crostolo",
+    "lat": 44.60952879477591,
+    "lng": 10.541401277587228,
+    "image": "/uploads/photo_1753818943639.webp",
+    "thumbnail": "/uploads/thumbnails/photo_1753818943639_thumb.webp",
+    "description": "",
+    "date": "2025-07-29",
+    "camera": "",
+    "lens": "",
+    "settings": "{\"aperture\":\"\",\"shutter\":\"\",\"iso\":\"\",\"focal\":\"\"}",
+    "tags": []
+  },
+  {
     "id": 1753816473200,
     "title": "Provv",
     "location": "a",

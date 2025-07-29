@@ -10,6 +10,8 @@ const ACTIONS = {
   SET_ERROR: 'SET_ERROR',
   SET_SELECTED_PHOTO: 'SET_SELECTED_PHOTO',
   SET_MODAL_OPEN: 'SET_MODAL_OPEN',
+  SET_GALLERY_PHOTOS: 'SET_GALLERY_PHOTOS',
+  SET_GALLERY_MODAL_OPEN: 'SET_GALLERY_MODAL_OPEN',
   ADD_PHOTO: 'ADD_PHOTO',
   DELETE_PHOTO: 'DELETE_PHOTO',
   SET_MAP_CENTER: 'SET_MAP_CENTER',
@@ -23,6 +25,8 @@ const initialState = {
   error: null,
   selectedPhoto: null,
   modalOpen: false,
+  galleryPhotos: [],
+  galleryModalOpen: false,
   mapCenter: [20, 0],
   mapZoom: 2,
   filters: {
@@ -67,6 +71,19 @@ function photoReducer(state, action) {
         ...state,
         modalOpen: action.payload,
         selectedPhoto: action.payload ? state.selectedPhoto : null
+      };
+    
+    case ACTIONS.SET_GALLERY_PHOTOS:
+      return {
+        ...state,
+        galleryPhotos: action.payload
+      };
+    
+    case ACTIONS.SET_GALLERY_MODAL_OPEN:
+      return {
+        ...state,
+        galleryModalOpen: action.payload,
+        galleryPhotos: action.payload ? state.galleryPhotos : []
       };
     
     case ACTIONS.ADD_PHOTO:
@@ -130,6 +147,17 @@ export function PhotoProvider({ children }) {
     // Close photo modal
     closePhotoModal: () => {
       dispatch({ type: ACTIONS.SET_MODAL_OPEN, payload: false });
+    },
+
+    // Open gallery modal for clusters
+    openGalleryModal: (photos) => {
+      dispatch({ type: ACTIONS.SET_GALLERY_PHOTOS, payload: photos });
+      dispatch({ type: ACTIONS.SET_GALLERY_MODAL_OPEN, payload: true });
+    },
+
+    // Close gallery modal
+    closeGalleryModal: () => {
+      dispatch({ type: ACTIONS.SET_GALLERY_MODAL_OPEN, payload: false });
     },
 
     // Set map center
