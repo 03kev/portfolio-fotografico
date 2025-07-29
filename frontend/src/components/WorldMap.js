@@ -42,7 +42,7 @@ const GlobeWrapper = styled(motion.div)`
   overflow: hidden;
   box-shadow: var(--shadow-2xl);
   margin-bottom: var(--spacing-2xl);
-  background: radial-gradient(circle at 30% 30%, #1a1a2e, #0f0f23);
+  background: radial-gradient(circle at 30% 30%, #0a0a0f, #050506);
 
   @media (max-width: 768px) {
     height: 400px;
@@ -86,7 +86,6 @@ const ControlButton = styled.button`
   cursor: pointer;
   transition: all var(--transition-normal);
   backdrop-filter: blur(10px);
-  font-size: var(--font-size-base);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -184,7 +183,6 @@ const StatNumber = styled.div`
 
 const StatLabel = styled.div`
   color: rgba(255, 255, 255, 0.8);
-  font-size: var(--font-size-base);
   font-weight: var(--font-weight-medium);
 `;
 
@@ -214,7 +212,7 @@ const InfoPopup = styled(motion.div)`
 `;
 
 const WorldMap = () => {
-  const { photos, loading, actions } = usePhotos();
+  const { photos, loading, actions, modalOpen } = usePhotos();
   const mountRef = useRef(null);
   const sceneRef = useRef(null);
   const rendererRef = useRef(null);
@@ -225,6 +223,7 @@ const WorldMap = () => {
   const markerObjectsRef = useRef([]); // Cache per raycasting
   const [mapLoaded, setMapLoaded] = useState(false);
   const [autoRotate, setAutoRotate] = useState(true);
+  const autoRotateTimerRef = useRef(null);
   const [hoveredMarker, setHoveredMarker] = useState(null);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const lastMouseMoveTime = useRef(0); // Per throttling
@@ -257,55 +256,41 @@ const WorldMap = () => {
     markerGroup.position.copy(position);
     markerGroup.userData = photo;
 
-    // Pin principale con geometria ridotta
-    const pinGeometry = new THREE.ConeGeometry(0.04, 0.12, 6); // Ridotto segmenti
-    const pinMaterial = new THREE.MeshLambertMaterial({ 
-      color: 0xff3030,
-      transparent: true,
-      opacity: 0.9
-    });
-    const pin = new THREE.Mesh(pinGeometry, pinMaterial);
-    pin.position.y = 0.06;
-    markerGroup.add(pin);
-
-    // Base del pin semplificata
-    const baseGeometry = new THREE.SphereGeometry(0.03, 8, 8); // Ridotto segmenti
-    const baseMaterial = new THREE.MeshLambertMaterial({ 
+    
+    
+    
+    // Pallino semplice (sfera)
+    const dotGeometry = new THREE.SphereGeometry(0.035, 16, 16);
+    const dotMaterial = new THREE.MeshLambertMaterial({ 
       color: 0xff5050,
       transparent: true,
-      opacity: 0.8
+      opacity: 0.95
     });
-    const base = new THREE.Mesh(baseGeometry, baseMaterial);
-    markerGroup.add(base);
-
-    // Alone pulsante leggero
-    const glowGeometry = new THREE.SphereGeometry(0.06, 6, 6); // Molto ridotto
-    const glowMaterial = new THREE.MeshBasicMaterial({
-      color: 0xff6060,
-      transparent: true,
-      opacity: 0.2
-    });
-    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-    markerGroup.add(glow);
+    const dot = new THREE.Mesh(dotGeometry, dotMaterial);
+    dot.userData = photo;
+    dot.position.y = 0.035;
+    markerGroup.add(dot);
+    /* KEEP_PLACE */
 
     // Stati per animazione ottimizzata
     markerGroup.isHovered = false;
     markerGroup.originalScale = 1;
+    markerGroup.dot = dot;
     
     // Animazione solo quando necessario
     markerGroup.pulseScale = (time) => {
       if (markerGroup.isHovered) {
         const scale = 1.2 + Math.sin(time * 3) * 0.1;
-        const glowScale = 1.5 + Math.sin(time * 2) * 0.3;
+        const glowScale = 0;
         
-        pin.scale.setScalar(scale);
-        base.scale.setScalar(scale);
-        glow.scale.setScalar(glowScale);
+        markerGroup.dot.scale.setScalar(scale);
+        
+        
       } else {
         // Reset rapido quando non in hover
-        pin.scale.setScalar(markerGroup.originalScale);
-        base.scale.setScalar(markerGroup.originalScale);
-        glow.scale.setScalar(markerGroup.originalScale);
+        markerGroup.dot.scale.setScalar(markerGroup.originalScale);
+        
+        
       }
     };
 
@@ -326,6 +311,20 @@ const WorldMap = () => {
       }
     };
   }, []);
+
+  const scheduleAutoRotateResume = useCallback((delay = 12000) => {
+    if (!controlsRef.current) return;
+    if (autoRotateTimerRef.current) {
+      clearTimeout(autoRotateTimerRef.current);
+    }
+    autoRotateTimerRef.current = setTimeout(() => {
+      if (controlsRef.current) {
+        controlsRef.current.autoRotate = true;
+      }
+      setAutoRotate(true);
+    }, delay);
+  }, [setAutoRotate]);
+
 
   // Controlli personalizzati ottimizzati
   const createCustomControls = useCallback((camera, domElement) => {
@@ -400,7 +399,10 @@ const WorldMap = () => {
           case 0:
             this.currentState = this.state.ROTATE;
             this.rotateStart.set(event.clientX, event.clientY);
+            this.autoRotate = false;
+            try { scheduleAutoRotateResume(); } catch(e) {}
             break;
+            try { scheduleAutoRotateResume(); } catch(e) {}
         }
         
         if (this.currentState !== this.state.NONE) {
@@ -416,13 +418,17 @@ const WorldMap = () => {
         
         if (this.currentState === this.state.ROTATE) {
           this.rotateEnd.set(event.clientX, event.clientY);
-          this.rotateDelta.subVectors(this.rotateEnd, this.rotateStart).multiplyScalar(0.004);
+                    const dragT = (this.spherical.radius - this.minDistance) / (this.maxDistance - this.minDistance || 1);
+          const dragFactor = 0.004 * Math.max(0.15, Math.min(1, dragT));
+          this.rotateDelta.subVectors(this.rotateEnd, this.rotateStart).multiplyScalar(dragFactor);
+          this.rotateDelta.subVectors(this.rotateEnd, this.rotateStart).multiplyScalar(dragFactor);
           
           this.sphericalDelta.theta -= this.rotateDelta.x;
           this.sphericalDelta.phi -= this.rotateDelta.y;
           
           this.rotateStart.copy(this.rotateEnd);
           this.autoRotate = false;
+          try { scheduleAutoRotateResume(); } catch(e) {}
         }
       },
       
@@ -435,17 +441,60 @@ const WorldMap = () => {
         this.currentState = this.state.NONE;
       },
       
+      
+      
+      
+      
       onWheel: function(event) {
-        if (!this.enabled || !this.enableZoom) return;
-        
+        if (!this.enabled) return;
         event.preventDefault();
-        
-        if (event.deltaY < 0) {
-          this.scale /= 0.95;
-        } else if (event.deltaY > 0) {
-          this.scale *= 0.95;
+
+        const absX = Math.abs(event.deltaX || 0);
+        const absY = Math.abs(event.deltaY || 0);
+
+        // Heuristics:
+        // - ctrl/meta => pinch zoom (Mac trackpad)
+        // - mouse wheel: absX ~ 0 and big |deltaY| or deltaMode === 1
+        const isPinch = !!(event.ctrlKey || event.metaKey);
+        const isMouseWheel = !isPinch && absX < 1 && (event.deltaMode === 1 || absY >= 40);
+
+        const zoomT = (this.spherical.radius - this.minDistance) / (this.maxDistance - this.minDistance || 1);
+        const clampT = Math.max(0, Math.min(1, zoomT));
+
+        // Zoom factors: smaller => faster
+        const basePinch = 0.992;                 // più veloce con le dita
+        const baseWheel = 0.985;                // classico ma reattivo
+        const base = isPinch ? basePinch : baseWheel;
+
+        // Rotazione sensitivity
+        const k = (0.004 * Math.max(0.15, Math.min(1, clampT))) * 0.30;
+
+        if (isPinch || isMouseWheel) {
+          if (!this.enableZoom) return;
+          // Invertito: deltaY > 0 => ZOOM IN (avvicina), deltaY < 0 => ZOOM OUT
+          if (event.deltaY > 0) {
+            this.scale /= base;
+          } else if (event.deltaY < 0) {
+            this.scale *= base;
+          }
+          this.autoRotate = false;
+          try { scheduleAutoRotateResume(); } catch(e) {}
+        } else {
+          // Rotazione 2D: invertito verticale rispetto alla versione precedente
+          const dx = (event.deltaX || 0);
+          const dy = (event.deltaY || 0);
+          // dx > 0 (dita a destra) => est (theta +)
+          this.sphericalDelta.theta += dx * k;
+          // dy > 0 (dita in giù) => sud (phi +)
+          this.sphericalDelta.phi   += dy * k;
+          this.autoRotate = false;
+          try { scheduleAutoRotateResume(); } catch(e) {}
         }
       },
+
+
+
+
       
       onTouchStart: function(event) {
         if (!this.enabled) return;
@@ -463,13 +512,17 @@ const WorldMap = () => {
         
         if (event.touches.length === 1 && this.currentState === this.state.ROTATE) {
           this.rotateEnd.set(event.touches[0].pageX, event.touches[0].pageY);
-          this.rotateDelta.subVectors(this.rotateEnd, this.rotateStart).multiplyScalar(0.004);
+          this.rotateDelta.subVectors(this.rotateEnd, this.rotateStart);
+          const dragT = (this.spherical.radius - this.minDistance) / (this.maxDistance - this.minDistance || 1);
+          const dragFactor = 0.004 * Math.max(0.15, Math.min(1, dragT));
+          this.rotateDelta.subVectors(this.rotateEnd, this.rotateStart).multiplyScalar(dragFactor);
           
           this.sphericalDelta.theta -= this.rotateDelta.x;
           this.sphericalDelta.phi -= this.rotateDelta.y;
           
           this.rotateStart.copy(this.rotateEnd);
           this.autoRotate = false;
+          try { scheduleAutoRotateResume(); } catch(e) {}
         }
       },
       
@@ -516,6 +569,7 @@ const WorldMap = () => {
 
     // Setup scene ottimizzato
     const scene = new THREE.Scene();
+    let contextLost = false;
     const camera = new THREE.PerspectiveCamera(
       50, // FOV ridotto per performance
       mountRef.current.clientWidth / mountRef.current.clientHeight, 
@@ -528,9 +582,10 @@ const WorldMap = () => {
       powerPreference: "high-performance"
     });
     
-    renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
+        renderer.setClearColor(0x060608, 1);
+renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Limitato per performance
-    renderer.setClearColor(0x000000, 0);
+    
     renderer.shadowMap.enabled = false; // Disabilitato per performance
     mountRef.current.appendChild(renderer.domElement);
 
@@ -633,7 +688,7 @@ const WorldMap = () => {
     const starsMaterial = new THREE.PointsMaterial({ 
       size: 1.2,
       transparent: true,
-      opacity: 0.8,
+      opacity: 0.6,
       color: 0xffffff,
       sizeAttenuation: false
     });
@@ -695,20 +750,16 @@ const WorldMap = () => {
       const intersects = raycaster.intersectObjects(markerObjectsRef.current);
       
       if (intersects.length > 0) {
-        let hoveredMarkerGroup = intersects[0].object;
-        while (hoveredMarkerGroup.parent && !hoveredMarkerGroup.userData) {
-          hoveredMarkerGroup = hoveredMarkerGroup.parent;
-        }
-        
-        if (hoveredMarkerGroup.userData && hoveredMarkerGroup.userData !== hoveredMarker) {
+        const hoveredObj = intersects[0].object;
+        const hoveredData = hoveredObj.userData || (hoveredObj.parent ? hoveredObj.parent.userData : null);
+        if (hoveredData && hoveredData !== hoveredMarker) {
           // Reset stato hover precedente
           if (hoveredMarker) {
             const prevMarker = markersRef.current.find(m => m.userData === hoveredMarker);
             if (prevMarker) prevMarker.isHovered = false;
           }
           
-          setHoveredMarker(hoveredMarkerGroup.userData);
-          hoveredMarkerGroup.isHovered = true;
+          setHoveredMarker(hoveredData);
           document.body.style.cursor = 'pointer';
         }
       } else {
@@ -731,20 +782,35 @@ const WorldMap = () => {
       const intersects = raycaster.intersectObjects(markerObjectsRef.current);
 
       if (intersects.length > 0) {
-        let clickedMarker = intersects[0].object;
-        while (clickedMarker.parent && !clickedMarker.userData) {
-          clickedMarker = clickedMarker.parent;
-        }
-        
-        if (clickedMarker.userData) {
-          console.log('Marker cliccato:', clickedMarker.userData);
-          actions.openPhotoModal(clickedMarker.userData);
+        const clickedMarker = intersects[0].object;
+        const data = clickedMarker.userData || (clickedMarker.parent ? clickedMarker.parent.userData : null);
+        if (data) {
+          const clickedData = data;
+          const fullPhoto = photos.find(p => p && String(p.id) === String(clickedData.id)) || clickedData;
+          focusOnPhoto(fullPhoto);
+          actions.openPhotoModal(fullPhoto);
         }
       }
     };
 
     // Event listeners
     const canvas = renderer.domElement;
+    // Gestione perdita/ripristino contesto WebGL
+    canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      contextLost = true;
+      console.warn('WebGL context lost');
+    }, false);
+    canvas.addEventListener('webglcontextrestored', () => {
+      console.warn('WebGL context restored');
+      contextLost = false;
+      // Ricarica texture della Terra
+      if (typeof loadTextures === 'function') {
+        loadTextures();
+      }
+    }, false);
+
+
     canvas.addEventListener('mousemove', handleMouseMove);
     canvas.addEventListener('click', handleClick);
 
@@ -836,8 +902,9 @@ const WorldMap = () => {
       
       renderer.dispose();
       document.body.style.cursor = 'default';
+      if (autoRotateTimerRef.current) { clearTimeout(autoRotateTimerRef.current); }
     };
-  }, [inView, latLngToVector3, createMarker, validPhotos, autoRotate, actions, createCustomControls, hoveredMarker, throttle]);
+  }, [inView, validPhotos]);
 
   // Funzioni di controllo ottimizzate
   const resetView = () => {
@@ -870,6 +937,42 @@ const WorldMap = () => {
       cameraRef.current.position.z = newZ;
     }
   };
+
+  
+  const focusOnPhoto = (photo, targetRadius = 3.2, duration = 1600) => {
+    if (!photo || !globeRef.current || !cameraRef.current) return;
+    // Calcola rotazioni target per approssimare il punto al centro
+    const targetRotationY = -photo.lng * (Math.PI / 180);
+    const targetRotationX = (photo.lat - 20) * (Math.PI / 180);
+    const startRotationX = globeRef.current.rotation.x;
+    const startRotationY = globeRef.current.rotation.y;
+    const startZ = cameraRef.current.position.z;
+    const destZ = Math.max(2.6, Math.min(8, targetRadius));
+    const startTime = Date.now();
+    if (controlsRef.current) {
+      controlsRef.current.autoRotate = false;
+    }
+    setAutoRotate(false);
+    const animateFocus = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const ease = 1 - Math.pow(1 - progress, 2);
+      if (globeRef.current) {
+        globeRef.current.rotation.x = startRotationX + (targetRotationX - startRotationX) * ease;
+        globeRef.current.rotation.y = startRotationY + (targetRotationY - startRotationY) * ease;
+      }
+      if (cameraRef.current) {
+        cameraRef.current.position.z = startZ + (destZ - startZ) * ease;
+      }
+      if (progress < 1) {
+        requestAnimationFrame(animateFocus);
+      } else {
+        scheduleAutoRotateResume();
+      }
+    };
+    requestAnimationFrame(animateFocus);
+  };
+
 
   const focusOnItaly = () => {
     const italianPhoto = validPhotos.find(photo => 
@@ -907,6 +1010,34 @@ const WorldMap = () => {
       }
     }
   };
+
+
+  // Livella l'inclinazione della Terra quando chiudi il modal
+  useEffect(() => {
+    if (modalOpen) return;
+    if (!globeRef.current) return;
+    // Anima lentamente rotation.x verso 0 mantenendo Y
+    const startX = globeRef.current.rotation.x;
+    const startY = globeRef.current.rotation.y;
+    const targetX = 0;
+    const startTime = Date.now();
+    const duration = 800;
+    let raf;
+    const animate = () => {
+      const t = Math.min(1, (Date.now() - startTime) / duration);
+      const ease = 1 - Math.pow(1 - t, 2);
+      if (globeRef.current) {
+        globeRef.current.rotation.x = startX + (targetX - startX) * ease;
+        globeRef.current.rotation.y = startY; // non toccare la longitudine
+      }
+      if (t < 1) {
+        raf = requestAnimationFrame(animate);
+      }
+    };
+    raf = requestAnimationFrame(animate);
+    return () => raf && cancelAnimationFrame(raf);
+  }, [modalOpen]);
+
 
   // Calcolo statistiche memoizzato
   const stats = useMemo(() => {
