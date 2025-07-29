@@ -50,3 +50,6 @@ tmp/
 temp/
 
 .DS_Store
+frontend/public/textures/*16k*
+frontend/public/textures/*32k*
+frontend/public/textures/*43k*

@@ -1,12 +1,12 @@
 {
   "name": "portfolio-fotografico",
-  "version": "1.0.0", 
+  "version": "1.0.0",
   "description": "Un moderno portfolio fotografico con mappa interattiva",
   "main": "index.js",
   "scripts": {
     "setup": "npm run setup:backend && npm run setup:frontend",
     "setup:backend": "cd backend && npm install",
-    "setup:frontend": "cd frontend && npm install", 
+    "setup:frontend": "cd frontend && npm install",
     "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
     "start:backend": "cd backend && npm run dev",
     "start:frontend": "cd frontend && npm start",
@@ -23,7 +23,7 @@
   },
   "keywords": [
     "photography",
-    "portfolio", 
+    "portfolio",
     "react",
     "nodejs",
     "leaflet",
@@ -45,5 +45,8 @@
   "bugs": {
     "url": "https://github.com/tuousername/portfolio-fotografico/issues"
   },
-  "homepage": "https://github.com/tuousername/portfolio-fotografico#readme"
+  "homepage": "https://github.com/tuousername/portfolio-fotografico#readme",
+  "dependencies": {
+    "three-slippy-map-globe": "^1.0.3"
+  }
 }

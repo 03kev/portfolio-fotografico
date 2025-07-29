@@ -6,8 +6,20 @@ import { usePhotos } from '../contexts/PhotoContext';
 
 import { useInView } from 'react-intersection-observer';
 
-// Meridiano di partenza (longitudine iniziale) in gradi
-const START_LON_OFFSET_DEG = -105;
+// ────────────────────────────────────────────────────────────────────────────
+// Configuration constants
+// ────────────────────────────────────────────────────────────────────────────
+const GLOBE_RADIUS          = 5;
+const ATMOSPHERE_RADIUS     = 2.05;
+const STAR_FIELD_RADIUS     = 500;
+const STAR_COUNT            = 8000;
+const CAMERA_START_Z        = GLOBE_RADIUS * 2.5 + 0.5;
+const MIN_CAMERA_DISTANCE   = GLOBE_RADIUS + 0.5;
+const MAX_CAMERA_DISTANCE   = CAMERA_START_Z * 2;
+const FOCUS_OFFSET_RADIUS   = GLOBE_RADIUS + 1.2;
+const RESUME_ROTATE_DELAY   = 5000; // ms
+const AUTO_ROTATE_SPEED     = 0.37; // rad/s
+const START_LON_OFFSET_DEG = -105; // rome longitude offset
 
 const MapSection = styled(motion.section)`
   padding: var(--spacing-4xl) 0;
@@ -236,6 +248,7 @@ const WorldMap = () => {
         triggerOnce: true
     });
     const prevRadiusRef = useRef(null);
+    
     // Disattiva l’auto-rotazione e sincronizza lo stato del pulsante
     const disableAutoRotate = useCallback(() => {
         if (controlsRef.current) controlsRef.current.autoRotate = false;
@@ -248,12 +261,15 @@ const WorldMap = () => {
     [photos]
 );
 
-// Converti coordinate geografiche in coordinate 3D sulla sfera
-const latLngToVector3 = useCallback((lat, lng, radius = 2) => {
-    const phi   = (90 - lat) * (Math.PI / 180);
-    // Aggiungiamo l'offset longitudinale così anche i marker “girano” con la Terra
+/**
+* Converts latitude/longitude to a 3‑D position on the globe.
+* @param {number} lat  Latitude  (degrees)
+* @param {number} lng  Longitude (degrees)
+* @param {number} [radius=GLOBE_RADIUS]
+* @returns {THREE.Vector3}
+*/
+const latLngToVector3 = useCallback((lat, lng, radius = GLOBE_RADIUS) => {    const phi   = (90 - lat) * (Math.PI / 180);
     const theta = (lng + START_LON_OFFSET_DEG + 180) * (Math.PI / 180);
-    
     return new THREE.Vector3(
         -radius * Math.sin(phi) * Math.cos(theta),
         radius * Math.cos(phi),
@@ -261,16 +277,13 @@ const latLngToVector3 = useCallback((lat, lng, radius = 2) => {
     );
 }, []);
 
-// Crea marker 3D ottimizzati
+// Creates a 3D marker for a photo
 const createMarker = useCallback((position, photo) => {
     const markerGroup = new THREE.Group();
     markerGroup.position.copy(position);
     markerGroup.userData = photo;
     
-    
-    
-    
-    // Pallino semplice (sfera)
+    // sphere
     const dotGeometry = new THREE.SphereGeometry(0.035, 16, 16);
     const dotMaterial = new THREE.MeshLambertMaterial({ 
         color: 0xff5050,
@@ -281,27 +294,20 @@ const createMarker = useCallback((position, photo) => {
     dot.userData = photo;
     dot.position.y = 0.035;
     markerGroup.add(dot);
-    /* KEEP_PLACE */
     
-    // Stati per animazione ottimizzata
+    // states for optimized animation
     markerGroup.isHovered = false;
     markerGroup.originalScale = 1;
     markerGroup.dot = dot;
     
-    // Animazione solo quando necessario
+    // animation only when needed
     markerGroup.pulseScale = (time) => {
         if (markerGroup.isHovered) {
             const scale = 1.2 + Math.sin(time * 3) * 0.1;
-            const glowScale = 0;
-            
             markerGroup.dot.scale.setScalar(scale);
-            
-            
         } else {
-            // Reset rapido quando non in hover
+            // quickly reset when not hovering
             markerGroup.dot.scale.setScalar(markerGroup.originalScale);
-            
-            
         }
     };
     
@@ -312,7 +318,7 @@ const createMarker = useCallback((position, photo) => {
     return markerGroup;
 }, []);
 
-// Throttle ottimizzato
+// throttle ottimizzato
 const throttle = useCallback((func, limit) => {
     return function(...args) {
         const now = Date.now();
@@ -323,13 +329,12 @@ const throttle = useCallback((func, limit) => {
     };
 }, []);
 
-const scheduleAutoRotateResume = useCallback((delay = 5000) => {
-    if (!controlsRef.current) return;
+const scheduleAutoRotateResume = useCallback((delay = RESUME_ROTATE_DELAY) => {    if (!controlsRef.current) return;
     if (autoRotateTimerRef.current) {
         clearTimeout(autoRotateTimerRef.current);
     }
     autoRotateTimerRef.current = setTimeout(() => {
-        // Non riprendere l'auto-rotazione se il modal è aperto
+        // don't resume auto-rotate if modal is open
         if (controlsRef.current && !modalOpen) {
             controlsRef.current.autoRotate = true;
             setAutoRotate(true);
@@ -337,18 +342,17 @@ const scheduleAutoRotateResume = useCallback((delay = 5000) => {
     }, delay);
 }, [setAutoRotate, modalOpen]);
 
-
-// Controlli personalizzati ottimizzati
+// Creates custom controls for the camera
 const createCustomControls = useCallback((camera, domElement) => {
     const controls = {
         enabled: true,
         autoRotate: false,
-        autoRotateSpeed: 0.37, // Ridotto per performance
+        autoRotateSpeed: AUTO_ROTATE_SPEED,
         enableDamping: true,
-        dampingFactor: 0.08, // Aumentato per smorzare di più
+        dampingFactor: 0.08,
         enableZoom: true,
-        minDistance: 2.5,
-        maxDistance: 15,
+        minDistance: MIN_CAMERA_DISTANCE,
+        maxDistance: MAX_CAMERA_DISTANCE,
         enablePan: false,
         
         spherical: new THREE.Spherical(),
@@ -404,7 +408,6 @@ const createCustomControls = useCallback((camera, domElement) => {
         
         onMouseDown: function(event) {
             if (!this.enabled) return;
-            
             event.preventDefault();
             
             switch (event.button) {
@@ -424,14 +427,12 @@ const createCustomControls = useCallback((camera, domElement) => {
         
         onMouseMove: function(event) {
             if (!this.enabled) return;
-            
             event.preventDefault();
             
             if (this.currentState === this.state.ROTATE) {
                 this.rotateEnd.set(event.clientX, event.clientY);
                 const dragT = (this.spherical.radius - this.minDistance) / (this.maxDistance - this.minDistance || 1);
                 const dragFactor = 0.004 * Math.max(0.15, Math.min(1, dragT));
-                this.rotateDelta.subVectors(this.rotateEnd, this.rotateStart).multiplyScalar(dragFactor);
                 this.rotateDelta.subVectors(this.rotateEnd, this.rotateStart).multiplyScalar(dragFactor);
                 
                 this.sphericalDelta.theta -= this.rotateDelta.x;
@@ -451,10 +452,6 @@ const createCustomControls = useCallback((camera, domElement) => {
             
             this.currentState = this.state.NONE;
         },
-        
-        
-        
-        
         
         onWheel: function(event) {
             if (!this.enabled) return;
@@ -482,7 +479,7 @@ const createCustomControls = useCallback((camera, domElement) => {
             
             if (isPinch || isMouseWheel) {
                 if (!this.enableZoom) return;
-                // Invertito: deltaY > 0 => ZOOM IN (avvicina), deltaY < 0 => ZOOM OUT
+                // deltaY > 0 => ZOOM IN (avvicina), deltaY < 0 => ZOOM OUT
                 if (event.deltaY > 0) {
                     this.scale /= base;
                 } else if (event.deltaY < 0) {
@@ -503,13 +500,8 @@ const createCustomControls = useCallback((camera, domElement) => {
             }
         },
         
-        
-        
-        
-        
         onTouchStart: function(event) {
             if (!this.enabled) return;
-            
             if (event.touches.length === 1) {
                 this.currentState = this.state.ROTATE;
                 this.rotateStart.set(event.touches[0].pageX, event.touches[0].pageY);
@@ -518,22 +510,19 @@ const createCustomControls = useCallback((camera, domElement) => {
         
         onTouchMove: function(event) {
             if (!this.enabled) return;
-            
             event.preventDefault();
             
             if (event.touches.length === 1 && this.currentState === this.state.ROTATE) {
                 this.rotateEnd.set(event.touches[0].pageX, event.touches[0].pageY);
-                this.rotateDelta.subVectors(this.rotateEnd, this.rotateStart);
                 const dragT = (this.spherical.radius - this.minDistance) / (this.maxDistance - this.minDistance || 1);
                 const dragFactor = 0.004 * Math.max(0.15, Math.min(1, dragT));
-                this.rotateDelta.subVectors(this.rotateEnd, this.rotateStart).multiplyScalar(dragFactor);
                 
                 this.sphericalDelta.theta -= this.rotateDelta.x;
                 this.sphericalDelta.phi -= this.rotateDelta.y;
                 
                 this.rotateStart.copy(this.rotateEnd);
-                this.autoRotate = false;
-                try { scheduleAutoRotateResume(); } catch(e) {}
+                disableAutoRotate();
+                scheduleAutoRotateResume();
             }
         },
         
@@ -578,59 +567,62 @@ const createCustomControls = useCallback((camera, domElement) => {
 useEffect(() => {
     if (!mountRef.current || !inView) return;
     
-    // Setup scene ottimizzato
     const scene = new THREE.Scene();
     let contextLost = false;
     const camera = new THREE.PerspectiveCamera(
-        50, // FOV ridotto per performance
+        50, // FOV
         mountRef.current.clientWidth / mountRef.current.clientHeight, 
         0.1, 
         1000
     );
     const renderer = new THREE.WebGLRenderer({ 
-        antialias: window.devicePixelRatio <= 1, // Antialias solo su schermi non retina
+        antialias: window.devicePixelRatio <= 1,
         alpha: true,
         powerPreference: "high-performance"
     });
     
     renderer.setClearColor(0x060608, 1);
     renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Limitato per performance
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     
-    renderer.shadowMap.enabled = false; // Disabilitato per performance
+    renderer.shadowMap.enabled = false;
     mountRef.current.appendChild(renderer.domElement);
     
-    // Store references
+    // store references
     sceneRef.current = scene;
     rendererRef.current = renderer;
     cameraRef.current = camera;
     
-    // Setup camera iniziale
-    camera.position.set(0, 0, 5);
+    // setup camera iniziale
+    camera.position.set(0, 0, CAMERA_START_Z);
     
-    // Crea controlli personalizzati
+    // crea controlli personalizzati
     const controls = createCustomControls(camera, renderer.domElement);
     controls.autoRotate = autoRotate;
     controlsRef.current = controls;
     
-    // Crea geometria della Terra ottimizzata
-    const earthGeometry = new THREE.SphereGeometry(2, 64, 64); // Ridotto da 128
+    // crea geometria della Terra ottimizzata
+    const earthGeometry = new THREE.SphereGeometry(GLOBE_RADIUS, 64, 64);
     
-    // Carica texture ottimizzate
+    // carica texture ottimizzate
     const textureLoader = new THREE.TextureLoader();
     
     const loadTextures = async () => {
         try {
             const earthTexture = await new Promise((resolve, reject) => {
                 textureLoader.load(
-                    'https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg',
+                    '/textures/16k_earth.jpg',
                     resolve,
                     undefined,
                     reject
                 );
             });
-            
-            const earthMaterial = new THREE.MeshLambertMaterial({ // Lambert invece di Phong per performance
+
+            earthTexture.colorSpace ??= THREE.SRGBColorSpace;
+            earthTexture.encoding    ||= THREE.sRGBEncoding;
+            earthTexture.anisotropy   = renderer.capabilities.getMaxAnisotropy();
+
+            const earthMaterial = new THREE.MeshLambertMaterial({
                 map: earthTexture,
                 transparent: false
             });
@@ -638,7 +630,7 @@ useEffect(() => {
             const earth = new THREE.Mesh(earthGeometry, earthMaterial);
             scene.add(earth);
             globeRef.current = earth;
-            // meridiano di partenza: roma
+            
             earth.rotation.y = THREE.MathUtils.degToRad(START_LON_OFFSET_DEG);
             
             setMapLoaded(true);
@@ -659,8 +651,8 @@ useEffect(() => {
     
     loadTextures();
     
-    // Atmosfera semplificata
-    const atmosphereGeometry = new THREE.SphereGeometry(2.05, 32, 32); // Ridotto
+    // atmosfera semplificata
+    const atmosphereGeometry = new THREE.SphereGeometry(ATMOSPHERE_RADIUS, 32, 32);
     const atmosphereMaterial = new THREE.MeshBasicMaterial({
         color: 0x4a90e2,
         transparent: true,
@@ -671,22 +663,22 @@ useEffect(() => {
     const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
     scene.add(atmosphere);
     
-    // Sistema di illuminazione più "daylight" (meno ombre notturne)
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); // Più intensa e bianca
+    // sistema di illuminazione più "daylight" (meno ombre notturne)
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
     scene.add(ambientLight);
     
-    const sunLight = new THREE.DirectionalLight(0xffffff, 0.8); // Più intensa
-    sunLight.position.set(10, 10, 10); // Più "frontale"
+    const sunLight = new THREE.DirectionalLight(0xfff6e5, 1.2);
+    sunLight.position.set(5, 3, 5);
     sunLight.castShadow = false;
     scene.add(sunLight);
     
-    // Stelle di sfondo ottimizzate
+    // stelle di sfondo ottimizzate
     const starsGeometry = new THREE.BufferGeometry();
-    const starsCount = 8000; // Ridotto da 15000
+    const starsCount = STAR_COUNT;
     const starsPositions = new Float32Array(starsCount * 3);
     
     for (let i = 0; i < starsCount; i++) {
-        const radius = 500;
+        const radius = STAR_FIELD_RADIUS;
         const u = Math.random();
         const v = Math.random();
         const theta = 2 * Math.PI * u;
@@ -709,18 +701,18 @@ useEffect(() => {
     const stars = new THREE.Points(starsGeometry, starsMaterial);
     scene.add(stars);
     
-    // Aggiungi marker per le foto
+    // aggiungi marker per le foto
     markersRef.current = [];
-    markerObjectsRef.current = []; // Reset cache
-    console.log('Foto valide trovate:', validPhotos.length);
+    markerObjectsRef.current = []; // reset cache
     
     validPhotos.forEach((photo, index) => {
-        const position = latLngToVector3(photo.lat, photo.lng, 2.02);
+        const MARKER_OFFSET = 0
+        const position = latLngToVector3(photo.lat, photo.lng, GLOBE_RADIUS + MARKER_OFFSET);
         const marker = createMarker(position, photo);
         scene.add(marker);
         markersRef.current.push(marker);
         
-        // Cache oggetti per raycasting
+        // cache oggetti per raycasting
         marker.traverse((child) => {
             if (child.isMesh) {
                 markerObjectsRef.current.push(child);
@@ -728,11 +720,11 @@ useEffect(() => {
         });
     });
     
-    // Raycaster ottimizzato
+    // raycaster ottimizzato
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
     
-    // Mouse move con throttling pesante per performance
+    // mouse move con throttling pesante per performance
     const handleMouseMove = throttle((event) => {
         const rect = renderer.domElement.getBoundingClientRect();
         mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -783,7 +775,7 @@ useEffect(() => {
             if (data) {
                 const clickedData = data;
                 const fullPhoto = photos.find(p => p && String(p.id) === String(clickedData.id)) || clickedData;
-                focusOnPhoto(fullPhoto, 3.2, 900, () => {
+                focusOnPhoto(fullPhoto, FOCUS_OFFSET_RADIUS, 900, () => {
                     actions.openPhotoModal(fullPhoto);   // ← si apre solo a fine animazione
                 });
             }
@@ -905,16 +897,16 @@ useEffect(() => {
 
 // Funzioni di controllo ottimizzate
 const resetView = () => {
-  if (cameraRef.current && globeRef.current && controlsRef.current) {
-    cameraRef.current.position.set(0, 0, 5);
-    globeRef.current.rotation.set(
-      0,
-      THREE.MathUtils.degToRad(START_LON_OFFSET_DEG),
-      0
-    );
-    controlsRef.current.autoRotate = true;
-    setAutoRotate(true);
-  }
+    if (cameraRef.current && globeRef.current && controlsRef.current) {
+        cameraRef.current.position.set(0, 0, CAMERA_START_Z);
+        globeRef.current.rotation.set(
+            0,
+            THREE.MathUtils.degToRad(START_LON_OFFSET_DEG),
+            0
+        );
+        controlsRef.current.autoRotate = true;
+        setAutoRotate(true);
+    }
 };
 
 const toggleAutoRotate = () => {
@@ -940,22 +932,24 @@ const zoomOut = () => {
 };
 
 
-// 🔄 sostituisci l’intera funzione
+/**
+* Smoothly rotates and zooms the camera to centre the given photo’s marker.
+* @param {object}   photo        Photo object with `lat` and `lng`
+* @param {number}   targetRadius Desired camera distance
+* @param {number}   duration     Animation duration in ms
+* @param {Function} onComplete   Callback once animation finishes
+*/
 const focusOnPhoto = (
     photo,
-    targetRadius = 3.2,
+    targetRadius = FOCUS_OFFSET_RADIUS,
     duration = 900,
-    onComplete          // callback a fine animazione
+    onComplete
 ) => {
     if (!photo || !cameraRef.current || !controlsRef.current) return;
-    
     const controls = controlsRef.current;
     const camera   = cameraRef.current;
-    
     prevRadiusRef.current = camera.position.length();  // distanza attuale
-    
-    // Direzione che punta al pin
-    const dir = latLngToVector3(photo.lat, photo.lng, 1).normalize();
+    const dir = latLngToVector3(photo.lat, photo.lng, 1).normalize(); // direzione del marker
     const destPos = dir.clone().multiplyScalar(targetRadius);   // camera opposta al pin
     const startPos = camera.position.clone();
     
@@ -990,7 +984,7 @@ const focusOnPhoto = (
 
 
 // Gestisci la rotazione della terra in base allo stato del modal
-// 👇 effetto completo per gestire l’apertura/chiusura del modal
+// effetto completo per gestire l’apertura/chiusura del modal
 useEffect(() => {
     if (!controlsRef.current || !globeRef.current || !cameraRef.current) return;
     
@@ -1028,7 +1022,7 @@ useEffect(() => {
     
     /* 2) Zoom-out alla distanza originale */
     const zoomStartPos = cam.position.clone();
-    const destRadius   = prevRadiusRef.current || 5;             // fallback 5
+    const destRadius   = prevRadiusRef.current || 5;
     const destPos      = zoomStartPos.clone().normalize()
     .multiplyScalar(destRadius);
     
