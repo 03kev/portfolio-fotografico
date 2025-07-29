@@ -366,7 +366,16 @@ const createMarker = useCallback((position, photo, isCluster = false) => {
     // raggruppa le foto in celle di griglia lat/lng di ampiezza stepDeg
     const buildClustersForStep = (photos, stepDeg) => {
       if (stepDeg === 0) {
-        return photos.map(p => ({ center: [p.lat, p.lng], photos: [p] }));
+        // Anche al livello massimo, raggruppa marker con coordinate identiche
+        const exactLocationMap = new Map();
+        photos.forEach(p => {
+          const key = `${p.lat}_${p.lng}`; // Chiave basata su coordinate esatte
+          if (!exactLocationMap.has(key)) {
+            exactLocationMap.set(key, { center: [p.lat, p.lng], photos: [] });
+          }
+          exactLocationMap.get(key).photos.push(p);
+        });
+        return Array.from(exactLocationMap.values());
       }
       const idOf = (lat, lng) =>
         `${Math.floor(lat / stepDeg)}_${Math.floor(lng / stepDeg)}`;
@@ -389,7 +398,7 @@ const createMarker = useCallback((position, photo, isCluster = false) => {
 
     // pre‑costruisci i cluster per 4 livelli (step 20°, 8°, 4°, 0°)
     const clusterLevels = useMemo(() => {
-      const steps = [20, 8, 4, 0];
+      const steps = [20, 8, 4, 0.32]; // step finale per cluster precisi: 35 km
       return steps.map(step => buildClustersForStep(validPhotos, step));
     }, [validPhotos]);
 
