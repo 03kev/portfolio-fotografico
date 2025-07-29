@@ -59,8 +59,8 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
 // Body parsing
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Servire file statici (immagini) con header CORP
 app.use('/uploads', (req, res, next) => {

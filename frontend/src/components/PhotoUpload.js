@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { uploadUtils } from '../utils/api';
+import MapSelector from './MapSelector';
 import './PhotoUpload.css';
 
 const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
@@ -30,6 +31,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
   const [error, setError] = useState('');
   const [locationLoading, setLocationLoading] = useState(false);
   const [tagInput, setTagInput] = useState('');
+  const [showMapSelector, setShowMapSelector] = useState(false);
   
   const fileInputRef = useRef(null);
   // const mapRef = useRef(null); // Rimosso perché non utilizzato
@@ -109,6 +111,17 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
       },
       { enableHighAccuracy: true, timeout: 10000 }
     );
+  }, []);
+
+  // Gestione selezione posizione da mappa
+  const handleMapLocationSelect = useCallback((locationData) => {
+    setFormData(prev => ({
+      ...prev,
+      lat: locationData.lat.toString(),
+      lng: locationData.lng.toString(),
+      location: locationData.address
+    }));
+    setShowMapSelector(false);
   }, []);
 
   // Gestione input form
@@ -247,7 +260,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
                 <div className="upload-placeholder">
                   <div className="upload-icon">📁</div>
                   <p>Clicca per selezionare un'immagine</p>
-                  <p className="upload-hint">JPG, PNG, WebP - Max 10MB</p>
+                  <p className="upload-hint">JPG, PNG, WebP - Max 50MB</p>
                 </div>
               )}
             </div>
@@ -296,11 +309,20 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
                   />
                   <button 
                     type="button"
-                    className="location-btn"
+                    className="location-btn gps-btn"
                     onClick={getCurrentLocation}
                     disabled={locationLoading}
+                    title="Usa posizione GPS"
                   >
                     {locationLoading ? '📍' : '🎯'}
+                  </button>
+                  <button 
+                    type="button"
+                    className="location-btn map-btn"
+                    onClick={() => setShowMapSelector(true)}
+                    title="Seleziona da mappa"
+                  >
+                    🗺️
                   </button>
                 </div>
               </div>
@@ -465,6 +487,17 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
           </div>
         </div>
       </div>
+      
+      {/* Map Selector Modal */}
+      <MapSelector
+        isOpen={showMapSelector}
+        onClose={() => setShowMapSelector(false)}
+        onLocationSelect={handleMapLocationSelect}
+        initialLocation={formData.lat && formData.lng ? {
+          lat: parseFloat(formData.lat),
+          lng: parseFloat(formData.lng)
+        } : null}
+      />
     </div>
   );
 };

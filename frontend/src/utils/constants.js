@@ -8,7 +8,7 @@ export const APP_VERSION = process.env.REACT_APP_VERSION || '1.0.0';
 
 // Image settings
 export const IMAGE_SETTINGS = {
-  maxFileSize: 10 * 1024 * 1024, // 10MB
+  maxFileSize: 50 * 1024 * 1024, // 50MB
   allowedTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'],
   defaultQuality: 0.85,
   thumbnailSize: { width: 400, height: 300 },
@@ -52,7 +52,7 @@ export const Z_INDEX = {
 // Error messages
 export const ERROR_MESSAGES = {
   NETWORK_ERROR: 'Errore di connessione. Verifica la tua connessione internet.',
-  FILE_TOO_LARGE: 'Il file è troppo grande. Massimo 10MB.',
+  FILE_TOO_LARGE: 'Il file è troppo grande. Massimo 50MB.',
   INVALID_FILE_TYPE: 'Tipo di file non supportato. Usa JPG, PNG o WebP.',
   UPLOAD_FAILED: 'Errore durante il caricamento. Riprova.',
   GENERIC_ERROR: 'Si è verificato un errore imprevisto.'

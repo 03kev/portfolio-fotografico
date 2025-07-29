@@ -90,14 +90,14 @@ export const uploadUtils = {
   // Valida file immagine
   validateImageFile: (file) => {
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    const maxSize = 10 * 1024 * 1024; // 10MB
+    const maxSize = 50 * 1024 * 1024; // 50MB
     
     if (!allowedTypes.includes(file.type)) {
       throw new Error('Tipo di file non supportato. Usa JPG, PNG o WebP.');
     }
     
     if (file.size > maxSize) {
-      throw new Error('File troppo grande. Massimo 10MB.');
+      throw new Error('File troppo grande. Massimo 50MB.');
     }
     
     return true;
