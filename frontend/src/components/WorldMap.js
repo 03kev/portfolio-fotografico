@@ -261,6 +261,18 @@ const WorldMap = () => {
     [photos]
 );
 
+// ——————————————————— cursore dinamico ———————————————————
+const isDraggingRef = useRef(false);           // true se stiamo trascinando
+const cursorRef     = useRef('grab');          // cursore attuale
+
+const setCanvasCursor = useCallback((value) => {
+    if (rendererRef.current && cursorRef.current !== value) {
+        rendererRef.current.domElement.style.cursor = value;
+        cursorRef.current = value;
+    }
+}, []);
+// ————————————————————————————————————————————————
+
 /**
 * Converts latitude/longitude to a 3‑D position on the globe.
 * @param {number} lat  Latitude  (degrees)
@@ -423,6 +435,9 @@ const createCustomControls = useCallback((camera, domElement) => {
                 document.addEventListener('mousemove', this.onMouseMove);
                 document.addEventListener('mouseup', this.onMouseUp);
             }
+            
+            isDraggingRef.current = true;
+            setCanvasCursor('grabbing');
         },
         
         onMouseMove: function(event) {
@@ -451,6 +466,9 @@ const createCustomControls = useCallback((camera, domElement) => {
             document.removeEventListener('mouseup', this.onMouseUp);
             
             this.currentState = this.state.NONE;
+            
+            isDraggingRef.current = false;
+            setCanvasCursor('grab');
         },
         
         onWheel: function(event) {
@@ -591,6 +609,7 @@ useEffect(() => {
     // store references
     sceneRef.current = scene;
     rendererRef.current = renderer;
+    
     cameraRef.current = camera;
     
     // setup camera iniziale
@@ -617,11 +636,7 @@ useEffect(() => {
                     reject
                 );
             });
-
-            earthTexture.colorSpace ??= THREE.SRGBColorSpace;
-            earthTexture.encoding    ||= THREE.sRGBEncoding;
-            earthTexture.anisotropy   = renderer.capabilities.getMaxAnisotropy();
-
+            
             const earthMaterial = new THREE.MeshLambertMaterial({
                 map: earthTexture,
                 transparent: false
@@ -738,26 +753,29 @@ useEffect(() => {
         const intersects = raycaster.intersectObjects(markerObjectsRef.current);
         
         if (intersects.length > 0) {
-            const hoveredObj = intersects[0].object;
+            const hoveredObj  = intersects[0].object;
             const hoveredData = hoveredObj.userData || (hoveredObj.parent ? hoveredObj.parent.userData : null);
+            
+            // se è un marker diverso, aggiorna lo stato
             if (hoveredData && hoveredData !== hoveredMarker) {
-                // Reset stato hover precedente
                 if (hoveredMarker) {
-                    const prevMarker = markersRef.current.find(m => m.userData === hoveredMarker);
-                    if (prevMarker) prevMarker.isHovered = false;
+                    const prev = markersRef.current.find(m => m.userData === hoveredMarker);
+                    if (prev) prev.isHovered = false;
                 }
-                
                 setHoveredMarker(hoveredData);
-                document.body.style.cursor = 'pointer';
             }
+            
+            // cursore sempre pointer mentre siamo sopra QUALSIASI marker
+            if (!isDraggingRef.current) setCanvasCursor('pointer');
+            
         } else {
+            // fuori da tutti i marker
             if (hoveredMarker) {
-                const prevMarker = markersRef.current.find(m => m.userData === hoveredMarker);
-                if (prevMarker) prevMarker.isHovered = false;
-                
+                const prev = markersRef.current.find(m => m.userData === hoveredMarker);
+                if (prev) prev.isHovered = false;
                 setHoveredMarker(null);
-                document.body.style.cursor = 'grab';
             }
+            if (!isDraggingRef.current) setCanvasCursor('grab');
         }
     }, 50); // Throttle a 50ms per ridurre il carico
     
@@ -1150,7 +1168,7 @@ const stats = useMemo(() => {
         </Controls>
         
         {/* Popup informativo per marker in hover */}
-        {hoveredMarker && (
+        {/*hoveredMarker && (
             <InfoPopup
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -1166,7 +1184,7 @@ const stats = useMemo(() => {
             Clicca per vedere la foto
             </p>
             </InfoPopup>
-        )}
+        )*/}
         
         <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
         </GlobeWrapper>
