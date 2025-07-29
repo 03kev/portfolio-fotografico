@@ -259,7 +259,9 @@ const WorldMap = () => {
     const validPhotos = useMemo(() => 
         photos.filter(p => p && p.location && p.lat && p.lng),
     [photos]
-);
+    );
+
+    // ——————————————————— cursore dinamico ———————————————————
 
 // ——————————————————— cursore dinamico ———————————————————
 const isDraggingRef = useRef(false);           // true se stiamo trascinando
@@ -304,31 +306,98 @@ const createMarker = useCallback((position, photo) => {
     });
     const dot = new THREE.Mesh(dotGeometry, dotMaterial);
     dot.userData = photo;
-    dot.position.y = 0.035;
+    // dot.position.y = 0.035;
+    // Move dot slightly outward along the normal
+    const normal = position.clone().normalize();
+    dot.translateOnAxis(normal, 0.015); // keep the dot nearly flush with the surface
     markerGroup.add(dot);
-    
-    // states for optimized animation
-    markerGroup.isHovered = false;
-    markerGroup.originalScale = 1;
-    markerGroup.dot = dot;
-    
-    // animation only when needed
-    markerGroup.pulseScale = (time) => {
-        if (markerGroup.isHovered) {
-            const scale = 1.2 + Math.sin(time * 3) * 0.1;
-            markerGroup.dot.scale.setScalar(scale);
-        } else {
-            // quickly reset when not hovering
-            markerGroup.dot.scale.setScalar(markerGroup.originalScale);
-        }
+
+    // states
+    markerGroup.isHovered  = false;
+    markerGroup.baseScale  = 1;
+    markerGroup.dot        = dot;
+
+    // animation – scales dot depending on zoom + hover
+    markerGroup.pulseScale = (time, scaleFactor) => {
+      const targetScale = markerGroup.isHovered
+        ? scaleFactor * (1.2 + Math.sin(time * 3) * 0.1) // pulsazione leggera
+        : scaleFactor;
+
+      markerGroup.dot.scale.setScalar(targetScale);
     };
     
     // Orienta il marker
-    const normal = position.clone().normalize();
     markerGroup.lookAt(position.clone().add(normal));
     
     return markerGroup;
 }, []);
+
+    // —————————————————— CLUSTERING UTILS ——————————————————
+    // trasforma la distanza camera‑centro in un “livello” (0 = più lontano)
+    const radiusToLevel = (r) => {
+      if (r > 25) return 0;      // continente
+      if (r > 15) return 1;      // nazione
+      if (r > 9)  return 2;      // macro‑regioni
+      return 3;                  // tutti i pin
+    };
+
+    // raggruppa le foto in celle di griglia lat/lng di ampiezza stepDeg
+    const buildClustersForStep = (photos, stepDeg) => {
+      if (stepDeg === 0) {
+        return photos.map(p => ({ center: [p.lat, p.lng], photos: [p] }));
+      }
+      const idOf = (lat, lng) =>
+        `${Math.floor(lat / stepDeg)}_${Math.floor(lng / stepDeg)}`;
+
+      const map = new Map();
+      photos.forEach(p => {
+        const id = idOf(p.lat, p.lng);
+        if (!map.has(id)) map.set(id, { sumLat: 0, sumLng: 0, photos: [] });
+        const c = map.get(id);
+        c.sumLat += p.lat;
+        c.sumLng += p.lng;
+        c.photos.push(p);
+      });
+
+      return Array.from(map.values()).map(c => ({
+        center: [c.sumLat / c.photos.length, c.sumLng / c.photos.length],
+        photos: c.photos,
+      }));
+    };
+
+    // pre‑costruisci i cluster per 4 livelli (step 20°, 8°, 4°, 0°)
+    const clusterLevels = useMemo(() => {
+      const steps = [20, 8, 4, 0];
+      return steps.map(step => buildClustersForStep(validPhotos, step));
+    }, [validPhotos]);
+
+    // livello corrente dei cluster
+    const currentClusterLevelRef = useRef(-1);
+
+    // rimuove i marker vecchi e disegna quelli del livello richiesto
+    const drawMarkersForLevel = useCallback((level) => {
+      // elimina marker esistenti
+      markersRef.current.forEach(m => sceneRef.current?.remove(m));
+      markersRef.current = [];
+      markerObjectsRef.current = [];
+
+      clusterLevels[level].forEach(cluster => {
+        const pos = latLngToVector3(
+          cluster.center[0],
+          cluster.center[1],
+          GLOBE_RADIUS
+        );
+        const marker = createMarker(pos, cluster.photos[0]); // riusa foto 0
+        marker.userData.photos = cluster.photos;             // array completo
+        sceneRef.current.add(marker);
+        markersRef.current.push(marker);
+        marker.traverse(child => {
+          if (child.isMesh) markerObjectsRef.current.push(child);
+        });
+      });
+    }, [clusterLevels, latLngToVector3, createMarker]);
+    // ————————————————————————————————————————————————
+
 
 // throttle ottimizzato
 const throttle = useCallback((func, limit) => {
@@ -716,24 +785,11 @@ useEffect(() => {
     const stars = new THREE.Points(starsGeometry, starsMaterial);
     scene.add(stars);
     
-    // aggiungi marker per le foto
+    // ——— disegna i marker del livello iniziale ———
     markersRef.current = [];
-    markerObjectsRef.current = []; // reset cache
-    
-    validPhotos.forEach((photo, index) => {
-        const MARKER_OFFSET = 0
-        const position = latLngToVector3(photo.lat, photo.lng, GLOBE_RADIUS + MARKER_OFFSET);
-        const marker = createMarker(position, photo);
-        scene.add(marker);
-        markersRef.current.push(marker);
-        
-        // cache oggetti per raycasting
-        marker.traverse((child) => {
-            if (child.isMesh) {
-                markerObjectsRef.current.push(child);
-            }
-        });
-    });
+    markerObjectsRef.current = [];
+    currentClusterLevelRef.current = radiusToLevel(camera.position.length());
+    drawMarkersForLevel(currentClusterLevelRef.current);
     
     // raycaster ottimizzato
     const raycaster = new THREE.Raycaster();
@@ -780,24 +836,42 @@ useEffect(() => {
     }, 50); // Throttle a 50ms per ridurre il carico
     
     const handleClick = (event) => {
-        const rect = renderer.domElement.getBoundingClientRect();
-        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-        
-        raycaster.setFromCamera(mouse, camera);
-        const intersects = raycaster.intersectObjects(markerObjectsRef.current);
-        
-        if (intersects.length > 0) {
-            const clickedMarker = intersects[0].object;
-            const data = clickedMarker.userData || (clickedMarker.parent ? clickedMarker.parent.userData : null);
-            if (data) {
-                const clickedData = data;
-                const fullPhoto = photos.find(p => p && String(p.id) === String(clickedData.id)) || clickedData;
-                focusOnPhoto(fullPhoto, FOCUS_OFFSET_RADIUS, 900, () => {
-                    actions.openPhotoModal(fullPhoto);   // ← si apre solo a fine animazione
-                });
-            }
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(markerObjectsRef.current);
+
+      if (intersects.length === 0) return;
+
+      const mesh         = intersects[0].object;
+      // il “gruppo” completo è sempre il parent di livello 1 (vedi createMarker)
+      const markerGroup   = mesh.parent ?? mesh;
+      const photosInMarker = markerGroup.userData?.photos ?? [];
+
+      if (Array.isArray(photosInMarker) && photosInMarker.length > 1) {
+        // CLUSTER  -> apri modalità galleria
+        if (actions.openGalleryModal) {
+          actions.openGalleryModal(photosInMarker);
+        } else {
+          // fallback: apri la prima foto se la funzione non esiste ancora
+          actions.openPhotoModal(photosInMarker[0]);
         }
+        return;
+      }
+
+      // FOTO SINGOLA  -> flusso classico
+      const photo  = photosInMarker.length === 1 ? photosInMarker[0] : null;
+      const full   = photo
+        ? photos.find(p => String(p.id) === String(photo.id)) || photo
+        : null;
+
+      if (full) {
+        focusOnPhoto(full, FOCUS_OFFSET_RADIUS, 900, () => {
+          actions.openPhotoModal(full);
+        });
+      }
     };
     
     // Event listeners
@@ -837,17 +911,31 @@ useEffect(() => {
         
         // Anima i marker solo ogni 3 frame per performance
         if (frameCount % 3 === 0) {
-            markersRef.current.forEach((marker) => {
-                if (marker.pulseScale) {
-                    marker.pulseScale(elapsedTime);
-                }
-            });
+          // scala da 1 (lontano) a 0.35 (molto vicino)
+          const scaleFactor = THREE.MathUtils.clamp(
+            camera.position.length() / CAMERA_START_Z,
+            0.35,
+            1
+          );
+
+          markersRef.current.forEach((marker) => {
+            if (marker.pulseScale) {
+              marker.pulseScale(elapsedTime, scaleFactor);
+            }
+          });
         }
         
         // Rotazione lenta delle stelle solo ogni 5 frame
         if (frameCount % 5 === 0) {
             stars.rotation.x += 0.0001;
             stars.rotation.y += 0.0002;
+        }
+
+        // se la distanza camera cambia livello, ridisegna i marker
+        const lvlNow = radiusToLevel(camera.position.length());
+        if (lvlNow !== currentClusterLevelRef.current) {
+          currentClusterLevelRef.current = lvlNow;
+          drawMarkersForLevel(lvlNow);
         }
         
         renderer.render(scene, camera);
@@ -911,7 +999,7 @@ useEffect(() => {
         document.body.style.cursor = 'default';
         if (autoRotateTimerRef.current) { clearTimeout(autoRotateTimerRef.current); }
     };
-}, [inView, validPhotos]);
+}, [inView, validPhotos, drawMarkersForLevel]);
 
 // Funzioni di controllo ottimizzate
 const resetView = () => {

@@ -1,5 +1,35 @@
 [
   {
+    "id": 1753816473200,
+    "title": "Provv",
+    "location": "a",
+    "lat": 42.513065737802265,
+    "lng": 11.848805284257761,
+    "image": "/uploads/photo_1753816473200.webp",
+    "thumbnail": "/uploads/thumbnails/photo_1753816473200_thumb.webp",
+    "description": "",
+    "date": "2025-07-29",
+    "camera": "",
+    "lens": "",
+    "settings": "{\"aperture\":\"\",\"shutter\":\"\",\"iso\":\"\",\"focal\":\"\"}",
+    "tags": []
+  },
+  {
+    "id": 1753816386680,
+    "title": "Daje",
+    "location": "Vezzano sul Crostolo",
+    "lat": 45.46157150265308,
+    "lng": 9.184176462727386,
+    "image": "/uploads/photo_1753816386680.webp",
+    "thumbnail": "/uploads/thumbnails/photo_1753816386680_thumb.webp",
+    "description": "prova",
+    "date": "2025-07-29",
+    "camera": "",
+    "lens": "",
+    "settings": "{\"aperture\":\"\",\"shutter\":\"\",\"iso\":\"\",\"focal\":\"\"}",
+    "tags": []
+  },
+  {
     "id": 1753547000970,
     "title": "Prova",
     "location": "Vezzano sul Crostolo",
@@ -11,7 +41,12 @@
     "date": "2025-07-26",
     "camera": "",
     "lens": "",
-    "settings": {"aperture":"","shutter":"","iso":"","focal":""},
+    "settings": {
+      "aperture": "",
+      "shutter": "",
+      "iso": "",
+      "focal": ""
+    },
     "tags": []
   }
 ]
