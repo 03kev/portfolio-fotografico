@@ -3,7 +3,11 @@ import * as THREE from 'three';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import { usePhotos } from '../contexts/PhotoContext';
+
 import { useInView } from 'react-intersection-observer';
+
+// Meridiano di partenza (longitudine iniziale) in gradi
+const START_LON_OFFSET_DEG = -105;
 
 const MapSection = styled(motion.section)`
   padding: var(--spacing-4xl) 0;
@@ -212,66 +216,73 @@ const InfoPopup = styled(motion.div)`
 `;
 
 const WorldMap = () => {
-  const { photos, loading, actions, modalOpen } = usePhotos();
-  const mountRef = useRef(null);
-  const sceneRef = useRef(null);
-  const rendererRef = useRef(null);
-  const globeRef = useRef(null);
-  const cameraRef = useRef(null);
-  const controlsRef = useRef(null);
-  const markersRef = useRef([]);
-  const markerObjectsRef = useRef([]); // Cache per raycasting
-  const [mapLoaded, setMapLoaded] = useState(false);
-  const [autoRotate, setAutoRotate] = useState(true);
-  const autoRotateTimerRef = useRef(null);
-  const [hoveredMarker, setHoveredMarker] = useState(null);
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
-  const lastMouseMoveTime = useRef(0); // Per throttling
-  const { ref, inView } = useInView({
-    threshold: 0.1,
-    triggerOnce: true
-  });
-
-  // Memoizza le foto valide
-  const validPhotos = useMemo(() => 
-    photos.filter(p => p && p.location && p.lat && p.lng),
+    const { photos, loading, actions, modalOpen } = usePhotos();
+    const mountRef = useRef(null);
+    const sceneRef = useRef(null);
+    const rendererRef = useRef(null);
+    const globeRef = useRef(null);
+    const cameraRef = useRef(null);
+    const controlsRef = useRef(null);
+    const markersRef = useRef([]);
+    const markerObjectsRef = useRef([]); // Cache per raycasting
+    const [mapLoaded, setMapLoaded] = useState(false);
+    const [autoRotate, setAutoRotate] = useState(true);
+    const autoRotateTimerRef = useRef(null);
+    const [hoveredMarker, setHoveredMarker] = useState(null);
+    const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+    const lastMouseMoveTime = useRef(0); // Per throttling
+    const { ref, inView } = useInView({
+        threshold: 0.1,
+        triggerOnce: true
+    });
+    const prevRadiusRef = useRef(null);
+    // Disattiva l’auto-rotazione e sincronizza lo stato del pulsante
+    const disableAutoRotate = useCallback(() => {
+        if (controlsRef.current) controlsRef.current.autoRotate = false;
+        setAutoRotate(false);
+    }, [setAutoRotate]);
+    
+    // Memoizza le foto valide
+    const validPhotos = useMemo(() => 
+        photos.filter(p => p && p.location && p.lat && p.lng),
     [photos]
-  );
+);
 
-  // Converti coordinate geografiche in coordinate 3D sulla sfera
-  const latLngToVector3 = useCallback((lat, lng, radius = 2) => {
-    const phi = (90 - lat) * (Math.PI / 180);
-    const theta = (lng + 180) * (Math.PI / 180);
+// Converti coordinate geografiche in coordinate 3D sulla sfera
+const latLngToVector3 = useCallback((lat, lng, radius = 2) => {
+    const phi   = (90 - lat) * (Math.PI / 180);
+    // Aggiungiamo l'offset longitudinale così anche i marker “girano” con la Terra
+    const theta = (lng + START_LON_OFFSET_DEG + 180) * (Math.PI / 180);
     
     return new THREE.Vector3(
-      -radius * Math.sin(phi) * Math.cos(theta),
-      radius * Math.cos(phi),
-      radius * Math.sin(phi) * Math.sin(theta)
+        -radius * Math.sin(phi) * Math.cos(theta),
+        radius * Math.cos(phi),
+        radius * Math.sin(phi) * Math.sin(theta)
     );
-  }, []);
+}, []);
 
-  // Crea marker 3D ottimizzati
-  const createMarker = useCallback((position, photo) => {
+// Crea marker 3D ottimizzati
+const createMarker = useCallback((position, photo) => {
     const markerGroup = new THREE.Group();
     markerGroup.position.copy(position);
     markerGroup.userData = photo;
-
+    
     
     
     
     // Pallino semplice (sfera)
     const dotGeometry = new THREE.SphereGeometry(0.035, 16, 16);
     const dotMaterial = new THREE.MeshLambertMaterial({ 
-      color: 0xff5050,
-      transparent: true,
-      opacity: 0.95
+        color: 0xff5050,
+        transparent: true,
+        opacity: 0.95
     });
     const dot = new THREE.Mesh(dotGeometry, dotMaterial);
     dot.userData = photo;
     dot.position.y = 0.035;
     markerGroup.add(dot);
     /* KEEP_PLACE */
-
+    
     // Stati per animazione ottimizzata
     markerGroup.isHovered = false;
     markerGroup.originalScale = 1;
@@ -279,329 +290,329 @@ const WorldMap = () => {
     
     // Animazione solo quando necessario
     markerGroup.pulseScale = (time) => {
-      if (markerGroup.isHovered) {
-        const scale = 1.2 + Math.sin(time * 3) * 0.1;
-        const glowScale = 0;
-        
-        markerGroup.dot.scale.setScalar(scale);
-        
-        
-      } else {
-        // Reset rapido quando non in hover
-        markerGroup.dot.scale.setScalar(markerGroup.originalScale);
-        
-        
-      }
+        if (markerGroup.isHovered) {
+            const scale = 1.2 + Math.sin(time * 3) * 0.1;
+            const glowScale = 0;
+            
+            markerGroup.dot.scale.setScalar(scale);
+            
+            
+        } else {
+            // Reset rapido quando non in hover
+            markerGroup.dot.scale.setScalar(markerGroup.originalScale);
+            
+            
+        }
     };
-
+    
     // Orienta il marker
     const normal = position.clone().normalize();
     markerGroup.lookAt(position.clone().add(normal));
-
+    
     return markerGroup;
-  }, []);
+}, []);
 
-  // Throttle ottimizzato
-  const throttle = useCallback((func, limit) => {
+// Throttle ottimizzato
+const throttle = useCallback((func, limit) => {
     return function(...args) {
-      const now = Date.now();
-      if (now - lastMouseMoveTime.current >= limit) {
-        lastMouseMoveTime.current = now;
-        func.apply(this, args);
-      }
+        const now = Date.now();
+        if (now - lastMouseMoveTime.current >= limit) {
+            lastMouseMoveTime.current = now;
+            func.apply(this, args);
+        }
     };
-  }, []);
+}, []);
 
-  const scheduleAutoRotateResume = useCallback((delay = 12000) => {
+const scheduleAutoRotateResume = useCallback((delay = 5000) => {
     if (!controlsRef.current) return;
     if (autoRotateTimerRef.current) {
-      clearTimeout(autoRotateTimerRef.current);
+        clearTimeout(autoRotateTimerRef.current);
     }
     autoRotateTimerRef.current = setTimeout(() => {
-      if (controlsRef.current) {
-        controlsRef.current.autoRotate = true;
-      }
-      setAutoRotate(true);
+        // Non riprendere l'auto-rotazione se il modal è aperto
+        if (controlsRef.current && !modalOpen) {
+            controlsRef.current.autoRotate = true;
+            setAutoRotate(true);
+        }
     }, delay);
-  }, [setAutoRotate]);
+}, [setAutoRotate, modalOpen]);
 
 
-  // Controlli personalizzati ottimizzati
-  const createCustomControls = useCallback((camera, domElement) => {
+// Controlli personalizzati ottimizzati
+const createCustomControls = useCallback((camera, domElement) => {
     const controls = {
-      enabled: true,
-      autoRotate: false,
-      autoRotateSpeed: 0.3, // Ridotto per performance
-      enableDamping: true,
-      dampingFactor: 0.08, // Aumentato per smorzare di più
-      enableZoom: true,
-      minDistance: 2.5,
-      maxDistance: 15,
-      enablePan: false,
-      
-      spherical: new THREE.Spherical(),
-      sphericalDelta: new THREE.Spherical(),
-      scale: 1,
-      
-      state: { NONE: -1, ROTATE: 0, ZOOM: 1 },
-      currentState: -1,
-      
-      rotateStart: new THREE.Vector2(),
-      rotateEnd: new THREE.Vector2(),
-      rotateDelta: new THREE.Vector2(),
-      
-      target: new THREE.Vector3(0, 0, 0),
-      
-      update: function() {
-        const offset = new THREE.Vector3();
-        const quat = new THREE.Quaternion().setFromUnitVectors(camera.up, new THREE.Vector3(0, 1, 0));
-        const quatInverse = quat.clone().invert();
+        enabled: true,
+        autoRotate: false,
+        autoRotateSpeed: 0.37, // Ridotto per performance
+        enableDamping: true,
+        dampingFactor: 0.08, // Aumentato per smorzare di più
+        enableZoom: true,
+        minDistance: 2.5,
+        maxDistance: 15,
+        enablePan: false,
         
-        offset.copy(camera.position).sub(this.target);
-        offset.applyQuaternion(quat);
+        spherical: new THREE.Spherical(),
+        sphericalDelta: new THREE.Spherical(),
+        scale: 1,
         
-        this.spherical.setFromVector3(offset);
+        state: { NONE: -1, ROTATE: 0, ZOOM: 1 },
+        currentState: -1,
         
-        if (this.autoRotate && this.currentState === this.state.NONE) {
-          this.spherical.theta -= this.autoRotateSpeed * 2 * Math.PI / 60 / 60;
+        rotateStart: new THREE.Vector2(),
+        rotateEnd: new THREE.Vector2(),
+        rotateDelta: new THREE.Vector2(),
+        
+        target: new THREE.Vector3(0, 0, 0),
+        
+        update: function() {
+            const offset = new THREE.Vector3();
+            const quat = new THREE.Quaternion().setFromUnitVectors(camera.up, new THREE.Vector3(0, 1, 0));
+            const quatInverse = quat.clone().invert();
+            
+            offset.copy(camera.position).sub(this.target);
+            offset.applyQuaternion(quat);
+            
+            this.spherical.setFromVector3(offset);
+            
+            if (this.autoRotate && this.currentState === this.state.NONE) {
+                this.spherical.theta -= this.autoRotateSpeed * 2 * Math.PI / 60 / 60;
+            }
+            
+            this.spherical.theta += this.sphericalDelta.theta;
+            this.spherical.phi += this.sphericalDelta.phi;
+            
+            this.spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, this.spherical.phi));
+            
+            this.spherical.radius *= this.scale;
+            this.spherical.radius = Math.max(this.minDistance, Math.min(this.maxDistance, this.spherical.radius));
+            
+            offset.setFromSpherical(this.spherical);
+            offset.applyQuaternion(quatInverse);
+            
+            camera.position.copy(this.target).add(offset);
+            camera.lookAt(this.target);
+            
+            if (this.enableDamping) {
+                this.sphericalDelta.theta *= (1 - this.dampingFactor);
+                this.sphericalDelta.phi *= (1 - this.dampingFactor);
+            } else {
+                this.sphericalDelta.set(0, 0, 0);
+            }
+            
+            this.scale = 1;
+        },
+        
+        onMouseDown: function(event) {
+            if (!this.enabled) return;
+            
+            event.preventDefault();
+            
+            switch (event.button) {
+                case 0:
+                this.currentState = this.state.ROTATE;
+                this.rotateStart.set(event.clientX, event.clientY);
+                disableAutoRotate();
+                scheduleAutoRotateResume();
+                break;
+            }
+            
+            if (this.currentState !== this.state.NONE) {
+                document.addEventListener('mousemove', this.onMouseMove);
+                document.addEventListener('mouseup', this.onMouseUp);
+            }
+        },
+        
+        onMouseMove: function(event) {
+            if (!this.enabled) return;
+            
+            event.preventDefault();
+            
+            if (this.currentState === this.state.ROTATE) {
+                this.rotateEnd.set(event.clientX, event.clientY);
+                const dragT = (this.spherical.radius - this.minDistance) / (this.maxDistance - this.minDistance || 1);
+                const dragFactor = 0.004 * Math.max(0.15, Math.min(1, dragT));
+                this.rotateDelta.subVectors(this.rotateEnd, this.rotateStart).multiplyScalar(dragFactor);
+                this.rotateDelta.subVectors(this.rotateEnd, this.rotateStart).multiplyScalar(dragFactor);
+                
+                this.sphericalDelta.theta -= this.rotateDelta.x;
+                this.sphericalDelta.phi -= this.rotateDelta.y;
+                
+                this.rotateStart.copy(this.rotateEnd);
+                disableAutoRotate();
+                scheduleAutoRotateResume();
+            }
+        },
+        
+        onMouseUp: function() {
+            if (!this.enabled) return;
+            
+            document.removeEventListener('mousemove', this.onMouseMove);
+            document.removeEventListener('mouseup', this.onMouseUp);
+            
+            this.currentState = this.state.NONE;
+        },
+        
+        
+        
+        
+        
+        onWheel: function(event) {
+            if (!this.enabled) return;
+            event.preventDefault();
+            
+            const absX = Math.abs(event.deltaX || 0);
+            const absY = Math.abs(event.deltaY || 0);
+            
+            // Heuristics:
+            // - ctrl/meta => pinch zoom (Mac trackpad)
+            // - mouse wheel: absX ~ 0 and big |deltaY| or deltaMode === 1
+            const isPinch = !!(event.ctrlKey || event.metaKey);
+            const isMouseWheel = !isPinch && absX < 1 && (event.deltaMode === 1 || absY >= 40);
+            
+            const zoomT = (this.spherical.radius - this.minDistance) / (this.maxDistance - this.minDistance || 1);
+            const clampT = Math.max(0, Math.min(1, zoomT));
+            
+            // Zoom factors: smaller => faster
+            const basePinch = 0.992;                 // più veloce con le dita
+            const baseWheel = 0.985;                // classico ma reattivo
+            const base = isPinch ? basePinch : baseWheel;
+            
+            // Rotazione sensitivity
+            const k = (0.004 * Math.max(0.15, Math.min(1, clampT))) * 0.30;
+            
+            if (isPinch || isMouseWheel) {
+                if (!this.enableZoom) return;
+                // Invertito: deltaY > 0 => ZOOM IN (avvicina), deltaY < 0 => ZOOM OUT
+                if (event.deltaY > 0) {
+                    this.scale /= base;
+                } else if (event.deltaY < 0) {
+                    this.scale *= base;
+                }
+                disableAutoRotate();
+                scheduleAutoRotateResume();
+            } else {
+                // Rotazione 2D: invertito verticale rispetto alla versione precedente
+                const dx = (event.deltaX || 0);
+                const dy = (event.deltaY || 0);
+                // dx > 0 (dita a destra) => est (theta +)
+                this.sphericalDelta.theta += dx * k;
+                // dy > 0 (dita in giù) => sud (phi +)
+                this.sphericalDelta.phi   += dy * k;
+                disableAutoRotate();
+                scheduleAutoRotateResume();
+            }
+        },
+        
+        
+        
+        
+        
+        onTouchStart: function(event) {
+            if (!this.enabled) return;
+            
+            if (event.touches.length === 1) {
+                this.currentState = this.state.ROTATE;
+                this.rotateStart.set(event.touches[0].pageX, event.touches[0].pageY);
+            }
+        },
+        
+        onTouchMove: function(event) {
+            if (!this.enabled) return;
+            
+            event.preventDefault();
+            
+            if (event.touches.length === 1 && this.currentState === this.state.ROTATE) {
+                this.rotateEnd.set(event.touches[0].pageX, event.touches[0].pageY);
+                this.rotateDelta.subVectors(this.rotateEnd, this.rotateStart);
+                const dragT = (this.spherical.radius - this.minDistance) / (this.maxDistance - this.minDistance || 1);
+                const dragFactor = 0.004 * Math.max(0.15, Math.min(1, dragT));
+                this.rotateDelta.subVectors(this.rotateEnd, this.rotateStart).multiplyScalar(dragFactor);
+                
+                this.sphericalDelta.theta -= this.rotateDelta.x;
+                this.sphericalDelta.phi -= this.rotateDelta.y;
+                
+                this.rotateStart.copy(this.rotateEnd);
+                this.autoRotate = false;
+                try { scheduleAutoRotateResume(); } catch(e) {}
+            }
+        },
+        
+        onTouchEnd: function() {
+            this.currentState = this.state.NONE;
+        },
+        
+        bindEventHandlers: function() {
+            this.onMouseDown = this.onMouseDown.bind(this);
+            this.onMouseMove = this.onMouseMove.bind(this);
+            this.onMouseUp = this.onMouseUp.bind(this);
+            this.onWheel = this.onWheel.bind(this);
+            this.onTouchStart = this.onTouchStart.bind(this);
+            this.onTouchMove = this.onTouchMove.bind(this);
+            this.onTouchEnd = this.onTouchEnd.bind(this);
+            
+            domElement.addEventListener('mousedown', this.onMouseDown);
+            domElement.addEventListener('wheel', this.onWheel, { passive: false });
+            domElement.addEventListener('touchstart', this.onTouchStart, { passive: true });
+            domElement.addEventListener('touchmove', this.onTouchMove, { passive: false });
+            domElement.addEventListener('touchend', this.onTouchEnd);
+        },
+        
+        dispose: function() {
+            domElement.removeEventListener('mousedown', this.onMouseDown);
+            domElement.removeEventListener('wheel', this.onWheel);
+            domElement.removeEventListener('touchstart', this.onTouchStart);
+            domElement.removeEventListener('touchmove', this.onTouchMove);
+            domElement.removeEventListener('touchend', this.onTouchEnd);
+            
+            document.removeEventListener('mousemove', this.onMouseMove);
+            document.removeEventListener('mouseup', this.onMouseUp);
         }
-        
-        this.spherical.theta += this.sphericalDelta.theta;
-        this.spherical.phi += this.sphericalDelta.phi;
-        
-        this.spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, this.spherical.phi));
-        
-        this.spherical.radius *= this.scale;
-        this.spherical.radius = Math.max(this.minDistance, Math.min(this.maxDistance, this.spherical.radius));
-        
-        offset.setFromSpherical(this.spherical);
-        offset.applyQuaternion(quatInverse);
-        
-        camera.position.copy(this.target).add(offset);
-        camera.lookAt(this.target);
-        
-        if (this.enableDamping) {
-          this.sphericalDelta.theta *= (1 - this.dampingFactor);
-          this.sphericalDelta.phi *= (1 - this.dampingFactor);
-        } else {
-          this.sphericalDelta.set(0, 0, 0);
-        }
-        
-        this.scale = 1;
-      },
-      
-      onMouseDown: function(event) {
-        if (!this.enabled) return;
-        
-        event.preventDefault();
-        
-        switch (event.button) {
-          case 0:
-            this.currentState = this.state.ROTATE;
-            this.rotateStart.set(event.clientX, event.clientY);
-            this.autoRotate = false;
-            try { scheduleAutoRotateResume(); } catch(e) {}
-            break;
-            try { scheduleAutoRotateResume(); } catch(e) {}
-        }
-        
-        if (this.currentState !== this.state.NONE) {
-          document.addEventListener('mousemove', this.onMouseMove);
-          document.addEventListener('mouseup', this.onMouseUp);
-        }
-      },
-      
-      onMouseMove: function(event) {
-        if (!this.enabled) return;
-        
-        event.preventDefault();
-        
-        if (this.currentState === this.state.ROTATE) {
-          this.rotateEnd.set(event.clientX, event.clientY);
-                    const dragT = (this.spherical.radius - this.minDistance) / (this.maxDistance - this.minDistance || 1);
-          const dragFactor = 0.004 * Math.max(0.15, Math.min(1, dragT));
-          this.rotateDelta.subVectors(this.rotateEnd, this.rotateStart).multiplyScalar(dragFactor);
-          this.rotateDelta.subVectors(this.rotateEnd, this.rotateStart).multiplyScalar(dragFactor);
-          
-          this.sphericalDelta.theta -= this.rotateDelta.x;
-          this.sphericalDelta.phi -= this.rotateDelta.y;
-          
-          this.rotateStart.copy(this.rotateEnd);
-          this.autoRotate = false;
-          try { scheduleAutoRotateResume(); } catch(e) {}
-        }
-      },
-      
-      onMouseUp: function() {
-        if (!this.enabled) return;
-        
-        document.removeEventListener('mousemove', this.onMouseMove);
-        document.removeEventListener('mouseup', this.onMouseUp);
-        
-        this.currentState = this.state.NONE;
-      },
-      
-      
-      
-      
-      
-      onWheel: function(event) {
-        if (!this.enabled) return;
-        event.preventDefault();
-
-        const absX = Math.abs(event.deltaX || 0);
-        const absY = Math.abs(event.deltaY || 0);
-
-        // Heuristics:
-        // - ctrl/meta => pinch zoom (Mac trackpad)
-        // - mouse wheel: absX ~ 0 and big |deltaY| or deltaMode === 1
-        const isPinch = !!(event.ctrlKey || event.metaKey);
-        const isMouseWheel = !isPinch && absX < 1 && (event.deltaMode === 1 || absY >= 40);
-
-        const zoomT = (this.spherical.radius - this.minDistance) / (this.maxDistance - this.minDistance || 1);
-        const clampT = Math.max(0, Math.min(1, zoomT));
-
-        // Zoom factors: smaller => faster
-        const basePinch = 0.992;                 // più veloce con le dita
-        const baseWheel = 0.985;                // classico ma reattivo
-        const base = isPinch ? basePinch : baseWheel;
-
-        // Rotazione sensitivity
-        const k = (0.004 * Math.max(0.15, Math.min(1, clampT))) * 0.30;
-
-        if (isPinch || isMouseWheel) {
-          if (!this.enableZoom) return;
-          // Invertito: deltaY > 0 => ZOOM IN (avvicina), deltaY < 0 => ZOOM OUT
-          if (event.deltaY > 0) {
-            this.scale /= base;
-          } else if (event.deltaY < 0) {
-            this.scale *= base;
-          }
-          this.autoRotate = false;
-          try { scheduleAutoRotateResume(); } catch(e) {}
-        } else {
-          // Rotazione 2D: invertito verticale rispetto alla versione precedente
-          const dx = (event.deltaX || 0);
-          const dy = (event.deltaY || 0);
-          // dx > 0 (dita a destra) => est (theta +)
-          this.sphericalDelta.theta += dx * k;
-          // dy > 0 (dita in giù) => sud (phi +)
-          this.sphericalDelta.phi   += dy * k;
-          this.autoRotate = false;
-          try { scheduleAutoRotateResume(); } catch(e) {}
-        }
-      },
-
-
-
-
-      
-      onTouchStart: function(event) {
-        if (!this.enabled) return;
-        
-        if (event.touches.length === 1) {
-          this.currentState = this.state.ROTATE;
-          this.rotateStart.set(event.touches[0].pageX, event.touches[0].pageY);
-        }
-      },
-      
-      onTouchMove: function(event) {
-        if (!this.enabled) return;
-        
-        event.preventDefault();
-        
-        if (event.touches.length === 1 && this.currentState === this.state.ROTATE) {
-          this.rotateEnd.set(event.touches[0].pageX, event.touches[0].pageY);
-          this.rotateDelta.subVectors(this.rotateEnd, this.rotateStart);
-          const dragT = (this.spherical.radius - this.minDistance) / (this.maxDistance - this.minDistance || 1);
-          const dragFactor = 0.004 * Math.max(0.15, Math.min(1, dragT));
-          this.rotateDelta.subVectors(this.rotateEnd, this.rotateStart).multiplyScalar(dragFactor);
-          
-          this.sphericalDelta.theta -= this.rotateDelta.x;
-          this.sphericalDelta.phi -= this.rotateDelta.y;
-          
-          this.rotateStart.copy(this.rotateEnd);
-          this.autoRotate = false;
-          try { scheduleAutoRotateResume(); } catch(e) {}
-        }
-      },
-      
-      onTouchEnd: function() {
-        this.currentState = this.state.NONE;
-      },
-      
-      bindEventHandlers: function() {
-        this.onMouseDown = this.onMouseDown.bind(this);
-        this.onMouseMove = this.onMouseMove.bind(this);
-        this.onMouseUp = this.onMouseUp.bind(this);
-        this.onWheel = this.onWheel.bind(this);
-        this.onTouchStart = this.onTouchStart.bind(this);
-        this.onTouchMove = this.onTouchMove.bind(this);
-        this.onTouchEnd = this.onTouchEnd.bind(this);
-        
-        domElement.addEventListener('mousedown', this.onMouseDown);
-        domElement.addEventListener('wheel', this.onWheel, { passive: false });
-        domElement.addEventListener('touchstart', this.onTouchStart, { passive: true });
-        domElement.addEventListener('touchmove', this.onTouchMove, { passive: false });
-        domElement.addEventListener('touchend', this.onTouchEnd);
-      },
-      
-      dispose: function() {
-        domElement.removeEventListener('mousedown', this.onMouseDown);
-        domElement.removeEventListener('wheel', this.onWheel);
-        domElement.removeEventListener('touchstart', this.onTouchStart);
-        domElement.removeEventListener('touchmove', this.onTouchMove);
-        domElement.removeEventListener('touchend', this.onTouchEnd);
-        
-        document.removeEventListener('mousemove', this.onMouseMove);
-        document.removeEventListener('mouseup', this.onMouseUp);
-      }
     };
     
     controls.spherical.setFromVector3(camera.position.clone().sub(controls.target));
     controls.bindEventHandlers();
     
     return controls;
-  }, []);
+}, [disableAutoRotate, scheduleAutoRotateResume]);
 
-  useEffect(() => {
+useEffect(() => {
     if (!mountRef.current || !inView) return;
-
+    
     // Setup scene ottimizzato
     const scene = new THREE.Scene();
     let contextLost = false;
     const camera = new THREE.PerspectiveCamera(
-      50, // FOV ridotto per performance
-      mountRef.current.clientWidth / mountRef.current.clientHeight, 
-      0.1, 
-      1000
+        50, // FOV ridotto per performance
+        mountRef.current.clientWidth / mountRef.current.clientHeight, 
+        0.1, 
+        1000
     );
     const renderer = new THREE.WebGLRenderer({ 
-      antialias: window.devicePixelRatio <= 1, // Antialias solo su schermi non retina
-      alpha: true,
-      powerPreference: "high-performance"
+        antialias: window.devicePixelRatio <= 1, // Antialias solo su schermi non retina
+        alpha: true,
+        powerPreference: "high-performance"
     });
     
-        renderer.setClearColor(0x060608, 1);
-renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
+    renderer.setClearColor(0x060608, 1);
+    renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Limitato per performance
     
     renderer.shadowMap.enabled = false; // Disabilitato per performance
     mountRef.current.appendChild(renderer.domElement);
-
+    
     // Store references
     sceneRef.current = scene;
     rendererRef.current = renderer;
     cameraRef.current = camera;
-
+    
     // Setup camera iniziale
     camera.position.set(0, 0, 5);
-
+    
     // Crea controlli personalizzati
     const controls = createCustomControls(camera, renderer.domElement);
     controls.autoRotate = autoRotate;
     controlsRef.current = controls;
-
+    
     // Crea geometria della Terra ottimizzata
     const earthGeometry = new THREE.SphereGeometry(2, 64, 64); // Ridotto da 128
     
@@ -609,604 +620,603 @@ renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
     const textureLoader = new THREE.TextureLoader();
     
     const loadTextures = async () => {
-      try {
-        const earthTexture = await new Promise((resolve, reject) => {
-          textureLoader.load(
-            'https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg',
-            resolve,
-            undefined,
-            reject
-          );
-        });
-
-        const earthMaterial = new THREE.MeshLambertMaterial({ // Lambert invece di Phong per performance
-          map: earthTexture,
-          transparent: false
-        });
-        
-        const earth = new THREE.Mesh(earthGeometry, earthMaterial);
-        scene.add(earth);
-        globeRef.current = earth;
-
-        setMapLoaded(true);
-        
-      } catch (error) {
-        console.log('Usando texture di fallback');
-        const fallbackMaterial = new THREE.MeshLambertMaterial({
-          color: 0x6B93D6,
-          transparent: false
-        });
-        
-        const earth = new THREE.Mesh(earthGeometry, fallbackMaterial);
-        scene.add(earth);
-        globeRef.current = earth;
-        setMapLoaded(true);
-      }
+        try {
+            const earthTexture = await new Promise((resolve, reject) => {
+                textureLoader.load(
+                    'https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg',
+                    resolve,
+                    undefined,
+                    reject
+                );
+            });
+            
+            const earthMaterial = new THREE.MeshLambertMaterial({ // Lambert invece di Phong per performance
+                map: earthTexture,
+                transparent: false
+            });
+            
+            const earth = new THREE.Mesh(earthGeometry, earthMaterial);
+            scene.add(earth);
+            globeRef.current = earth;
+            // meridiano di partenza: roma
+            earth.rotation.y = THREE.MathUtils.degToRad(START_LON_OFFSET_DEG);
+            
+            setMapLoaded(true);
+            
+        } catch (error) {
+            console.log('Usando texture di fallback');
+            const fallbackMaterial = new THREE.MeshLambertMaterial({
+                color: 0x6B93D6,
+                transparent: false
+            });
+            
+            const earth = new THREE.Mesh(earthGeometry, fallbackMaterial);
+            scene.add(earth);
+            globeRef.current = earth;
+            setMapLoaded(true);
+        }
     };
-
+    
     loadTextures();
-
+    
     // Atmosfera semplificata
     const atmosphereGeometry = new THREE.SphereGeometry(2.05, 32, 32); // Ridotto
     const atmosphereMaterial = new THREE.MeshBasicMaterial({
-      color: 0x4a90e2,
-      transparent: true,
-      opacity: 0.1,
-      side: THREE.BackSide
+        color: 0x4a90e2,
+        transparent: true,
+        opacity: 0.1,
+        side: THREE.BackSide
     });
     
     const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
     scene.add(atmosphere);
-
-    // Sistema di illuminazione semplificato
-    const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+    
+    // Sistema di illuminazione più "daylight" (meno ombre notturne)
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); // Più intensa e bianca
     scene.add(ambientLight);
     
-    const sunLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    sunLight.position.set(5, 3, 5);
+    const sunLight = new THREE.DirectionalLight(0xffffff, 0.8); // Più intensa
+    sunLight.position.set(10, 10, 10); // Più "frontale"
+    sunLight.castShadow = false;
     scene.add(sunLight);
-
+    
     // Stelle di sfondo ottimizzate
     const starsGeometry = new THREE.BufferGeometry();
     const starsCount = 8000; // Ridotto da 15000
     const starsPositions = new Float32Array(starsCount * 3);
     
     for (let i = 0; i < starsCount; i++) {
-      const radius = 500;
-      const u = Math.random();
-      const v = Math.random();
-      const theta = 2 * Math.PI * u;
-      const phi = Math.acos(2 * v - 1);
-      
-      starsPositions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
-      starsPositions[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
-      starsPositions[i * 3 + 2] = radius * Math.cos(phi);
+        const radius = 500;
+        const u = Math.random();
+        const v = Math.random();
+        const theta = 2 * Math.PI * u;
+        const phi = Math.acos(2 * v - 1);
+        
+        starsPositions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
+        starsPositions[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
+        starsPositions[i * 3 + 2] = radius * Math.cos(phi);
     }
     
     starsGeometry.setAttribute('position', new THREE.BufferAttribute(starsPositions, 3));
     
-    const starsMaterial = new THREE.PointsMaterial({ 
-      size: 1.2,
-      transparent: true,
-      opacity: 0.6,
-      color: 0xffffff,
-      sizeAttenuation: false
+    const starsMaterial = new THREE.PointsMaterial({
+        size: 1.2,
+        transparent: true,
+        opacity: 0.6,
+        color: 0xffffff,
+        sizeAttenuation: false
     });
     const stars = new THREE.Points(starsGeometry, starsMaterial);
     scene.add(stars);
-
+    
     // Aggiungi marker per le foto
     markersRef.current = [];
     markerObjectsRef.current = []; // Reset cache
     console.log('Foto valide trovate:', validPhotos.length);
     
     validPhotos.forEach((photo, index) => {
-      const position = latLngToVector3(photo.lat, photo.lng, 2.02);
-      const marker = createMarker(position, photo);
-      scene.add(marker);
-      markersRef.current.push(marker);
-      
-      // Cache oggetti per raycasting
-      marker.traverse((child) => {
-        if (child.isMesh) {
-          markerObjectsRef.current.push(child);
-        }
-      });
+        const position = latLngToVector3(photo.lat, photo.lng, 2.02);
+        const marker = createMarker(position, photo);
+        scene.add(marker);
+        markersRef.current.push(marker);
+        
+        // Cache oggetti per raycasting
+        marker.traverse((child) => {
+            if (child.isMesh) {
+                markerObjectsRef.current.push(child);
+            }
+        });
     });
-
-    // Centra vista sull'Italia se disponibile
-    const italianPhoto = validPhotos.find(photo => 
-      photo.location.toLowerCase().includes('italia') || 
-      photo.location.toLowerCase().includes('italy')
-    );
     
-    if (italianPhoto) {
-      setTimeout(() => {
-        if (globeRef.current) {
-          const targetRotationY = -italianPhoto.lng * (Math.PI / 180);
-          const targetRotationX = (italianPhoto.lat - 20) * (Math.PI / 180);
-          
-          globeRef.current.rotation.y = targetRotationY;
-          globeRef.current.rotation.x = targetRotationX;
-        }
-      }, 1000);
-    }
-
     // Raycaster ottimizzato
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
-
+    
     // Mouse move con throttling pesante per performance
     const handleMouseMove = throttle((event) => {
-      const rect = renderer.domElement.getBoundingClientRect();
-      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-      setMousePosition({ x: event.clientX, y: event.clientY });
-
-      raycaster.setFromCamera(mouse, camera);
-      
-      // Usa la cache degli oggetti invece di ricreare l'array
-      const intersects = raycaster.intersectObjects(markerObjectsRef.current);
-      
-      if (intersects.length > 0) {
-        const hoveredObj = intersects[0].object;
-        const hoveredData = hoveredObj.userData || (hoveredObj.parent ? hoveredObj.parent.userData : null);
-        if (hoveredData && hoveredData !== hoveredMarker) {
-          // Reset stato hover precedente
-          if (hoveredMarker) {
-            const prevMarker = markersRef.current.find(m => m.userData === hoveredMarker);
-            if (prevMarker) prevMarker.isHovered = false;
-          }
-          
-          setHoveredMarker(hoveredData);
-          document.body.style.cursor = 'pointer';
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        
+        setMousePosition({ x: event.clientX, y: event.clientY });
+        
+        raycaster.setFromCamera(mouse, camera);
+        
+        // Usa la cache degli oggetti invece di ricreare l'array
+        const intersects = raycaster.intersectObjects(markerObjectsRef.current);
+        
+        if (intersects.length > 0) {
+            const hoveredObj = intersects[0].object;
+            const hoveredData = hoveredObj.userData || (hoveredObj.parent ? hoveredObj.parent.userData : null);
+            if (hoveredData && hoveredData !== hoveredMarker) {
+                // Reset stato hover precedente
+                if (hoveredMarker) {
+                    const prevMarker = markersRef.current.find(m => m.userData === hoveredMarker);
+                    if (prevMarker) prevMarker.isHovered = false;
+                }
+                
+                setHoveredMarker(hoveredData);
+                document.body.style.cursor = 'pointer';
+            }
+        } else {
+            if (hoveredMarker) {
+                const prevMarker = markersRef.current.find(m => m.userData === hoveredMarker);
+                if (prevMarker) prevMarker.isHovered = false;
+                
+                setHoveredMarker(null);
+                document.body.style.cursor = 'grab';
+            }
         }
-      } else {
-        if (hoveredMarker) {
-          const prevMarker = markersRef.current.find(m => m.userData === hoveredMarker);
-          if (prevMarker) prevMarker.isHovered = false;
-          
-          setHoveredMarker(null);
-          document.body.style.cursor = 'grab';
-        }
-      }
     }, 50); // Throttle a 50ms per ridurre il carico
-
+    
     const handleClick = (event) => {
-      const rect = renderer.domElement.getBoundingClientRect();
-      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-      raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(markerObjectsRef.current);
-
-      if (intersects.length > 0) {
-        const clickedMarker = intersects[0].object;
-        const data = clickedMarker.userData || (clickedMarker.parent ? clickedMarker.parent.userData : null);
-        if (data) {
-          const clickedData = data;
-          const fullPhoto = photos.find(p => p && String(p.id) === String(clickedData.id)) || clickedData;
-          focusOnPhoto(fullPhoto);
-          actions.openPhotoModal(fullPhoto);
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        
+        raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObjects(markerObjectsRef.current);
+        
+        if (intersects.length > 0) {
+            const clickedMarker = intersects[0].object;
+            const data = clickedMarker.userData || (clickedMarker.parent ? clickedMarker.parent.userData : null);
+            if (data) {
+                const clickedData = data;
+                const fullPhoto = photos.find(p => p && String(p.id) === String(clickedData.id)) || clickedData;
+                focusOnPhoto(fullPhoto, 3.2, 900, () => {
+                    actions.openPhotoModal(fullPhoto);   // ← si apre solo a fine animazione
+                });
+            }
         }
-      }
     };
-
+    
     // Event listeners
     const canvas = renderer.domElement;
     // Gestione perdita/ripristino contesto WebGL
     canvas.addEventListener('webglcontextlost', (e) => {
-      e.preventDefault();
-      contextLost = true;
-      console.warn('WebGL context lost');
+        e.preventDefault();
+        contextLost = true;
+        console.warn('WebGL context lost');
     }, false);
     canvas.addEventListener('webglcontextrestored', () => {
-      console.warn('WebGL context restored');
-      contextLost = false;
-      // Ricarica texture della Terra
-      if (typeof loadTextures === 'function') {
-        loadTextures();
-      }
+        console.warn('WebGL context restored');
+        contextLost = false;
+        // Ricarica texture della Terra
+        if (typeof loadTextures === 'function') {
+            loadTextures();
+        }
     }, false);
-
-
+    
+    
     canvas.addEventListener('mousemove', handleMouseMove);
     canvas.addEventListener('click', handleClick);
-
+    
     // Animation loop ottimizzato
     const clock = new THREE.Clock();
     let frameCount = 0;
     
     const animate = () => {
-      requestAnimationFrame(animate);
-      frameCount++;
-      const elapsedTime = clock.getElapsedTime();
-
-      // Aggiorna controlli
-      if (controlsRef.current) {
-        controlsRef.current.update();
-      }
-
-      // Anima i marker solo ogni 3 frame per performance
-      if (frameCount % 3 === 0) {
-        markersRef.current.forEach((marker) => {
-          if (marker.pulseScale) {
-            marker.pulseScale(elapsedTime);
-          }
-        });
-      }
-
-      // Rotazione lenta delle stelle solo ogni 5 frame
-      if (frameCount % 5 === 0) {
-        stars.rotation.x += 0.0001;
-        stars.rotation.y += 0.0002;
-      }
-
-      renderer.render(scene, camera);
+        requestAnimationFrame(animate);
+        frameCount++;
+        const elapsedTime = clock.getElapsedTime();
+        
+        // Aggiorna controlli
+        if (controlsRef.current) {
+            controlsRef.current.update();
+        }
+        
+        // Anima i marker solo ogni 3 frame per performance
+        if (frameCount % 3 === 0) {
+            markersRef.current.forEach((marker) => {
+                if (marker.pulseScale) {
+                    marker.pulseScale(elapsedTime);
+                }
+            });
+        }
+        
+        // Rotazione lenta delle stelle solo ogni 5 frame
+        if (frameCount % 5 === 0) {
+            stars.rotation.x += 0.0001;
+            stars.rotation.y += 0.0002;
+        }
+        
+        renderer.render(scene, camera);
     };
-
+    
     animate();
-
+    
     // Handle resize ottimizzato
     const handleResize = throttle(() => {
-      if (!mountRef.current || !camera || !renderer) return;
-      
-      const width = mountRef.current.clientWidth;
-      const height = mountRef.current.clientHeight;
-      
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
-      renderer.setSize(width, height);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+        if (!mountRef.current || !camera || !renderer) return;
+        
+        const width = mountRef.current.clientWidth;
+        const height = mountRef.current.clientHeight;
+        
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        renderer.setSize(width, height);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     }, 100);
-
+    
     window.addEventListener('resize', handleResize);
-
+    
     // Cleanup ottimizzata
     return () => {
-      window.removeEventListener('resize', handleResize);
-      
-      const currentCanvas = renderer.domElement;
-      currentCanvas.removeEventListener('mousemove', handleMouseMove);
-      currentCanvas.removeEventListener('click', handleClick);
-      
-      if (controlsRef.current) {
-        controlsRef.current.dispose();
-      }
-      
-      const currentMount = mountRef.current;
-      if (currentMount && currentCanvas) {
-        currentMount.removeChild(currentCanvas);
-      }
-      
-      // Dispose completo delle risorse
-      scene.traverse((child) => {
-        if (child.geometry) child.geometry.dispose();
-        if (child.material) {
-          if (Array.isArray(child.material)) {
-            child.material.forEach(m => {
-              if (m.map) m.map.dispose();
-              if (m.normalMap) m.normalMap.dispose();
-              if (m.specularMap) m.specularMap.dispose();
-              m.dispose();
-            });
-          } else {
-            if (child.material.map) child.material.map.dispose();
-            if (child.material.normalMap) child.material.normalMap.dispose();
-            if (child.material.specularMap) child.material.specularMap.dispose();
-            child.material.dispose();
-          }
+        window.removeEventListener('resize', handleResize);
+        
+        const currentCanvas = renderer.domElement;
+        currentCanvas.removeEventListener('mousemove', handleMouseMove);
+        currentCanvas.removeEventListener('click', handleClick);
+        
+        if (controlsRef.current) {
+            controlsRef.current.dispose();
         }
-      });
-      
-      renderer.dispose();
-      document.body.style.cursor = 'default';
-      if (autoRotateTimerRef.current) { clearTimeout(autoRotateTimerRef.current); }
+        
+        const currentMount = mountRef.current;
+        if (currentMount && currentCanvas) {
+            currentMount.removeChild(currentCanvas);
+        }
+        
+        // Dispose completo delle risorse
+        scene.traverse((child) => {
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) {
+                if (Array.isArray(child.material)) {
+                    child.material.forEach(m => {
+                        if (m.map) m.map.dispose();
+                        if (m.normalMap) m.normalMap.dispose();
+                        if (m.specularMap) m.specularMap.dispose();
+                        m.dispose();
+                    });
+                } else {
+                    if (child.material.map) child.material.map.dispose();
+                    if (child.material.normalMap) child.material.normalMap.dispose();
+                    if (child.material.specularMap) child.material.specularMap.dispose();
+                    child.material.dispose();
+                }
+            }
+        });
+        
+        renderer.dispose();
+        document.body.style.cursor = 'default';
+        if (autoRotateTimerRef.current) { clearTimeout(autoRotateTimerRef.current); }
     };
-  }, [inView, validPhotos]);
+}, [inView, validPhotos]);
 
-  // Funzioni di controllo ottimizzate
-  const resetView = () => {
-    if (cameraRef.current && globeRef.current && controlsRef.current) {
-      cameraRef.current.position.set(0, 0, 5);
-      globeRef.current.rotation.set(0, 0, 0);
-      controlsRef.current.autoRotate = true;
-      setAutoRotate(true);
-    }
-  };
+// Funzioni di controllo ottimizzate
+const resetView = () => {
+  if (cameraRef.current && globeRef.current && controlsRef.current) {
+    cameraRef.current.position.set(0, 0, 5);
+    globeRef.current.rotation.set(
+      0,
+      THREE.MathUtils.degToRad(START_LON_OFFSET_DEG),
+      0
+    );
+    controlsRef.current.autoRotate = true;
+    setAutoRotate(true);
+  }
+};
 
-  const toggleAutoRotate = () => {
+const toggleAutoRotate = () => {
     const newAutoRotate = !autoRotate;
     setAutoRotate(newAutoRotate);
     if (controlsRef.current) {
-      controlsRef.current.autoRotate = newAutoRotate;
+        controlsRef.current.autoRotate = newAutoRotate;
     }
-  };
+};
 
-  const zoomIn = () => {
+const zoomIn = () => {
     if (cameraRef.current) {
-      const newZ = Math.max(2.5, cameraRef.current.position.z - 0.8);
-      cameraRef.current.position.z = newZ;
+        const newZ = Math.max(2.5, cameraRef.current.position.z - 0.8);
+        cameraRef.current.position.z = newZ;
     }
-  };
+};
 
-  const zoomOut = () => {
+const zoomOut = () => {
     if (cameraRef.current) {
-      const newZ = Math.min(15, cameraRef.current.position.z + 0.8);
-      cameraRef.current.position.z = newZ;
+        const newZ = Math.min(15, cameraRef.current.position.z + 0.8);
+        cameraRef.current.position.z = newZ;
     }
-  };
-
-  
-  const focusOnPhoto = (photo, targetRadius = 3.2, duration = 1600) => {
-    if (!photo || !globeRef.current || !cameraRef.current) return;
-    // Calcola rotazioni target per approssimare il punto al centro
-    const targetRotationY = -photo.lng * (Math.PI / 180);
-    const targetRotationX = (photo.lat - 20) * (Math.PI / 180);
-    const startRotationX = globeRef.current.rotation.x;
-    const startRotationY = globeRef.current.rotation.y;
-    const startZ = cameraRef.current.position.z;
-    const destZ = Math.max(2.6, Math.min(8, targetRadius));
-    const startTime = Date.now();
-    if (controlsRef.current) {
-      controlsRef.current.autoRotate = false;
-    }
-    setAutoRotate(false);
-    const animateFocus = () => {
-      const elapsed = Date.now() - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      const ease = 1 - Math.pow(1 - progress, 2);
-      if (globeRef.current) {
-        globeRef.current.rotation.x = startRotationX + (targetRotationX - startRotationX) * ease;
-        globeRef.current.rotation.y = startRotationY + (targetRotationY - startRotationY) * ease;
-      }
-      if (cameraRef.current) {
-        cameraRef.current.position.z = startZ + (destZ - startZ) * ease;
-      }
-      if (progress < 1) {
-        requestAnimationFrame(animateFocus);
-      } else {
-        scheduleAutoRotateResume();
-      }
-    };
-    requestAnimationFrame(animateFocus);
-  };
+};
 
 
-  const focusOnItaly = () => {
-    const italianPhoto = validPhotos.find(photo => 
-      photo.location.toLowerCase().includes('italia') || 
-      photo.location.toLowerCase().includes('italy')
-    );
+// 🔄 sostituisci l’intera funzione
+const focusOnPhoto = (
+    photo,
+    targetRadius = 3.2,
+    duration = 900,
+    onComplete          // callback a fine animazione
+) => {
+    if (!photo || !cameraRef.current || !controlsRef.current) return;
     
-    if (italianPhoto && globeRef.current && cameraRef.current) {
-      const targetRotationY = -italianPhoto.lng * (Math.PI / 180);
-      const targetRotationX = (italianPhoto.lat - 20) * (Math.PI / 180);
-      
-      // Animazione smooth ottimizzata
-      const startRotationX = globeRef.current.rotation.x;
-      const startRotationY = globeRef.current.rotation.y;
-      const startTime = Date.now();
-      const duration = 1500; // Ridotto da 2000ms
-      
-      const animate = () => {
-        const elapsed = Date.now() - startTime;
-        const progress = Math.min(elapsed / duration, 1);
-        const easeProgress = 1 - Math.pow(1 - progress, 2); // Easing più leggero
+    const controls = controlsRef.current;
+    const camera   = cameraRef.current;
+    
+    prevRadiusRef.current = camera.position.length();  // distanza attuale
+    
+    // Direzione che punta al pin
+    const dir = latLngToVector3(photo.lat, photo.lng, 1).normalize();
+    const destPos = dir.clone().multiplyScalar(targetRadius);   // camera opposta al pin
+    const startPos = camera.position.clone();
+    
+    // sospendi controlli / auto-rotate
+    const prevEnabled    = controls.enabled;
+    const prevAutoRotate = controls.autoRotate;
+    controls.enabled     = false;
+    controls.autoRotate  = false;
+    setAutoRotate(false);
+    
+    const start = performance.now();
+    const animate = (now) => {
+        const t = Math.min(1, (now - start) / duration);
+        const ease = 1 - Math.pow(1 - t, 2);       // easeOutQuad
+        camera.position.lerpVectors(startPos, destPos, ease);
+        camera.lookAt(0, 0, 0);
         
-        globeRef.current.rotation.x = startRotationX + (targetRotationX - startRotationX) * easeProgress;
-        globeRef.current.rotation.y = startRotationY + (targetRotationY - startRotationY) * easeProgress;
-        
-        if (progress < 1) {
-          requestAnimationFrame(animate);
+        if (t < 1) {
+            requestAnimationFrame(animate);
+        } else {
+            // riallinea le sferiche dei controlli alla nuova camera
+            controls.spherical.setFromVector3(
+                camera.position.clone().sub(controls.target)
+            );
+            controls.enabled     = prevEnabled;
+            controls.autoRotate  = prevAutoRotate;   // resta off finché non riprende col timer
+            if (typeof onComplete === "function") onComplete();
         }
-      };
-      
-      animate();
-      setAutoRotate(false);
-      if (controlsRef.current) {
-        controlsRef.current.autoRotate = false;
-      }
-    }
-  };
-
-
-  // Livella l'inclinazione della Terra quando chiudi il modal
-  useEffect(() => {
-    if (modalOpen) return;
-    if (!globeRef.current) return;
-    // Anima lentamente rotation.x verso 0 mantenendo Y
-    const startX = globeRef.current.rotation.x;
-    const startY = globeRef.current.rotation.y;
-    const targetX = 0;
-    const startTime = Date.now();
-    const duration = 800;
-    let raf;
-    const animate = () => {
-      const t = Math.min(1, (Date.now() - startTime) / duration);
-      const ease = 1 - Math.pow(1 - t, 2);
-      if (globeRef.current) {
-        globeRef.current.rotation.x = startX + (targetX - startX) * ease;
-        globeRef.current.rotation.y = startY; // non toccare la longitudine
-      }
-      if (t < 1) {
-        raf = requestAnimationFrame(animate);
-      }
     };
-    raf = requestAnimationFrame(animate);
-    return () => raf && cancelAnimationFrame(raf);
-  }, [modalOpen]);
+    requestAnimationFrame(animate);
+};
 
 
-  // Calcolo statistiche memoizzato
-  const stats = useMemo(() => {
+// Gestisci la rotazione della terra in base allo stato del modal
+// 👇 effetto completo per gestire l’apertura/chiusura del modal
+useEffect(() => {
+    if (!controlsRef.current || !globeRef.current || !cameraRef.current) return;
+    
+    const controls = controlsRef.current;
+    const cam      = cameraRef.current;
+    
+    if (modalOpen) {
+        /* --- MODAL APERTO --------------------------------------------------- */
+        // ferma auto-rotate e cancella timer di resume
+        controls.autoRotate = false;
+        setAutoRotate(false);
+        if (autoRotateTimerRef.current) {
+            clearTimeout(autoRotateTimerRef.current);
+            autoRotateTimerRef.current = null;
+        }
+        return;                 // nient’altro finché è aperto
+    }
+    
+    /* --- MODAL CHIUSO: livella + zoom-out -------------------------------- */
+    
+    /* 1) Livella inclinazione (rotation.x → 0) */
+    const rotStartX = globeRef.current.rotation.x;
+    const targetRotX = 0;
+    const levelDur = 800;
+    const levelStart = performance.now();
+    
+    const levelAnim = (now) => {
+        const t    = Math.min(1, (now - levelStart) / levelDur);
+        const ease = 1 - Math.pow(1 - t, 2);         // easeOutQuad
+        globeRef.current.rotation.x =
+        rotStartX + (targetRotX - rotStartX) * ease;
+        if (t < 1) requestAnimationFrame(levelAnim);
+    };
+    requestAnimationFrame(levelAnim);
+    
+    /* 2) Zoom-out alla distanza originale */
+    const zoomStartPos = cam.position.clone();
+    const destRadius   = prevRadiusRef.current || 5;             // fallback 5
+    const destPos      = zoomStartPos.clone().normalize()
+    .multiplyScalar(destRadius);
+    
+    const zoomDur   = 700;
+    const zoomStart = performance.now();
+    
+    const zoomAnim = (now) => {
+        const t    = Math.min(1, (now - zoomStart) / zoomDur);
+        const ease = 1 - Math.pow(1 - t, 2);
+        cam.position.lerpVectors(zoomStartPos, destPos, ease);
+        cam.lookAt(0, 0, 0);
+        
+        if (t < 1) {
+            requestAnimationFrame(zoomAnim);
+        } else {
+            /* 3) Dopo lo zoom-out, riattiva auto-rotate con il timer esistente */
+            scheduleAutoRotateResume();
+        }
+    };
+    requestAnimationFrame(zoomAnim);
+}, [modalOpen]);
+
+
+// Calcolo statistiche memoizzato
+const stats = useMemo(() => {
     const countries = [...new Set(validPhotos.map(p => {
-      const parts = p.location.split(',');
-      return parts.length > 0 ? parts[parts.length - 1].trim() : 'Sconosciuto';
+        const parts = p.location.split(',');
+        return parts.length > 0 ? parts[parts.length - 1].trim() : 'Sconosciuto';
     }).filter(Boolean))];
     
     const continents = [...new Set(validPhotos.map(p => {
-      const parts = p.location.split(',');
-      const country = parts.length > 0 ? parts[parts.length - 1].trim().toLowerCase() : '';
-      
-      const continentMap = {
-        'europa': ['italia', 'italy', 'francia', 'france', 'germania', 'germany', 'spagna', 'spain', 
-                  'norvegia', 'norway', 'svezia', 'sweden', 'finlandia', 'finland', 'islanda', 'iceland',
-                  'regno unito', 'uk', 'grecia', 'greece', 'portogallo', 'portugal'],
-        'asia': ['giappone', 'japan', 'cina', 'china', 'india', 'thailandia', 'thailand', 'corea', 'korea'],
-        'nord america': ['stati uniti', 'usa', 'united states', 'canada', 'messico', 'mexico'],
-        'sud america': ['brasile', 'brazil', 'argentina', 'cile', 'chile', 'peru', 'colombia'],
-        'africa': ['sud africa', 'south africa', 'kenya', 'tanzania', 'marocco', 'morocco', 'egitto', 'egypt'],
-        'oceania': ['australia', 'nuova zelanda', 'new zealand']
-      };
-      
-      for (const [continent, countryList] of Object.entries(continentMap)) {
-        if (countryList.some(c => country.includes(c))) {
-          return continent;
+        const parts = p.location.split(',');
+        const country = parts.length > 0 ? parts[parts.length - 1].trim().toLowerCase() : '';
+        
+        const continentMap = {
+            'europa': ['italia', 'italy', 'francia', 'france', 'germania', 'germany', 'spagna', 'spain', 
+                'norvegia', 'norway', 'svezia', 'sweden', 'finlandia', 'finland', 'islanda', 'iceland',
+                'regno unito', 'uk', 'grecia', 'greece', 'portogallo', 'portugal'],
+                'asia': ['giappone', 'japan', 'cina', 'china', 'india', 'thailandia', 'thailand', 'corea', 'korea'],
+                'nord america': ['stati uniti', 'usa', 'united states', 'canada', 'messico', 'mexico'],
+                'sud america': ['brasile', 'brazil', 'argentina', 'cile', 'chile', 'peru', 'colombia'],
+                'africa': ['sud africa', 'south africa', 'kenya', 'tanzania', 'marocco', 'morocco', 'egitto', 'egypt'],
+                'oceania': ['australia', 'nuova zelanda', 'new zealand']
+            };
+            
+            for (const [continent, countryList] of Object.entries(continentMap)) {
+                if (countryList.some(c => country.includes(c))) {
+                    return continent;
+                }
+            }
+            return 'altro';
+        }).filter(Boolean))];
+        
+        const cities = [...new Set(validPhotos.map(p => {
+            const parts = p.location.split(',');
+            return parts.length > 0 ? parts[0].trim() : 'Sconosciuto';
+        }).filter(Boolean))];
+        
+        return {
+            totalPhotos: validPhotos.length,
+            countries: countries.length,
+            continents: continents.length,
+            cities: cities.length
+        };
+    }, [validPhotos]);
+    
+    const sectionVariants = {
+        hidden: { opacity: 0, y: 50 },
+        visible: {
+            opacity: 1,
+            y: 0,
+            transition: {
+                duration: 0.8,
+                staggerChildren: 0.2
+            }
         }
-      }
-      return 'altro';
-    }).filter(Boolean))];
-    
-    const cities = [...new Set(validPhotos.map(p => {
-      const parts = p.location.split(',');
-      return parts.length > 0 ? parts[0].trim() : 'Sconosciuto';
-    }).filter(Boolean))];
-    
-    return {
-      totalPhotos: validPhotos.length,
-      countries: countries.length,
-      continents: continents.length,
-      cities: cities.length
     };
-  }, [validPhotos]);
-
-  const sectionVariants = {
-    hidden: { opacity: 0, y: 50 },
-    visible: {
-      opacity: 1,
-      y: 0,
-      transition: {
-        duration: 0.8,
-        staggerChildren: 0.2
-      }
-    }
-  };
-
-  const itemVariants = {
-    hidden: { opacity: 0, y: 30 },
-    visible: {
-      opacity: 1,
-      y: 0,
-      transition: { duration: 0.6 }
-    }
-  };
-
-  return (
-    <MapSection
-      ref={ref}
-      variants={sectionVariants}
-      initial="hidden"
-      animate={inView ? "visible" : "hidden"}
-    >
-      <Container>
+    
+    const itemVariants = {
+        hidden: { opacity: 0, y: 30 },
+        visible: {
+            opacity: 1,
+            y: 0,
+            transition: { duration: 0.6 }
+        }
+    };
+    
+    return (
+        <MapSection
+        ref={ref}
+        variants={sectionVariants}
+        initial="hidden"
+        animate={inView ? "visible" : "hidden"}
+        >
+        <Container>
         <SectionTitle variants={itemVariants}>
-          Il Mio Mondo in 3D
+        Il Mio Mondo in 3D
         </SectionTitle>
-
+        
         <GlobeWrapper variants={itemVariants}>
-          {(loading || !mapLoaded) && (
+        {(loading || !mapLoaded) && (
             <LoadingOverlay>
-              <LoadingSpinner />
-              <LoadingText>Caricamento della Terra...</LoadingText>
+            <LoadingSpinner />
+            <LoadingText>Caricamento della Terra...</LoadingText>
             </LoadingOverlay>
-          )}
-
-          <Controls
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.6, delay: 1 }}
-          >
-            <ControlButton onClick={resetView} title="Reset Vista">
-              🌍
-            </ControlButton>
-            <ControlButton onClick={toggleAutoRotate} title="Auto Rotazione">
-              {autoRotate ? '⏸️' : '▶️'}
-            </ControlButton>
-            <ControlButton onClick={focusOnItaly} title="Centra sull'Italia">
-              🇮🇹
-            </ControlButton>
-            <ControlButton onClick={zoomIn} title="Zoom In">
-              ➕
-            </ControlButton>
-            <ControlButton onClick={zoomOut} title="Zoom Out">
-              ➖
-            </ControlButton>
-          </Controls>
-
-          {/* Popup informativo per marker in hover */}
-          {hoveredMarker && (
+        )}
+        
+        <Controls
+        initial={{ opacity: 0, x: 20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.6, delay: 1 }}
+        >
+        <ControlButton onClick={resetView} title="Reset Vista">
+        🌍
+        </ControlButton>
+        <ControlButton onClick={toggleAutoRotate} title="Auto Rotazione">
+        {autoRotate ? '⏸️' : '▶️'}
+        </ControlButton>
+        <ControlButton onClick={zoomIn} title="Zoom In">
+        ➕
+        </ControlButton>
+        <ControlButton onClick={zoomOut} title="Zoom Out">
+        ➖
+        </ControlButton>
+        </Controls>
+        
+        {/* Popup informativo per marker in hover */}
+        {hoveredMarker && (
             <InfoPopup
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.8 }}
-              style={{
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            style={{
                 left: mousePosition.x + 10,
                 top: mousePosition.y - 80
-              }}
+            }}
             >
-              <h4>{hoveredMarker.title}</h4>
-              <p>{hoveredMarker.location}</p>
-              <p style={{ fontSize: '0.75rem', opacity: 0.6 }}>
-                Clicca per vedere la foto
-              </p>
+            <h4>{hoveredMarker.title}</h4>
+            <p>{hoveredMarker.location}</p>
+            <p style={{ fontSize: '0.75rem', opacity: 0.6 }}>
+            Clicca per vedere la foto
+            </p>
             </InfoPopup>
-          )}
-
-          <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
+        )}
+        
+        <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
         </GlobeWrapper>
-
+        
         <StatsContainer variants={sectionVariants}>
-          <StatCard
-            variants={itemVariants}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            <StatNumber>{stats.totalPhotos}</StatNumber>
-            <StatLabel>Foto Totali</StatLabel>
-          </StatCard>
-
-          <StatCard
-            variants={itemVariants}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            <StatNumber>{stats.countries}</StatNumber>
-            <StatLabel>Paesi Visitati</StatLabel>
-          </StatCard>
-
-          <StatCard
-            variants={itemVariants}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            <StatNumber>{stats.continents}</StatNumber>
-            <StatLabel>Continenti</StatLabel>
-          </StatCard>
-
-          <StatCard
-            variants={itemVariants}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            <StatNumber>{stats.cities}</StatNumber>
-            <StatLabel>Città Fotografate</StatLabel>
-          </StatCard>
+        <StatCard
+        variants={itemVariants}
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        >
+        <StatNumber>{stats.totalPhotos}</StatNumber>
+        <StatLabel>Foto Totali</StatLabel>
+        </StatCard>
+        
+        <StatCard
+        variants={itemVariants}
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        >
+        <StatNumber>{stats.countries}</StatNumber>
+        <StatLabel>Paesi Visitati</StatLabel>
+        </StatCard>
+        
+        <StatCard
+        variants={itemVariants}
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        >
+        <StatNumber>{stats.continents}</StatNumber>
+        <StatLabel>Continenti</StatLabel>
+        </StatCard>
+        
+        <StatCard
+        variants={itemVariants}
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        >
+        <StatNumber>{stats.cities}</StatNumber>
+        <StatLabel>Città Fotografate</StatLabel>
+        </StatCard>
         </StatsContainer>
-      </Container>
-    </MapSection>
-  );
+        </Container>
+        </MapSection>
+    );
 };
 
 export default WorldMap;
