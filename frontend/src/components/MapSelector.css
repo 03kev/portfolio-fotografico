@@ -23,9 +23,14 @@
   font-family: inherit;
 }
 
+/* Zoom control in alto a destra */
 .map-selector-container .leaflet-control-zoom {
-  border: none;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+  position: absolute !important;
+  top: 12px !important;
+  right: 12px !important;
+  left: auto !important;
+  bottom: auto !important;
+  z-index: 1000 !important;
 }
 
 .map-selector-container .leaflet-control-zoom a {
@@ -46,4 +51,20 @@
 
 .map-selector-container .leaflet-clickable {
   cursor: pointer;
+}
+
+.map-selector-container .leaflet-top.leaflet-left {
+  display: block !important;
+  position: absolute !important;
+  top: -8px !important;
+  left: auto !important;
+  right: 0px !important;
+  z-index: 1000 !important;
+  opacity: 0.95;
+}
+
+/* Riduci il control OSM a un’etichetta discreta */
+.map-selector-container .leaflet-control-attribution {
+  font-size: 0.2rem;
+  opacity: 0.8;
 }

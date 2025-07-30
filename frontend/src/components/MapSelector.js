@@ -4,14 +4,13 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import './MapSelector.css';
 import styled from 'styled-components';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 
-// Fix per le icone di Leaflet
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+    iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+    iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
 const MapSelectorOverlay = styled(motion.div)`
@@ -92,7 +91,7 @@ const MapInstructions = styled.div`
   position: absolute;
   top: 20px;
   left: 20px;
-  background: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.4);
   padding: 16px 20px;
   border-radius: 12px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
@@ -105,13 +104,15 @@ const MapInstructions = styled.div`
   h4 {
     margin: 0 0 8px 0;
     color: #667eea;
-    font-size: 1rem;
+    font-size: 16px;
     font-weight: 600;
+    margin-bottom: 2px;
   }
   
   p {
     margin: 0;
     line-height: 1.4;
+    font-size: 13px;
   }
 `;
 
@@ -150,8 +151,8 @@ const ActionButtons = styled.div`
 
 const ActionButton = styled.button`
   background: ${props => props.primary 
-    ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' 
-    : 'rgba(255, 255, 255, 0.9)'};
+? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' 
+: 'rgba(255, 255, 255, 0.9)'};
   color: ${props => props.primary ? 'white' : '#334155'};
   border: none;
   padding: 12px 20px;
@@ -176,151 +177,190 @@ const ActionButton = styled.button`
 
 // Componente per gestire i click sulla mappa
 const MapClickHandler = ({ onLocationSelect, selectedPosition }) => {
-  useMapEvents({
-    click: (e) => {
-      const { lat, lng } = e.latlng;
-      onLocationSelect(lat, lng);
-    },
-  });
-  
-  return selectedPosition ? (
-    <Marker position={[selectedPosition.lat, selectedPosition.lng]} />
-  ) : null;
+    useMapEvents({
+        click: (e) => {
+            const { lat, lng } = e.latlng;
+            onLocationSelect(lat, lng);
+        },
+    });
+    
+    return selectedPosition ? (
+        <Marker position={[selectedPosition.lat, selectedPosition.lng]} />
+    ) : null;
 };
 
-const MapSelector = ({ isOpen, onClose, onLocationSelect, initialLocation = null }) => {
-  const [selectedPosition, setSelectedPosition] = useState(
-    initialLocation ? { lat: initialLocation.lat, lng: initialLocation.lng } : null
-  );
-  const [address, setAddress] = useState('');
-  const [loading, setLoading] = useState(false);
-  
-  // Geolocalizzazione
-  const getCurrentLocation = () => {
-    setLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords;
-        setSelectedPosition({ lat: latitude, lng: longitude });
-        reverseGeocode(latitude, longitude);
-        setLoading(false);
-      },
-      (error) => {
-        console.error('Errore geolocalizzazione:', error);
-        setLoading(false);
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
+const MapSelector = ({ isOpen, onClose, onLocationSelect, initialLocation = null, initialFullAddress = '' }) => {
+    const [initialAddr, initialCtry = ''] = initialFullAddress
+    .split(',')
+    .map(s => s.trim());
+    
+    const [selectedPosition, setSelectedPosition] = useState(
+        initialLocation ? { lat: initialLocation.lat, lng: initialLocation.lng } : null
     );
-  };
-  
-  // Reverse geocoding per ottenere l'indirizzo
-  const reverseGeocode = async (lat, lng) => {
-    try {
-      const response = await fetch(
-        `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=it`
-      );
-      const data = await response.json();
-      const addressString = data.locality || data.city || data.countryName || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
-      setAddress(addressString);
-    } catch (error) {
-      console.error('Errore reverse geocoding:', error);
-      setAddress(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
-    }
-  };
-  
-  const handleLocationClick = async (lat, lng) => {
-    setSelectedPosition({ lat, lng });
-    await reverseGeocode(lat, lng);
-  };
-  
-  const handleConfirm = () => {
-    if (selectedPosition && onLocationSelect) {
-      onLocationSelect({
-        lat: selectedPosition.lat,
-        lng: selectedPosition.lng,
-        address: address
-      });
-    }
-    onClose();
-  };
-  
-  if (!isOpen) return null;
-  
-  return (
-    <MapSelectorOverlay
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-    >
-      <MapContainer2
+    
+    const [address, setAddress] = useState(initialAddr);
+    const [country, setCountry] = useState(initialCtry);
+    const [loading, setLoading] = useState(false);
+    
+    const overlayRef = useRef();
+    useEffect(() => {
+        const onOutsideClick = (e) => {
+            // se il click è sull’overlay esterno, chiudi
+            if (e.target === overlayRef.current) {
+                onClose();
+            }
+        };
+        document.addEventListener('mousedown', onOutsideClick);
+        return () => document.removeEventListener('mousedown', onOutsideClick);
+    }, [onClose]);
+    
+    // Geolocalizzazione
+    const getCurrentLocation = () => {
+        setLoading(true);
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const { latitude, longitude } = position.coords;
+                setSelectedPosition({ lat: latitude, lng: longitude });
+                reverseGeocode(latitude, longitude);
+                setLoading(false);
+            },
+            (error) => {
+                console.error('Errore geolocalizzazione:', error);
+                setLoading(false);
+            },
+            { enableHighAccuracy: true, timeout: 10000 }
+        );
+    };
+    
+    // Reverse geocoding per ottenere l'indirizzo
+    const reverseGeocode = async (lat, lng) => {
+        try {
+            const response = await fetch(
+                `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=it`
+            );
+            const data = await response.json();
+            const addressString = data.locality || data.city || data.countryName || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+            setAddress(addressString);
+            setCountry(data.countryName || '');
+        } catch (error) {
+            console.error('Errore reverse geocoding:', error);
+            setAddress(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+        }
+    };
+    
+    const handleLocationClick = async (lat, lng) => {
+        setSelectedPosition({ lat, lng });
+        await reverseGeocode(lat, lng);
+    };
+    
+    const handleConfirm = () => {
+        if (selectedPosition && onLocationSelect) {
+            let base = address
+            ? address
+            : `${selectedPosition.lat.toFixed(4)}, ${selectedPosition.lng.toFixed(4)}`;
+            const fullAddress = country
+            ? `${base}, ${country}`
+            : base;
+            
+            onLocationSelect({
+                lat: selectedPosition.lat,
+                lng: selectedPosition.lng,
+                address: fullAddress
+            });
+        }
+        onClose();
+    };
+    
+    // Conferma posizione premendo Invio
+    useEffect(() => {
+        const onKeyDown = (e) => {
+            if (e.key === 'Enter' && selectedPosition) {
+                handleConfirm();
+            }
+        };
+        document.addEventListener('keydown', onKeyDown);
+        return () => document.removeEventListener('keydown', onKeyDown);
+    }, [selectedPosition, handleConfirm]);
+    
+    if (!isOpen) return null;
+    
+    return (
+        <MapSelectorOverlay
+        ref={overlayRef}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1, transition: { duration: 0.15 } }}
+        exit={{ opacity: 0, transition: { duration: 0.15 } }}
+        >
+        <MapContainer2
         initial={{ scale: 0.9, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.9, opacity: 0 }}
-        transition={{ type: "spring", damping: 20, stiffness: 300 }}
-      >
+        animate={{ scale: 1, opacity: 1, transition: { type: "spring", damping: 18, stiffness: 400, duration: 0.15 } }}
+        exit={{ scale: 0.9, opacity: 0, transition: { duration: 0.15 } }}
+        transition={{ type: "spring", damping: 18, stiffness: 400 }}
+        >
         <MapHeader>
-          <h3>🗺️ Seleziona Posizione</h3>
-          <CloseButton onClick={onClose}>×</CloseButton>
+        <h3>🗺️ Seleziona Posizione</h3>
+        <CloseButton onClick={onClose}>×</CloseButton>
         </MapHeader>
         
         <MapContent className="map-selector-container">
-          <MapContainer
-            center={
-              selectedPosition 
-                ? [selectedPosition.lat, selectedPosition.lng]
-                : [41.8719, 12.5674] // Roma come default
-            }
-            zoom={selectedPosition ? 12 : 6}
-            style={{ height: '100%', width: '100%' }}
-          >
-            <TileLayer
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            />
-            <MapClickHandler 
-              onLocationSelect={handleLocationClick}
-              selectedPosition={selectedPosition}
-            />
-          </MapContainer>
-          
-          <MapInstructions>
-            <h4>Come usare:</h4>
-            <p>Clicca sulla mappa per selezionare una posizione, oppure usa il pulsante "Posizione attuale" per usare il GPS.</p>
-          </MapInstructions>
-          
-          {selectedPosition && (
+        <MapContainer
+        center={
+            selectedPosition 
+            ? [selectedPosition.lat, selectedPosition.lng]
+            : [41.8719, 12.5674] // Roma come default
+        }
+        zoom={selectedPosition ? 12 : 6}
+        style={{ height: '100%', width: '100%' }}
+        zoomControl={true}
+        >
+        <TileLayer
+        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        />
+        <MapClickHandler 
+        onLocationSelect={handleLocationClick}
+        selectedPosition={selectedPosition}
+        />
+        </MapContainer>
+        
+        <MapInstructions>
+        <h4>Come usare:</h4>
+        <p>Clicca sulla mappa per selezionare una posizione, oppure usa il pulsante "Posizione attuale" per usare il GPS.</p>
+        </MapInstructions>
+        
+        {selectedPosition && (
             <CoordinatesDisplay>
-              <div className="coord-label">Coordinate selezionate:</div>
-              <div className="coord-values">
-                {selectedPosition.lat.toFixed(6)}, {selectedPosition.lng.toFixed(6)}
-              </div>
-              {address && (
+            <div className="coord-label">Coordinate selezionate:</div>
+            <div className="coord-values">
+            {selectedPosition.lat.toFixed(6)}, {selectedPosition.lng.toFixed(6)}
+            </div>
+            {address && (
                 <div style={{ fontSize: '0.8rem', opacity: 0.8, marginTop: '4px' }}>
-                  📍 {address}
+                📍 {address}{country ? `, ${country}` : ''}
                 </div>
-              )}
+            )}
             </CoordinatesDisplay>
-          )}
-          
-          <ActionButtons>
-            <ActionButton onClick={getCurrentLocation} disabled={loading}>
-              {loading ? '📍' : '🎯'} Posizione attuale
-            </ActionButton>
-            <ActionButton onClick={onClose}>
-              Annulla
-            </ActionButton>
-            <ActionButton 
-              primary 
-              onClick={handleConfirm}
-              disabled={!selectedPosition}
-            >
-              ✓ Conferma Posizione
-            </ActionButton>
-          </ActionButtons>
+        )}
+        
+        <ActionButtons>
+        <ActionButton onClick={getCurrentLocation} disabled={loading}>
+        {loading ? '📍' : '🎯'} Posizione attuale
+        </ActionButton>
+        <ActionButton onClick={onClose}>
+        Annulla
+        </ActionButton>
+        <ActionButton 
+        primary 
+        onClick={handleConfirm}
+        disabled={!selectedPosition}
+        >
+        ✓ Conferma Posizione
+        </ActionButton>
+        </ActionButtons>
         </MapContent>
-      </MapContainer2>
-    </MapSelectorOverlay>
-  );
+        </MapContainer2>
+        </MapSelectorOverlay>
+    );
 };
 
 export default MapSelector;

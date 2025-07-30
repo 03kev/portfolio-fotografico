@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';import { usePhotos } from '../contexts/PhotoContext';
 import { uploadUtils } from '../utils/api';
 import MapSelector from './MapSelector';
+import { AnimatePresence } from 'framer-motion';
 import exifr from 'exifr';  // Libreria per leggere metadati EXIF [oai_citation:1‡stackoverflow.com](https://stackoverflow.com/questions/59580568/read-exif-data-in-react#:~:text=there%27s%20a%20simple%20library%20for,that%20called%20exifr)
 import './PhotoUpload.css';
 
@@ -32,6 +33,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
     const totalSteps = 3;
     
     const fileInputRef = useRef(null);
+    const tagInputRef  = useRef(null);
     
     // Disabilita lo scroll della pagina dietro il modal
     useEffect(() => {
@@ -311,6 +313,44 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
         }
     };
     
+    // Navigazione via Invio: avanza allo step successivo o carica
+    useEffect(() => {
+        const onKeyDown = (e) => {
+            if (e.key !== 'Enter' || loading) return;
+            
+            // Se il focus è sul tag-input, aggiungi tag e non proseguire
+            if (tagInputRef.current === document.activeElement) {
+                e.preventDefault();
+                if (tagInput.trim()) addTag(tagInput);
+                return;
+            }   
+                     
+            // Se non siamo all’ultimo step, prova ad andare avanti (se il pulsante non è disabled)
+            if (currentStep < totalSteps) {
+                const disabledNext =
+                (currentStep === 1 && !selectedFile) ||
+                (currentStep === 2 && !formData.title.trim());
+                if (!disabledNext) {
+                    nextStep();
+                }
+            }
+            // Se siamo all’ultimo step, prova a caricare (se il pulsante non è disabled)
+            else if (
+                currentStep === totalSteps &&
+                selectedFile &&
+                formData.title.trim() &&
+                !loading
+            ) {
+                handleUpload();
+            }
+        };
+        
+        document.addEventListener('keydown', onKeyDown);
+        return () => document.removeEventListener('keydown', onKeyDown);
+    }, [
+        currentStep, totalSteps, selectedFile, formData.title, loading, nextStep, handleUpload
+    ]);
+    
     return (
         <div
         className="photo-upload-modal"
@@ -535,6 +575,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
             <label>Tag</label>
             <div className="tags-input-group">
             <input
+            ref={tagInputRef}
             type="text"
             value={tagInput}
             placeholder="Aggiungi tag e premi Invio"
@@ -623,8 +664,10 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
         </div>
         
         {/* Modal Mappa per selezione posizione */}
+        <AnimatePresence initial={false} mode="wait">
         {showMapSelector && (
             <MapSelector
+            key="map-selector"
             isOpen={showMapSelector}
             onClose={() => setShowMapSelector(false)}
             onLocationSelect={handleMapLocationSelect}
@@ -633,8 +676,10 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
                 ? { lat: parseFloat(formData.lat), lng: parseFloat(formData.lng) } 
                 : null
             }
+            initialFullAddress={formData.location ? formData.location : ''}
             />
         )}
+        </AnimatePresence>
         </div>
         </div>
     );

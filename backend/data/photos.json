@@ -1,17 +1,17 @@
 [
   {
-    "id": 1753825014945,
+    "id": 1753894599624,
     "title": "Isola Tiberina",
-    "location": "Campitelli, Roma",
-    "lat": 41.89111659256616,
-    "lng": 12.47831091284752,
-    "image": "/uploads/photo_1753825014945.webp",
-    "thumbnail": "/uploads/thumbnails/photo_1753825014945_thumb.webp",
-    "description": "",
+    "location": "Roma, Italia",
+    "lat": 41.891157,
+    "lng": 12.478354,
+    "image": "/uploads/photo_1753894599624.webp",
+    "thumbnail": "/uploads/thumbnails/photo_1753894599624_thumb.webp",
+    "description": "Isola Tiberina dal ponte Fabricio, Roma.",
     "date": "2025-05-24",
     "camera": "Samsung Galaxy S25 Ultra",
     "lens": "",
-    "settings": "{\"aperture\":\"\",\"shutter\":\"\",\"iso\":\"\",\"focal\":\"\"}",
-    "tags": ["rome"]
+    "settings": "{\"aperture\":\"f/1.7\",\"shutter\":\"1/3818s\",\"iso\":\"40\",\"focal\":\"6.3mm\"}",
+    "tags": ["Roma"]
   }
 ]
