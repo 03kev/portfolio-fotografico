@@ -20,6 +20,7 @@ dist/
 .idea/
 *.swp
 *.swo
+.history/
 
 # OS files
 .DS_Store

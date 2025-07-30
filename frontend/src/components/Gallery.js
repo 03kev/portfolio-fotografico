@@ -241,9 +241,15 @@ const NoResults = styled(motion.div)`
 `;
 
 const Gallery = () => {
-  const { photos, filteredPhotos, loading, actions } = usePhotos();
-  const [activeFilter, setActiveFilter] = useState('all');
-  const [searchTerm, setSearchTerm] = useState('');
+  const { photos, filteredPhotos, loading, actions, filters } = usePhotos();
+  
+  // Inizializza lo stato locale con i valori del context
+  const [activeFilter, setActiveFilter] = useState(() => {
+    return filters.tags && filters.tags.length > 0 ? filters.tags[0] : 'all';
+  });
+  const [searchTerm, setSearchTerm] = useState(() => {
+    return filters.search || '';
+  });
 
   // Estrai tutti i tag unici dalle foto - gestisci il caso in cui tags non sia un array
   const allTags = [...new Set(photos.flatMap(photo => {
@@ -251,26 +257,8 @@ const Gallery = () => {
   }))];
   const filterOptions = ['all', ...allTags];
 
-  // Effetto per sincronizzare il filtro attivo con i filtri del context
-  const { filters: contextFilters } = usePhotos();
+  // Effetto per applicare i filtri quando cambiano activeFilter o searchTerm
   useEffect(() => {
-    // Se c'è un filtro tag attivo nel context che non corrisponde al nostro activeFilter
-    if (contextFilters.tags && contextFilters.tags.length > 0 && contextFilters.tags[0] !== activeFilter) {
-      setActiveFilter(contextFilters.tags[0]);
-    } else if ((!contextFilters.tags || contextFilters.tags.length === 0) && activeFilter !== 'all') {
-      // Se non ci sono filtri tag nel context ma abbiamo un filtro attivo, resettiamo
-      setActiveFilter('all');
-    }
-    
-    // Sincronizza anche il termine di ricerca
-    if (contextFilters.search !== searchTerm) {
-      setSearchTerm(contextFilters.search || '');
-    }
-  }, [contextFilters.tags, contextFilters.search, activeFilter, searchTerm]);
-
-  useEffect(() => {
-    // Applica filtri
-    // NB: 'actions' viene dal context e non cambia mai, quindi NON va messo tra le dipendenze
     const filterData = {};
     if (searchTerm) filterData.search = searchTerm;
     if (activeFilter !== 'all') filterData.tags = [activeFilter];
@@ -278,8 +266,24 @@ const Gallery = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeFilter, searchTerm]);
 
+  // Effetto per sincronizzare quando i filtri vengono impostati dall'esterno (es. PhotoModal)
+  // Ma solo quando il componente non sta già gestendo l'aggiornamento
+  useEffect(() => {
+    const currentTag = filters.tags && filters.tags.length > 0 ? filters.tags[0] : 'all';
+    const currentSearch = filters.search || '';
+    
+    // Aggiorna solo se i valori sono effettivamente diversi
+    if (currentTag !== activeFilter) {
+      setActiveFilter(currentTag);
+    }
+    if (currentSearch !== searchTerm) {
+      setSearchTerm(currentSearch);
+    }
+  }, [filters.tags?.join(','), filters.search]); // Solo quando questi valori cambiano realmente
+
   const handleFilterClick = (filter) => {
     setActiveFilter(filter);
+    
     // Se clicchiamo su "Tutti", resettiamo completamente i filtri
     if (filter === 'all') {
       actions.clearFilters();
