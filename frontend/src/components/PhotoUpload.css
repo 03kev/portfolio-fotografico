@@ -9,11 +9,12 @@
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   z-index: 1050;
   padding: 20px;
   overflow-y: auto;
+  padding-top: 15vh;
 }
 
 .photo-upload-container {
@@ -117,7 +118,11 @@
   position: relative;
   transition: all 0.4s ease;
   background: linear-gradient(145deg, #f8fafc 0%, #f1f5f9 100%);
-  min-height: 280px;
+  background: linear-gradient(145deg, #f8fafc 0%, #f1f5f9 100%);
+  aspect-ratio: 1 / 1;
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -150,7 +155,7 @@
 .preview-container {
   position: relative;
   width: 100%;
-  height: 280px;
+  aspect-ratio: 1 / 1;
   border-radius: 12px;
   overflow: hidden;
 }
@@ -158,6 +163,8 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center;
+  display: block;
 }
 .preview-overlay {
   position: absolute;
@@ -434,6 +441,7 @@
 
 /* Messaggi di errore */
 .error-message {
+  margin-top: 15px;
   background: linear-gradient(145deg, #fef2f2 0%, #fee2e2 100%);
   color: #dc2626;
   padding: 14px 18px;
@@ -556,4 +564,58 @@
     flex-direction: column;
     gap: 12px;
   }
+}
+
+/* Navbar cliccabile degli step */
+.step-navbar {
+  display: flex;
+  justify-content: center;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0.5rem 1rem;
+  gap: 4rem;
+
+}
+.step-navbar button {
+  background: transparent;
+  border: none;
+  font-size: 0.95rem;
+  color: #64748b;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  position: relative;
+  transition: color 0.2s;
+}
+.step-navbar button:hover:not(:disabled) {
+  color: #334155;
+}
+.step-navbar button.active {
+  color: #667eea;
+  font-weight: 600;
+}
+.step-navbar button.active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: #667eea;
+  border-radius: 2px 2px 0 0;
+}
+
+@keyframes modalSlideOut {
+  from {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.9) translateY(20px);
+  }
+}
+
+/* Applichiamo l’animazione al closing */
+.photo-upload-container.closing {
+  animation: modalSlideOut 0.3s ease forwards;
 }
