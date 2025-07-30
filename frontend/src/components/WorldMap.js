@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useRef, useEffect, useLayoutEffect, useState, useCallback, useMemo } from 'react';
 import * as THREE from 'three';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
@@ -203,7 +203,7 @@ const StatLabel = styled.div`
 `;
 
 const InfoPopup = styled(motion.div)`
-  position: absolute;
+  position: fixed;
   background: rgba(0, 0, 0, 0.95);
   color: white;
   padding: var(--spacing-lg);
@@ -241,7 +241,38 @@ const WorldMap = () => {
     const [autoRotate, setAutoRotate] = useState(true);
     const autoRotateTimerRef = useRef(null);
     const [hoveredMarker, setHoveredMarker] = useState(null);
-    const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+    const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
+    const [adjustedPosition, setAdjustedPosition] = useState({ x: 0, y: 0 });
+    const popupRef = useRef(null);
+
+    useLayoutEffect(() => {
+        if (!popupRef.current) return;
+        const { offsetWidth: w, offsetHeight: h } = popupRef.current;
+        let x = popupPosition.x;
+        let y = popupPosition.y;
+        const margin = 8;
+        const containerRect = mountRef.current?.getBoundingClientRect();
+        if (containerRect) {
+            const minX = containerRect.left + margin;
+            const maxX = containerRect.right - w - margin;
+            const minY = containerRect.top + margin;
+            const maxY = containerRect.bottom - h - margin;
+            if (x > maxX) x = maxX;
+            if (x < minX) x = minX;
+            if (y > maxY) y = maxY;
+            if (y < minY) y = minY;
+        } else {
+            // fallback to entire window
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            if (x + w > vw) x = vw - w - margin;
+            if (x < margin) x = margin;
+            if (y + h > vh) y = vh - h - margin;
+            if (y < margin) y = margin;
+        }
+        setAdjustedPosition({ x, y });
+    }, [popupPosition]);
+    
     const lastMouseMoveTime = useRef(0); // Per throttling
     const { ref, inView } = useInView({
         threshold: 0.1,
@@ -841,8 +872,6 @@ useEffect(() => {
         mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
         
-        setMousePosition({ x: event.clientX, y: event.clientY });
-        
         raycaster.setFromCamera(mouse, camera);
         
         // Usa la cache degli oggetti invece di ricreare l'array
@@ -874,6 +903,16 @@ useEffect(() => {
                 }
             }
             
+            // compute marker screen position for InfoPopup
+            const worldPos = hoveredObj.getWorldPosition(new THREE.Vector3());
+            worldPos.project(camera);
+            const rect = renderer.domElement.getBoundingClientRect();
+            const x = (worldPos.x * 0.5 + 0.5) * rect.width + rect.left;
+            const y = (-worldPos.y * 0.5 + 0.5) * rect.height + rect.top;
+            const offsetY = 10;
+            const offsetX = 10;
+            setPopupPosition({ x: x + offsetX, y: y + offsetY });
+            
             // cursore sempre pointer mentre siamo sopra QUALSIASI marker
             if (!isDraggingRef.current) setCanvasCursor('pointer');
             
@@ -886,6 +925,10 @@ useEffect(() => {
     }, 50); // Throttle a 50ms per ridurre il carico
     
     const handleClick = (event) => {
+        // nascondi popup quando clicco un marker
+        markersRef.current.forEach(m => m.isHovered = false);
+        setHoveredMarker(null);
+        setCanvasCursor('grab');
         const rect = renderer.domElement.getBoundingClientRect();
         mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -947,7 +990,7 @@ useEffect(() => {
     canvas.addEventListener('mouseleave', () => {
         setCanvasCursor('grab');
     });
-
+    
     // --- Clear hover on wheel/touch to hide InfoPopup when rotating/zooming ---
     const clearHover = () => {
         markersRef.current.forEach(m => m.isHovered = false);
@@ -1024,7 +1067,7 @@ useEffect(() => {
     // Cleanup ottimizzata
     return () => {
         window.removeEventListener('resize', handleResize);
-
+        
         const currentCanvas = renderer.domElement;
         currentCanvas.removeEventListener('mousemove', handleMouseMove);
         currentCanvas.removeEventListener('click', handleClick);
@@ -1033,16 +1076,16 @@ useEffect(() => {
         currentCanvas.removeEventListener('touchstart', clearHover);
         currentCanvas.removeEventListener('touchmove', clearHover);
         currentCanvas.removeEventListener('touchend', clearHover);
-
+        
         if (controlsRef.current) {
             controlsRef.current.dispose();
         }
-
+        
         const currentMount = mountRef.current;
         if (currentMount && currentCanvas) {
             currentMount.removeChild(currentCanvas);
         }
-
+        
         // Dispose completo delle risorse
         scene.traverse((child) => {
             if (child.geometry) child.geometry.dispose();
@@ -1062,7 +1105,7 @@ useEffect(() => {
                 }
             }
         });
-
+        
         renderer.dispose();
         document.body.style.cursor = 'default';
         if (autoRotateTimerRef.current) { clearTimeout(autoRotateTimerRef.current); }
@@ -1326,12 +1369,13 @@ const stats = useMemo(() => {
         {/* Popup informativo per marker in hover */}
         {hoveredMarker && (
             <InfoPopup
+            ref={popupRef}
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.8 }}
             style={{
-                bottom: '20px',
-                right: '20px'
+                left: `${adjustedPosition.x}px`,
+                top: `${adjustedPosition.y}px`
             }}
             >
             <h4>
