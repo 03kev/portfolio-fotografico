@@ -10,8 +10,8 @@ import { useInView } from 'react-intersection-observer';
 // Configuration constants
 // ────────────────────────────────────────────────────────────────────────────
 const GLOBE_RADIUS          = 5;
-const ATMOSPHERE_RADIUS     = 2.05;
-const STAR_FIELD_RADIUS     = 500;
+const ATMOSPHERE_RADIUS     = GLOBE_RADIUS * 1.025;
+const STAR_FIELD_RADIUS     = 1000;
 const STAR_COUNT            = 8000;
 const CAMERA_START_Z        = GLOBE_RADIUS * 2.5 + 0.5;
 const MIN_CAMERA_DISTANCE   = GLOBE_RADIUS + 0.5;

@@ -49,7 +49,7 @@ temp/
 tmp/
 temp/
 
-.DS_Store
+# Textures
 frontend/public/textures/*16k*
 frontend/public/textures/*32k*
 frontend/public/textures/*43k*
