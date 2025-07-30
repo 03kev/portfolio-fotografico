@@ -17,7 +17,7 @@ const CAMERA_START_Z        = GLOBE_RADIUS * 2.5 + 0.5;
 const MIN_CAMERA_DISTANCE   = GLOBE_RADIUS + 0.5;
 const MAX_CAMERA_DISTANCE   = CAMERA_START_Z * 2;
 const FOCUS_OFFSET_RADIUS   = GLOBE_RADIUS + 1.2;
-const RESUME_ROTATE_DELAY   = 5000; // ms
+const RESUME_ROTATE_DELAY   = 10000; // ms
 const AUTO_ROTATE_SPEED     = 0.37; // rad/s
 const START_LON_OFFSET_DEG = -105; // rome longitude offset
 
@@ -259,9 +259,9 @@ const WorldMap = () => {
     const validPhotos = useMemo(() => 
         photos.filter(p => p && p.location && p.lat && p.lng),
     [photos]
-    );
+);
 
-    // ——————————————————— cursore dinamico ———————————————————
+// ——————————————————— cursore dinamico ———————————————————
 
 // ——————————————————— cursore dinamico ———————————————————
 const isDraggingRef = useRef(false);           // true se stiamo trascinando
@@ -312,7 +312,7 @@ const createMarker = useCallback((position, photo, isCluster = false) => {
     const normal = position.clone().normalize();
     dot.translateOnAxis(normal, 0.015);
     markerGroup.add(dot);
-
+    
     // Add a ring for clusters to make them more visible
     if (isCluster) {
         const ringGeometry = new THREE.RingGeometry(size * 1.3, size * 1.5, 16);
@@ -328,24 +328,24 @@ const createMarker = useCallback((position, photo, isCluster = false) => {
         markerGroup.add(ring);
         markerGroup.ring = ring;
     }
-
+    
     // states
     markerGroup.isHovered  = false;
     markerGroup.baseScale  = 1;
     markerGroup.dot        = dot;
     markerGroup.isCluster  = isCluster;
-
+    
     // animation – scales dot depending on zoom + hover
     markerGroup.pulseScale = (time, scaleFactor) => {
-      const baseScale = isCluster ? 1.1 : 1;
-      const targetScale = markerGroup.isHovered
+        const baseScale = isCluster ? 1.1 : 1;
+        const targetScale = markerGroup.isHovered
         ? scaleFactor * baseScale * (1.2 + Math.sin(time * 3) * 0.1) // pulsazione leggera
         : scaleFactor * baseScale;
-
-      markerGroup.dot.scale.setScalar(targetScale);
-      if (markerGroup.ring) {
-        markerGroup.ring.scale.setScalar(targetScale * 0.9);
-      }
+        
+        markerGroup.dot.scale.setScalar(targetScale);
+        if (markerGroup.ring) {
+            markerGroup.ring.scale.setScalar(targetScale * 0.9);
+        }
     };
     
     // Orienta il marker
@@ -354,69 +354,69 @@ const createMarker = useCallback((position, photo, isCluster = false) => {
     return markerGroup;
 }, []);
 
-    // —————————————————— CLUSTERING UTILS ——————————————————
-    // trasforma la distanza camera‑centro in un “livello” (0 = più lontano)
-    const radiusToLevel = (r) => {
-      if (r > 25) return 0;      // continente
-      if (r > 15) return 1;      // nazione
-      if (r > 9)  return 2;      // macro‑regioni
-      return 3;                  // tutti i pin
-    };
+// —————————————————— CLUSTERING UTILS ——————————————————
+// trasforma la distanza camera‑centro in un “livello” (0 = più lontano)
+const radiusToLevel = (r) => {
+    if (r > 25) return 0;      // continente
+    if (r > 15) return 1;      // nazione
+    if (r > 9)  return 2;      // macro‑regioni
+    return 3;                  // tutti i pin
+};
 
-    // raggruppa le foto in celle di griglia lat/lng di ampiezza stepDeg
-    const buildClustersForStep = (photos, stepDeg) => {
-      if (stepDeg === 0) {
+// raggruppa le foto in celle di griglia lat/lng di ampiezza stepDeg
+const buildClustersForStep = (photos, stepDeg) => {
+    if (stepDeg === 0) {
         // Anche al livello massimo, raggruppa marker con coordinate identiche
         const exactLocationMap = new Map();
         photos.forEach(p => {
-          const key = `${p.lat}_${p.lng}`; // Chiave basata su coordinate esatte
-          if (!exactLocationMap.has(key)) {
-            exactLocationMap.set(key, { center: [p.lat, p.lng], photos: [] });
-          }
-          exactLocationMap.get(key).photos.push(p);
+            const key = `${p.lat}_${p.lng}`; // Chiave basata su coordinate esatte
+            if (!exactLocationMap.has(key)) {
+                exactLocationMap.set(key, { center: [p.lat, p.lng], photos: [] });
+            }
+            exactLocationMap.get(key).photos.push(p);
         });
         return Array.from(exactLocationMap.values());
-      }
-      const idOf = (lat, lng) =>
+    }
+    const idOf = (lat, lng) =>
         `${Math.floor(lat / stepDeg)}_${Math.floor(lng / stepDeg)}`;
-
-      const map = new Map();
-      photos.forEach(p => {
+    
+    const map = new Map();
+    photos.forEach(p => {
         const id = idOf(p.lat, p.lng);
         if (!map.has(id)) map.set(id, { sumLat: 0, sumLng: 0, photos: [] });
         const c = map.get(id);
         c.sumLat += p.lat;
         c.sumLng += p.lng;
         c.photos.push(p);
-      });
-
-      return Array.from(map.values()).map(c => ({
+    });
+    
+    return Array.from(map.values()).map(c => ({
         center: [c.sumLat / c.photos.length, c.sumLng / c.photos.length],
         photos: c.photos,
-      }));
-    };
+    }));
+};
 
-    // pre‑costruisci i cluster per 4 livelli (step 20°, 8°, 4°, 0°)
-    const clusterLevels = useMemo(() => {
-      const steps = [20, 8, 4, 0.32]; // step finale per cluster precisi: 35 km
-      return steps.map(step => buildClustersForStep(validPhotos, step));
-    }, [validPhotos]);
+// pre‑costruisci i cluster per 4 livelli (step 20°, 8°, 4°, 0°)
+const clusterLevels = useMemo(() => {
+    const steps = [20, 8, 4, 0.32]; // step finale per cluster precisi: 35 km
+    return steps.map(step => buildClustersForStep(validPhotos, step));
+}, [validPhotos]);
 
-    // livello corrente dei cluster
-    const currentClusterLevelRef = useRef(-1);
+// livello corrente dei cluster
+const currentClusterLevelRef = useRef(-1);
 
-    // rimuove i marker vecchi e disegna quelli del livello richiesto
-    const drawMarkersForLevel = useCallback((level) => {
-      // elimina marker esistenti
-      markersRef.current.forEach(m => sceneRef.current?.remove(m));
-      markersRef.current = [];
-      markerObjectsRef.current = [];
-
-      clusterLevels[level].forEach(cluster => {
+// rimuove i marker vecchi e disegna quelli del livello richiesto
+const drawMarkersForLevel = useCallback((level) => {
+    // elimina marker esistenti
+    markersRef.current.forEach(m => sceneRef.current?.remove(m));
+    markersRef.current = [];
+    markerObjectsRef.current = [];
+    
+    clusterLevels[level].forEach(cluster => {
         const pos = latLngToVector3(
-          cluster.center[0],
-          cluster.center[1],
-          GLOBE_RADIUS
+            cluster.center[0],
+            cluster.center[1],
+            GLOBE_RADIUS
         );
         const isCluster = cluster.photos.length > 1;
         const marker = createMarker(pos, cluster.photos[0], isCluster); // riusa foto 0
@@ -425,11 +425,11 @@ const createMarker = useCallback((position, photo, isCluster = false) => {
         sceneRef.current.add(marker);
         markersRef.current.push(marker);
         marker.traverse(child => {
-          if (child.isMesh) markerObjectsRef.current.push(child);
+            if (child.isMesh) markerObjectsRef.current.push(child);
         });
-      });
-    }, [clusterLevels, latLngToVector3, createMarker]);
-    // ————————————————————————————————————————————————
+    });
+}, [clusterLevels, latLngToVector3, createMarker]);
+// ————————————————————————————————————————————————
 
 
 // throttle ottimizzato
@@ -443,18 +443,24 @@ const throttle = useCallback((func, limit) => {
     };
 }, []);
 
-const scheduleAutoRotateResume = useCallback((delay = RESUME_ROTATE_DELAY) => {    if (!controlsRef.current) return;
+const scheduleAutoRotateResume = useCallback((delay = RESUME_ROTATE_DELAY) => {
+    if (!controlsRef.current) return;
     if (autoRotateTimerRef.current) {
         clearTimeout(autoRotateTimerRef.current);
     }
     autoRotateTimerRef.current = setTimeout(() => {
         // don't resume auto-rotate if modal is open
         if (controlsRef.current && !modalOpen) {
+            // clear any hover state and hide popup
+            markersRef.current.forEach(m => m.isHovered = false);
+            setHoveredMarker(null);
+            setCanvasCursor('grab');
+            // resume auto-rotation
             controlsRef.current.autoRotate = true;
             setAutoRotate(true);
         }
     }, delay);
-}, [setAutoRotate, modalOpen]);
+}, [setAutoRotate, modalOpen, setHoveredMarker, setCanvasCursor]);
 
 // Creates custom controls for the camera
 const createCustomControls = useCallback((camera, domElement) => {
@@ -576,6 +582,7 @@ const createCustomControls = useCallback((camera, domElement) => {
         onWheel: function(event) {
             if (!this.enabled) return;
             event.preventDefault();
+            setCanvasCursor('grab');
             
             const absX = Math.abs(event.deltaX || 0);
             const absY = Math.abs(event.deltaY || 0);
@@ -871,53 +878,50 @@ useEffect(() => {
             if (!isDraggingRef.current) setCanvasCursor('pointer');
             
         } else {
-            // fuori da tutti i marker
-            if (hoveredMarker) {
-                const prev = markersRef.current.find(m => m.userData === hoveredMarker);
-                if (prev) prev.isHovered = false;
-                setHoveredMarker(null);
-            }
+            // fuori da tutti i marker: rimuovi hover e nascondi popup
+            markersRef.current.forEach(m => m.isHovered = false);
+            setHoveredMarker(null);
             if (!isDraggingRef.current) setCanvasCursor('grab');
         }
     }, 50); // Throttle a 50ms per ridurre il carico
     
     const handleClick = (event) => {
-      const rect = renderer.domElement.getBoundingClientRect();
-      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-      raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(markerObjectsRef.current);
-
-      if (intersects.length === 0) return;
-
-      const mesh         = intersects[0].object;
-      // il “gruppo” completo è sempre il parent di livello 1 (vedi createMarker)
-      const markerGroup   = mesh.parent ?? mesh;
-      const photosInMarker = markerGroup.userData?.photos ?? [];
-
-      if (Array.isArray(photosInMarker) && photosInMarker.length > 1) {
-        // CLUSTER  -> apri modalità galleria
-        if (actions.openGalleryModal) {
-          actions.openGalleryModal(photosInMarker);
-        } else {
-          // fallback: apri la prima foto se la funzione non esiste ancora
-          actions.openPhotoModal(photosInMarker[0]);
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        
+        raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObjects(markerObjectsRef.current);
+        
+        if (intersects.length === 0) return;
+        
+        const mesh         = intersects[0].object;
+        // il “gruppo” completo è sempre il parent di livello 1 (vedi createMarker)
+        const markerGroup   = mesh.parent ?? mesh;
+        const photosInMarker = markerGroup.userData?.photos ?? [];
+        
+        if (Array.isArray(photosInMarker) && photosInMarker.length > 1) {
+            // CLUSTER  -> apri modalità galleria
+            if (actions.openGalleryModal) {
+                actions.openGalleryModal(photosInMarker);
+            } else {
+                // fallback: apri la prima foto se la funzione non esiste ancora
+                actions.openPhotoModal(photosInMarker[0]);
+            }
+            return;
         }
-        return;
-      }
-
-      // FOTO SINGOLA  -> flusso classico
-      const photo  = photosInMarker.length === 1 ? photosInMarker[0] : null;
-      const full   = photo
+        
+        // FOTO SINGOLA  -> flusso classico
+        const photo  = photosInMarker.length === 1 ? photosInMarker[0] : null;
+        const full   = photo
         ? photos.find(p => String(p.id) === String(photo.id)) || photo
         : null;
-
-      if (full) {
-        focusOnPhoto(full, FOCUS_OFFSET_RADIUS, 900, () => {
-          actions.openPhotoModal(full);
-        });
-      }
+        
+        if (full) {
+            focusOnPhoto(full, FOCUS_OFFSET_RADIUS, 900, () => {
+                actions.openPhotoModal(full);
+            });
+        }
     };
     
     // Event listeners
@@ -940,6 +944,19 @@ useEffect(() => {
     
     canvas.addEventListener('mousemove', handleMouseMove);
     canvas.addEventListener('click', handleClick);
+    canvas.addEventListener('mouseleave', () => {
+        setCanvasCursor('grab');
+    });
+
+    // --- Clear hover on wheel/touch to hide InfoPopup when rotating/zooming ---
+    const clearHover = () => {
+        markersRef.current.forEach(m => m.isHovered = false);
+        setHoveredMarker(null);
+    };
+    canvas.addEventListener('wheel', clearHover, { passive: true });
+    canvas.addEventListener('touchstart', clearHover, { passive: true });
+    canvas.addEventListener('touchmove', clearHover, { passive: true });
+    canvas.addEventListener('touchend', clearHover);
     
     // Animation loop ottimizzato
     const clock = new THREE.Clock();
@@ -957,18 +974,18 @@ useEffect(() => {
         
         // Anima i marker solo ogni 3 frame per performance
         if (frameCount % 3 === 0) {
-          // scala da 1 (lontano) a 0.35 (molto vicino)
-          const scaleFactor = THREE.MathUtils.clamp(
-            camera.position.length() / CAMERA_START_Z,
-            0.35,
-            1
-          );
-
-          markersRef.current.forEach((marker) => {
-            if (marker.pulseScale) {
-              marker.pulseScale(elapsedTime, scaleFactor);
-            }
-          });
+            // scala da 1 (lontano) a 0.35 (molto vicino)
+            const scaleFactor = THREE.MathUtils.clamp(
+                camera.position.length() / CAMERA_START_Z,
+                0.35,
+                1
+            );
+            
+            markersRef.current.forEach((marker) => {
+                if (marker.pulseScale) {
+                    marker.pulseScale(elapsedTime, scaleFactor);
+                }
+            });
         }
         
         // Rotazione lenta delle stelle solo ogni 5 frame
@@ -976,12 +993,12 @@ useEffect(() => {
             stars.rotation.x += 0.0001;
             stars.rotation.y += 0.0002;
         }
-
+        
         // se la distanza camera cambia livello, ridisegna i marker
         const lvlNow = radiusToLevel(camera.position.length());
         if (lvlNow !== currentClusterLevelRef.current) {
-          currentClusterLevelRef.current = lvlNow;
-          drawMarkersForLevel(lvlNow);
+            currentClusterLevelRef.current = lvlNow;
+            drawMarkersForLevel(lvlNow);
         }
         
         renderer.render(scene, camera);
@@ -1007,20 +1024,25 @@ useEffect(() => {
     // Cleanup ottimizzata
     return () => {
         window.removeEventListener('resize', handleResize);
-        
+
         const currentCanvas = renderer.domElement;
         currentCanvas.removeEventListener('mousemove', handleMouseMove);
         currentCanvas.removeEventListener('click', handleClick);
-        
+        // Remove clearHover listeners
+        currentCanvas.removeEventListener('wheel', clearHover);
+        currentCanvas.removeEventListener('touchstart', clearHover);
+        currentCanvas.removeEventListener('touchmove', clearHover);
+        currentCanvas.removeEventListener('touchend', clearHover);
+
         if (controlsRef.current) {
             controlsRef.current.dispose();
         }
-        
+
         const currentMount = mountRef.current;
         if (currentMount && currentCanvas) {
             currentMount.removeChild(currentCanvas);
         }
-        
+
         // Dispose completo delle risorse
         scene.traverse((child) => {
             if (child.geometry) child.geometry.dispose();
@@ -1040,7 +1062,7 @@ useEffect(() => {
                 }
             }
         });
-        
+
         renderer.dispose();
         document.body.style.cursor = 'default';
         if (autoRotateTimerRef.current) { clearTimeout(autoRotateTimerRef.current); }
@@ -1308,22 +1330,22 @@ const stats = useMemo(() => {
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.8 }}
             style={{
-                left: mousePosition.x + 10,
-                top: mousePosition.y - 80
+                bottom: '20px',
+                right: '20px'
             }}
             >
             <h4>
-                {hoveredMarker.isCluster 
-                    ? `${hoveredMarker.photoCount} foto in zona`
-                    : hoveredMarker.title
-                }
+            {hoveredMarker.isCluster 
+                ? `${hoveredMarker.photoCount} foto in zona`
+                : hoveredMarker.title
+            }
             </h4>
             <p>📍 {hoveredMarker.location}</p>
             <p style={{ fontSize: '0.75rem', opacity: 0.6 }}>
-                {hoveredMarker.isCluster 
-                    ? `Clicca per vedere tutte le ${hoveredMarker.photoCount} foto`
-                    : 'Clicca per vedere la foto'
-                }
+            {hoveredMarker.isCluster 
+                ? `Clicca per vedere tutte le ${hoveredMarker.photoCount} foto`
+                : 'Clicca per vedere la foto'
+            }
             </p>
             </InfoPopup>
         )}

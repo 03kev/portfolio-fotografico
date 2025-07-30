@@ -21,7 +21,7 @@ NC='\033[0m'
 # Variabili globali
 BACKEND_PID=""
 FRONTEND_PID=""
-BACKEND_PORT=5000
+BACKEND_PORT=5001
 FRONTEND_PORT=3000
 
 # Funzioni di utilità
