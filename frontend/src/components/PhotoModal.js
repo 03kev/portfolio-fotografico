@@ -263,237 +263,244 @@ const ActionButton = styled(motion.button)`
 `;
 
 const PhotoModal = () => {
-  const { modalOpen, selectedPhoto, actions } = usePhotos();
-
-  useEffect(() => {
-    if (modalOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'auto';
-    }
-
-    return () => {
-      document.body.style.overflow = 'auto';
+    const { modalOpen, selectedPhoto, actions } = usePhotos();
+    
+    useEffect(() => {
+        if (modalOpen) {
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = 'auto';
+        }
+        
+        return () => {
+            document.body.style.overflow = 'auto';
+        };
+    }, [modalOpen]);
+    
+    useEffect(() => {
+        const handleEscape = (e) => {
+            if (e.key === 'Escape') {
+                actions.closePhotoModal();
+            }
+        };
+        
+        if (modalOpen) {
+            document.addEventListener('keydown', handleEscape);
+        }
+        
+        return () => {
+            document.removeEventListener('keydown', handleEscape);
+        };
+    }, [modalOpen, actions]);
+    
+    const handleOverlayClick = (e) => {
+        if (e.target === e.currentTarget) {
+            actions.closePhotoModal();
+        }
     };
-  }, [modalOpen]);
-
-  useEffect(() => {
-    const handleEscape = (e) => {
-      if (e.key === 'Escape') {
+        
+    const handleLocationClick = () => {
+        if (selectedPhoto) {
+            actions.closePhotoModal();
+            
+            setTimeout(() => {
+                actions.focusOnPhoto(selectedPhoto);
+                const mapSection = document.getElementById('world-map-3d');
+                if (mapSection) {
+                    mapSection.scrollIntoView({ behavior: 'smooth' });
+                }
+            }, 100);
+        }
+    };
+    
+    const handleTagClick = (tag) => {
+        // Resettiamo tutti i filtri e impostiamo solo il tag selezionato
+        actions.setFilter({ search: '', tags: [tag], location: '' });
         actions.closePhotoModal();
-      }
+        const gallerySection = document.getElementById('galleria');
+        if (gallerySection) {
+            setTimeout(() => {
+                gallerySection.scrollIntoView({ behavior: 'smooth' });
+            }, 150);
+        }
     };
-
-    if (modalOpen) {
-      document.addEventListener('keydown', handleEscape);
-    }
-
-    return () => {
-      document.removeEventListener('keydown', handleEscape);
+    
+    const formatDate = (dateString) => {
+        return new Date(dateString).toLocaleDateString('it-IT', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
     };
-  }, [modalOpen, actions]);
-
-  const handleOverlayClick = (e) => {
-    if (e.target === e.currentTarget) {
-      actions.closePhotoModal();
-    }
-  };
-
-  const handleLocationClick = () => {
-    if (selectedPhoto) {
-      actions.focusOnPhoto(selectedPhoto);
-      actions.closePhotoModal();
-    }
-  };
-
-  const handleTagClick = (tag) => {
-    actions.setFilter({ tags: [tag] });
-    actions.closePhotoModal();
-    // Scroll to gallery
-    const gallerySection = document.getElementById('galleria');
-    if (gallerySection) {
-      setTimeout(() => {
-        gallerySection.scrollIntoView({ behavior: 'smooth' });
-      }, 100);
-    }
-  };
-
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('it-IT', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
-  };
-
-  if (!selectedPhoto) return null;
-
-  return (
-    <AnimatePresence>
-      {modalOpen && (
-        <ModalOverlay
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={handleOverlayClick}
-        >
-          <ModalContent
+    
+    if (!selectedPhoto) return null;
+    
+    return (
+        <AnimatePresence>
+        {modalOpen && (
+            <ModalOverlay
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={handleOverlayClick}
+            >
+            <ModalContent
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.8, opacity: 0 }}
             transition={{ duration: 0.3 }}
             onClick={(e) => e.stopPropagation()}
-          >
-            <CloseButton
-              onClick={actions.closePhotoModal}
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
             >
-              ×
+            <CloseButton
+            onClick={actions.closePhotoModal}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            >
+            ×
             </CloseButton>
-
+            
             <ImageContainer>
-              <ModalImage
-                src={`${IMAGES_BASE_URL}${selectedPhoto.image}`}
-                alt={selectedPhoto.title}
-                initial={{ scale: 1.1 }}
-                animate={{ scale: 1 }}
-                transition={{ duration: 0.4 }}
-                onError={(e) => {
-                  e.target.src = `https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1200&h=900&fit=crop`;
-                }}
-              />
+            <ModalImage
+            src={`${IMAGES_BASE_URL}${selectedPhoto.image}`}
+            alt={selectedPhoto.title}
+            initial={{ scale: 1.1 }}
+            animate={{ scale: 1 }}
+            transition={{ duration: 0.4 }}
+            onError={(e) => {
+                e.target.src = `https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1200&h=900&fit=crop`;
+            }}
+            />
             </ImageContainer>
-
+            
             <InfoPanel>
-              <PhotoTitle
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: 0.1 }}
-              >
-                {selectedPhoto.title}
-              </PhotoTitle>
-
-              <PhotoLocation
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: 0.2 }}
-                onClick={handleLocationClick}
-              >
-                📍 {selectedPhoto.location}
-              </PhotoLocation>
-
-              <PhotoDescription
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: 0.3 }}
-              >
-                {selectedPhoto.description}
-              </PhotoDescription>
-
-              {selectedPhoto.camera && (
+            <PhotoTitle
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.1 }}
+            >
+            {selectedPhoto.title}
+            </PhotoTitle>
+            
+            <PhotoLocation
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.2 }}
+            onClick={handleLocationClick}
+            >
+            📍 {selectedPhoto.location}
+            </PhotoLocation>
+            
+            <PhotoDescription
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.3 }}
+            >
+            {selectedPhoto.description}
+            </PhotoDescription>
+            
+            {selectedPhoto.camera && (
                 <MetadataSection
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.4, delay: 0.4 }}
-                >
-                  <MetadataTitle>Dati Tecnici</MetadataTitle>
-                  <MetadataGrid>
-                    <MetadataItem>
-                      <div className="label">Camera</div>
-                      <div className="value">{selectedPhoto.camera}</div>
-                    </MetadataItem>
-                    {selectedPhoto.lens && (
-                      <MetadataItem>
-                        <div className="label">Obiettivo</div>
-                        <div className="value">{selectedPhoto.lens}</div>
-                      </MetadataItem>
-                    )}
-                    {selectedPhoto.settings && (
-                      <>
-                        <MetadataItem>
-                          <div className="label">Apertura</div>
-                          <div className="value">{selectedPhoto.settings.aperture}</div>
-                        </MetadataItem>
-                        <MetadataItem>
-                          <div className="label">Tempo</div>
-                          <div className="value">{selectedPhoto.settings.shutter}</div>
-                        </MetadataItem>
-                        <MetadataItem>
-                          <div className="label">ISO</div>
-                          <div className="value">{selectedPhoto.settings.iso}</div>
-                        </MetadataItem>
-                        <MetadataItem>
-                          <div className="label">Focale</div>
-                          <div className="value">{selectedPhoto.settings.focal}</div>
-                        </MetadataItem>
-                      </>
-                    )}
-                    <MetadataItem>
-                      <div className="label">Data</div>
-                      <div className="value">{formatDate(selectedPhoto.date)}</div>
-                    </MetadataItem>
-                  </MetadataGrid>
-                </MetadataSection>
-              )}
-
-              {selectedPhoto.tags && selectedPhoto.tags.length > 0 && (
-                <TagsContainer
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.4, delay: 0.5 }}
-                >
-                  <MetadataTitle>Tag</MetadataTitle>
-                  <TagsGrid>
-                    {selectedPhoto.tags.map((tag, index) => (
-                      <Tag
-                        key={tag}
-                        onClick={() => handleTagClick(tag)}
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ duration: 0.3, delay: 0.1 * index }}
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                      >
-                        {tag}
-                      </Tag>
-                    ))}
-                  </TagsGrid>
-                </TagsContainer>
-              )}
-
-              <ActionButtons
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: 0.6 }}
-              >
-                <ActionButton
-                  onClick={handleLocationClick}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
+                transition={{ duration: 0.4, delay: 0.4 }}
                 >
-                  📍 Vai alla Mappa
-                </ActionButton>
-                <ActionButton
-                  className="primary"
-                  onClick={() => {
-                    const link = document.createElement('a');
-                    link.href = `https://images.unsplash.com/photo-${selectedPhoto.id > 3 ? '1516426122078-c23e76319801' : '1506905925346-21bda4d32df4'}?w=1920&h=1080&fit=crop`;
-                    link.download = `${selectedPhoto.title}.jpg`;
-                    link.click();
-                  }}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
+                <MetadataTitle>Dati Tecnici</MetadataTitle>
+                <MetadataGrid>
+                <MetadataItem>
+                <div className="label">Camera</div>
+                <div className="value">{selectedPhoto.camera}</div>
+                </MetadataItem>
+                {selectedPhoto.lens && (
+                    <MetadataItem>
+                    <div className="label">Obiettivo</div>
+                    <div className="value">{selectedPhoto.lens}</div>
+                    </MetadataItem>
+                )}
+                {selectedPhoto.settings && (
+                    <>
+                    <MetadataItem>
+                    <div className="label">Apertura</div>
+                    <div className="value">{selectedPhoto.settings.aperture}</div>
+                    </MetadataItem>
+                    <MetadataItem>
+                    <div className="label">Tempo</div>
+                    <div className="value">{selectedPhoto.settings.shutter}</div>
+                    </MetadataItem>
+                    <MetadataItem>
+                    <div className="label">ISO</div>
+                    <div className="value">{selectedPhoto.settings.iso}</div>
+                    </MetadataItem>
+                    <MetadataItem>
+                    <div className="label">Focale</div>
+                    <div className="value">{selectedPhoto.settings.focal}</div>
+                    </MetadataItem>
+                    </>
+                )}
+                <MetadataItem>
+                <div className="label">Data</div>
+                <div className="value">{formatDate(selectedPhoto.date)}</div>
+                </MetadataItem>
+                </MetadataGrid>
+                </MetadataSection>
+            )}
+            
+            {selectedPhoto.tags && selectedPhoto.tags.length > 0 && (
+                <TagsContainer
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 0.5 }}
                 >
-                  💾 Download
-                </ActionButton>
-              </ActionButtons>
+                <MetadataTitle>Tag</MetadataTitle>
+                <TagsGrid>
+                {selectedPhoto.tags.map((tag, index) => (
+                    <Tag
+                    key={tag}
+                    onClick={() => handleTagClick(tag)}
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.3, delay: 0.1 * index }}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    >
+                    {tag}
+                    </Tag>
+                ))}
+                </TagsGrid>
+                </TagsContainer>
+            )}
+            
+            <ActionButtons
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.6 }}
+            >
+            <ActionButton
+            onClick={handleLocationClick}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            >
+            📍 Vai alla Mappa
+            </ActionButton>
+            <ActionButton
+            className="primary"
+            onClick={() => {
+                const link = document.createElement('a');
+                link.href = `https://images.unsplash.com/photo-${selectedPhoto.id > 3 ? '1516426122078-c23e76319801' : '1506905925346-21bda4d32df4'}?w=1920&h=1080&fit=crop`;
+                link.download = `${selectedPhoto.title}.jpg`;
+                link.click();
+            }}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            >
+            💾 Download
+            </ActionButton>
+            </ActionButtons>
             </InfoPanel>
-          </ModalContent>
-        </ModalOverlay>
-      )}
-    </AnimatePresence>
-  );
+            </ModalContent>
+            </ModalOverlay>
+        )}
+        </AnimatePresence>
+    );
 };
 
 export default PhotoModal;

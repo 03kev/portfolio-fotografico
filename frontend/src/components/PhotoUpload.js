@@ -286,8 +286,9 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
                 ...formData,
                 image: selectedFile,
                 settings: JSON.stringify(formData.settings),
-                tags: JSON.stringify(formData.tags)
+                tags: formData.tags
             });
+
             const result = await actions.addPhoto(uploadData);
             // Se upload ha successo, callback esterno
             if (onUploadSuccess) onUploadSuccess(result.data);

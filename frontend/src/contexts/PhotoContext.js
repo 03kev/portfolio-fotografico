@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useRef } from 'react';
 import { photoService } from '../utils/api';
 
 const PhotoContext = createContext();
@@ -40,89 +40,90 @@ const initialState = {
 function photoReducer(state, action) {
   switch (action.type) {
     case ACTIONS.SET_LOADING:
-      return {
-        ...state,
-        loading: action.payload
-      };
+    return {
+      ...state,
+      loading: action.payload
+    };
     
     case ACTIONS.SET_PHOTOS:
-      return {
-        ...state,
-        photos: action.payload,
-        loading: false,
-        error: null
-      };
+    return {
+      ...state,
+      photos: action.payload,
+      loading: false,
+      error: null
+    };
     
     case ACTIONS.SET_ERROR:
-      return {
-        ...state,
-        error: action.payload,
-        loading: false
-      };
+    return {
+      ...state,
+      error: action.payload,
+      loading: false
+    };
     
     case ACTIONS.SET_SELECTED_PHOTO:
-      return {
-        ...state,
-        selectedPhoto: action.payload
-      };
+    return {
+      ...state,
+      selectedPhoto: action.payload
+    };
     
     case ACTIONS.SET_MODAL_OPEN:
-      return {
-        ...state,
-        modalOpen: action.payload,
-        selectedPhoto: action.payload ? state.selectedPhoto : null
-      };
+    return {
+      ...state,
+      modalOpen: action.payload,
+      selectedPhoto: action.payload ? state.selectedPhoto : null
+    };
     
     case ACTIONS.SET_GALLERY_PHOTOS:
-      return {
-        ...state,
-        galleryPhotos: action.payload
-      };
+    return {
+      ...state,
+      galleryPhotos: action.payload
+    };
     
     case ACTIONS.SET_GALLERY_MODAL_OPEN:
-      return {
-        ...state,
-        galleryModalOpen: action.payload,
-        galleryPhotos: action.payload ? state.galleryPhotos : []
-      };
+    return {
+      ...state,
+      galleryModalOpen: action.payload,
+      galleryPhotos: action.payload ? state.galleryPhotos : []
+    };
     
     case ACTIONS.ADD_PHOTO:
-      return {
-        ...state,
-        photos: [action.payload, ...state.photos]
-      };
+    return {
+      ...state,
+      photos: [action.payload, ...state.photos]
+    };
     
     case ACTIONS.DELETE_PHOTO:
-      return {
-        ...state,
-        photos: state.photos.filter(photo => photo.id !== action.payload)
-      };
+    return {
+      ...state,
+      photos: state.photos.filter(photo => photo.id !== action.payload)
+    };
     
     case ACTIONS.SET_MAP_CENTER:
-      return {
-        ...state,
-        mapCenter: action.payload.center,
-        mapZoom: action.payload.zoom || state.mapZoom
-      };
+    return {
+      ...state,
+      mapCenter: action.payload.center,
+      mapZoom: action.payload.zoom || state.mapZoom
+    };
     
     case ACTIONS.SET_FILTER:
-      return {
-        ...state,
-        filters: {
-          ...state.filters,
-          ...action.payload
-        }
-      };
+    return {
+      ...state,
+      filters: {
+        ...state.filters,
+        ...action.payload
+      }
+    };
     
     default:
-      return state;
+    return state;
   }
 }
 
 // Provider Component
 export function PhotoProvider({ children }) {
   const [state, dispatch] = useReducer(photoReducer, initialState);
-
+  const focusHandlerRef = useRef(null);
+  
   // Actions
   const actions = {
     // Fetch photos from API
@@ -137,29 +138,29 @@ export function PhotoProvider({ children }) {
         dispatch({ type: ACTIONS.SET_ERROR, payload: 'Errore nel caricamento delle foto' });
       }
     },
-
+    
     // Open photo modal
     openPhotoModal: (photo) => {
       dispatch({ type: ACTIONS.SET_SELECTED_PHOTO, payload: photo });
       dispatch({ type: ACTIONS.SET_MODAL_OPEN, payload: true });
     },
-
+    
     // Close photo modal
     closePhotoModal: () => {
       dispatch({ type: ACTIONS.SET_MODAL_OPEN, payload: false });
     },
-
+    
     // Open gallery modal for clusters
     openGalleryModal: (photos) => {
       dispatch({ type: ACTIONS.SET_GALLERY_PHOTOS, payload: photos });
       dispatch({ type: ACTIONS.SET_GALLERY_MODAL_OPEN, payload: true });
     },
-
+    
     // Close gallery modal
     closeGalleryModal: () => {
       dispatch({ type: ACTIONS.SET_GALLERY_MODAL_OPEN, payload: false });
     },
-
+    
     // Set map center
     setMapCenter: (lat, lng, zoom = 10) => {
       dispatch({ 
@@ -167,17 +168,15 @@ export function PhotoProvider({ children }) {
         payload: { center: [lat, lng], zoom } 
       });
     },
-
-    // Focus on photo location
-    focusOnPhoto: (photo) => {
-      actions.setMapCenter(photo.lat, photo.lng, 12);
-      // Scroll to map section
-      const mapSection = document.getElementById('mappa');
-      if (mapSection) {
-        mapSection.scrollIntoView({ behavior: 'smooth' });
-      }
+    
+    // permetti di registrare il focus handler
+    registerFocusHandler: handler => { focusHandlerRef.current = handler },
+    // e di richiamarlo
+    focusOnPhoto: photo => {
+      if (typeof focusHandlerRef.current === 'function')
+        focusHandlerRef.current(photo);
     },
-
+    
     // Add new photo
     addPhoto: async (photoData) => {
       try {
@@ -198,7 +197,7 @@ export function PhotoProvider({ children }) {
         throw error;
       }
     },
-
+    
     // Delete photo
     deletePhoto: async (photoId) => {
       try {
@@ -209,12 +208,12 @@ export function PhotoProvider({ children }) {
         throw error;
       }
     },
-
+    
     // Set filters
     setFilter: (filterData) => {
       dispatch({ type: ACTIONS.SET_FILTER, payload: filterData });
     },
-
+    
     // Clear filters
     clearFilters: () => {
       dispatch({ 
@@ -223,7 +222,7 @@ export function PhotoProvider({ children }) {
       });
     }
   };
-
+  
   // Load photos on mount
   useEffect(() => {
     const fetchPhotos = async () => {
@@ -237,10 +236,10 @@ export function PhotoProvider({ children }) {
         dispatch({ type: ACTIONS.SET_ERROR, payload: 'Errore nel caricamento delle foto' });
       }
     };
-
+    
     fetchPhotos();
   }, []);
-
+  
   // Filtered photos based on current filters
   const filteredPhotos = state.photos.filter(photo => {
     const { search, tags, location } = state.filters;
@@ -252,8 +251,8 @@ export function PhotoProvider({ children }) {
     
     // Search filter
     if (search && !photo.title.toLowerCase().includes(search.toLowerCase()) &&
-        !photo.description.toLowerCase().includes(search.toLowerCase()) &&
-        !photo.location.toLowerCase().includes(search.toLowerCase())) {
+    !photo.description.toLowerCase().includes(search.toLowerCase()) &&
+    !photo.location.toLowerCase().includes(search.toLowerCase())) {
       return false;
     }
     
@@ -272,16 +271,16 @@ export function PhotoProvider({ children }) {
     
     return true;
   });
-
+  
   const value = {
     ...state,
     filteredPhotos,
     actions
   };
-
+  
   return (
     <PhotoContext.Provider value={value}>
-      {children}
+    {children}
     </PhotoContext.Provider>
   );
 }

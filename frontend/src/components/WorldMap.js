@@ -244,7 +244,7 @@ const WorldMap = () => {
     const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
     const [adjustedPosition, setAdjustedPosition] = useState({ x: 0, y: 0 });
     const popupRef = useRef(null);
-
+    
     useLayoutEffect(() => {
         if (!popupRef.current) return;
         const { offsetWidth: w, offsetHeight: h } = popupRef.current;
@@ -343,22 +343,6 @@ const createMarker = useCallback((position, photo, isCluster = false) => {
     const normal = position.clone().normalize();
     dot.translateOnAxis(normal, 0.015);
     markerGroup.add(dot);
-    
-    // Add a ring for clusters to make them more visible
-    if (isCluster) {
-        const ringGeometry = new THREE.RingGeometry(size * 1.3, size * 1.5, 16);
-        const ringMaterial = new THREE.MeshBasicMaterial({
-            color: 0x4facfe,
-            transparent: true,
-            opacity: 0.4,
-            side: THREE.DoubleSide
-        });
-        const ring = new THREE.Mesh(ringGeometry, ringMaterial);
-        ring.translateOnAxis(normal, 0.02);
-        ring.lookAt(position.clone().add(normal.clone().multiplyScalar(2)));
-        markerGroup.add(ring);
-        markerGroup.ring = ring;
-    }
     
     // states
     markerGroup.isHovered  = false;
@@ -1199,6 +1183,9 @@ const focusOnPhoto = (
     requestAnimationFrame(animate);
 };
 
+useEffect(() => {
+    actions.registerFocusHandler(focusOnPhoto);
+}, [actions, focusOnPhoto]);
 
 // Gestisci la rotazione della terra in base allo stato del modal
 // effetto completo per gestire l’apertura/chiusura del modal
@@ -1329,6 +1316,7 @@ const stats = useMemo(() => {
     
     return (
         <MapSection
+        id="world-map-3d"
         ref={ref}
         variants={sectionVariants}
         initial="hidden"

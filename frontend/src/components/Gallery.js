@@ -249,7 +249,24 @@ const Gallery = () => {
   const allTags = [...new Set(photos.flatMap(photo => {
     return Array.isArray(photo.tags) ? photo.tags : [];
   }))];
-  const filters = ['all', ...allTags];
+  const filterOptions = ['all', ...allTags];
+
+  // Effetto per sincronizzare il filtro attivo con i filtri del context
+  const { filters: contextFilters } = usePhotos();
+  useEffect(() => {
+    // Se c'è un filtro tag attivo nel context che non corrisponde al nostro activeFilter
+    if (contextFilters.tags && contextFilters.tags.length > 0 && contextFilters.tags[0] !== activeFilter) {
+      setActiveFilter(contextFilters.tags[0]);
+    } else if ((!contextFilters.tags || contextFilters.tags.length === 0) && activeFilter !== 'all') {
+      // Se non ci sono filtri tag nel context ma abbiamo un filtro attivo, resettiamo
+      setActiveFilter('all');
+    }
+    
+    // Sincronizza anche il termine di ricerca
+    if (contextFilters.search !== searchTerm) {
+      setSearchTerm(contextFilters.search || '');
+    }
+  }, [contextFilters.tags, contextFilters.search, activeFilter, searchTerm]);
 
   useEffect(() => {
     // Applica filtri
@@ -263,6 +280,11 @@ const Gallery = () => {
 
   const handleFilterClick = (filter) => {
     setActiveFilter(filter);
+    // Se clicchiamo su "Tutti", resettiamo completamente i filtri
+    if (filter === 'all') {
+      actions.clearFilters();
+      setSearchTerm('');
+    }
   };
 
   const handleSearchChange = (e) => {
@@ -338,7 +360,7 @@ const Gallery = () => {
         </SearchContainer>
 
         <FilterContainer>
-          {filters.map((filter, index) => (
+          {filterOptions.map((filter, index) => (
             <FilterButton
               key={filter}
               active={activeFilter === filter}
