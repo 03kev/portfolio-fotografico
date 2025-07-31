@@ -44,12 +44,12 @@ const FilterContainer = styled(motion.div)`
 
 const FilterButton = styled(motion.button)`
   background: ${props => props.active 
-    ? 'var(--accent-gradient)' 
-    : 'rgba(255, 255, 255, 0.1)'};
+? 'var(--accent-gradient)' 
+: 'rgba(255, 255, 255, 0.1)'};
   color: var(--color-white);
   border: 1px solid ${props => props.active 
-    ? 'transparent' 
-    : 'rgba(255, 255, 255, 0.2)'};
+? 'transparent' 
+: 'rgba(255, 255, 255, 0.2)'};
   padding: var(--spacing-sm) var(--spacing-lg);
   border-radius: var(--border-radius-full);
   font-size: var(--font-size-sm);
@@ -60,8 +60,8 @@ const FilterButton = styled(motion.button)`
 
   &:hover {
     background: ${props => props.active 
-      ? 'var(--accent-gradient)' 
-      : 'rgba(255, 255, 255, 0.15)'};
+? 'var(--accent-gradient)' 
+: 'rgba(255, 255, 255, 0.15)'};
     transform: translateY(-2px);
   }
 
@@ -241,188 +241,185 @@ const NoResults = styled(motion.div)`
 `;
 
 const Gallery = () => {
-  const { photos, filteredPhotos, loading, actions, filters } = usePhotos();
-  
-  // Inizializza lo stato locale con i valori del context
-  const [activeFilter, setActiveFilter] = useState(() => {
-    return filters.tags && filters.tags.length > 0 ? filters.tags[0] : 'all';
-  });
-  const [searchTerm, setSearchTerm] = useState(() => {
-    return filters.search || '';
-  });
-
-  // Estrai tutti i tag unici dalle foto - gestisci il caso in cui tags non sia un array
-  const allTags = [...new Set(photos.flatMap(photo => {
-    return Array.isArray(photo.tags) ? photo.tags : [];
-  }))];
-  const filterOptions = ['all', ...allTags];
-
-  // Effetto per applicare i filtri quando cambiano activeFilter o searchTerm
-  useEffect(() => {
+const { photos, filteredPhotos, loading, actions, filters, gallerySyncTrigger } = usePhotos();
+    
+    // Inizializza lo stato locale con i valori del context
+    const [activeFilter, setActiveFilter] = useState(() => {
+        return filters.tags && filters.tags.length > 0 ? filters.tags[0] : 'all';
+    });
+    const [searchTerm, setSearchTerm] = useState(() => {
+        return filters.search || '';
+    });
+    
+    // Estrai tutti i tag unici dalle foto - gestisci il caso in cui tags non sia un array
+    const allTags = [...new Set(photos.flatMap(photo => {
+        return Array.isArray(photo.tags) ? photo.tags : [];
+    }))];
+    const filterOptions = ['all', ...allTags];
+    
+    // Effetto per applicare i filtri quando cambiano activeFilter o searchTerm
+    useEffect(() => {
     const filterData = {};
     if (searchTerm) filterData.search = searchTerm;
     if (activeFilter !== 'all') filterData.tags = [activeFilter];
     actions.setFilter(filterData);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeFilter, searchTerm]);
+    }, [activeFilter, searchTerm]);
 
-  // Effetto per sincronizzare quando i filtri vengono impostati dall'esterno (es. PhotoModal)
-  // Ma solo quando il componente non sta già gestendo l'aggiornamento
+  // Effetto che si attiva quando il trigger di sincronizzazione cambia (dal PhotoModal)
   useEffect(() => {
-    const currentTag = filters.tags && filters.tags.length > 0 ? filters.tags[0] : 'all';
-    const currentSearch = filters.search || '';
+    if (gallerySyncTrigger > 0) {
+      // Sincronizza lo stato con i filtri del context
+      const contextTag = filters.tags && filters.tags.length > 0 ? filters.tags[0] : 'all';
+      const contextSearch = filters.search || '';
+      
+      setActiveFilter(contextTag);
+      setSearchTerm(contextSearch);
+    }
+  }, [gallerySyncTrigger, filters.tags, filters.search]);
     
-    // Aggiorna solo se i valori sono effettivamente diversi
-    if (currentTag !== activeFilter) {
-      setActiveFilter(currentTag);
-    }
-    if (currentSearch !== searchTerm) {
-      setSearchTerm(currentSearch);
-    }
-  }, [filters.tags?.join(','), filters.search]); // Solo quando questi valori cambiano realmente
-
-  const handleFilterClick = (filter) => {
-    setActiveFilter(filter);
+    const handleFilterClick = (filter) => {
+        setActiveFilter(filter);
+        
+        // Se clicchiamo su "Tutti", resettiamo completamente i filtri
+        if (filter === 'all') {
+            actions.clearFilters();
+            setSearchTerm('');
+        }
+    };
     
-    // Se clicchiamo su "Tutti", resettiamo completamente i filtri
-    if (filter === 'all') {
-      actions.clearFilters();
-      setSearchTerm('');
-    }
-  };
-
-  const handleSearchChange = (e) => {
-    setSearchTerm(e.target.value);
-  };
-
-  const handlePhotoClick = (photo) => {
-    actions.openPhotoModal(photo);
-  };
-
-  // Varianti di animazione rimosse temporaneamente perché non utilizzate
-  // const sectionVariants = {
-  //   hidden: { opacity: 0, y: 50 },
-  //   visible: {
-  //     opacity: 1,
-  //     y: 0,
-  //     transition: {
-  //       duration: 0.8,
-  //       staggerChildren: 0.2
-  //     }
-  //   }
-  // };
-
-  // const itemVariants = {
-  //   hidden: { opacity: 0, y: 30 },
-  //   visible: {
-  //     opacity: 1,
-  //     y: 0,
-  //     transition: { duration: 0.6 }
-  //   }
-  // };
-
-  // const cardVariants = {
-  //   hidden: { opacity: 0, scale: 0.8 },
-  //   visible: {
-  //     opacity: 1,
-  //     scale: 1,
-  //     transition: { duration: 0.4 }
-  //   },
-  //   hover: {
-  //     y: -10,
-  //     transition: { duration: 0.3 }
-  //   }
-  // };
-
-  if (loading) {
-    return (
-      <GallerySection>
-        <Container>
-          <LoadingContainer>
+    const handleSearchChange = (e) => {
+        setSearchTerm(e.target.value);
+    };
+    
+    const handlePhotoClick = (photo) => {
+        actions.openPhotoModal(photo);
+    };
+    
+    // Varianti di animazione rimosse temporaneamente perché non utilizzate
+    // const sectionVariants = {
+    //   hidden: { opacity: 0, y: 50 },
+    //   visible: {
+    //     opacity: 1,
+    //     y: 0,
+    //     transition: {
+    //       duration: 0.8,
+    //       staggerChildren: 0.2
+    //     }
+    //   }
+    // };
+    
+    // const itemVariants = {
+    //   hidden: { opacity: 0, y: 30 },
+    //   visible: {
+    //     opacity: 1,
+    //     y: 0,
+    //     transition: { duration: 0.6 }
+    //   }
+    // };
+    
+    // const cardVariants = {
+    //   hidden: { opacity: 0, scale: 0.8 },
+    //   visible: {
+    //     opacity: 1,
+    //     scale: 1,
+    //     transition: { duration: 0.4 }
+    //   },
+    //   hover: {
+    //     y: -10,
+    //     transition: { duration: 0.3 }
+    //   }
+    // };
+    
+    if (loading) {
+        return (
+            <GallerySection>
+            <Container>
+            <LoadingContainer>
             <LoadingSpinner />
-          </LoadingContainer>
-        </Container>
-      </GallerySection>
-    );
-  }
-
-  return (
-    <GallerySection>
-      <Container>
+            </LoadingContainer>
+            </Container>
+            </GallerySection>
+        );
+    }
+    
+    return (
+        <GallerySection>
+        <Container>
         <SectionTitle>
-          Galleria Fotografica
+        Galleria Fotografica
         </SectionTitle>
-
+        
         <SearchContainer>
-          <SearchInput
-            type="text"
-            placeholder="Cerca per titolo, luogo o descrizione..."
-            value={searchTerm}
-            onChange={handleSearchChange}
-          />
-          <SearchIcon>🔍</SearchIcon>
+        <SearchInput
+        type="text"
+        placeholder="Cerca per titolo, luogo o descrizione..."
+        value={searchTerm}
+        onChange={handleSearchChange}
+        />
+        <SearchIcon>🔍</SearchIcon>
         </SearchContainer>
-
+        
         <FilterContainer>
-          {filterOptions.map((filter, index) => (
+        {filterOptions.map((filter, index) => (
             <FilterButton
-              key={filter}
-              active={activeFilter === filter}
-              onClick={() => handleFilterClick(filter)}
+            key={filter}
+            active={activeFilter === filter}
+            onClick={() => handleFilterClick(filter)}
             >
-              {filter === 'all' ? 'Tutti' : filter}
+            {filter === 'all' ? 'Tutti' : filter}
             </FilterButton>
-          ))}
+        ))}
         </FilterContainer>
-
+        
         <AnimatePresence mode="wait">
-          {filteredPhotos.length === 0 ? (
+        {filteredPhotos.length === 0 ? (
             <NoResults
-              key="no-results"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+            key="no-results"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             >
-              <h3>Nessuna foto trovata</h3>
-              <p>Prova a modificare i filtri di ricerca</p>
+            <h3>Nessuna foto trovata</h3>
+            <p>Prova a modificare i filtri di ricerca</p>
             </NoResults>
-          ) : (
+        ) : (
             <GalleryGrid
-              key="gallery-grid"
+            key="gallery-grid"
             >
-              {filteredPhotos.map((photo, index) => (
+            {filteredPhotos.map((photo, index) => (
                 <PhotoCard
-                  key={photo.id}
-                  onClick={() => handlePhotoClick(photo)}
+                key={photo.id}
+                onClick={() => handlePhotoClick(photo)}
                 >
-                  <PhotoImage
-                    src={`${IMAGES_BASE_URL}${photo.image || photo.thumbnail}`}
-                    alt={photo.title}
-                    loading="eager"
-                    onError={(e) => {
-                      e.target.src = `https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop`;
-                    }}
-                  />
-                  <PhotoOverlay>
-                    <PhotoTitle>{photo.title}</PhotoTitle>
-                    <PhotoLocation>{photo.location}</PhotoLocation>
-                    <PhotoDescription>{photo.description}</PhotoDescription>
-                    {Array.isArray(photo.tags) && photo.tags.length > 0 && (
-                      <PhotoTags>
-                        {photo.tags.slice(0, 3).map(tag => (
-                          <Tag key={tag}>{tag}</Tag>
-                        ))}
-                      </PhotoTags>
-                    )}
-                  </PhotoOverlay>
+                <PhotoImage
+                src={`${IMAGES_BASE_URL}${photo.image || photo.thumbnail}`}
+                alt={photo.title}
+                loading="eager"
+                onError={(e) => {
+                    e.target.src = `https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop`;
+                }}
+                />
+                <PhotoOverlay>
+                <PhotoTitle>{photo.title}</PhotoTitle>
+                <PhotoLocation>{photo.location}</PhotoLocation>
+                <PhotoDescription>{photo.description}</PhotoDescription>
+                {Array.isArray(photo.tags) && photo.tags.length > 0 && (
+                    <PhotoTags>
+                    {photo.tags.slice(0, 3).map(tag => (
+                        <Tag key={tag}>{tag}</Tag>
+                    ))}
+                    </PhotoTags>
+                )}
+                </PhotoOverlay>
                 </PhotoCard>
-              ))}
+            ))}
             </GalleryGrid>
-          )}
+        )}
         </AnimatePresence>
-      </Container>
-    </GallerySection>
-  );
+        </Container>
+        </GallerySection>
+    );
 };
 
 export default Gallery;

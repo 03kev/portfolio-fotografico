@@ -1,5 +1,40 @@
 [
   {
+    "id": 1753922032716,
+    "title": "Sotto il Tetto di Stelle",
+    "location": "Vezzano sul Crostolo, Italia",
+    "lat": 44.609668,
+    "lng": 10.541488,
+    "image": "/uploads/photo_1753922032716.webp",
+    "thumbnail": "/uploads/thumbnails/photo_1753922032716_thumb.webp",
+    "description": "La Via Lattea si estende maestosa sopra le capriate del tetto, trasformando l’ordinario scorcio domestico in un panorama cosmico.",
+    "date": "2023-07-09",
+    "camera": "Nikon D750",
+    "lens": "Tamron SP 15-30mm F2.8 Di VC USD",
+    "settings": "{\"aperture\":\"f/2.8\",\"shutter\":\"4min\",\"iso\":\"1600\",\"focal\":\"19mm\"}",
+    "tags": [
+      "Via Lattea"
+    ]
+  },
+  {
+    "id": 1753921256646,
+    "title": "Altopiano Celeste",
+    "location": "Compaccio, Italia",
+    "lat": 46.543772,
+    "lng": 11.616946,
+    "image": "/uploads/photo_1753921256646.webp",
+    "thumbnail": "/uploads/thumbnails/photo_1753921256646_thumb.webp",
+    "description": "In un cielo terso, la Via Lattea sembra sospesa sopra l’Alpe di Siusi, disegnando un arco di splendore tra le ombre alpine.",
+    "date": "2023-07-23",
+    "camera": "Nikon D750",
+    "lens": "Tamron SP 15-30mm F2.8 Di VC USD",
+    "settings": "{\"aperture\":\"f/2.8\",\"shutter\":\"6min\",\"iso\":\"3200\",\"focal\":\"15mm\"}",
+    "tags": [
+      "Via Lattea",
+      "Alpe di Siusi"
+    ]
+  },
+  {
     "id": 1753910481392,
     "title": "Notte sulle Mura",
     "location": "Dubrovnik, Croazia",
@@ -12,7 +47,10 @@
     "camera": "Samsung Galaxy S22",
     "lens": "",
     "settings": "{\"aperture\":\"f/1.8\",\"shutter\":\"1/9s\",\"iso\":\"1600\",\"focal\":\"5.4mm\"}",
-    "tags": ["Dubrovnik", "Croazia"]
+    "tags": [
+      "Dubrovnik",
+      "Croazia"
+    ]
   },
   {
     "id": 1753900780885,
@@ -28,7 +66,8 @@
     "lens": "",
     "settings": "{\"aperture\":\"f/3.4\",\"shutter\":\"1/767s\",\"iso\":\"64\",\"focal\":\"18.6mm\"}",
     "tags": [
-      "Roma", "Italia"
+      "Roma",
+      "Italia"
     ]
   },
   {
@@ -45,7 +84,8 @@
     "lens": "",
     "settings": "{\"aperture\":\"f/1.7\",\"shutter\":\"1/3818s\",\"iso\":\"40\",\"focal\":\"6.3mm\"}",
     "tags": [
-      "Roma", "Italia"
+      "Roma",
+      "Italia"
     ]
   }
 ]

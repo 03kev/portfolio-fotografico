@@ -315,7 +315,8 @@ const PhotoModal = () => {
     
     const handleTagClick = (tag) => {
         // Resettiamo tutti i filtri e impostiamo solo il tag selezionato
-        actions.setFilter({ search: '', tags: [tag], location: '' });
+        // Usando setFilterAndSync per forzare la sincronizzazione con la Gallery
+        actions.setFilterAndSync({ search: '', tags: [tag], location: '' });
         actions.closePhotoModal();
         const gallerySection = document.getElementById('galleria');
         if (gallerySection) {
