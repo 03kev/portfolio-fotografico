@@ -366,7 +366,7 @@ main() {
     
     # Apri browser automaticamente
     sleep 2
-    open_browser
+    #open_browser
     
     # Gestione comandi interattivi
     handle_commands

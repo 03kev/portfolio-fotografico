@@ -228,7 +228,7 @@ const InfoPopup = styled(motion.div)`
 `;
 
 const WorldMap = () => {
-    const { photos, loading, actions, modalOpen, navigatingToMap } = usePhotos();
+    const { photos, loading, actions, modalOpen, galleryModalOpen } = usePhotos();
     const mountRef = useRef(null);
     const sceneRef = useRef(null);
     const rendererRef = useRef(null);
@@ -244,6 +244,8 @@ const WorldMap = () => {
     const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
     const [adjustedPosition, setAdjustedPosition] = useState({ x: 0, y: 0 });
     const popupRef = useRef(null);
+    const skipUnzoomRef = useRef(false);
+    const disablePopupRef = useRef(false);
     
     useLayoutEffect(() => {
         if (!popupRef.current) return;
@@ -437,6 +439,7 @@ const drawMarkersForLevel = useCallback((level) => {
         const marker = createMarker(pos, cluster.photos[0], isCluster); // riusa foto 0
         marker.userData.photos = cluster.photos;             // array completo
         marker.userData.isCluster = isCluster; // indica se è un cluster
+        marker.userData.center = cluster.center; // aggiungi il centro del cluster
         sceneRef.current.add(marker);
         markersRef.current.push(marker);
         marker.traverse(child => {
@@ -852,6 +855,13 @@ useEffect(() => {
     
     // mouse move con throttling pesante per performance
     const handleMouseMove = throttle((event) => {
+        // Disabilita l'InfoPopup se un modal è aperto o dopo un click fino a chiusura modali
+        if (modalOpen || galleryModalOpen || disablePopupRef.current) {
+            markersRef.current.forEach(m => m.isHovered = false);
+            setHoveredMarker(null);
+            if (!isDraggingRef.current) setCanvasCursor('grab');
+            return;
+        }
         const rect = renderer.domElement.getBoundingClientRect();
         mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -909,9 +919,11 @@ useEffect(() => {
     }, 50); // Throttle a 50ms per ridurre il carico
     
     const handleClick = (event) => {
-        // nascondi popup quando clicco un marker
+        // Chiudi sempre l'InfoPopup quando clicco un marker/cluster
         markersRef.current.forEach(m => m.isHovered = false);
         setHoveredMarker(null);
+        // Disabilita InfoPopup fino a chiusura di tutti i modal
+        disablePopupRef.current = true;
         setCanvasCursor('grab');
         const rect = renderer.domElement.getBoundingClientRect();
         mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -928,13 +940,20 @@ useEffect(() => {
         const photosInMarker = markerGroup.userData?.photos ?? [];
         
         if (Array.isArray(photosInMarker) && photosInMarker.length > 1) {
-            // CLUSTER  -> apri modalità galleria
-            if (actions.openGalleryModal) {
-                actions.openGalleryModal(photosInMarker);
-            } else {
-                // fallback: apri la prima foto se la funzione non esiste ancora
-                actions.openPhotoModal(photosInMarker[0]);
-            }
+            // CLUSTER: focus sul centro del cluster, poi apri la galleria
+            const center = markerGroup.userData.center || [photosInMarker[0].lat, photosInMarker[0].lng];
+            focusOnPhoto(
+                { lat: center[0], lng: center[1] },
+                FOCUS_OFFSET_RADIUS,
+                900,
+                () => {
+                    if (actions.openGalleryModal) {
+                        actions.openGalleryModal(photosInMarker);
+                    } else {
+                        actions.openPhotoModal(photosInMarker[0]);
+                    }
+                }
+            );
             return;
         }
         
@@ -1146,6 +1165,11 @@ const focusOnPhoto = (
     duration = 900,
     onComplete
 ) => {
+    // Se il focus viene richiesto mentre il modal è ancora aperto (→ “vai alla mappa”)
+    if (modalOpen) {
+        skipUnzoomRef.current = true;
+    }
+    
     if (!photo || !cameraRef.current || !controlsRef.current) return;
     const controls = controlsRef.current;
     const camera   = cameraRef.current;
@@ -1190,31 +1214,28 @@ useEffect(() => {
 // Gestisci la rotazione della terra in base allo stato del modal
 // effetto completo per gestire l’apertura/chiusura del modal
 useEffect(() => {
+    // Reinstate InfoPopup when all modals are closed
+    if (!modalOpen && !galleryModalOpen) {
+        disablePopupRef.current = false;
+    }
+    // Salta l’unzoom standard se proveniamo da “vai alla mappa”
+    if (!modalOpen && skipUnzoomRef.current) {
+        skipUnzoomRef.current = false;
+        return;
+    }
+
     if (!controlsRef.current || !globeRef.current || !cameraRef.current) return;
     
     const controls = controlsRef.current;
     const cam      = cameraRef.current;
     
-    if (modalOpen) {
-        /* --- MODAL APERTO --------------------------------------------------- */
-        // ferma auto-rotate e cancella timer di resume
+    if (modalOpen || galleryModalOpen) {
         controls.autoRotate = false;
         setAutoRotate(false);
         if (autoRotateTimerRef.current) {
             clearTimeout(autoRotateTimerRef.current);
             autoRotateTimerRef.current = null;
         }
-        return;                 // nient’altro finché è aperto
-    }
-    
-    /* --- MODAL CHIUSO -------------------------------- */
-    
-    // Se stiamo navigando alla mappa, non fare zoom-out
-    if (navigatingToMap) {
-        // Reset del flag
-        actions.resetNavigatingToMap();
-        // Riattiva solo auto-rotate con timer
-        scheduleAutoRotateResume();
         return;
     }
     
@@ -1258,7 +1279,7 @@ useEffect(() => {
         }
     };
     requestAnimationFrame(zoomAnim);
-}, [modalOpen, navigatingToMap]);
+}, [modalOpen, galleryModalOpen]);
 
 
 // Calcolo statistiche memoizzato

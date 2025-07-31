@@ -263,7 +263,7 @@ const ActionButton = styled(motion.button)`
 `;
 
 const PhotoModal = () => {
-    const { modalOpen, selectedPhoto, actions } = usePhotos();
+    const { modalOpen, selectedPhoto, actions, galleryModalOpen } = usePhotos();
     
     useEffect(() => {
         if (modalOpen) {
@@ -298,14 +298,15 @@ const PhotoModal = () => {
             actions.closePhotoModal();
         }
     };
-        
+    
     const handleLocationClick = () => {
         if (selectedPhoto) {
+            if (galleryModalOpen) actions.closeGalleryModal();
             // Passa un flag per indicare che stiamo navigando alla mappa
-            actions.closePhotoModal(true); // true = navigatingToMap
             
             setTimeout(() => {
                 actions.focusOnPhoto(selectedPhoto);
+                actions.closePhotoModal(true);
                 const mapSection = document.getElementById('world-map-3d');
                 if (mapSection) {
                     mapSection.scrollIntoView({ behavior: 'smooth' });
@@ -317,6 +318,7 @@ const PhotoModal = () => {
     const handleTagClick = (tag) => {
         // Resettiamo tutti i filtri e impostiamo solo il tag selezionato
         // Usando setFilterAndSync per forzare la sincronizzazione con la Gallery
+        if (galleryModalOpen) actions.closeGalleryModal();
         actions.setFilterAndSync({ search: '', tags: [tag], location: '' });
         actions.closePhotoModal();
         const gallerySection = document.getElementById('galleria');
@@ -486,6 +488,7 @@ const PhotoModal = () => {
             <ActionButton
             className="primary"
             onClick={() => {
+                if (galleryModalOpen) actions.closeGalleryModal();
                 const link = document.createElement('a');
                 link.href = `https://images.unsplash.com/photo-${selectedPhoto.id > 3 ? '1516426122078-c23e76319801' : '1506905925346-21bda4d32df4'}?w=1920&h=1080&fit=crop`;
                 link.download = `${selectedPhoto.title}.jpg`;

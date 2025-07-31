@@ -11,7 +11,7 @@ const ModalOverlay = styled(motion.div)`
   width: 100%;
   height: 100%;
   background: rgba(0, 0, 0, 0.95);
-  z-index: var(--z-modal);
+  z-index: calc(var(--z-modal) - 10);
   backdrop-filter: blur(15px);
   display: flex;
   align-items: center;
@@ -280,7 +280,7 @@ const GalleryModal = () => {
   };
 
   const handlePhotoClick = (photo) => {
-    actions.closeGalleryModal();
+    //actions.closeGalleryModal();
     actions.openPhotoModal(photo);
   };
 
