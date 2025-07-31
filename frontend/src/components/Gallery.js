@@ -1,8 +1,19 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePhotos } from '../contexts/PhotoContext';
 import { IMAGES_BASE_URL } from '../utils/constants';
+
+const DEBOUNCE_DELAY_FILTER = 200;
+
+function useDebounce(value, delay) {
+    const [debounced, setDebounced] = useState(value);
+    useEffect(() => {
+        const handler = setTimeout(() => setDebounced(value), delay);
+        return () => clearTimeout(handler);
+    }, [value, delay]);
+    return debounced;
+}
 
 const cardVariants = {
     hidden: { opacity: 0, scale: 0.8, y: 20 },
@@ -256,21 +267,22 @@ const Gallery = () => {
     const [searchTerm, setSearchTerm] = useState(() => {
         return filters.search || '';
     });
+    const debouncedSearchTerm = useDebounce(searchTerm, DEBOUNCE_DELAY_FILTER);
     
     const allTags = useMemo(() =>
-      [...new Set(photos.flatMap(photo => Array.isArray(photo.tags) ? photo.tags : []))],
+        [...new Set(photos.flatMap(photo => Array.isArray(photo.tags) ? photo.tags : []))],
     [photos]);
-
+    
     const filterOptions = useMemo(() => ['all', ...allTags], [allTags]);
     
-    // Apply search + tag filters to context whenever inputs change
+    // Apply search + tag filters to context whenever inputs change (debounced)
     useEffect(() => {
-        if (searchTerm.trim()) {
+        if (debouncedSearchTerm.trim()) {
             // c'è un testo di ricerca: applicalo sempre
             if (activeFilter !== 'all') {
-                actions.setFilter({ search: searchTerm, tags: [activeFilter] });
+                actions.setFilter({ search: debouncedSearchTerm, tags: [activeFilter] });
             } else {
-                actions.setFilter({ search: searchTerm, tags: [] });
+                actions.setFilter({ search: debouncedSearchTerm, tags: [] });
             }
         } else {
             // campo ricerca vuoto: togli solo search, mantieni o togli i tag
@@ -280,7 +292,7 @@ const Gallery = () => {
                 actions.clearFilters(); // nessun filtro attivo
             }
         }
-    }, [searchTerm, activeFilter]);
+    }, [debouncedSearchTerm, activeFilter]);
     
     // Effetto per sincronizzare quando i filtri vengono impostati dall'esterno (es. PhotoModal)
     // Ma solo quando il componente non sta già gestendo l'aggiornamento
