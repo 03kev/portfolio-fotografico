@@ -1,8 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePhotos } from '../contexts/PhotoContext';
 import { IMAGES_BASE_URL } from '../utils/constants';
+
+const cardVariants = {
+    hidden: { opacity: 0, scale: 0.8, y: 20 },
+    visible: { opacity: 1, scale: 1, y: 0, transition: { duration: 0.4 } },
+    exit:    { opacity: 0, scale: 0.8, y: -20, transition: { duration: 0.3 } }
+};
 
 const GallerySection = styled(motion.section)`
   padding: var(--spacing-4xl) 0;
@@ -109,7 +115,7 @@ const SearchIcon = styled.div`
   pointer-events: none;
 `;
 
-const GalleryGrid = styled(motion.div)`
+const GalleryGrid = styled(motion.div).attrs({ layout: true })`
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
   gap: var(--spacing-xl);
@@ -241,7 +247,7 @@ const NoResults = styled(motion.div)`
 `;
 
 const Gallery = () => {
-const { photos, filteredPhotos, loading, actions, filters, gallerySyncTrigger } = usePhotos();
+    const { photos, filteredPhotos, loading, actions, filters } = usePhotos();
     
     // Inizializza lo stato locale con i valori del context
     const [activeFilter, setActiveFilter] = useState(() => {
@@ -251,32 +257,45 @@ const { photos, filteredPhotos, loading, actions, filters, gallerySyncTrigger } 
         return filters.search || '';
     });
     
-    // Estrai tutti i tag unici dalle foto - gestisci il caso in cui tags non sia un array
-    const allTags = [...new Set(photos.flatMap(photo => {
-        return Array.isArray(photo.tags) ? photo.tags : [];
-    }))];
-    const filterOptions = ['all', ...allTags];
-    
-    // Effetto per applicare i filtri quando cambiano activeFilter o searchTerm
-    useEffect(() => {
-    const filterData = {};
-    if (searchTerm) filterData.search = searchTerm;
-    if (activeFilter !== 'all') filterData.tags = [activeFilter];
-    actions.setFilter(filterData);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeFilter, searchTerm]);
+    const allTags = useMemo(() =>
+      [...new Set(photos.flatMap(photo => Array.isArray(photo.tags) ? photo.tags : []))],
+    [photos]);
 
-  // Effetto che si attiva quando il trigger di sincronizzazione cambia (dal PhotoModal)
-  useEffect(() => {
-    if (gallerySyncTrigger > 0) {
-      // Sincronizza lo stato con i filtri del context
-      const contextTag = filters.tags && filters.tags.length > 0 ? filters.tags[0] : 'all';
-      const contextSearch = filters.search || '';
-      
-      setActiveFilter(contextTag);
-      setSearchTerm(contextSearch);
-    }
-  }, [gallerySyncTrigger, filters.tags, filters.search]);
+    const filterOptions = useMemo(() => ['all', ...allTags], [allTags]);
+    
+    // Apply search + tag filters to context whenever inputs change
+    useEffect(() => {
+        if (searchTerm.trim()) {
+            // c'è un testo di ricerca: applicalo sempre
+            if (activeFilter !== 'all') {
+                actions.setFilter({ search: searchTerm, tags: [activeFilter] });
+            } else {
+                actions.setFilter({ search: searchTerm, tags: [] });
+            }
+        } else {
+            // campo ricerca vuoto: togli solo search, mantieni o togli i tag
+            if (activeFilter !== 'all') {
+                actions.setFilter({ search: '', tags: [activeFilter] });
+            } else {
+                actions.clearFilters(); // nessun filtro attivo
+            }
+        }
+    }, [searchTerm, activeFilter]);
+    
+    // Effetto per sincronizzare quando i filtri vengono impostati dall'esterno (es. PhotoModal)
+    // Ma solo quando il componente non sta già gestendo l'aggiornamento
+    useEffect(() => {
+        const currentTag = filters.tags && filters.tags.length > 0 ? filters.tags[0] : 'all';
+        const currentSearch = filters.search || '';
+        
+        // Aggiorna solo se i valori sono effettivamente diversi
+        if (currentTag !== activeFilter) {
+            setActiveFilter(currentTag);
+        }
+        if (currentSearch !== searchTerm) {
+            setSearchTerm(currentSearch);
+        }
+    }, [filters.tags?.join(','), filters.search]); // Solo quando questi valori cambiano realmente
     
     const handleFilterClick = (filter) => {
         setActiveFilter(filter);
@@ -295,41 +314,6 @@ const { photos, filteredPhotos, loading, actions, filters, gallerySyncTrigger } 
     const handlePhotoClick = (photo) => {
         actions.openPhotoModal(photo);
     };
-    
-    // Varianti di animazione rimosse temporaneamente perché non utilizzate
-    // const sectionVariants = {
-    //   hidden: { opacity: 0, y: 50 },
-    //   visible: {
-    //     opacity: 1,
-    //     y: 0,
-    //     transition: {
-    //       duration: 0.8,
-    //       staggerChildren: 0.2
-    //     }
-    //   }
-    // };
-    
-    // const itemVariants = {
-    //   hidden: { opacity: 0, y: 30 },
-    //   visible: {
-    //     opacity: 1,
-    //     y: 0,
-    //     transition: { duration: 0.6 }
-    //   }
-    // };
-    
-    // const cardVariants = {
-    //   hidden: { opacity: 0, scale: 0.8 },
-    //   visible: {
-    //     opacity: 1,
-    //     scale: 1,
-    //     transition: { duration: 0.4 }
-    //   },
-    //   hover: {
-    //     y: -10,
-    //     transition: { duration: 0.3 }
-    //   }
-    // };
     
     if (loading) {
         return (
@@ -372,7 +356,6 @@ const { photos, filteredPhotos, loading, actions, filters, gallerySyncTrigger } 
         ))}
         </FilterContainer>
         
-        <AnimatePresence mode="wait">
         {filteredPhotos.length === 0 ? (
             <NoResults
             key="no-results"
@@ -387,11 +370,18 @@ const { photos, filteredPhotos, loading, actions, filters, gallerySyncTrigger } 
             <GalleryGrid
             key="gallery-grid"
             >
-            {filteredPhotos.map((photo, index) => (
-                <PhotoCard
+            <AnimatePresence mode="popLayout" initial={false}>
+            {filteredPhotos.map(photo => (
+                <motion.div
                 key={photo.id}
+                layout
+                variants={cardVariants}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
                 onClick={() => handlePhotoClick(photo)}
                 >
+                <PhotoCard>
                 <PhotoImage
                 src={`${IMAGES_BASE_URL}${photo.image || photo.thumbnail}`}
                 alt={photo.title}
@@ -413,10 +403,11 @@ const { photos, filteredPhotos, loading, actions, filters, gallerySyncTrigger } 
                 )}
                 </PhotoOverlay>
                 </PhotoCard>
+                </motion.div>
             ))}
+            </AnimatePresence>
             </GalleryGrid>
         )}
-        </AnimatePresence>
         </Container>
         </GallerySection>
     );

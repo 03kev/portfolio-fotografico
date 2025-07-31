@@ -301,7 +301,8 @@ const PhotoModal = () => {
         
     const handleLocationClick = () => {
         if (selectedPhoto) {
-            actions.closePhotoModal();
+            // Passa un flag per indicare che stiamo navigando alla mappa
+            actions.closePhotoModal(true); // true = navigatingToMap
             
             setTimeout(() => {
                 actions.focusOnPhoto(selectedPhoto);

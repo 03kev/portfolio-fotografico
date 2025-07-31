@@ -228,7 +228,7 @@ const InfoPopup = styled(motion.div)`
 `;
 
 const WorldMap = () => {
-    const { photos, loading, actions, modalOpen } = usePhotos();
+    const { photos, loading, actions, modalOpen, navigatingToMap } = usePhotos();
     const mountRef = useRef(null);
     const sceneRef = useRef(null);
     const rendererRef = useRef(null);
@@ -1207,7 +1207,18 @@ useEffect(() => {
         return;                 // nient’altro finché è aperto
     }
     
-    /* --- MODAL CHIUSO: livella + zoom-out -------------------------------- */
+    /* --- MODAL CHIUSO -------------------------------- */
+    
+    // Se stiamo navigando alla mappa, non fare zoom-out
+    if (navigatingToMap) {
+        // Reset del flag
+        actions.resetNavigatingToMap();
+        // Riattiva solo auto-rotate con timer
+        scheduleAutoRotateResume();
+        return;
+    }
+    
+    /* --- MODAL CHIUSO: livella + zoom-out (comportamento normale) -------------------------------- */
     
     /* 1) Livella inclinazione (rotation.x → 0) */
     const rotStartX = globeRef.current.rotation.x;
@@ -1247,7 +1258,7 @@ useEffect(() => {
         }
     };
     requestAnimationFrame(zoomAnim);
-}, [modalOpen]);
+}, [modalOpen, navigatingToMap]);
 
 
 // Calcolo statistiche memoizzato

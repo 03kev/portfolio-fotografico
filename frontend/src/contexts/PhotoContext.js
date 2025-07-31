@@ -10,6 +10,7 @@ const ACTIONS = {
   SET_ERROR: 'SET_ERROR',
   SET_SELECTED_PHOTO: 'SET_SELECTED_PHOTO',
   SET_MODAL_OPEN: 'SET_MODAL_OPEN',
+  SET_NAVIGATING_TO_MAP: 'SET_NAVIGATING_TO_MAP',
   SET_GALLERY_PHOTOS: 'SET_GALLERY_PHOTOS',
   SET_GALLERY_MODAL_OPEN: 'SET_GALLERY_MODAL_OPEN',
   ADD_PHOTO: 'ADD_PHOTO',
@@ -26,6 +27,7 @@ const initialState = {
   error: null,
   selectedPhoto: null,
   modalOpen: false,
+  navigatingToMap: false,
   galleryPhotos: [],
   galleryModalOpen: false,
   mapCenter: [20, 0],
@@ -72,7 +74,14 @@ function photoReducer(state, action) {
     return {
       ...state,
       modalOpen: action.payload,
-      selectedPhoto: action.payload ? state.selectedPhoto : null
+      selectedPhoto: action.payload ? state.selectedPhoto : null,
+      navigatingToMap: false // Reset quando il modal cambia stato
+    };
+    
+    case ACTIONS.SET_NAVIGATING_TO_MAP:
+    return {
+      ...state,
+      navigatingToMap: action.payload
     };
     
     case ACTIONS.SET_GALLERY_PHOTOS:
@@ -154,7 +163,10 @@ export function PhotoProvider({ children }) {
     },
     
     // Close photo modal
-    closePhotoModal: () => {
+    closePhotoModal: (navigatingToMap = false) => {
+      if (navigatingToMap) {
+        dispatch({ type: ACTIONS.SET_NAVIGATING_TO_MAP, payload: true });
+      }
       dispatch({ type: ACTIONS.SET_MODAL_OPEN, payload: false });
     },
     
@@ -234,6 +246,11 @@ export function PhotoProvider({ children }) {
         type: ACTIONS.SET_FILTER, 
         payload: { search: '', tags: [], location: '' } 
       });
+    },
+    
+    // Reset navigating to map flag
+    resetNavigatingToMap: () => {
+      dispatch({ type: ACTIONS.SET_NAVIGATING_TO_MAP, payload: false });
     }
   };
   
