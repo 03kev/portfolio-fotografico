@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePhotos } from '../contexts/PhotoContext';
@@ -123,6 +123,67 @@ const CloseButton = styled(motion.button)`
     height: 40px;
     font-size: var(--font-size-lg);
   }
+`;
+
+const NavigationControls = styled(motion.div)`
+  position: absolute;
+  bottom: var(--spacing-lg);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: var(--spacing-md);
+  z-index: 10;
+  
+  @media (max-width: 768px) {
+    bottom: var(--spacing-md);
+    gap: var(--spacing-sm);
+  }
+`;
+
+const NavButton = styled(motion.button)`
+  width: 48px;
+  height: 48px;
+  background: rgba(0, 0, 0, 0.8);
+  color: var(--color-white);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: var(--font-size-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(10px);
+  transition: all var(--transition-normal);
+  
+  &:hover:not(:disabled) {
+    background: var(--accent-gradient);
+    border-color: transparent;
+    transform: translateY(-2px);
+  }
+  
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  
+  @media (max-width: 768px) {
+    width: 40px;
+    height: 40px;
+    font-size: var(--font-size-base);
+  }
+`;
+
+const LocationIndicator = styled(motion.div)`
+  background: rgba(0, 0, 0, 0.8);
+  color: var(--color-white);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-radius: var(--border-radius-full);
+  font-size: var(--font-size-sm);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
 `;
 
 const PhotoTitle = styled(motion.h2)`
@@ -277,21 +338,54 @@ const PhotoModal = () => {
         };
     }, [modalOpen]);
     
+    const handleNavigateNext = useCallback(() => {
+        const nextPhoto = actions.findNextPhoto(selectedPhoto);
+        if (nextPhoto) {
+            actions.openPhotoModal(nextPhoto);
+            // Centra anche sulla mappa
+            actions.focusOnPhoto(nextPhoto);
+        }
+    }, [selectedPhoto, actions]);
+    
+    const handleNavigatePrevious = useCallback(() => {
+        const prevPhoto = actions.findPreviousPhoto(selectedPhoto);
+        if (prevPhoto) {
+            actions.openPhotoModal(prevPhoto);
+            // Centra anche sulla mappa
+            actions.focusOnPhoto(prevPhoto);
+        }
+    }, [selectedPhoto, actions]);
+    
+    const handleNavigateNearest = useCallback(() => {
+        const nearestPhoto = actions.findNearestPhoto(selectedPhoto, [selectedPhoto.id]);
+        if (nearestPhoto) {
+            actions.openPhotoModal(nearestPhoto);
+            // Centra anche sulla mappa
+            actions.focusOnPhoto(nearestPhoto);
+        }
+    }, [selectedPhoto, actions]);
+    
     useEffect(() => {
-        const handleEscape = (e) => {
+        const handleKeyPress = (e) => {
             if (e.key === 'Escape') {
                 actions.closePhotoModal();
+            } else if (e.key === 'ArrowLeft') {
+                handleNavigatePrevious();
+            } else if (e.key === 'ArrowRight') {
+                handleNavigateNext();
             }
         };
         
         if (modalOpen) {
-            document.addEventListener('keydown', handleEscape);
+            document.addEventListener('keydown', handleKeyPress);
         }
         
         return () => {
-            document.removeEventListener('keydown', handleEscape);
+            document.removeEventListener('keydown', handleKeyPress);
         };
-    }, [modalOpen, actions]);
+    }, [modalOpen, actions, handleNavigatePrevious, handleNavigateNext]);
+    
+
     
     const handleOverlayClick = (e) => {
         if (e.target === e.currentTarget) {
@@ -374,6 +468,46 @@ const PhotoModal = () => {
                 e.target.src = `https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1200&h=900&fit=crop`;
             }}
             />
+            
+            <NavigationControls
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.2 }}
+            >
+            <NavButton
+            onClick={handleNavigatePrevious}
+            disabled={!actions.findPreviousPhoto(selectedPhoto)}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            title="Foto precedente (←)"
+            >
+            ←
+            </NavButton>
+            
+            <LocationIndicator>
+            📍 Più vicina
+            </LocationIndicator>
+            
+            <NavButton
+            onClick={handleNavigateNearest}
+            disabled={!actions.findNearestPhoto(selectedPhoto, [selectedPhoto.id])}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            title="Foto più vicina geograficamente"
+            >
+            📍
+            </NavButton>
+            
+            <NavButton
+            onClick={handleNavigateNext}
+            disabled={!actions.findNextPhoto(selectedPhoto)}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            title="Foto successiva (→)"
+            >
+            →
+            </NavButton>
+            </NavigationControls>
             </ImageContainer>
             
             <InfoPanel>

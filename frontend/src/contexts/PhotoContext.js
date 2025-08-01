@@ -140,6 +140,7 @@ function photoReducer(state, action) {
 export function PhotoProvider({ children }) {
     const [state, dispatch] = useReducer(photoReducer, initialState);
     const focusHandlerRef = useRef(null);
+    const navigationHandlersRef = useRef(null);
     
     // Actions
     const actions = {
@@ -195,6 +196,33 @@ export function PhotoProvider({ children }) {
         focusOnPhoto: photo => {
             if (typeof focusHandlerRef.current === 'function')
                 focusHandlerRef.current(photo);
+        },
+        
+        // Registra gli handler di navigazione dalla mappa
+        registerNavigationHandlers: handlers => {
+            navigationHandlersRef.current = handlers;
+        },
+        
+        // Metodi di navigazione che usano la mappa
+        findNextPhoto: (currentPhoto) => {
+            if (navigationHandlersRef.current?.findNext) {
+                return navigationHandlersRef.current.findNext(currentPhoto);
+            }
+            return null;
+        },
+        
+        findPreviousPhoto: (currentPhoto) => {
+            if (navigationHandlersRef.current?.findPrevious) {
+                return navigationHandlersRef.current.findPrevious(currentPhoto);
+            }
+            return null;
+        },
+        
+        findNearestPhoto: (currentPhoto, excludeIds) => {
+            if (navigationHandlersRef.current?.findNearest) {
+                return navigationHandlersRef.current.findNearest(currentPhoto, excludeIds);
+            }
+            return null;
         },
         
         // Add new photo

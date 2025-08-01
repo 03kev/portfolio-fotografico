@@ -987,7 +987,7 @@ useEffect(() => {
         setHoveredMarker(null);
         setCanvasCursor('grab');
         
-        const mesh         = intersects[0].object;
+        const mesh = intersects[0].object;
         // il “gruppo” completo è sempre il parent di livello 1 (vedi createMarker)
         const markerGroup   = mesh.parent ?? mesh;
         const photosInMarker = markerGroup.userData?.photos ?? [];
@@ -1229,6 +1229,62 @@ const zoomOut = () => {
 * @param {number}   duration     Animation duration in ms
 * @param {Function} onComplete   Callback once animation finishes
 */
+// Trova il marker più vicino in una direzione specifica
+const findAdjacentMarker = useCallback((currentPhoto, direction = 'next') => {
+    if (!currentPhoto || !markersRef.current.length) return null;
+    
+    // Trova tutti i marker singoli (non cluster) attualmente visibili
+    const singleMarkers = markersRef.current.filter(marker => 
+        !marker.userData.isCluster && 
+        marker.userData.photos && 
+        marker.userData.photos.length === 1
+    );
+    
+    if (singleMarkers.length <= 1) return null;
+    
+    // Trova il marker corrente
+    const currentIndex = singleMarkers.findIndex(marker => 
+        marker.userData.photos[0].id === currentPhoto.id
+    );
+    
+    if (currentIndex === -1) return null;
+    
+    // Calcola il prossimo indice
+    let nextIndex;
+    if (direction === 'next') {
+        nextIndex = (currentIndex + 1) % singleMarkers.length;
+    } else {
+        nextIndex = (currentIndex - 1 + singleMarkers.length) % singleMarkers.length;
+    }
+    
+    return singleMarkers[nextIndex].userData.photos[0];
+}, []);
+
+// Trova il marker geograficamente più vicino
+const findNearestMarker = useCallback((currentPhoto, excludeIds = []) => {
+    if (!currentPhoto || !markersRef.current.length) return null;
+    
+    const currentPos = latLngToVector3(currentPhoto.lat, currentPhoto.lng);
+    let nearest = null;
+    let minDistance = Infinity;
+    
+    markersRef.current.forEach(marker => {
+        // Salta cluster e marker esclusi
+        if (marker.userData.isCluster || 
+            excludeIds.includes(marker.userData.photos[0].id)) return;
+        
+        const markerPos = marker.position.clone();
+        const distance = currentPos.distanceTo(markerPos);
+        
+        if (distance < minDistance && distance > 0.01) { // Evita lo stesso marker
+            minDistance = distance;
+            nearest = marker.userData.photos[0];
+        }
+    });
+    
+    return nearest;
+}, [latLngToVector3]);
+
 const focusOnPhoto = (
     photo,
     targetRadius = FOCUS_OFFSET_RADIUS,
@@ -1282,9 +1338,37 @@ const focusOnPhoto = (
     requestAnimationFrame(animate);
 };
 
+// Previeni scroll quando il mouse è sul globo
+useEffect(() => {
+    const canvas = rendererRef.current?.domElement;
+    if (!canvas) return;
+    
+    const preventScroll = (e) => {
+        if (e.target === canvas) {
+            e.preventDefault();
+        }
+    };
+    
+    // Previeni scroll della pagina quando usi wheel sul globo
+    document.addEventListener('wheel', preventScroll, { passive: false });
+    
+    return () => {
+        document.removeEventListener('wheel', preventScroll);
+    };
+}, []);
+
 useEffect(() => {
     actions.registerFocusHandler(focusOnPhoto);
-}, [actions, focusOnPhoto]);
+    
+    // Registra i metodi di navigazione per il modal
+    if (actions.registerNavigationHandlers) {
+        actions.registerNavigationHandlers({
+            findNext: (currentPhoto) => findAdjacentMarker(currentPhoto, 'next'),
+            findPrevious: (currentPhoto) => findAdjacentMarker(currentPhoto, 'prev'),
+            findNearest: findNearestMarker
+        });
+    }
+}, [actions, focusOnPhoto, findAdjacentMarker, findNearestMarker]);
 
 // Gestisci la rotazione della terra in base allo stato del modal
 // effetto completo per gestire l’apertura/chiusura del modal
