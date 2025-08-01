@@ -127,7 +127,7 @@ start_backend() {
         fi
         sleep 1
         count=$((count + 1))
-        echo -n "."
+        echo -n ""
     done
     
     print_error "Backend non risponde dopo ${max_attempts}s"
@@ -202,14 +202,14 @@ show_status() {
 show_commands() {
     echo ""
     print_header "⌨️  Comandi Disponibili"
-    echo "   ${YELLOW}s${NC} - Mostra status servizi"
-    echo "   ${YELLOW}r${NC} - Riavvia entrambi i servizi"
-    echo "   ${YELLOW}b${NC} - Riavvia solo backend"
-    echo "   ${YELLOW}f${NC} - Riavvia solo frontend"
-    echo "   ${YELLOW}l${NC} - Mostra log in tempo reale"
-    echo "   ${YELLOW}o${NC} - Apri nel browser"
-    echo "   ${YELLOW}h${NC} - Mostra questo aiuto"
-    echo "   ${YELLOW}q${NC} - Termina applicazione"
+    echo -e "   ${YELLOW}s${NC} - Mostra status servizi"
+    echo -e "   ${YELLOW}r${NC} - Riavvia entrambi i servizi"
+    echo -e "   ${YELLOW}b${NC} - Riavvia solo backend"
+    echo -e "   ${YELLOW}f${NC} - Riavvia solo frontend"
+    echo -e "   ${YELLOW}l${NC} - Mostra log in tempo reale"
+    echo -e "   ${YELLOW}o${NC} - Apri nel browser"
+    echo -e "   ${YELLOW}h${NC} - Mostra questo aiuto"
+    echo -e "   ${YELLOW}q${NC} - Termina applicazione"
     echo ""
 }
 
@@ -263,11 +263,11 @@ restart_services() {
         kill $FRONTEND_PID 2>/dev/null || true
     fi
     
-    sleep 3
+    sleep 2
     
     # Riavvia
     start_backend
-    sleep 3
+    sleep 2
     start_frontend
     
     print_success "Servizi riavviati"
@@ -349,7 +349,7 @@ main() {
     fi
     
     echo ""
-    sleep 3
+    sleep 2
     
     # Avvia frontend
     start_frontend
@@ -365,7 +365,7 @@ main() {
     print_info "💡 Premi Ctrl+C per fermare tutti i servizi"
     
     # Apri browser automaticamente
-    sleep 2
+    sleep 1
     #open_browser
     
     # Gestione comandi interattivi

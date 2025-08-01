@@ -1223,7 +1223,7 @@ useEffect(() => {
         skipUnzoomRef.current = false;
         return;
     }
-
+    
     if (!controlsRef.current || !globeRef.current || !cameraRef.current) return;
     
     const controls = controlsRef.current;
@@ -1294,169 +1294,215 @@ const stats = useMemo(() => {
         const country = parts.length > 0 ? parts[parts.length - 1].trim().toLowerCase() : '';
         
         const continentMap = {
-            'europa': ['italia', 'italy', 'francia', 'france', 'germania', 'germany', 'spagna', 'spain', 
-                'norvegia', 'norway', 'svezia', 'sweden', 'finlandia', 'finland', 'islanda', 'iceland',
-                'regno unito', 'uk', 'grecia', 'greece', 'portogallo', 'portugal'],
-                'asia': ['giappone', 'japan', 'cina', 'china', 'india', 'thailandia', 'thailand', 'corea', 'korea'],
-                'nord america': ['stati uniti', 'usa', 'united states', 'canada', 'messico', 'mexico'],
-                'sud america': ['brasile', 'brazil', 'argentina', 'cile', 'chile', 'peru', 'colombia'],
-                'africa': ['sud africa', 'south africa', 'kenya', 'tanzania', 'marocco', 'morocco', 'egitto', 'egypt'],
-                'oceania': ['australia', 'nuova zelanda', 'new zealand']
-            };
-            
-            for (const [continent, countryList] of Object.entries(continentMap)) {
-                if (countryList.some(c => country.includes(c))) {
-                    return continent;
-                }
-            }
-            return 'altro';
-        }).filter(Boolean))];
-        
-        const cities = [...new Set(validPhotos.map(p => {
-            const parts = p.location.split(',');
-            return parts.length > 0 ? parts[0].trim() : 'Sconosciuto';
-        }).filter(Boolean))];
-        
-        return {
-            totalPhotos: validPhotos.length,
-            countries: countries.length,
-            continents: continents.length,
-            cities: cities.length
+            'europa': [
+                'italia', 'italy', 
+                'francia', 'france', 
+                'germania', 'germany', 
+                'spagna', 'spain', 
+                'norvegia', 'norway', 
+                'svezia', 'sweden', 
+                'finlandia', 'finland', 
+                'islanda', 'iceland',
+                'regno unito', 'uk', 'united kingdom',
+                'grecia', 'greece', 
+                'portogallo', 'portugal',
+                'croazia', 'croatia', // ⭐ AGGIUNTO
+                'slovenia', 'austria', 'svizzera', 'switzerland',
+                'olanda', 'netherlands', 'belgio', 'belgium',
+                'danimarca', 'denmark', 'polonia', 'poland',
+                'repubblica ceca', 'czech republic', 'ungheria', 'hungary',
+                'romania', 'bulgaria', 'serbia', 'bosnia', 'montenegro',
+                'albania', 'macedonia', 'estonia', 'lettonia', 'lituania'
+            ],
+            'asia': [
+                'giappone', 'japan', 
+                'cina', 'china', 
+                'india', 
+                'thailandia', 'thailand', 
+                'corea', 'korea', 'south korea',
+                'vietnam', 'cambogia', 'laos', 'myanmar',
+                'indonesia', 'malaysia', 'singapore', 'filippine',
+                'taiwan', 'hong kong', 'macao'
+            ],
+            'nord america': [
+                'stati uniti', 'usa', 'united states', 
+                'canada', 
+                'messico', 'mexico'
+            ],
+            'sud america': [
+                'brasile', 'brazil', 
+                'argentina', 
+                'cile', 'chile', 
+                'peru', 'colombia',
+                'venezuela', 'ecuador', 'bolivia', 'paraguay', 'uruguay'
+            ],
+            'africa': [
+                'sud africa', 'south africa', 
+                'kenya', 'tanzania', 
+                'marocco', 'morocco', 
+                'egitto', 'egypt',
+                'tunisia', 'algeria', 'libia', 'etiopia', 'nigeria'
+            ],
+            'oceania': [
+                'australia', 
+                'nuova zelanda', 'new zealand',
+                'fiji', 'papua nuova guinea'
+            ]
         };
-    }, [validPhotos]);
-    
-    const sectionVariants = {
-        hidden: { opacity: 0, y: 50 },
-        visible: {
-            opacity: 1,
-            y: 0,
-            transition: {
-                duration: 0.8,
-                staggerChildren: 0.2
+        
+        for (const [continent, countryList] of Object.entries(continentMap)) {
+            if (countryList.some(c => country.includes(c))) {
+                return continent;
             }
         }
-    };
+        return 'altro';
+    }).filter(Boolean))];
     
-    const itemVariants = {
-        hidden: { opacity: 0, y: 30 },
-        visible: {
-            opacity: 1,
-            y: 0,
-            transition: { duration: 0.6 }
+    const cities = [...new Set(validPhotos.map(p => {
+        const parts = p.location.split(',');
+        return parts.length > 0 ? parts[0].trim() : 'Sconosciuto';
+    }).filter(Boolean))];
+    
+    return {
+        totalPhotos: validPhotos.length,
+        countries: countries.length,
+        continents: continents.length,
+        cities: cities.length
+    };
+}, [validPhotos]);
+
+const sectionVariants = {
+    hidden: { opacity: 0, y: 50 },
+    visible: {
+        opacity: 1,
+        y: 0,
+        transition: {
+            duration: 0.8,
+            staggerChildren: 0.2
         }
-    };
+    }
+};
+
+const itemVariants = {
+    hidden: { opacity: 0, y: 30 },
+    visible: {
+        opacity: 1,
+        y: 0,
+        transition: { duration: 0.6 }
+    }
+};
+
+return (
+    <MapSection
+    id="world-map-3d"
+    ref={ref}
+    variants={sectionVariants}
+    initial="hidden"
+    animate={inView ? "visible" : "hidden"}
+    >
+    <Container>
+    <SectionTitle variants={itemVariants}>
+    Il Mio Mondo in 3D
+    </SectionTitle>
     
-    return (
-        <MapSection
-        id="world-map-3d"
-        ref={ref}
-        variants={sectionVariants}
-        initial="hidden"
-        animate={inView ? "visible" : "hidden"}
+    <GlobeWrapper variants={itemVariants}>
+    {(loading || !mapLoaded) && (
+        <LoadingOverlay>
+        <LoadingSpinner />
+        <LoadingText>Caricamento della Terra...</LoadingText>
+        </LoadingOverlay>
+    )}
+    
+    <Controls
+    initial={{ opacity: 0, x: 20 }}
+    animate={{ opacity: 1, x: 0 }}
+    transition={{ duration: 0.6, delay: 1 }}
+    >
+    <ControlButton onClick={resetView} title="Reset Vista">
+    🌍
+    </ControlButton>
+    <ControlButton onClick={toggleAutoRotate} title="Auto Rotazione">
+    {autoRotate ? '⏸️' : '▶️'}
+    </ControlButton>
+    <ControlButton onClick={zoomIn} title="Zoom In">
+    ➕
+    </ControlButton>
+    <ControlButton onClick={zoomOut} title="Zoom Out">
+    ➖
+    </ControlButton>
+    </Controls>
+    
+    {/* Popup informativo per marker in hover */}
+    {hoveredMarker && (
+        <InfoPopup
+        ref={popupRef}
+        initial={{ opacity: 0, scale: 0.8 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.8 }}
+        style={{
+            left: `${adjustedPosition.x}px`,
+            top: `${adjustedPosition.y}px`
+        }}
         >
-        <Container>
-        <SectionTitle variants={itemVariants}>
-        Il Mio Mondo in 3D
-        </SectionTitle>
-        
-        <GlobeWrapper variants={itemVariants}>
-        {(loading || !mapLoaded) && (
-            <LoadingOverlay>
-            <LoadingSpinner />
-            <LoadingText>Caricamento della Terra...</LoadingText>
-            </LoadingOverlay>
-        )}
-        
-        <Controls
-        initial={{ opacity: 0, x: 20 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: 0.6, delay: 1 }}
-        >
-        <ControlButton onClick={resetView} title="Reset Vista">
-        🌍
-        </ControlButton>
-        <ControlButton onClick={toggleAutoRotate} title="Auto Rotazione">
-        {autoRotate ? '⏸️' : '▶️'}
-        </ControlButton>
-        <ControlButton onClick={zoomIn} title="Zoom In">
-        ➕
-        </ControlButton>
-        <ControlButton onClick={zoomOut} title="Zoom Out">
-        ➖
-        </ControlButton>
-        </Controls>
-        
-        {/* Popup informativo per marker in hover */}
-        {hoveredMarker && (
-            <InfoPopup
-            ref={popupRef}
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.8 }}
-            style={{
-                left: `${adjustedPosition.x}px`,
-                top: `${adjustedPosition.y}px`
-            }}
-            >
-            <h4>
-            {hoveredMarker.isCluster 
-                ? `${hoveredMarker.photoCount} foto in zona`
-                : hoveredMarker.title
-            }
-            </h4>
-            <p>📍 {hoveredMarker.location}</p>
-            <p style={{ fontSize: '0.75rem', opacity: 0.6 }}>
-            {hoveredMarker.isCluster 
-                ? `Clicca per vedere tutte le ${hoveredMarker.photoCount} foto`
-                : 'Clicca per vedere la foto'
-            }
-            </p>
-            </InfoPopup>
-        )}
-        
-        <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
-        </GlobeWrapper>
-        
-        <StatsContainer variants={sectionVariants}>
-        <StatCard
-        variants={itemVariants}
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        >
-        <StatNumber>{stats.totalPhotos}</StatNumber>
-        <StatLabel>Foto Totali</StatLabel>
-        </StatCard>
-        
-        <StatCard
-        variants={itemVariants}
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        >
-        <StatNumber>{stats.countries}</StatNumber>
-        <StatLabel>Paesi Visitati</StatLabel>
-        </StatCard>
-        
-        <StatCard
-        variants={itemVariants}
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        >
-        <StatNumber>{stats.continents}</StatNumber>
-        <StatLabel>Continenti</StatLabel>
-        </StatCard>
-        
-        <StatCard
-        variants={itemVariants}
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        >
-        <StatNumber>{stats.cities}</StatNumber>
-        <StatLabel>Città Fotografate</StatLabel>
-        </StatCard>
-        </StatsContainer>
-        </Container>
-        </MapSection>
-    );
+        <h4>
+        {hoveredMarker.isCluster 
+            ? `${hoveredMarker.photoCount} foto in zona`
+            : hoveredMarker.title
+        }
+        </h4>
+        <p>📍 {hoveredMarker.location}</p>
+        <p style={{ fontSize: '0.75rem', opacity: 0.6 }}>
+        {hoveredMarker.isCluster 
+            ? `Clicca per vedere tutte le ${hoveredMarker.photoCount} foto`
+            : 'Clicca per vedere la foto'
+        }
+        </p>
+        </InfoPopup>
+    )}
+    
+    <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
+    </GlobeWrapper>
+    
+    <StatsContainer variants={sectionVariants}>
+    <StatCard
+    variants={itemVariants}
+    whileHover={{ scale: 1.05 }}
+    whileTap={{ scale: 0.95 }}
+    >
+    <StatNumber>{stats.totalPhotos}</StatNumber>
+    <StatLabel>Foto Totali</StatLabel>
+    </StatCard>
+    
+    <StatCard
+    variants={itemVariants}
+    whileHover={{ scale: 1.05 }}
+    whileTap={{ scale: 0.95 }}
+    >
+    <StatNumber>{stats.countries}</StatNumber>
+    <StatLabel>Paesi Visitati</StatLabel>
+    </StatCard>
+    
+    <StatCard
+    variants={itemVariants}
+    whileHover={{ scale: 1.05 }}
+    whileTap={{ scale: 0.95 }}
+    >
+    <StatNumber>{stats.continents}</StatNumber>
+    <StatLabel>Continenti</StatLabel>
+    </StatCard>
+    
+    <StatCard
+    variants={itemVariants}
+    whileHover={{ scale: 1.05 }}
+    whileTap={{ scale: 0.95 }}
+    >
+    <StatNumber>{stats.cities}</StatNumber>
+    <StatLabel>Città Fotografate</StatLabel>
+    </StatCard>
+    </StatsContainer>
+    </Container>
+    </MapSection>
+);
 };
 
 export default WorldMap;

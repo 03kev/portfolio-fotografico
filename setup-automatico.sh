@@ -390,35 +390,35 @@ print_final_summary() {
     print_header "🎉 Setup Completato!"
     
     echo -e "\n${GREEN}📋 Configurazione Completata:${NC}"
-    echo "   ✅ Dipendenze backend e frontend installate"
-    echo "   ✅ File di configurazione .env creati"
-    echo "   ✅ Cartelle di sistema create"
-    echo "   ✅ Database inizializzato"
-    echo "   ✅ Script di utilità generati"
-    echo "   ✅ Permessi configurati"
+    echo -e "   ✅ Dipendenze backend e frontend installate"
+    echo -e "   ✅ File di configurazione .env creati"
+    echo -e "   ✅ Cartelle di sistema create"
+    echo -e "   ✅ Database inizializzato"
+    echo -e "   ✅ Script di utilità generati"
+    echo -e "   ✅ Permessi configurati"
     
     echo -e "\n${BLUE}🚀 Prossimi Passi:${NC}"
-    echo "1. Avvia il sistema:"
+    echo -e "1. Avvia il sistema:"
     if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
-        echo "   ${CYAN}start-windows.bat${NC} (doppio click)"
+        echo -e "   ${CYAN}start-windows.bat${NC} (doppio click)"
     else
-        echo "   ${CYAN}./start-unix.sh${NC}"
+        echo -e "   ${CYAN}./start-unix.sh${NC}"
     fi
     
     echo -e "\n2. Apri il browser:"
-    echo "   ${CYAN}http://localhost:3000${NC}"
+    echo -e "   ${CYAN}http://localhost:3000${NC}"
     
     echo -e "\n3. Verifica sistema (opzionale):"
-    echo "   ${CYAN}./verify-system.sh${NC}"
+    echo -e "   ${CYAN}./verify-system.sh${NC}"
     
     echo -e "\n${YELLOW}🔧 Comandi Utili:${NC}"
-    echo "   ${CYAN}./cleanup-backups.sh${NC}     - Pulisce file backup"
-    echo "   ${CYAN}./verify-system.sh${NC}       - Verifica configurazione"
+    echo -e "   ${CYAN}./cleanup-backups.sh${NC}     - Pulisce file backup"
+    echo -e "   ${CYAN}./verify-system.sh${NC}       - Verifica configurazione"
     
     echo -e "\n${PURPLE}📡 URL di Accesso:${NC}"
-    echo "   Frontend: ${GREEN}http://localhost:3000${NC}"
-    echo "   Backend:  ${GREEN}http://localhost:5000${NC}"
-    echo "   API:      ${GREEN}http://localhost:5000/api${NC}"
+    echo -e "   Frontend: ${GREEN}http://localhost:3000${NC}"
+    echo -e "   Backend:  ${GREEN}http://localhost:5000${NC}"
+    echo -e "   API:      ${GREEN}http://localhost:5000/api${NC}"
     
     echo -e "\n${CYAN}✨ Buon lavoro con il tuo Portfolio Fotografico! ✨${NC}"
 }

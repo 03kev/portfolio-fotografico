@@ -236,14 +236,14 @@ main() {
         print_success "Sistema pronto per l'avvio!"
         echo ""
         print_info "Comandi disponibili:"
-        echo "   ${CYAN}./start-unix.sh${NC}     - Avvia sistema (macOS/Linux)"
-        echo "   ${CYAN}start-windows.bat${NC}  - Avvia sistema (Windows)"
-        echo "   ${CYAN}./verify-system.sh${NC} - Ri-verifica sistema"
+        echo -e "   ${CYAN}./start-unix.sh${NC}     - Avvia sistema (macOS/Linux)"
+        echo -e "   ${CYAN}start-windows.bat${NC}  - Avvia sistema (Windows)"
+        echo -e "   ${CYAN}./verify-system.sh${NC} - Ri-verifica sistema"
         echo ""
         print_info "URL di accesso:"
-        echo "   Frontend: ${GREEN}http://localhost:3000${NC}"
-        echo "   Backend:  ${GREEN}http://localhost:5000${NC}"
-        echo "   API:      ${GREEN}http://localhost:5000/api${NC}"
+        echo -e "   Frontend: ${GREEN}http://localhost:3000${NC}"
+        echo -e "   Backend:  ${GREEN}http://localhost:5000${NC}"
+        echo -e "   API:      ${GREEN}http://localhost:5000/api${NC}"
     else
         print_warning "Configurazione incompleta"
         print_info "Esegui il setup automatico per risolvere i problemi"
@@ -252,18 +252,18 @@ main() {
     echo ""
     print_header "🔧 Comandi di Manutenzione"
     
-    echo "   ${YELLOW}Pulizia cache:${NC}"
-    echo "   cd backend && npm run clean"
-    echo "   cd frontend && npm run clean"
+    echo -e "   ${YELLOW}Pulizia cache:${NC}"
+    echo -e "   cd backend && npm run clean"
+    echo -e "   cd frontend && npm run clean"
     echo ""
-    echo "   ${YELLOW}Aggiornamento dipendenze:${NC}"
-    echo "   cd backend && npm update"
-    echo "   cd frontend && npm update"
+    echo -e "   ${YELLOW}Aggiornamento dipendenze:${NC}"
+    echo -e "   cd backend && npm update"
+    echo -e "   cd frontend && npm update"
     echo ""
-    echo "   ${YELLOW}Reset completo:${NC}"
-    echo "   ./cleanup-backups.sh"
-    echo "   rm -rf */node_modules"
-    echo "   ./setup-automatico.sh"
+    echo -e "   ${YELLOW}Reset completo:${NC}"
+    echo -e "   ./cleanup-backups.sh"
+    echo -e "   rm -rf */node_modules"
+    echo -e "   ./setup-automatico.sh"
     echo ""
     
     # Statistiche finali
@@ -275,14 +275,14 @@ main() {
     local css_files=$(find . -name "*.css" | wc -l)
     local json_files=$(find . -name "*.json" | wc -l)
     
-    echo "   📁 File totali: $total_files"
-    echo "   📄 File JavaScript: $js_files"
-    echo "   🎨 File CSS: $css_files"
-    echo "   ⚙️  File JSON: $json_files"
-    
+    echo -e "   📁 File totali:\t $total_files"
+    echo -e "   📄 File JavaScript:\t $js_files"
+    echo -e "   🎨 File CSS:\t\t $css_files"
+    echo -e "   ⚙️  File JSON:\t $json_files"
+
     if [ -d "backend/uploads" ]; then
         local uploaded_images=$(find backend/uploads -name "*.jpg" -o -name "*.png" -o -name "*.webp" 2>/dev/null | wc -l)
-        echo "   🖼️  Immagini caricate: $uploaded_images"
+        echo -e "   🖼️  Immagini caricate: $uploaded_images"
     fi
     
     echo ""
@@ -291,10 +291,10 @@ main() {
     # Suggerimenti finali
     echo ""
     print_info "💡 Suggerimenti:"
-    echo "   - Esegui questa verifica dopo ogni aggiornamento"
-    echo "   - Controlla i log se qualcosa non funziona"
-    echo "   - Usa gli script interattivi per debugging"
-    echo "   - Mantieni Node.js e npm aggiornati"
+    echo -e "   - Esegui questa verifica dopo ogni aggiornamento"
+    echo -e "   - Controlla i log se qualcosa non funziona"
+    echo -e "   - Usa gli script interattivi per debugging"
+    echo -e "   - Mantieni Node.js e npm aggiornati"
     echo ""
 }
 
