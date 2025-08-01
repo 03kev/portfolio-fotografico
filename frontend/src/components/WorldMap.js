@@ -785,6 +785,25 @@ useEffect(() => {
             
             const earth = new THREE.Mesh(earthGeometry, earthMaterial);
             scene.add(earth);
+            
+            // BORDERS
+            const boundaryTexture = textureLoader.load('/textures/boundaries_8k.png');
+            const boundaryMaterial = new THREE.MeshBasicMaterial({
+                map: boundaryTexture,
+                transparent: true,
+                depthTest: true,
+                opacity: 0.5, 
+                polygonOffset: true,
+                polygonOffsetFactor: -1,
+                polygonOffsetUnits: 1
+            });
+            const boundaryMesh = new THREE.Mesh(
+                new THREE.SphereGeometry(GLOBE_RADIUS + 0.005, 64, 64),
+                boundaryMaterial
+            );
+            scene.add(boundaryMesh);
+            boundaryMesh.rotation.y = THREE.MathUtils.degToRad(START_LON_OFFSET_DEG+0.03);
+            
             globeRef.current = earth;
             
             earth.rotation.y = THREE.MathUtils.degToRad(START_LON_OFFSET_DEG);
@@ -820,11 +839,11 @@ useEffect(() => {
     scene.add(atmosphere);
     
     // sistema di illuminazione più "daylight" (meno ombre notturne)
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.04);
     scene.add(ambientLight);
     
     const sunLight = new THREE.DirectionalLight(0xfff6e5, 1.2);
-    sunLight.position.set(5, 3, 5);
+    //sunLight.position.set(5, 3, 5);
     sunLight.castShadow = false;
     scene.add(sunLight);
     
@@ -1072,6 +1091,23 @@ useEffect(() => {
             currentClusterLevelRef.current = lvlNow;
             drawMarkersForLevel(lvlNow);
         }
+        
+        // Zona di ombra in basso a sinistra
+        const DISTANCE     = GLOBE_RADIUS * 5;                  // quanto lontano mettiamo il “sole”
+        const TILT_ELEV    = THREE.MathUtils.degToRad(32.5);      // inclinazione verso l’alto
+        const TILT_AZIM     = THREE.MathUtils.degToRad(27.5);     // inclinazione verso destra
+        // 1) Prendi la direzione di vista della camera (punta al centro dello schermo)
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);      // ora dir punta da camera ➔ centro
+        dir.negate();                       // inverti: da centro ➔ camera (cioè luce che viene verso di te)
+        // 2) Calcola gli assi locali della camera
+        const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
+        const camUp    = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
+        // 3) Applica le due rotazioni locali
+        dir.applyAxisAngle(camRight, -TILT_ELEV);   // “solleva” la luce verso l’alto dello schermo
+        dir.applyAxisAngle(camUp,    -TILT_AZIM);  // sposta la luce verso destra dello schermo
+        // 4) Imposta la posizione del directional light
+        sunLight.position.copy(dir.multiplyScalar(DISTANCE));
         
         renderer.render(scene, camera);
     };
