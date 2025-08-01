@@ -246,6 +246,7 @@ const WorldMap = () => {
     const popupRef = useRef(null);
     const skipUnzoomRef = useRef(false);
     const disablePopupRef = useRef(false);
+    const isAnimatingRef = useRef(false); // Blocca interazioni durante animazioni
     
     useLayoutEffect(() => {
         if (!popupRef.current) return;
@@ -900,8 +901,8 @@ useEffect(() => {
     
     // mouse move con throttling pesante per performance
     const handleMouseMove = throttle((event) => {
-        // Disabilita l'InfoPopup se un modal è aperto o dopo un click fino a chiusura modali
-        if (modalOpen || galleryModalOpen || disablePopupRef.current) {
+        // Disabilita l'InfoPopup se un modal è aperto, durante animazioni o dopo un click fino a chiusura modali
+        if (modalOpen || galleryModalOpen || disablePopupRef.current || isAnimatingRef.current) {
             markersRef.current.forEach(m => m.isHovered = false);
             setHoveredMarker(null);
             if (!isDraggingRef.current) setCanvasCursor('grab');
@@ -964,12 +965,9 @@ useEffect(() => {
     }, 50); // Throttle a 50ms per ridurre il carico
     
     const handleClick = (event) => {
-        // Chiudi sempre l'InfoPopup quando clicco un marker/cluster
-        markersRef.current.forEach(m => m.isHovered = false);
-        setHoveredMarker(null);
-        // Disabilita InfoPopup fino a chiusura di tutti i modal
-        disablePopupRef.current = true;
-        setCanvasCursor('grab');
+        // Ignora click se stiamo già animando o se i modal sono aperti
+        if (isAnimatingRef.current || modalOpen || galleryModalOpen) return;
+        
         const rect = renderer.domElement.getBoundingClientRect();
         mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -977,7 +975,17 @@ useEffect(() => {
         raycaster.setFromCamera(mouse, camera);
         const intersects = raycaster.intersectObjects(markerObjectsRef.current);
         
+        // Se non abbiamo cliccato su nessun marker, non fare nulla
         if (intersects.length === 0) return;
+        
+        // Blocca immediatamente tutte le interazioni
+        isAnimatingRef.current = true;
+        disablePopupRef.current = true;
+        
+        // Chiudi l'InfoPopup
+        markersRef.current.forEach(m => m.isHovered = false);
+        setHoveredMarker(null);
+        setCanvasCursor('grab');
         
         const mesh         = intersects[0].object;
         // il “gruppo” completo è sempre il parent di livello 1 (vedi createMarker)
@@ -1263,6 +1271,11 @@ const focusOnPhoto = (
             );
             controls.enabled     = prevEnabled;
             controls.autoRotate  = prevAutoRotate;   // resta off finché non riprende col timer
+            
+            // Riabilita le interazioni ora che l'animazione è finita
+            isAnimatingRef.current = false;
+            disablePopupRef.current = false;
+            
             if (typeof onComplete === "function") onComplete();
         }
     };
@@ -1276,10 +1289,6 @@ useEffect(() => {
 // Gestisci la rotazione della terra in base allo stato del modal
 // effetto completo per gestire l’apertura/chiusura del modal
 useEffect(() => {
-    // Reinstate InfoPopup when all modals are closed
-    if (!modalOpen && !galleryModalOpen) {
-        disablePopupRef.current = false;
-    }
     // Salta l’unzoom standard se proveniamo da “vai alla mappa”
     if (!modalOpen && skipUnzoomRef.current) {
         skipUnzoomRef.current = false;
@@ -1368,7 +1377,7 @@ const stats = useMemo(() => {
                 'regno unito', 'uk', 'united kingdom',
                 'grecia', 'greece', 
                 'portogallo', 'portugal',
-                'croazia', 'croatia', // ⭐ AGGIUNTO
+                'croazia', 'croatia',
                 'slovenia', 'austria', 'svizzera', 'switzerland',
                 'olanda', 'netherlands', 'belgio', 'belgium',
                 'danimarca', 'denmark', 'polonia', 'poland',
