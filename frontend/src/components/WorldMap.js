@@ -772,7 +772,7 @@ useEffect(() => {
         try {
             const earthTexture = await new Promise((resolve, reject) => {
                 textureLoader.load(
-                    '/textures/16k_earth.jpg',
+                    '/textures/8k_earth_v2.jpg',
                     resolve,
                     undefined,
                     reject
@@ -827,13 +827,53 @@ useEffect(() => {
     
     loadTextures();
     
-    // atmosfera semplificata
-    const atmosphereGeometry = new THREE.SphereGeometry(ATMOSPHERE_RADIUS, 32, 32);
-    const atmosphereMaterial = new THREE.MeshBasicMaterial({
-        color: 0x4a90e2,
+    // atmosfera con shader personalizzato che rispetta l'illuminazione
+    const atmosphereGeometry = new THREE.SphereGeometry(ATMOSPHERE_RADIUS, 64, 64);
+    const atmosphereMaterial = new THREE.ShaderMaterial({
+        vertexShader: `
+            varying vec3 vNormal;
+            varying vec3 vPosition;
+            varying vec3 vWorldPosition;
+            void main() {
+                vNormal = normalize(normalMatrix * normal);
+                vPosition = (modelViewMatrix * vec4(position, 1.0)).xyz;
+                vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform vec3 lightPosition;
+            varying vec3 vNormal;
+            varying vec3 vPosition;
+            varying vec3 vWorldPosition;
+            
+            void main() {
+                // Direzione della luce in coordinate mondo
+                vec3 lightDir = normalize(lightPosition);
+                
+                // Normale in coordinate mondo
+                vec3 worldNormal = normalize(vWorldPosition);
+                
+                // Calcola quanto la superficie punta verso la luce
+                float lightIntensity = dot(worldNormal, lightDir);
+                
+                // Effetto atmosfera basato sull'angolo di vista
+                vec3 viewDirection = normalize(vPosition);
+                float atmosphere = pow(1.0 - abs(dot(viewDirection, vNormal)), 2.0);
+                
+                // Modula l'atmosfera con l'illuminazione
+                atmosphere *= clamp(lightIntensity + 0.2, 0.0, 1.0); // Ridotto da 0.3 a 0.15 per ombra più grande
+                
+                vec3 atmosphereColor = vec3(0.3, 0.6, 1.0);
+                gl_FragColor = vec4(atmosphereColor, atmosphere * 0.25);
+            }
+        `,
+        uniforms: {
+            lightPosition: { value: new THREE.Vector3(5, 3, 5) }
+        },
+        side: THREE.BackSide,
         transparent: true,
-        opacity: 0.1,
-        side: THREE.BackSide
+        depthWrite: false
     });
     
     const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
@@ -1116,6 +1156,11 @@ useEffect(() => {
         dir.applyAxisAngle(camUp,    -TILT_AZIM);  // sposta la luce verso destra dello schermo
         // 4) Imposta la posizione del directional light
         sunLight.position.copy(dir.multiplyScalar(DISTANCE));
+        
+        // Aggiorna la posizione della luce per l'atmosfera (usa la stessa posizione del sunLight)
+        if (atmosphereMaterial && atmosphereMaterial.uniforms) {
+            atmosphereMaterial.uniforms.lightPosition.value.copy(sunLight.position);
+        }
         
         renderer.render(scene, camera);
     };

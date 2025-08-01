@@ -51,6 +51,6 @@ tmp/
 temp/
 
 # Textures
+frontend/public/textures/*10k*
 frontend/public/textures/*16k*
 frontend/public/textures/*32k*
-frontend/public/textures/*43k*
