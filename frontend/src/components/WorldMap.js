@@ -446,6 +446,20 @@ const drawMarkersForLevel = useCallback((level) => {
             if (child.isMesh) markerObjectsRef.current.push(child);
         });
     });
+    
+    // Aggiorna immediatamente la scala dei marker appena creati
+    if (cameraRef.current) {
+        const scaleFactor = THREE.MathUtils.clamp(
+            cameraRef.current.position.length() / CAMERA_START_Z,
+            0.35,
+            1
+        );
+        markersRef.current.forEach((marker) => {
+            if (marker.pulseScale) {
+                marker.pulseScale(0, scaleFactor);
+            }
+        });
+    }
 }, [clusterLevels, latLngToVector3, createMarker]);
 // ————————————————————————————————————————————————
 
@@ -848,6 +862,18 @@ useEffect(() => {
     markerObjectsRef.current = [];
     currentClusterLevelRef.current = radiusToLevel(camera.position.length());
     drawMarkersForLevel(currentClusterLevelRef.current);
+    
+    // Aggiorna scala marker in base alla distanza camera
+    const updateMarkerScales = () => {
+        const cameraDistance = camera.position.length();
+        const scaleFactor = Math.max(0.5, Math.min(2, (cameraDistance - 5) / 15));
+        
+        markersRef.current.forEach(marker => {
+            if (marker.pulseScale) {
+                marker.pulseScale(Date.now() * 0.001, scaleFactor);
+            }
+        });
+    };
     
     // raycaster ottimizzato
     const raycaster = new THREE.Raycaster();

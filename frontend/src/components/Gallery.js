@@ -22,6 +22,8 @@ const cardVariants = {
 };
 
 const GallerySection = styled(motion.section)`
+  padding-top: 125px !important;
+  padding-bottom: 125px !important;
   padding: var(--spacing-4xl) 0;
   background: linear-gradient(135deg, #1a1a1a 0%, #0c0c0c 100%);
 `;
@@ -340,7 +342,9 @@ const Gallery = () => {
     }
     
     return (
-        <GallerySection>
+        <GallerySection
+        id="gallery"
+        >
         <Container>
         <SectionTitle>
         Galleria Fotografica
