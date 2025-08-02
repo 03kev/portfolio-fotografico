@@ -3,7 +3,6 @@ import * as THREE from 'three';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import { usePhotos } from '../contexts/PhotoContext';
-import { createQuaternionControls } from '../utils/quaternionControls';
 
 import { useInView } from 'react-intersection-observer';
 
@@ -496,8 +495,7 @@ const scheduleAutoRotateResume = useCallback((delay = RESUME_ROTATE_DELAY) => {
     }, delay);
 }, [setAutoRotate, modalOpen, setHoveredMarker, setCanvasCursor]);
 
-// Removed createCustomControls - now using createQuaternionControls from utils
-/*
+// Creates custom controls for the camera
 const createCustomControls = useCallback((camera, domElement) => {
     const controls = {
         enabled: true,
@@ -674,7 +672,6 @@ const createCustomControls = useCallback((camera, domElement) => {
             document.removeEventListener('mouseup', this.onMouseUp);
             
             this.currentState = this.state.NONE;
-            this.isDragTracking = false; // Reset il tracking
             
             isDraggingRef.current = false;
             setCanvasCursor('grab');
@@ -791,7 +788,6 @@ const createCustomControls = useCallback((camera, domElement) => {
     
     return controls;
 }, [disableAutoRotate, scheduleAutoRotateResume]);
-*/
 
 useEffect(() => {
     if (!mountRef.current || !inView) return;
@@ -826,18 +822,8 @@ useEffect(() => {
     // setup camera iniziale
     camera.position.set(0, 0, CAMERA_START_Z);
     
-    // crea controlli personalizzati con quaternioni
-    const controls = createQuaternionControls(camera, renderer.domElement, {
-        autoRotateSpeed: AUTO_ROTATE_SPEED,
-        minDistance: MIN_CAMERA_DISTANCE,
-        maxDistance: MAX_CAMERA_DISTANCE,
-        disableAutoRotate,
-        scheduleAutoRotateResume,
-        setCanvasCursor,
-        isDraggingRef,
-        GLOBE_RADIUS,
-        CAMERA_START_Z
-    });
+    // crea controlli personalizzati
+    const controls = createCustomControls(camera, renderer.domElement);
     controls.autoRotate = autoRotate;
     controlsRef.current = controls;
     
@@ -1312,20 +1298,12 @@ useEffect(() => {
 // Funzioni di controllo ottimizzate
 const resetView = () => {
     if (cameraRef.current && globeRef.current && controlsRef.current) {
-        // Reset camera position
-        const startPos = new THREE.Vector3(0, 0, CAMERA_START_Z);
-        cameraRef.current.position.copy(startPos);
-        
-        // Reset globe rotation
+        cameraRef.current.position.set(0, 0, CAMERA_START_Z);
         globeRef.current.rotation.set(
             0,
             THREE.MathUtils.degToRad(START_LON_OFFSET_DEG),
             0
         );
-        
-        // Reset controls
-        controlsRef.current.setFromCamera(startPos);
-        controlsRef.current.radius = CAMERA_START_Z;
         controlsRef.current.autoRotate = true;
         setAutoRotate(true);
     }
@@ -1397,8 +1375,10 @@ const focusOnPhoto = (
         if (t < 1) {
             requestAnimationFrame(animate);
         } else {
-            // riallinea i quaternioni dei controlli alla nuova camera
-            controls.setFromCamera(camera.position);
+            // riallinea le sferiche dei controlli alla nuova camera
+            controls.spherical.setFromVector3(
+                camera.position.clone().sub(controls.target)
+            );
             controls.enabled     = prevEnabled;
             controls.autoRotate  = prevAutoRotate;   // resta off finché non riprende col timer
             
