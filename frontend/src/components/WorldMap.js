@@ -495,103 +495,100 @@ const scheduleAutoRotateResume = useCallback((delay = RESUME_ROTATE_DELAY) => {
     }, delay);
 }, [setAutoRotate, modalOpen, setHoveredMarker, setCanvasCursor]);
 
-// Creates custom controls for the camera
+// Creates custom controls for the camera with quaternion-based rotation
 const createCustomControls = useCallback((camera, domElement) => {
-    const controls = {
-        enabled: true,
-        autoRotate: false,
-        autoRotateSpeed: AUTO_ROTATE_SPEED,
-        enableDamping: true,
-        dampingFactor: 0.08,
-        enableZoom: true,
-        minDistance: MIN_CAMERA_DISTANCE,
-        maxDistance: MAX_CAMERA_DISTANCE,
-        enablePan: false,
+const controls = {
+enabled: true,
+autoRotate: false,
+autoRotateSpeed: AUTO_ROTATE_SPEED,
+enableDamping: true,
+dampingFactor: 0.08,
+enableZoom: true,
+minDistance: MIN_CAMERA_DISTANCE,
+maxDistance: MAX_CAMERA_DISTANCE,
+enablePan: false,
+
+// Spherical for zoom only
+spherical: new THREE.Spherical(),
+scale: 1,
+
+// Globe rotation state
+globeQuaternion: new THREE.Quaternion(),
+targetGlobeQuaternion: new THREE.Quaternion(),
+
+state: { NONE: -1, ROTATE: 0, ZOOM: 1 },
+currentState: -1,
+
+// Mouse tracking for drag
+mouseStart: new THREE.Vector2(),
+mouseEnd: new THREE.Vector2(),
+mouseDelta: new THREE.Vector2(),
+
+// Raycaster for drag on sphere
+raycaster: new THREE.Raycaster(),
+dragStart: new THREE.Vector3(),
+dragCurrent: new THREE.Vector3(),
+
+target: new THREE.Vector3(0, 0, 0),
+
+update: function() {
+    // Update camera distance
+    this.spherical.radius *= this.scale;
+    this.spherical.radius = Math.max(this.minDistance, Math.min(this.maxDistance, this.spherical.radius));
+    
+    // Keep camera fixed, looking at center
+    camera.position.set(0, 0, this.spherical.radius);
+    camera.lookAt(this.target);
+    
+    // Apply rotation to globe instead
+    if (globeRef.current) {
+        // Apply damping to globe rotation
+        if (this.enableDamping) {
+            this.globeQuaternion.slerp(this.targetGlobeQuaternion, this.dampingFactor);
+        } else {
+            this.globeQuaternion.copy(this.targetGlobeQuaternion);
+        }
         
-        spherical: new THREE.Spherical(),
-        sphericalDelta: new THREE.Spherical(),
-        scale: 1,
+        // Auto-rotate if enabled
+        if (this.autoRotate && this.currentState === this.state.NONE) {
+            const autoRotateQuat = new THREE.Quaternion().setFromAxisAngle(
+                new THREE.Vector3(0, 1, 0),
+                -this.autoRotateSpeed * 2 * Math.PI / 60 / 60
+            );
+            this.targetGlobeQuaternion.premultiply(autoRotateQuat);
+        }
         
-        state: { NONE: -1, ROTATE: 0, ZOOM: 1 },
-        currentState: -1,
-        
-        rotateStart: new THREE.Vector2(),
-        rotateEnd: new THREE.Vector2(),
-        rotateDelta: new THREE.Vector2(),
-        
-        target: new THREE.Vector3(0, 0, 0),
-        
-        update: function() {
-            const offset = new THREE.Vector3();
-            const quat = new THREE.Quaternion().setFromUnitVectors(camera.up, new THREE.Vector3(0, 1, 0));
-            const quatInverse = quat.clone().invert();
-            
-            offset.copy(camera.position).sub(this.target);
-            offset.applyQuaternion(quat);
-            
-            this.spherical.setFromVector3(offset);
-            
-            if (this.autoRotate && this.currentState === this.state.NONE) {
-                this.spherical.theta -= this.autoRotateSpeed * 2 * Math.PI / 60 / 60;
-            }
-            
-            this.spherical.theta += this.sphericalDelta.theta;
-            this.spherical.phi += this.sphericalDelta.phi;
-            
-            this.spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, this.spherical.phi));
-            
-            this.spherical.radius *= this.scale;
-            this.spherical.radius = Math.max(this.minDistance, Math.min(this.maxDistance, this.spherical.radius));
-            
-            offset.setFromSpherical(this.spherical);
-            offset.applyQuaternion(quatInverse);
-            
-            camera.position.copy(this.target).add(offset);
-            camera.lookAt(this.target);
-            
-            if (this.enableDamping) {
-                this.sphericalDelta.theta *= (1 - this.dampingFactor);
-                this.sphericalDelta.phi *= (1 - this.dampingFactor);
-            } else {
-                this.sphericalDelta.set(0, 0, 0);
-            }
-            
-            this.scale = 1;
-        },
-        
-        // Aggiungiamo variabili per il tracking del punto cliccato
-        dragStartVector: new THREE.Vector3(),
-        isDragTracking: false,
+        // Apply final rotation to globe
+        globeRef.current.quaternion.copy(this.globeQuaternion);
+    }
+    
+    // Reset scale
+    this.scale = 1;
+},
         
         onMouseDown: function(event) {
             if (!this.enabled) return;
             event.preventDefault();
             
             switch (event.button) {
-                case 0:
+                case 0: // Left mouse button
                     this.currentState = this.state.ROTATE;
-                    this.rotateStart.set(event.clientX, event.clientY);
+                    this.mouseStart.set(event.clientX, event.clientY);
                     
-                    // Calcola quale punto del globo è stato cliccato
+                    // Get the point on the sphere where we clicked
                     const rect = domElement.getBoundingClientRect();
-                    const mouse = new THREE.Vector2();
-                    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-                    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+                    const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                    const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
                     
-                    const raycaster = new THREE.Raycaster();
-                    raycaster.setFromCamera(mouse, camera);
+                    this.raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
+                    const intersects = this.raycaster.intersectObject(globeRef.current);
                     
-                    // Interseca con una sfera invisibile del raggio del globo
-                    const globeSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), GLOBE_RADIUS);
-                    const intersectPoint = new THREE.Vector3();
-                    
-                    if (raycaster.ray.intersectSphere(globeSphere, intersectPoint)) {
-                        // Abbiamo cliccato sul globo, salva il punto
-                        this.dragStartVector.copy(intersectPoint).normalize();
-                        this.isDragTracking = true;
+                    if (intersects.length > 0) {
+                        // We clicked on the globe - store the point
+                        this.dragStart.copy(intersects[0].point).normalize();
                     } else {
-                        // Non abbiamo cliccato sul globo, usa il drag normale
-                        this.isDragTracking = false;
+                        // Clicked outside - use screen-based rotation
+                        this.dragStart.set(0, 0, 0);
                     }
                     
                     disableAutoRotate();
@@ -613,51 +610,60 @@ const createCustomControls = useCallback((camera, domElement) => {
             event.preventDefault();
             
             if (this.currentState === this.state.ROTATE) {
-                if (this.isDragTracking) {
-                    // Nuovo sistema: mantieni il punto cliccato sotto il cursore
+                this.mouseEnd.set(event.clientX, event.clientY);
+                
+                if (this.dragStart.lengthSq() > 0 && globeRef.current) {
+                    // Drag on sphere - get current intersection point
                     const rect = domElement.getBoundingClientRect();
-                    const mouse = new THREE.Vector2();
-                    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-                    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+                    const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                    const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
                     
-                    const raycaster = new THREE.Raycaster();
-                    raycaster.setFromCamera(mouse, camera);
+                    this.raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
                     
-                    // Calcola dove dovrebbe essere il punto ora
-                    const globeSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), GLOBE_RADIUS);
-                    const targetPoint = new THREE.Vector3();
+                    // Use a larger invisible sphere for better dragging
+                    const dragSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), GLOBE_RADIUS * 1.2);
+                    const ray = this.raycaster.ray;
+                    const intersection = new THREE.Vector3();
                     
-                    if (raycaster.ray.intersectSphere(globeSphere, targetPoint)) {
-                        targetPoint.normalize();
+                    if (ray.intersectSphere(dragSphere, intersection)) {
+                        this.dragCurrent.copy(intersection).normalize();
                         
-                        // Calcola la rotazione necessaria per portare dragStartVector a targetPoint
-                        const quaternion = new THREE.Quaternion();
-                        quaternion.setFromUnitVectors(this.dragStartVector, targetPoint);
+                        // Calculate rotation to move dragStart to dragCurrent
+                        const rotationAxis = new THREE.Vector3().crossVectors(this.dragStart, this.dragCurrent);
+                        const rotationAngle = this.dragStart.angleTo(this.dragCurrent);
                         
-                        // Converti il quaternion in angoli sferici
-                        const euler = new THREE.Euler().setFromQuaternion(quaternion);
-                        
-                        // Applica la rotazione
-                        this.sphericalDelta.theta -= euler.y;
-                        this.sphericalDelta.phi -= euler.x;
-                        
-                        // Aggiorna il vettore di partenza per il prossimo frame
-                        this.dragStartVector.copy(targetPoint);
-                    } else {
-                        // Il cursore è uscito dal globo, ferma il tracking
-                        this.isDragTracking = false;
+                        if (rotationAxis.length() > 0.001) {
+                            rotationAxis.normalize();
+                            
+                            // Create rotation quaternion
+                            const deltaQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, rotationAngle);
+                            
+                            // Apply rotation to target quaternion
+                            this.targetGlobeQuaternion.premultiply(deltaQuat);
+                            
+                            // Update drag start for smooth continuous rotation
+                            this.dragStart.copy(this.dragCurrent);
+                        }
                     }
                 } else {
-                    // Sistema di drag classico (quando clicchi fuori dal globo)
-                    this.rotateEnd.set(event.clientX, event.clientY);
-                    const dragT = (this.spherical.radius - this.minDistance) / (this.maxDistance - this.minDistance || 1);
-                    const dragFactor = 0.004 * Math.max(0.15, Math.min(1, dragT));
-                    this.rotateDelta.subVectors(this.rotateEnd, this.rotateStart).multiplyScalar(dragFactor);
+                    // Screen-based rotation (when clicking outside globe)
+                    this.mouseDelta.subVectors(this.mouseEnd, this.mouseStart);
                     
-                    this.sphericalDelta.theta -= this.rotateDelta.x;
-                    this.sphericalDelta.phi -= this.rotateDelta.y;
+                    const rotateSpeed = 0.005;
                     
-                    this.rotateStart.copy(this.rotateEnd);
+                    // Get camera's local axes
+                    const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+                    const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+                    
+                    // Create rotations around camera's local axes
+                    const horizontalQuat = new THREE.Quaternion().setFromAxisAngle(cameraUp, -this.mouseDelta.x * rotateSpeed);
+                    const verticalQuat = new THREE.Quaternion().setFromAxisAngle(cameraRight, -this.mouseDelta.y * rotateSpeed);
+                    
+                    // Apply to target quaternion
+                    this.targetGlobeQuaternion.premultiply(horizontalQuat);
+                    this.targetGlobeQuaternion.premultiply(verticalQuat);
+                    
+                    this.mouseStart.copy(this.mouseEnd);
                 }
                 
                 disableAutoRotate();
@@ -685,51 +691,61 @@ const createCustomControls = useCallback((camera, domElement) => {
             const absX = Math.abs(event.deltaX || 0);
             const absY = Math.abs(event.deltaY || 0);
             
-            // Heuristics:
-            // - ctrl/meta => pinch zoom (Mac trackpad)
-            // - mouse wheel: absX ~ 0 and big |deltaY| or deltaMode === 1
+            // Detect pinch zoom vs scroll
             const isPinch = !!(event.ctrlKey || event.metaKey);
             const isMouseWheel = !isPinch && absX < 1 && (event.deltaMode === 1 || absY >= 40);
             
-            const zoomT = (this.spherical.radius - this.minDistance) / (this.maxDistance - this.minDistance || 1);
-            const clampT = Math.max(0, Math.min(1, zoomT));
-            
-            // Zoom factors: smaller => faster
-            const basePinch = 0.992;                 // più veloce con le dita
-            const baseWheel = 0.985;                // classico ma reattivo
-            const base = isPinch ? basePinch : baseWheel;
-            
-            // Rotazione sensitivity
-            const k = (0.004 * Math.max(0.15, Math.min(1, clampT))) * 0.30;
-            
             if (isPinch || isMouseWheel) {
+                // Zoom
                 if (!this.enableZoom) return;
-                // deltaY > 0 => ZOOM IN (avvicina), deltaY < 0 => ZOOM OUT
+                const zoomSpeed = 0.99;
                 if (event.deltaY > 0) {
-                    this.scale /= base;
+                    this.scale /= zoomSpeed;
                 } else if (event.deltaY < 0) {
-                    this.scale *= base;
+                    this.scale *= zoomSpeed;
                 }
-                disableAutoRotate();
-                scheduleAutoRotateResume();
             } else {
-                // Rotazione 2D: invertito verticale rispetto alla versione precedente
-                const dx = (event.deltaX || 0);
-                const dy = (event.deltaY || 0);
-                // dx > 0 (dita a destra) => est (theta +)
-                this.sphericalDelta.theta += dx * k;
-                // dy > 0 (dita in giù) => sud (phi +)
-                this.sphericalDelta.phi   += dy * k;
-                disableAutoRotate();
-                scheduleAutoRotateResume();
+                // Trackpad rotation with quaternions
+                const rotateSpeed = 0.002;
+                const deltaX = event.deltaX || 0;
+                const deltaY = event.deltaY || 0;
+                
+                // Get camera's local axes
+                const cameraRight = new THREE.Vector3(1, 0, 0);
+                const cameraUp = new THREE.Vector3(0, 1, 0);
+                
+                // Create rotations around camera's local axes  
+                const horizontalQuat = new THREE.Quaternion().setFromAxisAngle(cameraUp, -deltaX * rotateSpeed);
+                const verticalQuat = new THREE.Quaternion().setFromAxisAngle(cameraRight, -deltaY * rotateSpeed);
+                
+                // Apply to target quaternion
+                this.targetGlobeQuaternion.premultiply(horizontalQuat);
+                this.targetGlobeQuaternion.premultiply(verticalQuat);
             }
+            
+            disableAutoRotate();
+            scheduleAutoRotateResume();
         },
         
         onTouchStart: function(event) {
             if (!this.enabled) return;
             if (event.touches.length === 1) {
                 this.currentState = this.state.ROTATE;
-                this.rotateStart.set(event.touches[0].pageX, event.touches[0].pageY);
+                this.mouseStart.set(event.touches[0].pageX, event.touches[0].pageY);
+                
+                // Try to get touch point on sphere
+                const rect = domElement.getBoundingClientRect();
+                const x = ((event.touches[0].clientX - rect.left) / rect.width) * 2 - 1;
+                const y = -((event.touches[0].clientY - rect.top) / rect.height) * 2 + 1;
+                
+                this.raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
+                const intersects = this.raycaster.intersectObject(globeRef.current);
+                
+                if (intersects.length > 0) {
+                    this.dragStart.copy(intersects[0].point).normalize();
+                } else {
+                    this.dragStart.set(0, 0, 0);
+                }
             }
         },
         
@@ -738,14 +754,51 @@ const createCustomControls = useCallback((camera, domElement) => {
             event.preventDefault();
             
             if (event.touches.length === 1 && this.currentState === this.state.ROTATE) {
-                this.rotateEnd.set(event.touches[0].pageX, event.touches[0].pageY);
-                const dragT = (this.spherical.radius - this.minDistance) / (this.maxDistance - this.minDistance || 1);
-                const dragFactor = 0.004 * Math.max(0.15, Math.min(1, dragT));
+                this.mouseEnd.set(event.touches[0].pageX, event.touches[0].pageY);
                 
-                this.sphericalDelta.theta -= this.rotateDelta.x;
-                this.sphericalDelta.phi -= this.rotateDelta.y;
+                if (this.dragStart.lengthSq() > 0) {
+                    // Touch drag on sphere
+                    const rect = domElement.getBoundingClientRect();
+                    const x = ((event.touches[0].clientX - rect.left) / rect.width) * 2 - 1;
+                    const y = -((event.touches[0].clientY - rect.top) / rect.height) * 2 + 1;
+                    
+                    this.raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
+                    const intersects = this.raycaster.intersectObject(globeRef.current);
+                    
+                    if (intersects.length > 0) {
+                        this.dragCurrent.copy(intersects[0].point).normalize();
+                        
+                        // Calculate rotation to move dragStart to dragCurrent
+                        const rotationAxis = new THREE.Vector3().crossVectors(this.dragStart, this.dragCurrent);
+                        const rotationAngle = this.dragStart.angleTo(this.dragCurrent);
+                        
+                        if (rotationAxis.length() > 0.001) {
+                            rotationAxis.normalize();
+                            const deltaQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, rotationAngle);
+                            this.targetGlobeQuaternion.premultiply(deltaQuat);
+                            this.dragStart.copy(this.dragCurrent);
+                        }
+                    }
+                } else {
+                    // Screen-based touch rotation
+                    this.mouseDelta.subVectors(this.mouseEnd, this.mouseStart);
+                    
+                    const rotateSpeed = 0.005;
+                    // Get camera's local axes
+                    const cameraRight = new THREE.Vector3(1, 0, 0);
+                    const cameraUp = new THREE.Vector3(0, 1, 0);
+                    
+                    // Create rotations around camera's local axes
+                    const horizontalQuat = new THREE.Quaternion().setFromAxisAngle(cameraUp, -this.mouseDelta.x * rotateSpeed);
+                    const verticalQuat = new THREE.Quaternion().setFromAxisAngle(cameraRight, -this.mouseDelta.y * rotateSpeed);
+                    
+                    // Apply to target quaternion
+                    this.targetGlobeQuaternion.premultiply(horizontalQuat);
+                    this.targetGlobeQuaternion.premultiply(verticalQuat);
+                    
+                    this.mouseStart.copy(this.mouseEnd);
+                }
                 
-                this.rotateStart.copy(this.rotateEnd);
                 disableAutoRotate();
                 scheduleAutoRotateResume();
             }
@@ -783,7 +836,15 @@ const createCustomControls = useCallback((camera, domElement) => {
         }
     };
     
+    // Initialize spherical from camera position
     controls.spherical.setFromVector3(camera.position.clone().sub(controls.target));
+    
+    // Initialize globe quaternion
+    if (globeRef.current) {
+        controls.globeQuaternion.copy(globeRef.current.quaternion);
+        controls.targetGlobeQuaternion.copy(globeRef.current.quaternion);
+    }
+    
     controls.bindEventHandlers();
     
     return controls;
@@ -1298,12 +1359,17 @@ useEffect(() => {
 // Funzioni di controllo ottimizzate
 const resetView = () => {
     if (cameraRef.current && globeRef.current && controlsRef.current) {
-        cameraRef.current.position.set(0, 0, CAMERA_START_Z);
-        globeRef.current.rotation.set(
-            0,
-            THREE.MathUtils.degToRad(START_LON_OFFSET_DEG),
-            0
+        // Reset camera distance
+        controlsRef.current.spherical.radius = CAMERA_START_Z;
+        
+        // Reset globe rotation to initial state
+        const initialRotation = new THREE.Quaternion().setFromEuler(
+            new THREE.Euler(0, THREE.MathUtils.degToRad(START_LON_OFFSET_DEG), 0)
         );
+        controlsRef.current.targetGlobeQuaternion.copy(initialRotation);
+        controlsRef.current.globeQuaternion.copy(initialRotation);
+        
+        // Re-enable auto-rotate
         controlsRef.current.autoRotate = true;
         setAutoRotate(true);
     }
@@ -1318,16 +1384,14 @@ const toggleAutoRotate = () => {
 };
 
 const zoomIn = () => {
-    if (cameraRef.current) {
-        const newZ = Math.max(2.5, cameraRef.current.position.z - 0.8);
-        cameraRef.current.position.z = newZ;
+    if (controlsRef.current) {
+        controlsRef.current.scale = 0.9;
     }
 };
 
 const zoomOut = () => {
-    if (cameraRef.current) {
-        const newZ = Math.min(15, cameraRef.current.position.z + 0.8);
-        cameraRef.current.position.z = newZ;
+    if (controlsRef.current) {
+        controlsRef.current.scale = 1.1;
     }
 };
 
@@ -1353,10 +1417,27 @@ const focusOnPhoto = (
     if (!photo || !cameraRef.current || !controlsRef.current) return;
     const controls = controlsRef.current;
     const camera   = cameraRef.current;
-    prevRadiusRef.current = camera.position.length();  // distanza attuale
-    const dir = latLngToVector3(photo.lat, photo.lng, 1).normalize(); // direzione del marker
-    const destPos = dir.clone().multiplyScalar(targetRadius);   // camera opposta al pin
-    const startPos = camera.position.clone();
+    prevRadiusRef.current = controls.spherical.radius;  // distanza attuale
+    const markerPos = latLngToVector3(photo.lat, photo.lng, 1).normalize(); // posizione del marker
+    
+    // Calculate rotation to bring marker to front
+    const front = new THREE.Vector3(0, 0, 1); // Front of globe when camera looks from z axis
+    const currentMarkerWorld = markerPos.clone().applyQuaternion(controls.globeQuaternion);
+    
+    // Calculate the rotation needed
+    const rotationAxis = new THREE.Vector3().crossVectors(currentMarkerWorld, front);
+    const rotationAngle = currentMarkerWorld.angleTo(front);
+    
+    let targetGlobeQuat = controls.globeQuaternion.clone();
+    if (rotationAxis.length() > 0.001) {
+        rotationAxis.normalize();
+        const deltaQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, rotationAngle);
+        targetGlobeQuat.premultiply(deltaQuat);
+    }
+    
+    // Store initial values
+    const startQuat = controls.globeQuaternion.clone();
+    const startRadius = controls.spherical.radius;
     
     // sospendi controlli / auto-rotate
     const prevEnabled    = controls.enabled;
@@ -1369,16 +1450,20 @@ const focusOnPhoto = (
     const animate = (now) => {
         const t = Math.min(1, (now - start) / duration);
         const ease = 1 - Math.pow(1 - t, 2);       // easeOutQuad
-        camera.position.lerpVectors(startPos, destPos, ease);
-        camera.lookAt(0, 0, 0);
+        
+        // Interpolate globe rotation
+        controls.globeQuaternion.slerpQuaternions(startQuat, targetGlobeQuat, ease);
+        controls.targetGlobeQuaternion.copy(controls.globeQuaternion);
+        
+        // Interpolate zoom
+        controls.spherical.radius = startRadius + (targetRadius - startRadius) * ease;
+        
+        // Update controls
+        controls.update();
         
         if (t < 1) {
             requestAnimationFrame(animate);
         } else {
-            // riallinea le sferiche dei controlli alla nuova camera
-            controls.spherical.setFromVector3(
-                camera.position.clone().sub(controls.target)
-            );
             controls.enabled     = prevEnabled;
             controls.autoRotate  = prevAutoRotate;   // resta off finché non riprende col timer
             
@@ -1438,10 +1523,8 @@ useEffect(() => {
     requestAnimationFrame(levelAnim);
     
     /* 2) Zoom-out alla distanza originale */
-    const zoomStartPos = cam.position.clone();
-    const destRadius   = prevRadiusRef.current || 5;
-    const destPos      = zoomStartPos.clone().normalize()
-    .multiplyScalar(destRadius);
+    const startRadius = controls.spherical.radius;
+    const destRadius = prevRadiusRef.current || CAMERA_START_Z;
     
     const zoomDur   = 700;
     const zoomStart = performance.now();
@@ -1449,8 +1532,12 @@ useEffect(() => {
     const zoomAnim = (now) => {
         const t    = Math.min(1, (now - zoomStart) / zoomDur);
         const ease = 1 - Math.pow(1 - t, 2);
-        cam.position.lerpVectors(zoomStartPos, destPos, ease);
-        cam.lookAt(0, 0, 0);
+        
+        // Interpolate zoom only (keep current rotation)
+        controls.spherical.radius = startRadius + (destRadius - startRadius) * ease;
+        
+        // Update camera
+        controls.update();
         
         if (t < 1) {
             requestAnimationFrame(zoomAnim);
