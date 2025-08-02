@@ -526,6 +526,12 @@ scale: 1,
 globeQuaternion: new THREE.Quaternion(),
 targetGlobeQuaternion: new THREE.Quaternion(),
 
+// Inertia system
+rotationVelocity: new THREE.Vector2(0, 0),
+lastMousePos: new THREE.Vector2(0, 0),
+lastRotationTime: Date.now(),
+inertiaEnabled: false,
+
 state: { NONE: -1, ROTATE: 0, ZOOM: 1 },
 currentState: -1,
 
@@ -553,6 +559,31 @@ target: new THREE.Vector3(0, 0, 0),
             
             // Apply rotation to globe and synchronize markers/borders
             if (globeRef.current) {
+                // Apply inertia if enabled
+                if (this.inertiaEnabled && this.currentState === this.state.NONE) {
+                    const inertiaDecay = 0.92; // How quickly inertia slows down (lower = faster decay)
+                    const minVelocity = 0.00005; // Minimum velocity before stopping
+                    
+                    if (Math.abs(this.rotationVelocity.x) > minVelocity || Math.abs(this.rotationVelocity.y) > minVelocity) {
+                        // Apply inertia rotation
+                        const cameraRight = new THREE.Vector3(1, 0, 0);
+                        const cameraUp = new THREE.Vector3(0, 1, 0);
+                        
+                        const horizontalQuat = new THREE.Quaternion().setFromAxisAngle(cameraUp, -this.rotationVelocity.x);
+                        const verticalQuat = new THREE.Quaternion().setFromAxisAngle(cameraRight, -this.rotationVelocity.y);
+                        
+                        this.targetGlobeQuaternion.premultiply(horizontalQuat);
+                        this.targetGlobeQuaternion.premultiply(verticalQuat);
+                        
+                        // Decay velocity
+                        this.rotationVelocity.multiplyScalar(inertiaDecay);
+                    } else {
+                        // Stop inertia when velocity is too small
+                        this.inertiaEnabled = false;
+                        this.rotationVelocity.set(0, 0);
+                    }
+                }
+                
                 // Apply damping to globe rotation
                 if (this.enableDamping) {
                     this.globeQuaternion.slerp(this.targetGlobeQuaternion, this.dampingFactor);
@@ -618,6 +649,12 @@ target: new THREE.Vector3(0, 0, 0),
                         this.dragStart.copy(intersects[0].point).normalize();
                         // Store the initial mouse position for this drag session
                         this.initialMousePos = new THREE.Vector2(x, y);
+                        
+                        // Initialize velocity tracking
+                        this.rotationVelocity.set(0, 0);
+                        this.lastMousePos.set(x, y);
+                        this.lastRotationTime = Date.now();
+                        this.inertiaEnabled = false;
                         
                         disableAutoRotate();
                         scheduleAutoRotateResume();
@@ -689,6 +726,27 @@ target: new THREE.Vector3(0, 0, 0),
                                 
                                 // Update dragStart to the new position after rotation for continuous tracking
                                 this.dragStart.copy(currentPoint);
+                                
+                                // Calculate velocity for inertia based on mouse movement
+                                const currentTime = Date.now();
+                                const deltaTime = (currentTime - this.lastRotationTime) / 1000; // Convert to seconds
+                                
+                                if (deltaTime > 0 && deltaTime < 0.1) { // Ignore if too much time has passed
+                                    const mouseDeltaX = currentX - this.lastMousePos.x;
+                                    const mouseDeltaY = currentY - this.lastMousePos.y;
+                                    
+                                    // Calculate instantaneous velocity
+                                    const instantVelX = (mouseDeltaX / deltaTime) * 0.003; // Scale factor for rotation
+                                    const instantVelY = (mouseDeltaY / deltaTime) * 0.003;
+                                    
+                                    // Smooth velocity update with higher weight on recent movement
+                                    const smoothingFactor = 0.3;
+                                    this.rotationVelocity.x = this.rotationVelocity.x * smoothingFactor + instantVelX * (1 - smoothingFactor);
+                                    this.rotationVelocity.y = this.rotationVelocity.y * smoothingFactor + instantVelY * (1 - smoothingFactor);
+                                }
+                                
+                                this.lastMousePos.set(currentX, currentY);
+                                this.lastRotationTime = currentTime;
                             }
                         } else {
                             // If no intersection, try sphere projection for edge cases
@@ -719,13 +777,40 @@ target: new THREE.Vector3(0, 0, 0),
                                         const deltaQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, rotationAngle);
                                         this.targetGlobeQuaternion.premultiply(deltaQuat);
                                         this.dragStart.copy(currentPoint);
+                                        
+                                        // Update velocity for inertia
+                                        const currentTime = Date.now();
+                                        const deltaTime = (currentTime - this.lastRotationTime) / 1000;
+                                        
+                                        if (deltaTime > 0 && deltaTime < 0.1) {
+                                            const mouseDeltaX = currentX - this.lastMousePos.x;
+                                            const mouseDeltaY = currentY - this.lastMousePos.y;
+                                            
+                                            const instantVelX = (mouseDeltaX / deltaTime) * 0.003;
+                                            const instantVelY = (mouseDeltaY / deltaTime) * 0.003;
+                                            
+                                            const smoothingFactor = 0.3;
+                                            this.rotationVelocity.x = this.rotationVelocity.x * smoothingFactor + instantVelX * (1 - smoothingFactor);
+                                            this.rotationVelocity.y = this.rotationVelocity.y * smoothingFactor + instantVelY * (1 - smoothingFactor);
+                                        }
+                                        
+                                        this.lastMousePos.set(currentX, currentY);
+                                        this.lastRotationTime = currentTime;
                                     }
                                 }
                             } else {
-                                // Mouse is too far outside - release drag
+                                // Mouse is too far outside - release drag with inertia
                                 this.dragStart.set(0, 0, 0);
                                 this.initialMousePos = null;
                                 this.mouseStart.set(event.clientX, event.clientY);
+                                
+                                // Enable inertia with current velocity
+                                this.inertiaEnabled = true;
+                                
+                                // Trigger mouse up to release drag
+                                this.currentState = this.state.NONE;
+                                isDraggingRef.current = false;
+                                setCanvasCursor('default');
                             }
                         }
                     }
@@ -755,16 +840,35 @@ target: new THREE.Vector3(0, 0, 0),
             }
         },
         
-        onMouseUp: function() {
+        onMouseUp: function(event) {
             if (!this.enabled) return;
             
             document.removeEventListener('mousemove', this.onMouseMove);
             document.removeEventListener('mouseup', this.onMouseUp);
             
+            // Enable inertia if we were dragging on the sphere
+            if (this.currentState === this.state.ROTATE && this.dragStart.lengthSq() > 0) {
+                this.inertiaEnabled = true;
+            }
+            
             this.currentState = this.state.NONE;
             
             isDraggingRef.current = false;
-            setCanvasCursor('grab');
+            
+            // Update cursor based on current mouse position
+            if (event) {
+                const rect = domElement.getBoundingClientRect();
+                const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+                
+                this.raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
+                const intersects = this.raycaster.intersectObject(globeRef.current);
+                
+                setCanvasCursor(intersects.length > 0 ? 'grab' : 'default');
+            } else {
+                // Fallback if event is not available
+                setCanvasCursor('default');
+            }
         },
         
         onWheel: function(event) {
@@ -1249,7 +1353,11 @@ useEffect(() => {
         
         raycaster.setFromCamera(mouse, camera);
         
-        // Usa la cache degli oggetti invece di ricreare l'array
+        // First check if we're over the globe itself
+        const globeIntersects = raycaster.intersectObject(globeRef.current);
+        const isOverGlobe = globeIntersects.length > 0;
+        
+        // Then check markers
         const intersects = raycaster.intersectObjects(markerObjectsRef.current);
         
         if (intersects.length > 0) {
@@ -1295,7 +1403,11 @@ useEffect(() => {
             // fuori da tutti i marker: rimuovi hover e nascondi popup
             markersRef.current.forEach(m => m.isHovered = false);
             setHoveredMarker(null);
-            if (!isDraggingRef.current) setCanvasCursor('grab');
+            
+            // Set cursor based on whether we're over the globe
+            if (!isDraggingRef.current) {
+                setCanvasCursor(isOverGlobe ? 'grab' : 'default');
+            }
         }
     }, 50); // Throttle a 50ms per ridurre il carico
     
@@ -1379,7 +1491,7 @@ useEffect(() => {
     canvas.addEventListener('mousemove', handleMouseMove);
     canvas.addEventListener('click', handleClick);
     canvas.addEventListener('mouseleave', () => {
-        setCanvasCursor('grab');
+        setCanvasCursor('default');
     });
     
     // --- Clear hover on wheel/touch to hide InfoPopup when rotating/zooming ---
