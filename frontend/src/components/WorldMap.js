@@ -599,9 +599,6 @@ target: new THREE.Vector3(0, 0, 0),
             
             switch (event.button) {
                 case 0: // Left mouse button
-                    this.currentState = this.state.ROTATE;
-                    this.mouseStart.set(event.clientX, event.clientY);
-                    
                     // Get the point on the sphere where we clicked
                     const rect = domElement.getBoundingClientRect();
                     const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -609,34 +606,36 @@ target: new THREE.Vector3(0, 0, 0),
                     
                     this.raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
                     
-                    // Use a larger sphere for more reliable intersection detection
-                    const intersectSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), GLOBE_RADIUS * 1.01);
-                    const ray = this.raycaster.ray;
-                    const intersectionPoint = new THREE.Vector3();
+                    // Check if we clicked on the actual globe
+                    const intersects = this.raycaster.intersectObject(globeRef.current);
                     
-                    if (ray.intersectSphere(intersectSphere, intersectionPoint)) {
-                        // We clicked on or near the globe - store the normalized point
-                        this.dragStart.copy(intersectionPoint).normalize();
+                    if (intersects.length > 0) {
+                        // We clicked on the globe - enable drag rotation
+                        this.currentState = this.state.ROTATE;
+                        this.mouseStart.set(event.clientX, event.clientY);
+                        
+                        // Store the normalized intersection point
+                        this.dragStart.copy(intersects[0].point).normalize();
                         // Store the initial mouse position for this drag session
                         this.initialMousePos = new THREE.Vector2(x, y);
+                        
+                        disableAutoRotate();
+                        scheduleAutoRotateResume();
+                        
+                        // Add event listeners
+                        document.addEventListener('mousemove', this.onMouseMove);
+                        document.addEventListener('mouseup', this.onMouseUp);
+                        
+                        isDraggingRef.current = true;
+                        setCanvasCursor('grabbing');
                     } else {
-                        // Clicked outside - use screen-based rotation
+                        // Clicked outside the globe - do nothing
+                        this.currentState = this.state.NONE;
                         this.dragStart.set(0, 0, 0);
                         this.initialMousePos = null;
                     }
-                    
-                    disableAutoRotate();
-                    scheduleAutoRotateResume();
                     break;
             }
-            
-            if (this.currentState !== this.state.NONE) {
-                document.addEventListener('mousemove', this.onMouseMove);
-                document.addEventListener('mouseup', this.onMouseUp);
-            }
-            
-            isDraggingRef.current = true;
-            setCanvasCursor('grabbing');
         },
         
         onMouseMove: function(event) {
@@ -664,14 +663,15 @@ target: new THREE.Vector3(0, 0, 0),
                             return;
                         }
                         
-                        // Project current mouse position onto the sphere
+                        // Project current mouse position onto the sphere using proper sphere projection
                         this.raycaster.setFromCamera(new THREE.Vector2(currentX, currentY), camera);
-                        const intersectSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), GLOBE_RADIUS * 1.05);
-                        const ray = this.raycaster.ray;
-                        const currentPoint = new THREE.Vector3();
                         
-                        if (ray.intersectSphere(intersectSphere, currentPoint)) {
-                            currentPoint.normalize();
+                        // Calculate intersection with the visible sphere
+                        const intersects = this.raycaster.intersectObject(globeRef.current);
+                        
+                        if (intersects.length > 0) {
+                            // Use actual intersection point for more accurate tracking
+                            const currentPoint = intersects[0].point.clone().normalize();
                             
                             // Calculate the rotation needed to move dragStart to currentPoint
                             const rotationAxis = new THREE.Vector3().crossVectors(this.dragStart, currentPoint);
@@ -690,10 +690,47 @@ target: new THREE.Vector3(0, 0, 0),
                                 // Update dragStart to the new position after rotation for continuous tracking
                                 this.dragStart.copy(currentPoint);
                             }
+                        } else {
+                            // If no intersection, try sphere projection for edge cases
+                            const ray = this.raycaster.ray;
+                            const sphereRadius = GLOBE_RADIUS;
+                            
+                            // Project ray onto sphere surface even if it doesn't intersect
+                            const toSphere = ray.origin.clone().negate();
+                            const toCameraDistance = toSphere.length();
+                            const normalizedDir = ray.direction.clone().normalize();
+                            
+                            // Calculate the closest point on the sphere to the ray
+                            const dot = toSphere.dot(normalizedDir);
+                            const discriminant = dot * dot - (toCameraDistance * toCameraDistance - sphereRadius * sphereRadius);
+                            
+                            if (discriminant >= 0) {
+                                // There's a valid projection
+                                const t = dot - Math.sqrt(discriminant);
+                                if (t > 0) {
+                                    const projectedPoint = ray.origin.clone().add(normalizedDir.multiplyScalar(t));
+                                    const currentPoint = projectedPoint.normalize();
+                                    
+                                    const rotationAxis = new THREE.Vector3().crossVectors(this.dragStart, currentPoint);
+                                    const rotationAngle = this.dragStart.angleTo(currentPoint);
+                                    
+                                    if (rotationAxis.length() > 0.0001 && rotationAngle > 0.0001) {
+                                        rotationAxis.normalize();
+                                        const deltaQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, rotationAngle);
+                                        this.targetGlobeQuaternion.premultiply(deltaQuat);
+                                        this.dragStart.copy(currentPoint);
+                                    }
+                                }
+                            } else {
+                                // Mouse is too far outside - release drag
+                                this.dragStart.set(0, 0, 0);
+                                this.initialMousePos = null;
+                                this.mouseStart.set(event.clientX, event.clientY);
+                            }
                         }
                     }
-                } else {
-                    // Screen-based rotation (when clicking outside globe)
+                } else if (this.dragStart.lengthSq() === 0) {
+                    // Screen-based rotation (when clicking outside globe or after leaving sphere)
                     this.mouseDelta.subVectors(this.mouseEnd, this.mouseStart);
                     
                     const rotateSpeed = 0.005;
@@ -777,25 +814,27 @@ target: new THREE.Vector3(0, 0, 0),
         onTouchStart: function(event) {
             if (!this.enabled) return;
             if (event.touches.length === 1) {
-                this.currentState = this.state.ROTATE;
-                this.mouseStart.set(event.touches[0].pageX, event.touches[0].pageY);
-                
-                // Try to get touch point on sphere with improved detection
+                // Try to get touch point on sphere
                 const rect = domElement.getBoundingClientRect();
                 const x = ((event.touches[0].clientX - rect.left) / rect.width) * 2 - 1;
                 const y = -((event.touches[0].clientY - rect.top) / rect.height) * 2 + 1;
                 
                 this.raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
                 
-                // Use larger sphere for better touch detection
-                const intersectSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), GLOBE_RADIUS * 1.01);
-                const ray = this.raycaster.ray;
-                const intersectionPoint = new THREE.Vector3();
+                // Check if we touched the actual globe
+                const intersects = this.raycaster.intersectObject(globeRef.current);
                 
-                if (ray.intersectSphere(intersectSphere, intersectionPoint)) {
-                    this.dragStart.copy(intersectionPoint).normalize();
+                if (intersects.length > 0) {
+                    // We touched the globe - enable drag rotation
+                    this.currentState = this.state.ROTATE;
+                    this.mouseStart.set(event.touches[0].pageX, event.touches[0].pageY);
+                    
+                    // Store the normalized intersection point
+                    this.dragStart.copy(intersects[0].point).normalize();
                     this.initialMousePos = new THREE.Vector2(x, y);
                 } else {
+                    // Touched outside the globe - do nothing
+                    this.currentState = this.state.NONE;
                     this.dragStart.set(0, 0, 0);
                     this.initialMousePos = null;
                 }
@@ -826,13 +865,15 @@ target: new THREE.Vector3(0, 0, 0),
                             return;
                         }
                         
+                        // Project current touch position onto the sphere using proper sphere projection
                         this.raycaster.setFromCamera(new THREE.Vector2(currentX, currentY), camera);
-                        const intersectSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), GLOBE_RADIUS * 1.05);
-                        const ray = this.raycaster.ray;
-                        const currentPoint = new THREE.Vector3();
                         
-                        if (ray.intersectSphere(intersectSphere, currentPoint)) {
-                            currentPoint.normalize();
+                        // Calculate intersection with the visible sphere
+                        const intersects = this.raycaster.intersectObject(globeRef.current);
+                        
+                        if (intersects.length > 0) {
+                            // Use actual intersection point for more accurate tracking
+                            const currentPoint = intersects[0].point.clone().normalize();
                             
                             const rotationAxis = new THREE.Vector3().crossVectors(this.dragStart, currentPoint);
                             const rotationAngle = this.dragStart.angleTo(currentPoint);
@@ -842,6 +883,43 @@ target: new THREE.Vector3(0, 0, 0),
                                 const deltaQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, rotationAngle);
                                 this.targetGlobeQuaternion.premultiply(deltaQuat);
                                 this.dragStart.copy(currentPoint);
+                            }
+                        } else {
+                            // If no intersection, try sphere projection for edge cases
+                            const ray = this.raycaster.ray;
+                            const sphereRadius = GLOBE_RADIUS;
+                            
+                            // Project ray onto sphere surface even if it doesn't intersect
+                            const toSphere = ray.origin.clone().negate();
+                            const toCameraDistance = toSphere.length();
+                            const normalizedDir = ray.direction.clone().normalize();
+                            
+                            // Calculate the closest point on the sphere to the ray
+                            const dot = toSphere.dot(normalizedDir);
+                            const discriminant = dot * dot - (toCameraDistance * toCameraDistance - sphereRadius * sphereRadius);
+                            
+                            if (discriminant >= 0) {
+                                // There's a valid projection
+                                const t = dot - Math.sqrt(discriminant);
+                                if (t > 0) {
+                                    const projectedPoint = ray.origin.clone().add(normalizedDir.multiplyScalar(t));
+                                    const currentPoint = projectedPoint.normalize();
+                                    
+                                    const rotationAxis = new THREE.Vector3().crossVectors(this.dragStart, currentPoint);
+                                    const rotationAngle = this.dragStart.angleTo(currentPoint);
+                                    
+                                    if (rotationAxis.length() > 0.0001 && rotationAngle > 0.0001) {
+                                        rotationAxis.normalize();
+                                        const deltaQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, rotationAngle);
+                                        this.targetGlobeQuaternion.premultiply(deltaQuat);
+                                        this.dragStart.copy(currentPoint);
+                                    }
+                                }
+                            } else {
+                                // Touch is too far outside - release drag
+                                this.dragStart.set(0, 0, 0);
+                                this.initialMousePos = null;
+                                this.currentState = this.state.NONE;
                             }
                         }
                     }
