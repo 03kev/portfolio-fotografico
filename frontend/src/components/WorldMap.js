@@ -317,7 +317,7 @@ const setCanvasCursor = useCallback((value) => {
 * @returns {THREE.Vector3}
 */
 const latLngToVector3 = useCallback((lat, lng, radius = GLOBE_RADIUS) => {    const phi   = (90 - lat) * (Math.PI / 180);
-    const theta = (lng + START_LON_OFFSET_DEG + 180) * (Math.PI / 180);
+    const theta = (lng + 180) * (Math.PI / 180); // Removed START_LON_OFFSET_DEG - now handled by quaternions
     return new THREE.Vector3(
         -radius * Math.sin(phi) * Math.cos(theta),
         radius * Math.cos(phi),
@@ -328,7 +328,17 @@ const latLngToVector3 = useCallback((lat, lng, radius = GLOBE_RADIUS) => {    co
 // Creates a 3D marker for a photo or cluster
 const createMarker = useCallback((position, photo, isCluster = false) => {
     const markerGroup = new THREE.Group();
-    markerGroup.position.copy(position);
+    
+    // Store the original position without any offset for rotation calculations
+    markerGroup.originalPosition = position.clone();
+    
+    // Apply initial offset to the marker's current position
+    const initialQuat = new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(0, THREE.MathUtils.degToRad(START_LON_OFFSET_DEG), 0)
+    );
+    const offsetPosition = position.clone().applyQuaternion(initialQuat);
+    markerGroup.position.copy(offsetPosition);
+    
     markerGroup.userData = photo;
     
     // sphere with different styles for clusters
@@ -502,7 +512,7 @@ enabled: true,
 autoRotate: false,
 autoRotateSpeed: AUTO_ROTATE_SPEED,
 enableDamping: true,
-dampingFactor: 0.08,
+dampingFactor: 0.05, // Reduced for more responsive Google Earth-like feel
 enableZoom: true,
 minDistance: MIN_CAMERA_DISTANCE,
 maxDistance: MAX_CAMERA_DISTANCE,
@@ -531,42 +541,58 @@ dragCurrent: new THREE.Vector3(),
 
 target: new THREE.Vector3(0, 0, 0),
 
-update: function() {
-    // Update camera distance
-    this.spherical.radius *= this.scale;
-    this.spherical.radius = Math.max(this.minDistance, Math.min(this.maxDistance, this.spherical.radius));
-    
-    // Keep camera fixed, looking at center
-    camera.position.set(0, 0, this.spherical.radius);
-    camera.lookAt(this.target);
-    
-    // Apply rotation to globe instead
-    if (globeRef.current) {
-        // Apply damping to globe rotation
-        if (this.enableDamping) {
-            this.globeQuaternion.slerp(this.targetGlobeQuaternion, this.dampingFactor);
-        } else {
-            this.globeQuaternion.copy(this.targetGlobeQuaternion);
-        }
-        
-        // Auto-rotate if enabled
-        if (this.autoRotate && this.currentState === this.state.NONE) {
-            const autoRotateQuat = new THREE.Quaternion().setFromAxisAngle(
-                new THREE.Vector3(0, 1, 0),
-                -this.autoRotateSpeed * 2 * Math.PI / 60 / 60
-            );
-            this.targetGlobeQuaternion.premultiply(autoRotateQuat);
-        }
-        
-        // Apply final rotation to globe
-        globeRef.current.quaternion.copy(this.globeQuaternion);
-    }
-    
-    // Reset scale
-    this.scale = 1;
-},
-        
-        onMouseDown: function(event) {
+        update: function() {
+            // Update camera distance
+            this.spherical.radius *= this.scale;
+            this.spherical.radius = Math.max(this.minDistance, Math.min(this.maxDistance, this.spherical.radius));
+            
+            // Keep camera fixed, looking at center
+            camera.position.set(0, 0, this.spherical.radius);
+            camera.lookAt(this.target);
+            
+            // Apply rotation to globe and synchronize markers/borders
+            if (globeRef.current) {
+                // Apply damping to globe rotation
+                if (this.enableDamping) {
+                    this.globeQuaternion.slerp(this.targetGlobeQuaternion, this.dampingFactor);
+                } else {
+                    this.globeQuaternion.copy(this.targetGlobeQuaternion);
+                }
+                
+                // Auto-rotate if enabled
+                if (this.autoRotate && this.currentState === this.state.NONE) {
+                    const autoRotateQuat = new THREE.Quaternion().setFromAxisAngle(
+                        new THREE.Vector3(0, 1, 0),
+                        -this.autoRotateSpeed * 2 * Math.PI / 60 / 60
+                    );
+                    this.targetGlobeQuaternion.premultiply(autoRotateQuat);
+                }
+                
+                // Apply final rotation to globe
+                globeRef.current.quaternion.copy(this.globeQuaternion);
+                
+                // Synchronize markers with globe rotation
+                markersRef.current.forEach(marker => {
+                    if (marker.originalPosition) {
+                        // Apply globe rotation to the original position (which doesn't have offset)
+                        const rotatedPos = marker.originalPosition.clone().applyQuaternion(this.globeQuaternion);
+                        marker.position.copy(rotatedPos);
+                        
+                        // Update marker orientation to face outward
+                        const normal = rotatedPos.clone().normalize();
+                        marker.lookAt(rotatedPos.clone().add(normal));
+                    }
+                });
+                
+                // Synchronize boundary mesh if it exists
+                if (this.boundaryMesh) {
+                    this.boundaryMesh.quaternion.copy(this.globeQuaternion);
+                }
+            }
+            
+            // Reset scale
+            this.scale = 1;
+        },        onMouseDown: function(event) {
             if (!this.enabled) return;
             event.preventDefault();
             
@@ -613,36 +639,36 @@ update: function() {
                 this.mouseEnd.set(event.clientX, event.clientY);
                 
                 if (this.dragStart.lengthSq() > 0 && globeRef.current) {
-                    // Drag on sphere - get current intersection point
+                    // Google Earth style dragging - get where mouse is now on sphere
                     const rect = domElement.getBoundingClientRect();
                     const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
                     const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
                     
                     this.raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
                     
-                    // Use a larger invisible sphere for better dragging
-                    const dragSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), GLOBE_RADIUS * 1.2);
+                    // Use larger invisible sphere for better dragging experience
+                    const dragSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), GLOBE_RADIUS * 1.1);
                     const ray = this.raycaster.ray;
-                    const intersection = new THREE.Vector3();
+                    const currentPoint = new THREE.Vector3();
                     
-                    if (ray.intersectSphere(dragSphere, intersection)) {
-                        this.dragCurrent.copy(intersection).normalize();
+                    if (ray.intersectSphere(dragSphere, currentPoint)) {
+                        currentPoint.normalize();
                         
-                        // Calculate rotation to move dragStart to dragCurrent
-                        const rotationAxis = new THREE.Vector3().crossVectors(this.dragStart, this.dragCurrent);
-                        const rotationAngle = this.dragStart.angleTo(this.dragCurrent);
+                        // Calculate rotation to move dragStart point to current mouse position
+                        const rotationAxis = new THREE.Vector3().crossVectors(this.dragStart, currentPoint);
                         
-                        if (rotationAxis.length() > 0.001) {
+                        if (rotationAxis.length() > 0.0001) {
+                            const rotationAngle = this.dragStart.angleTo(currentPoint);
                             rotationAxis.normalize();
                             
                             // Create rotation quaternion
                             const deltaQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, rotationAngle);
                             
-                            // Apply rotation to target quaternion
+                            // Apply rotation immediately to target quaternion
                             this.targetGlobeQuaternion.premultiply(deltaQuat);
                             
-                            // Update drag start for smooth continuous rotation
-                            this.dragStart.copy(this.dragCurrent);
+                            // Update drag start point to follow the rotation
+                            this.dragStart.applyQuaternion(deltaQuat);
                         }
                     }
                 } else {
@@ -757,26 +783,32 @@ update: function() {
                 this.mouseEnd.set(event.touches[0].pageX, event.touches[0].pageY);
                 
                 if (this.dragStart.lengthSq() > 0) {
-                    // Touch drag on sphere
+                    // Google Earth style touch dragging
                     const rect = domElement.getBoundingClientRect();
                     const x = ((event.touches[0].clientX - rect.left) / rect.width) * 2 - 1;
                     const y = -((event.touches[0].clientY - rect.top) / rect.height) * 2 + 1;
                     
                     this.raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
-                    const intersects = this.raycaster.intersectObject(globeRef.current);
                     
-                    if (intersects.length > 0) {
-                        this.dragCurrent.copy(intersects[0].point).normalize();
+                    const dragSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), GLOBE_RADIUS * 1.1);
+                    const ray = this.raycaster.ray;
+                    const currentPoint = new THREE.Vector3();
+                    
+                    if (ray.intersectSphere(dragSphere, currentPoint)) {
+                        currentPoint.normalize();
                         
-                        // Calculate rotation to move dragStart to dragCurrent
-                        const rotationAxis = new THREE.Vector3().crossVectors(this.dragStart, this.dragCurrent);
-                        const rotationAngle = this.dragStart.angleTo(this.dragCurrent);
+                        // Calculate rotation to move dragStart point to current touch position
+                        const rotationAxis = new THREE.Vector3().crossVectors(this.dragStart, currentPoint);
                         
-                        if (rotationAxis.length() > 0.001) {
+                        if (rotationAxis.length() > 0.0001) {
+                            const rotationAngle = this.dragStart.angleTo(currentPoint);
                             rotationAxis.normalize();
+                            
                             const deltaQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, rotationAngle);
                             this.targetGlobeQuaternion.premultiply(deltaQuat);
-                            this.dragStart.copy(this.dragCurrent);
+                            
+                            // Update drag start point to follow the rotation
+                            this.dragStart.applyQuaternion(deltaQuat);
                         }
                     }
                 } else {
@@ -929,11 +961,22 @@ useEffect(() => {
                 boundaryMaterial
             );
             scene.add(boundaryMesh);
-            boundaryMesh.rotation.y = THREE.MathUtils.degToRad(START_LON_OFFSET_DEG+0.03);
+            
+            // Apply initial offset to both earth and boundary
+            const initialQuaternion = new THREE.Quaternion().setFromEuler(
+                new THREE.Euler(0, THREE.MathUtils.degToRad(START_LON_OFFSET_DEG), 0)
+            );
+            earth.quaternion.copy(initialQuaternion);
+            boundaryMesh.quaternion.copy(initialQuaternion);
             
             globeRef.current = earth;
             
-            earth.rotation.y = THREE.MathUtils.degToRad(START_LON_OFFSET_DEG);
+            // Store boundary mesh reference in controls for synchronization
+            if (controlsRef.current) {
+                controlsRef.current.boundaryMesh = boundaryMesh;
+                controlsRef.current.globeQuaternion.copy(initialQuaternion);
+                controlsRef.current.targetGlobeQuaternion.copy(initialQuaternion);
+            }
             
             setMapLoaded(true);
             
@@ -946,7 +989,21 @@ useEffect(() => {
             
             const earth = new THREE.Mesh(earthGeometry, fallbackMaterial);
             scene.add(earth);
+            
+            // Apply initial offset to fallback earth
+            const initialQuaternion = new THREE.Quaternion().setFromEuler(
+                new THREE.Euler(0, THREE.MathUtils.degToRad(START_LON_OFFSET_DEG), 0)
+            );
+            earth.quaternion.copy(initialQuaternion);
+            
             globeRef.current = earth;
+            
+            // Initialize controls quaternion for fallback
+            if (controlsRef.current) {
+                controlsRef.current.globeQuaternion.copy(initialQuaternion);
+                controlsRef.current.targetGlobeQuaternion.copy(initialQuaternion);
+            }
+            
             setMapLoaded(true);
         }
     };
