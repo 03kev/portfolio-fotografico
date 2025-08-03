@@ -150,6 +150,8 @@ const Newsletter = styled.div`
   border-radius: var(--border-radius-xl);
   border: 1px solid rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(10px);
+  max-width: 100%;
+  overflow: hidden;
 
   h4 {
     color: var(--color-white);
@@ -161,6 +163,10 @@ const Newsletter = styled.div`
   p {
     font-size: var(--font-size-sm);
     margin-bottom: var(--spacing-md);
+  }
+
+  @media (max-width: 480px) {
+    padding: var(--spacing-md);
   }
 `;
 
@@ -180,6 +186,7 @@ const NewsletterForm = styled.form`
     border-radius: var(--border-radius);
     color: var(--color-white);
     font-size: var(--font-size-sm);
+    min-width: 0;
 
     &::placeholder {
       color: rgba(255, 255, 255, 0.5);
@@ -189,6 +196,11 @@ const NewsletterForm = styled.form`
       outline: none;
       border-color: var(--color-accent);
       background: rgba(255, 255, 255, 0.15);
+    }
+
+    @media (max-width: 480px) {
+      width: 100%;
+      margin-bottom: var(--spacing-xs);
     }
   }
 
@@ -202,10 +214,17 @@ const NewsletterForm = styled.form`
     font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--transition-normal);
+    min-width: fit-content;
+    white-space: nowrap;
 
     &:hover {
       transform: translateY(-2px);
       box-shadow: 0 8px 20px rgba(79, 172, 254, 0.3);
+    }
+
+    @media (max-width: 480px) {
+      width: 100%;
+      padding: var(--spacing-md) var(--spacing-lg);
     }
   }
 `;
