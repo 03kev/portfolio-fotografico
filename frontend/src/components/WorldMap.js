@@ -134,6 +134,30 @@ const ControlButton = styled.button`
   }
 `;
 
+const CompassButton = styled(ControlButton)`
+  position: relative;
+  overflow: visible;
+  
+  &:hover .compass-needle {
+    filter: drop-shadow(0 0 8px rgba(79, 172, 254, 0.8));
+  }
+`;
+
+const CompassSVG = styled.svg`
+  width: 32px;
+  height: 32px;
+  transition: transform 0.3s ease;
+  
+  @media (max-width: 768px) {
+    width: 28px;
+    height: 28px;
+  }
+  
+  .compass-needle {
+    transition: filter var(--transition-normal);
+  }
+`;
+
 const LoadingOverlay = styled.div`
   position: absolute;
   top: 0;
@@ -258,6 +282,7 @@ const WorldMap = () => {
     const skipUnzoomRef = useRef(false);
     const disablePopupRef = useRef(false);
     const isAnimatingRef = useRef(false); // Blocca interazioni durante animazioni
+    const [compassRotation, setCompassRotation] = useState(0); // Rotazione della bussola
     
     useLayoutEffect(() => {
         if (!popupRef.current) return;
@@ -533,6 +558,28 @@ const createCustomControls = useCallback((camera, domElement) => {
     return createWorldMapNavigation(camera, domElement, refs, callbacks);
 }, [disableAutoRotate, scheduleAutoRotateResume]);
 
+// Funzione per calcolare la rotazione della bussola
+const updateCompassRotation = useCallback(() => {
+    if (!globeRef.current) return;
+    
+    // Crea un vettore che punta al nord (polo nord)
+    const northPole = new THREE.Vector3(0, 1, 0);
+    
+    // Applica la rotazione del globo al vettore del polo nord
+    const rotatedNorth = northPole.clone().applyQuaternion(globeRef.current.quaternion);
+    
+    // Proietta il vettore sul piano XZ (vista dall'alto)
+    const projectedNorth = new THREE.Vector2(rotatedNorth.x, -rotatedNorth.z);
+    
+    // Calcola l'angolo rispetto all'asse Y (nord dello schermo)
+    const angle = Math.atan2(projectedNorth.x, projectedNorth.y);
+    
+    // Converti in gradi
+    const degrees = angle * (180 / Math.PI);
+    
+    setCompassRotation(degrees);
+}, []);
+
 useEffect(() => {
     if (!mountRef.current || !inView) return;
     
@@ -757,6 +804,9 @@ useEffect(() => {
     currentClusterLevelRef.current = radiusToLevel(camera.position.length());
     drawMarkersForLevel(currentClusterLevelRef.current);
     
+    // Inizializza la rotazione della bussola
+    updateCompassRotation();
+    
     // Aggiorna scala marker in base alla distanza camera
     const updateMarkerScales = () => {
         const cameraDistance = camera.position.length();
@@ -953,6 +1003,11 @@ useEffect(() => {
             controlsRef.current.update();
         }
         
+        // Aggiorna la rotazione della bussola
+        if (frameCount % 2 === 0) { // Ogni 2 frame per performance
+            updateCompassRotation();
+        }
+        
         // Anima i marker solo ogni 3 frame per performance
         if (frameCount % 3 === 0) {
             // scala da 1 (lontano) a 0.35 (molto vicino)
@@ -1070,7 +1125,119 @@ useEffect(() => {
         document.body.style.cursor = 'default';
         if (autoRotateTimerRef.current) { clearTimeout(autoRotateTimerRef.current); }
     };
-}, [inView, validPhotos, drawMarkersForLevel]);
+}, [inView, validPhotos, drawMarkersForLevel, updateCompassRotation]);
+
+// Funzione per raddrizzare il globo (nord in alto)
+const straightenGlobe = useCallback(() => {
+    if (!controlsRef.current || !globeRef.current || !cameraRef.current) return;
+    
+    const controls = controlsRef.current;
+    const camera = cameraRef.current;
+    
+    // Disabilita temporaneamente i controlli
+    const prevEnabled = controls.enabled;
+    controls.enabled = false;
+    controls.autoRotate = false;
+    setAutoRotate(false);
+    
+    // Ottieni la rotazione corrente
+    const currentQuat = controls.globeQuaternion.clone();
+    
+    // Trova il punto sulla Terra che è attualmente al centro dello schermo
+    // Creiamo un raggio dal centro della camera
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+    
+    // Troviamo l'intersezione con il globo
+    const intersects = raycaster.intersectObject(globeRef.current);
+    
+    if (intersects.length > 0) {
+        // Punto al centro dello schermo in coordinate mondo
+        const centerPoint = intersects[0].point.clone();
+        
+        // Applichiamo la rotazione inversa per ottenere il punto originale sul globo
+        const inverseQuat = currentQuat.clone().invert();
+        const originalPoint = centerPoint.clone().applyQuaternion(inverseQuat).normalize();
+        
+        // Convertiamo in coordinate geografiche
+        const lat = Math.asin(originalPoint.y) * 180 / Math.PI;
+        const lng = Math.atan2(originalPoint.x, originalPoint.z) * 180 / Math.PI;
+        
+        // Ora creiamo una rotazione che:
+        // 1. Porta questo punto al centro (fronte della camera)
+        // 2. Mantiene il nord in alto
+        
+        // Prima ruotiamo solo attorno all'asse Y per centrare la longitudine
+        const yRotation = -lng * Math.PI / 180;
+        const yQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yRotation);
+        
+        // Poi ruotiamo attorno all'asse X per centrare la latitudine
+        const xRotation = lat * Math.PI / 180;
+        const xQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), xRotation);
+        
+        // Combiniamo le rotazioni nell'ordine corretto
+        const targetQuat = new THREE.Quaternion();
+        targetQuat.multiply(xQuat);
+        targetQuat.multiply(yQuat);
+        
+        // Animazione
+        const duration = 800;
+        const start = performance.now();
+        
+        const animate = (now) => {
+            const t = Math.min(1, (now - start) / duration);
+            const ease = 1 - Math.pow(1 - t, 3); // easeOutCubic
+            
+            // Interpola la rotazione
+            controls.globeQuaternion.slerpQuaternions(currentQuat, targetQuat, ease);
+            controls.targetGlobeQuaternion.copy(controls.globeQuaternion);
+            
+            // Aggiorna la bussola
+            updateCompassRotation();
+            
+            // Forza l'aggiornamento
+            controls.update();
+            
+            if (t < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                // Riabilita i controlli
+                controls.enabled = prevEnabled;
+                scheduleAutoRotateResume();
+            }
+        };
+        
+        requestAnimationFrame(animate);
+    } else {
+        // Se non troviamo intersezioni, usiamo il metodo di fallback
+        // che resetta semplicemente l'inclinazione
+        const currentEuler = new THREE.Euler().setFromQuaternion(currentQuat, 'YXZ');
+        const targetEuler = new THREE.Euler(0, currentEuler.y, 0, 'YXZ');
+        const targetQuat = new THREE.Quaternion().setFromEuler(targetEuler);
+        
+        const duration = 800;
+        const start = performance.now();
+        
+        const animate = (now) => {
+            const t = Math.min(1, (now - start) / duration);
+            const ease = 1 - Math.pow(1 - t, 3);
+            
+            controls.globeQuaternion.slerpQuaternions(currentQuat, targetQuat, ease);
+            controls.targetGlobeQuaternion.copy(controls.globeQuaternion);
+            updateCompassRotation();
+            controls.update();
+            
+            if (t < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                controls.enabled = prevEnabled;
+                scheduleAutoRotateResume();
+            }
+        };
+        
+        requestAnimationFrame(animate);
+    }
+}, [updateCompassRotation, scheduleAutoRotateResume, setAutoRotate]);
 
 // Funzioni di controllo ottimizzate
 const resetView = () => {
@@ -1402,6 +1569,62 @@ return (
     animate={{ opacity: 1, x: 0 }}
     transition={{ duration: 0.6, delay: 1 }}
     >
+    <CompassButton onClick={straightenGlobe} title="Raddrizza Vista (Nord in alto)">
+        <CompassSVG 
+            viewBox="0 0 100 100" 
+            style={{ transform: `rotate(${compassRotation}deg)` }}
+        >
+            {/* Cerchio esterno della bussola */}
+            <circle 
+                cx="50" 
+                cy="50" 
+                r="48" 
+                fill="none" 
+                stroke="white" 
+                strokeWidth="3" 
+                opacity="0.6"
+            />
+            
+            {/* Indicatori cardinali */}
+            <line x1="50" y1="5" x2="50" y2="15" stroke="white" strokeWidth="3" opacity="0.6"/>
+            <line x1="50" y1="85" x2="50" y2="95" stroke="white" strokeWidth="3" opacity="0.6"/>
+            <line x1="5" y1="50" x2="15" y2="50" stroke="white" strokeWidth="3" opacity="0.6"/>
+            <line x1="85" y1="50" x2="95" y2="50" stroke="white" strokeWidth="3" opacity="0.6"/>
+            
+            {/* Ago della bussola */}
+            <g className="compass-needle">
+                {/* Parte nord (rossa) */}
+                <path 
+                    d="M 50,20 L 42,50 L 50,40 L 58,50 Z" 
+                    fill="#ff4444" 
+                    stroke="#aa0000" 
+                    strokeWidth="1.5"
+                />
+                {/* Parte sud (bianca) */}
+                <path 
+                    d="M 50,80 L 42,50 L 50,60 L 58,50 Z" 
+                    fill="white" 
+                    stroke="#888" 
+                    strokeWidth="1.5"
+                />
+                {/* Centro */}
+                <circle cx="50" cy="50" r="5" fill="white"/>
+            </g>
+            
+            {/* Lettera N */}
+            <text 
+                x="50" 
+                y="20" 
+                textAnchor="middle" 
+                fill="white" 
+                fontSize="14" 
+                fontWeight="bold"
+                style={{ transform: `rotate(${-compassRotation}deg)`, transformOrigin: '50px 50px' }}
+            >
+                N
+            </text>
+        </CompassSVG>
+    </CompassButton>
     <ControlButton onClick={resetView} title="Reset Vista">
     🌍
     </ControlButton>
