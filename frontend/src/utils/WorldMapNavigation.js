@@ -39,6 +39,7 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
         autoRotateSpeed: AUTO_ROTATE_SPEED,
         minDistance: MIN_CAMERA_DISTANCE,
         maxDistance: MAX_CAMERA_DISTANCE,
+        northLocked: false, // Modalità blocco nord
 
         // Spherical for zoom only
         spherical: new THREE.Spherical(),
@@ -101,6 +102,11 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                         
                         this.targetGlobeQuaternion.premultiply(horizontalQuat);
                         this.targetGlobeQuaternion.premultiply(verticalQuat);
+                        
+                        // Se il nord è bloccato, rimuovi qualsiasi inclinazione anche dall'inerzia
+                        if (this.northLocked) {
+                            this._removeInclinationFromQuaternion(this.targetGlobeQuaternion);
+                        }
                         
                         // Decay velocity
                         this.rotationVelocity.multiplyScalar(inertiaDecay);
@@ -227,63 +233,68 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                     
                     // Only proceed if we have a valid initial mouse position
                     if (this.initialMousePos) {
-                        // Calculate mouse movement in normalized device coordinates
-                        const deltaX = currentX - this.initialMousePos.x;
-                        const deltaY = currentY - this.initialMousePos.y;
+                    // Calculate mouse movement in normalized device coordinates
+                    const deltaX = currentX - this.initialMousePos.x;
+                    const deltaY = currentY - this.initialMousePos.y;
+                    
+                    // Ignore tiny movements to prevent jitter
+                    const movementThreshold = 0.001;
+                    if (Math.abs(deltaX) < movementThreshold && Math.abs(deltaY) < movementThreshold) {
+                    return;
+                    }
+                    
+                    // Project current mouse position onto the sphere using proper sphere projection
+                    this.raycaster.setFromCamera(new THREE.Vector2(currentX, currentY), camera);
+                    
+                    // Calculate intersection with the visible sphere
+                    const intersects = this.raycaster.intersectObject(globeRef.current);
+                    
+                    if (intersects.length > 0) {
+                    // Use actual intersection point for more accurate tracking
+                    const currentPoint = intersects[0].point.clone().normalize();
+                    
+                    // Calculate the rotation needed to move dragStart to currentPoint
+                    const rotationAxis = new THREE.Vector3().crossVectors(this.dragStart, currentPoint);
+                    const rotationAngle = this.dragStart.angleTo(currentPoint);
+                    
+                    // Only rotate if there's a meaningful angle and axis
+                    if (rotationAxis.length() > 0.0001 && rotationAngle > 0.0001) {
+                    rotationAxis.normalize();
+                    
+                    // Create rotation quaternion
+                    const deltaQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, rotationAngle);
+                    
+                    // Apply rotation to target quaternion
+                    this.targetGlobeQuaternion.premultiply(deltaQuat);
+                    
+                    // Se il nord è bloccato, rimuovi qualsiasi inclinazione
+                    if (this.northLocked) {
+                        this._removeInclinationFromQuaternion(this.targetGlobeQuaternion);
+                    }
+                    
+                    // Update dragStart to the new position after rotation for continuous tracking
+                    this.dragStart.copy(currentPoint);
+                    
+                    // Calculate velocity for inertia based on mouse movement
+                    const currentTime = Date.now();
+                    const deltaTime = (currentTime - this.lastRotationTime) / 1000; // Convert to seconds
+                    
+                    if (deltaTime > 0 && deltaTime < 0.1) { // Ignore if too much time has passed
+                    const mouseDeltaX = currentX - this.lastMousePos.x;
+                    const mouseDeltaY = currentY - this.lastMousePos.y;
+                    
+                    // Calculate instantaneous velocity
+                    const instantVelX = (mouseDeltaX / deltaTime) * 0.003; // Scale factor for rotation
+                    const instantVelY = (mouseDeltaY / deltaTime) * 0.003;
                         
-                        // Ignore tiny movements to prevent jitter
-                        const movementThreshold = 0.001;
-                        if (Math.abs(deltaX) < movementThreshold && Math.abs(deltaY) < movementThreshold) {
-                            return;
-                        }
+                        // Smooth velocity update with higher weight on recent movement
+                        const smoothingFactor = 0.3;
+                        this.rotationVelocity.x = this.rotationVelocity.x * smoothingFactor + instantVelX * (1 - smoothingFactor);
+                            this.rotationVelocity.y = this.rotationVelocity.y * smoothingFactor + instantVelY * (1 - smoothingFactor);
+                            }
                         
-                        // Project current mouse position onto the sphere using proper sphere projection
-                        this.raycaster.setFromCamera(new THREE.Vector2(currentX, currentY), camera);
-                        
-                        // Calculate intersection with the visible sphere
-                        const intersects = this.raycaster.intersectObject(globeRef.current);
-                        
-                        if (intersects.length > 0) {
-                            // Use actual intersection point for more accurate tracking
-                            const currentPoint = intersects[0].point.clone().normalize();
-                            
-                            // Calculate the rotation needed to move dragStart to currentPoint
-                            const rotationAxis = new THREE.Vector3().crossVectors(this.dragStart, currentPoint);
-                            const rotationAngle = this.dragStart.angleTo(currentPoint);
-                            
-                            // Only rotate if there's a meaningful angle and axis
-                            if (rotationAxis.length() > 0.0001 && rotationAngle > 0.0001) {
-                                rotationAxis.normalize();
-                                
-                                // Create rotation quaternion
-                                const deltaQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, rotationAngle);
-                                
-                                // Apply rotation to target quaternion
-                                this.targetGlobeQuaternion.premultiply(deltaQuat);
-                                
-                                // Update dragStart to the new position after rotation for continuous tracking
-                                this.dragStart.copy(currentPoint);
-                                
-                                // Calculate velocity for inertia based on mouse movement
-                                const currentTime = Date.now();
-                                const deltaTime = (currentTime - this.lastRotationTime) / 1000; // Convert to seconds
-                                
-                                if (deltaTime > 0 && deltaTime < 0.1) { // Ignore if too much time has passed
-                                    const mouseDeltaX = currentX - this.lastMousePos.x;
-                                    const mouseDeltaY = currentY - this.lastMousePos.y;
-                                    
-                                    // Calculate instantaneous velocity
-                                    const instantVelX = (mouseDeltaX / deltaTime) * 0.003; // Scale factor for rotation
-                                    const instantVelY = (mouseDeltaY / deltaTime) * 0.003;
-                                    
-                                    // Smooth velocity update with higher weight on recent movement
-                                    const smoothingFactor = 0.3;
-                                    this.rotationVelocity.x = this.rotationVelocity.x * smoothingFactor + instantVelX * (1 - smoothingFactor);
-                                    this.rotationVelocity.y = this.rotationVelocity.y * smoothingFactor + instantVelY * (1 - smoothingFactor);
-                                }
-                                
-                                this.lastMousePos.set(currentX, currentY);
-                                this.lastRotationTime = currentTime;
+                        this.lastMousePos.set(currentX, currentY);
+                            this.lastRotationTime = currentTime;
                             }
                         } else {
                             // If no intersection, try sphere projection for edge cases
@@ -375,6 +386,11 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                 // Apply to target quaternion
                 this.targetGlobeQuaternion.premultiply(horizontalQuat);
                 this.targetGlobeQuaternion.premultiply(verticalQuat);
+                
+                // Se il nord è bloccato, rimuovi qualsiasi inclinazione
+                if (this.northLocked) {
+                    this._removeInclinationFromQuaternion(this.targetGlobeQuaternion);
+                }
             }
             
             disableAutoRotate();
@@ -458,6 +474,12 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                                 rotationAxis.normalize();
                                 const deltaQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, rotationAngle);
                                 this.targetGlobeQuaternion.premultiply(deltaQuat);
+                                
+                                // Se il nord è bloccato, rimuovi qualsiasi inclinazione
+                                if (this.northLocked) {
+                                    this._removeInclinationFromQuaternion(this.targetGlobeQuaternion);
+                                }
+                                
                                 this.dragStart.copy(currentPoint);
                             }
                         } else {
@@ -512,6 +534,12 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                         rotationAxis.normalize();
                         const deltaQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, rotationAngle);
                         this.targetGlobeQuaternion.premultiply(deltaQuat);
+                        
+                        // Se il nord è bloccato, rimuovi qualsiasi inclinazione
+                        if (this.northLocked) {
+                            this._removeInclinationFromQuaternion(this.targetGlobeQuaternion);
+                        }
+                        
                         this.dragStart.copy(currentPoint);
                         
                         // Update velocity for inertia (only for mouse, not touch)
@@ -571,7 +599,28 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
             this.targetGlobeQuaternion.premultiply(horizontalQuat);
             this.targetGlobeQuaternion.premultiply(verticalQuat);
             
+            // Se il nord è bloccato, rimuovi qualsiasi inclinazione
+            if (this.northLocked) {
+                this._removeInclinationFromQuaternion(this.targetGlobeQuaternion);
+            }
+            
             this.mouseStart.copy(this.mouseEnd);
+        },
+
+        /**
+         * Helper method - quando il nord è bloccato, rimuove solo l'inclinazione laterale (Z)
+         */
+        _removeInclinationFromQuaternion: function(quaternion) {
+            // Estrai gli angoli di Eulero dal quaternione
+            const euler = new THREE.Euler().setFromQuaternion(quaternion, 'YXZ');
+            
+            // Mantieni X (movimento verticale/latitudine) e Y (movimento orizzontale/longitudine)
+            // Rimuovi solo Z (inclinazione laterale/rotazione dell'orizzonte)
+            // Questo permette di esplorare tutte le latitudini mantenendo l'orizzonte dritto
+            const cleanEuler = new THREE.Euler(euler.x, euler.y, 0, 'YXZ');
+            
+            // Ricrea il quaternione pulito
+            quaternion.setFromEuler(cleanEuler);
         },
 
         /**

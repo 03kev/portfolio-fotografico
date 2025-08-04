@@ -141,6 +141,34 @@ const CompassButton = styled(ControlButton)`
   &:hover .compass-needle {
     filter: drop-shadow(0 0 8px rgba(79, 172, 254, 0.8));
   }
+  
+  &.locked {
+    background: rgba(79, 172, 254, 0.3);
+    border-color: var(--color-accent);
+  }
+`;
+
+const LockIcon = styled.div`
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 20px;
+  height: 20px;
+  background: rgba(79, 172, 254, 0.9);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  
+  @media (max-width: 768px) {
+    width: 18px;
+    height: 18px;
+    font-size: 10px;
+    top: -6px;
+    right: -6px;
+  }
 `;
 
 const CompassSVG = styled.svg`
@@ -283,6 +311,7 @@ const WorldMap = () => {
     const disablePopupRef = useRef(false);
     const isAnimatingRef = useRef(false); // Blocca interazioni durante animazioni
     const [compassRotation, setCompassRotation] = useState(0); // Rotazione della bussola
+    const [northLocked, setNorthLocked] = useState(false); // Modalità blocco nord
     
     useLayoutEffect(() => {
         if (!popupRef.current) return;
@@ -616,6 +645,7 @@ useEffect(() => {
     // crea controlli personalizzati
     const controls = createCustomControls(camera, renderer.domElement);
     controls.autoRotate = autoRotate;
+    controls.northLocked = northLocked; // Passa lo stato iniziale
     controlsRef.current = controls;
     
     // crea geometria della Terra ottimizzata
@@ -1569,7 +1599,30 @@ return (
     animate={{ opacity: 1, x: 0 }}
     transition={{ duration: 0.6, delay: 1 }}
     >
-    <CompassButton onClick={straightenGlobe} title="Raddrizza Vista (Nord in alto)">
+    <CompassButton 
+        onClick={() => {
+            // Click sinistro: raddrizza sempre la terra
+            straightenGlobe();
+        }}
+        onContextMenu={(e) => {
+            e.preventDefault(); // Previene il menu contestuale del browser
+            // Click destro: toggle del blocco nord
+            const newLocked = !northLocked;
+            setNorthLocked(newLocked);
+            if (controlsRef.current) {
+                controlsRef.current.northLocked = newLocked;
+            }
+            // Se stiamo attivando il blocco, raddrizza la vista
+            if (newLocked) {
+                straightenGlobe();
+            }
+        }}
+        className={northLocked ? 'locked' : ''}
+        title={northLocked ? "Nord bloccato - Click sinistro: raddrizza | Click destro: sblocca" : "Click sinistro: raddrizza terra | Click destro: blocca nord in alto"}
+    >
+        {northLocked && (
+            <LockIcon>🔒</LockIcon>
+        )}
         <CompassSVG 
             viewBox="0 0 100 100" 
             style={{ transform: `rotate(${compassRotation}deg)` }}
