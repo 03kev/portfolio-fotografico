@@ -122,6 +122,7 @@ const GlobalStyles = createGlobalStyle`
 
   html {
     scroll-behavior: smooth;
+    scrollbar-gutter: stable;
     -webkit-text-size-adjust: 100%;
     -ms-text-size-adjust: 100%;
   }
@@ -136,6 +137,7 @@ const GlobalStyles = createGlobalStyle`
     color: var(--color-text);
     line-height: 1.65;
     overflow-x: hidden;
+    overflow-y: scroll;
   }
 
   main {

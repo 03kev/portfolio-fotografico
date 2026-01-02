@@ -256,16 +256,22 @@ const EmptyState = styled.div`
 
 const GalleryModal = () => {
   const { galleryModalOpen, galleryPhotos, actions } = usePhotos();
+  const originalBodyOverflowRef = React.useRef(null);
 
   useEffect(() => {
     if (galleryModalOpen) {
+      if (originalBodyOverflowRef.current === null) {
+        originalBodyOverflowRef.current = document.body.style.overflow;
+      }
       document.body.style.overflow = 'hidden';
     } else {
-      document.body.style.overflow = 'auto';
+      document.body.style.overflow = originalBodyOverflowRef.current ?? '';
+      originalBodyOverflowRef.current = null;
     }
 
     return () => {
-      document.body.style.overflow = 'auto';
+      document.body.style.overflow = originalBodyOverflowRef.current ?? '';
+      originalBodyOverflowRef.current = null;
     };
   }, [galleryModalOpen]);
 

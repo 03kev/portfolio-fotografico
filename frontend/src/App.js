@@ -18,14 +18,12 @@ import ContactPage from './pages/ContactPage';
 import NotFoundPage from './pages/NotFoundPage';
 
 import SeriesDetail from './components/SeriesDetail';
-import ScrollToTop from './components/ScrollToTop';
 
 export default function App() {
   return (
     <PhotoProvider>
       <SeriesProvider>
         <Router>
-          <ScrollToTop />
           <GlobalStyles />
           <Routes>
             <Route element={<SiteLayout />}> 

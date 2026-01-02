@@ -150,16 +150,16 @@ const Footer = () => {
             </Text>
 
             <SocialRow>
-              <SocialLink href="https://instagram.com" target="_blank" rel="noopener noreferrer" aria-label="Instagram" whileTap={{ scale: 0.98 }}>
+              <SocialLink href="https://instagram.com/kev.muka" target="_blank" rel="noopener noreferrer" aria-label="Instagram" whileTap={{ scale: 0.98 }}>
                 <Instagram size={18} />
               </SocialLink>
-              <SocialLink href="https://twitter.com" target="_blank" rel="noopener noreferrer" aria-label="Twitter/X" whileTap={{ scale: 0.98 }}>
+              <SocialLink href="https://twitter.com/03kev__" target="_blank" rel="noopener noreferrer" aria-label="Twitter/X" whileTap={{ scale: 0.98 }}>
                 <Twitter size={18} />
               </SocialLink>
-              <SocialLink href="https://youtube.com" target="_blank" rel="noopener noreferrer" aria-label="YouTube" whileTap={{ scale: 0.98 }}>
+              <SocialLink href="https://youtube.com/@03kev" target="_blank" rel="noopener noreferrer" aria-label="YouTube" whileTap={{ scale: 0.98 }}>
                 <Youtube size={18} />
               </SocialLink>
-              <SocialLink href="https://facebook.com" target="_blank" rel="noopener noreferrer" aria-label="Facebook" whileTap={{ scale: 0.98 }}>
+              <SocialLink href="https://facebook.com/03kev" target="_blank" rel="noopener noreferrer" aria-label="Facebook" whileTap={{ scale: 0.98 }}>
                 <Facebook size={18} />
               </SocialLink>
             </SocialRow>

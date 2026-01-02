@@ -4,10 +4,11 @@
     "title": "Frammenti di Varsavia",
     "slug": "frammenti-di-varsavia",
     "description": " ",
-    "coverImage": 1767354244527,
+    "coverImage": 1767357918231,
     "photos": [
       1767354244527,
-      1767351827175
+      1767351827175,
+      1767357918231
     ],
     "content": [
       {
@@ -19,13 +20,14 @@
         "type": "photos",
         "content": [
           1767354244527,
-          1767351827175
+          1767351827175,
+          1767357918231
         ],
         "order": 1
       }
     ],
     "published": true,
     "createdAt": "2026-01-02T00:34:11.494Z",
-    "updatedAt": "2026-01-02T12:41:15.835Z"
+    "updatedAt": "2026-01-02T13:52:41.149Z"
   }
 ]

@@ -284,16 +284,6 @@ function SeriesDetail() {
     }
   }, [currentSeries, photos]);
 
-  // Scroll alla HeroSection quando la serie viene caricata
-  useEffect(() => {
-    if (currentSeries) {
-      // Piccolo delay per assicurarsi che il contenuto sia renderizzato
-      setTimeout(() => {
-        window.scrollTo({ top: 0, behavior: 'instant' });
-      }, 0);
-    }
-  }, [currentSeries]);
-
   const handlePhotoClick = (photo) => {
     actions.openPhotoModal(photo);
   };

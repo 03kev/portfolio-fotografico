@@ -275,16 +275,22 @@ const ActionButton = styled(motion.button)`
 const PhotoModal = () => {
     const { modalOpen, selectedPhoto, actions, galleryModalOpen } = usePhotos();
     const navigate = useNavigate();
+  const originalBodyOverflowRef = React.useRef(null);
     
     useEffect(() => {
         if (modalOpen) {
-            document.body.style.overflow = 'hidden';
+        if (originalBodyOverflowRef.current === null) {
+          originalBodyOverflowRef.current = document.body.style.overflow;
+        }
+        document.body.style.overflow = 'hidden';
         } else {
-            document.body.style.overflow = 'auto';
+        document.body.style.overflow = originalBodyOverflowRef.current ?? '';
+        originalBodyOverflowRef.current = null;
         }
         
         return () => {
-            document.body.style.overflow = 'auto';
+        document.body.style.overflow = originalBodyOverflowRef.current ?? '';
+        originalBodyOverflowRef.current = null;
         };
     }, [modalOpen]);
     
@@ -326,6 +332,18 @@ const PhotoModal = () => {
     };
     
     const handleTagClick = (tag) => {
+      const scrollToTopNow = () => {
+        const html = document.documentElement;
+        const previousScrollBehavior = html.style.scrollBehavior;
+        html.style.scrollBehavior = 'auto';
+        window.scrollTo(0, 0);
+        html.scrollTop = 0;
+        document.body.scrollTop = 0;
+        requestAnimationFrame(() => {
+          html.style.scrollBehavior = previousScrollBehavior;
+        });
+      };
+
         // Resettiamo tutti i filtri e impostiamo solo il tag selezionato
         if (galleryModalOpen) actions.closeGalleryModal();
         actions.setFilterAndSync({ search: '', tags: [tag], location: '' });
@@ -333,6 +351,9 @@ const PhotoModal = () => {
         
         // Naviga alla pagina della galleria
         navigate('/gallery');
+
+      // Se eri già su /gallery, il pathname non cambia: forza comunque lo scroll in cima.
+      scrollToTopNow();
     };
     
     const formatDate = (dateString) => {

@@ -33,7 +33,7 @@ const RESUME_ROTATE_DELAY   = 10000; // ms
 const START_LON_OFFSET_DEG = -105; // rome longitude offset
 
 const MapSection = styled(motion.section)`
-  padding: var(--spacing-4xl) 0;
+  padding: var(--spacing-2xl) 0 var(--spacing-4xl);
   background: transparent;
   min-height: 100vh;
   display: flex;

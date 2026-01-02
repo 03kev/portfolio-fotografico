@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useLayoutEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 
 import Header from '../components/Header';
@@ -15,10 +15,28 @@ export default function SiteLayout() {
   const toast = useToast();
   const [showUpload, setShowUpload] = useState(false);
 
-  // Classic multi-page behavior: always start at top when changing route
-  useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'auto' });
-  }, [location.pathname]);
+  // Classic multi-page behavior: always start at top when changing route.
+  // useLayoutEffect runs before paint, so you don't see the scroll movement / scrollbar flash.
+  useLayoutEffect(() => {
+    const html = document.documentElement;
+    const previousScrollBehavior = html.style.scrollBehavior;
+    // Override global `scroll-behavior: smooth` for this reset.
+    html.style.scrollBehavior = 'auto';
+
+    if ('scrollRestoration' in window.history) {
+      window.history.scrollRestoration = 'manual';
+    }
+
+    // Some browsers use `documentElement`, others `body` as the scrolling element.
+    window.scrollTo(0, 0);
+    html.scrollTop = 0;
+    document.body.scrollTop = 0;
+
+    // Restore previous behavior on next frame.
+    requestAnimationFrame(() => {
+      html.style.scrollBehavior = previousScrollBehavior;
+    });
+  }, [location.key, location.pathname, location.search, location.hash]);
 
   const handleUploadSuccess = () => {
     setShowUpload(false);
