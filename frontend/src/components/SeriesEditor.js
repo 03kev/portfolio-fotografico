@@ -203,6 +203,24 @@ const AddBlockButton = styled(motion.button)`
   }
 `;
 
+const AdvancedToggleButton = styled(motion.button)`
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.88);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-radius: var(--border-radius-full);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.10);
+    border-color: rgba(255, 255, 255, 0.18);
+  }
+`;
+
 const PhotoSelector = styled.div`
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
@@ -543,20 +561,23 @@ function SeriesEditor({ series, onClose }) {
             )}
 
             <SectionTitle>Layout & Contenuto</SectionTitle>
-            <p style={{ color: 'rgba(255,255,255,0.65)', marginTop: 'var(--spacing-sm)' }}>
+            <p style={{ color: 'rgba(255,255,255,0.65)', marginTop: 'var(--spacing-sm)', marginBottom: 0 }}>
               Il contenuto (foto/paragrafi) lo componi principalmente dalla pagina della serie usando <b>Layout (drag/resize)</b>.
               Qui sotto puoi comunque modificare i blocchi, ma è una modalità avanzata.
             </p>
 
-            <AddBlockButton
+            <AdvancedToggleButton
               type="button"
               onClick={() => setShowAdvancedContent(v => !v)}
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
-              style={{ marginTop: 'var(--spacing-lg)' }}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              style={{ marginTop: 'var(--spacing-lg)', marginBottom: 'var(--spacing-lg)' }}
             >
-              {showAdvancedContent ? 'Nascondi contenuto avanzato' : 'Mostra contenuto avanzato'}
-            </AddBlockButton>
+              <span style={{ fontSize: '18px', lineHeight: 1 }}>
+                {showAdvancedContent ? '−' : '+'}
+              </span>
+              {showAdvancedContent ? 'Nascondi contenuto avanzato' : 'Contenuto avanzato'}
+            </AdvancedToggleButton>
 
             {showAdvancedContent && (
               <>

@@ -201,8 +201,7 @@ const Canvas = styled.div`
 const DraggableBlock = styled.div`
   position: absolute;
   border-radius: var(--border-radius-xl);
-  border: 1px solid ${props => (props.$selected ? 'rgba(255, 255, 255, 0.55)' : 'rgba(255, 255, 255, 0.12)')};
-  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid ${props => (props.$selected ? 'rgba(255, 255, 255, 0.40)' : 'rgba(255, 255, 255, 0.06)')};  background: rgba(0, 0, 0, 0.35);
   backdrop-filter: blur(10px);
   overflow: hidden;
   touch-action: none;
@@ -238,6 +237,105 @@ const DragHint = styled.div`
   color: rgba(255, 255, 255, 0.45);
 `;
 
+const Inspector = styled.div`
+  position: fixed;
+  top: 110px;
+  right: 24px;
+  width: min(320px, 92vw);
+  max-height: calc(100vh - 160px);
+  overflow: auto;
+  z-index: 9998;
+  border-radius: var(--border-radius-2xl);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 18px 46px rgba(0,0,0,0.38);
+  padding: var(--spacing-lg);
+`;
+
+const InspectorTitle = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-md);
+`;
+
+const InspectorHeading = styled.div`
+  font-weight: var(--font-weight-bold);
+  color: rgba(255, 255, 255, 0.92);
+`;
+
+const InspectorSmall = styled.div`
+  color: rgba(255,255,255,0.55);
+  font-size: var(--font-size-sm);
+`;
+
+const InspectorClose = styled.button`
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.9);
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  cursor: pointer;
+
+  &:hover { background: rgba(255,255,255,0.12); }
+`;
+
+const InspectorGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+`;
+
+const InspectorThumb = styled.button`
+  appearance: none;
+  border: 2px solid ${p => (p.$active ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.10)')};
+  background: rgba(0,0,0,0.20);
+  border-radius: 12px;
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  position: relative;
+
+  &:hover { border-color: rgba(255,255,255,0.28); }
+`;
+
+const InspectorImg = styled.img`
+  width: 100%;
+  height: 92px;
+  object-fit: cover;
+  display: block;
+`;
+
+const InspectorBadge = styled.div`
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.86);
+  color: rgba(0,0,0,0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+`;
+
+const InspectorDivider = styled.div`
+  height: 1px;
+  background: rgba(255,255,255,0.10);
+  margin: var(--spacing-md) 0;
+`;
+
+const InspectorHint = styled.div`
+  color: rgba(255,255,255,0.55);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+`;
+
 const BlockBody = styled.div`
   width: 100%;
   height: calc(100% - 38px);
@@ -247,12 +345,92 @@ const BlockBody = styled.div`
 
 const ResizeHandle = styled.div`
   position: absolute;
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(0, 0, 0, 0.45);
   z-index: 3;
+`;
+
+const FloatingLayoutTools = styled.div`
+  position: fixed;
+  right: 28px;
+  bottom: 28px;
+  z-index: 9999;
+`;
+
+const FabButton = styled(motion.button)`
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.60);
+  color: var(--color-white);
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.35);
+
+  &:hover { background: rgba(0, 0, 0, 0.72); }
+`;
+
+const FabMenu = styled(motion.div)`
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-end;
+`;
+
+const FabItem = styled(motion.button)`
+  border-radius: var(--border-radius-full);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba(255, 255, 255, 0.92);
+  padding: 10px 14px;
+  cursor: pointer;
+  font-weight: var(--font-weight-medium);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 12px 28px rgba(0,0,0,0.30);
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.68);
+    border-color: rgba(255, 255, 255, 0.22);
+  }
+`;
+
+const FabIcon = styled.span`
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.10);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+`;
+
+const InlineTextEditor = styled.textarea`
+  width: 100%;
+  height: 100%;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: var(--font-size-lg);
+  line-height: 1.85;
+  letter-spacing: 0.01em;
+  padding: var(--spacing-lg);
+  font-family: inherit;
+  box-sizing: border-box;
+  overflow: auto;
 `;
 
 const SeriesText = styled.div`
@@ -264,6 +442,8 @@ const SeriesText = styled.div`
   line-height: 1.85;
   letter-spacing: 0.01em;
   white-space: pre-wrap;
+  box-sizing: border-box;
+  overflow: auto;
 
   background: linear-gradient(
     180deg,
@@ -279,8 +459,8 @@ const PhotoFrame = styled.figure`
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-sm);
+  gap: 0;
+  padding: 0;
 `;
 
 const CanvasPhoto = styled.img`
@@ -310,15 +490,15 @@ const ThumbGrid = styled.div`
 
 const ThumbButton = styled.button`
   appearance: none;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  background: rgba(0, 0, 0, 0.18);
-  border-radius: var(--border-radius-xl);
+  border: none;
+  background: transparent;
+  border-radius: 0;
   padding: 0;
   overflow: hidden;
   cursor: pointer;
 
   &:hover {
-    border-color: rgba(255, 255, 255, 0.20);
+    filter: brightness(1.05);
   }
 `;
 
@@ -487,6 +667,7 @@ function SeriesDetail() {
   const [lightboxPhoto, setLightboxPhoto] = useState(null);
   const stageRef = useRef(null);
   const dragStateRef = useRef(null);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
 
   const canvasRef = useRef(null);
   const [selectedIndex, setSelectedIndex] = useState(null);
@@ -540,7 +721,8 @@ function SeriesDetail() {
       });
     };
 
-    setDraftContent(withDefaults(currentSeries.content || []));
+    const prepared = resolveAllCollisions(sanitizeContent(withDefaults(currentSeries.content || [])));
+    setDraftContent(prepared);
   }, [currentSeries]);
 
   useEffect(() => {
@@ -548,6 +730,15 @@ function SeriesDetail() {
     if (selectedIndex === null) return;
 
     const onKeyDown = (e) => {
+      const tag = (e.target?.tagName || '').toLowerCase();
+      if (tag === 'textarea' || tag === 'input') return;
+
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIndex !== null) {
+        e.preventDefault();
+        deleteBlock(selectedIndex);
+        return;
+      }
+
       const keys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'];
       if (!keys.includes(e.key)) return;
       e.preventDefault();
@@ -594,11 +785,17 @@ function SeriesDetail() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [layoutMode, selectedIndex, snapEnabled]);
 
+  const normalizeLayout = (layout = {}) => ({
+    x: typeof layout.x === 'number' ? layout.x : 24,
+    y: typeof layout.y === 'number' ? layout.y : 24,
+    w: typeof layout.w === 'number' ? layout.w : 720,
+    h: typeof layout.h === 'number' ? layout.h : 320,
+  });
+
   const getCanvasHeight = (content) => {
     const maxBottom = (content || []).reduce((max, b) => {
-      const l = b?.layout;
-      if (!l) return max;
-      return Math.max(max, (l.y || 0) + (l.h || 0));
+      const l = normalizeLayout(b?.layout);
+      return Math.max(max, l.y + l.h);
     }, 0);
     return Math.max(720, maxBottom + 120);
   };
@@ -617,6 +814,99 @@ function SeriesDetail() {
 
   const clamp = (v, min, max) => Math.max(min, Math.min(v, max));
 
+  const constrainLayout = (layout, content) => {
+    const canvasH = getCanvasHeight(content);
+    const canvasW = CANVAS_WIDTH;
+    let { x, y, w, h } = normalizeLayout(layout);
+
+    w = clamp(w, MIN_W, canvasW);
+    h = clamp(h, MIN_H, canvasH);
+    x = clamp(x, 0, canvasW - w);
+    y = clamp(y, 0, canvasH - h);
+
+    if (snapEnabled) {
+      x = snap(x);
+      y = snap(y);
+      w = snap(w);
+      h = snap(h);
+      x = snapEdges(x, canvasW - w);
+      y = snapEdges(y, canvasH - h);
+    }
+
+    return { x, y, w, h };
+  };
+
+  const sanitizeContent = (content = []) => {
+    const base = (content || []).map((b) => ({ ...b, layout: normalizeLayout(b.layout) }));
+    return base.map((b) => ({ ...b, layout: constrainLayout(b.layout, base) }));
+  };
+
+  const resolveCollisions = (index, layout, content) => {
+    const padding = GRID_SIZE;
+    const canvasH = getCanvasHeight(content);
+    let resolved = { ...layout };
+
+    const overlaps = (a, b) => {
+      if (!b) return false;
+      const other = normalizeLayout(b);
+      return !(
+        a.x + a.w + padding <= other.x ||
+        a.x >= other.x + other.w + padding ||
+        a.y + a.h + padding <= other.y ||
+        a.y >= other.y + other.h + padding
+      );
+    };
+
+    let guard = content.length * 3;
+    while (guard > 0) {
+      const hasCollision = content.some((b, i) => i !== index && overlaps(resolved, b?.layout));
+      if (!hasCollision) break;
+      const nextY = snapEnabled ? snap(resolved.y + GRID_SIZE) : resolved.y + GRID_SIZE;
+      resolved = { ...resolved, y: clamp(nextY, 0, canvasH - resolved.h) };
+      guard -= 1;
+    }
+
+    return resolved;
+  };
+
+  const resolveAllCollisions = (content = []) => {
+    const padding = GRID_SIZE;
+    const sorted = content
+      .map((b, i) => ({ ...b, _i: i, layout: normalizeLayout(b.layout) }))
+      .sort((a, b) => a.layout.y - b.layout.y || a._i - b._i);
+
+    const placed = [];
+    const overlaps = (a, b) => {
+      const l1 = normalizeLayout(a.layout);
+      const l2 = normalizeLayout(b.layout);
+      return !(
+        l1.x + l1.w + padding <= l2.x ||
+        l1.x >= l2.x + l2.w + padding ||
+        l1.y + l1.h + padding <= l2.y ||
+        l1.y >= l2.y + l2.h + padding
+      );
+    };
+
+    const contentHeight = getCanvasHeight(content);
+
+    sorted.forEach((item) => {
+      let layout = constrainLayout(item.layout, content);
+      let guard = content.length * 4;
+      while (placed.some(p => overlaps({ layout }, p)) && guard > 0) {
+        layout = {
+          ...layout,
+          y: clamp((snapEnabled ? snap(layout.y + GRID_SIZE) : layout.y + GRID_SIZE), 0, contentHeight - layout.h),
+        };
+        guard -= 1;
+      }
+      placed.push({ ...item, layout });
+    });
+
+    return placed
+      .sort((a, b) => a._i - b._i)
+      .map(({ _i, ...rest }) => rest);
+  };
+
   const handlePhotoClick = (photo) => {
     setLightboxPhoto(photo);
   };
@@ -626,14 +916,12 @@ function SeriesDetail() {
     e.stopPropagation();
     setSelectedIndex(index);
 
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
     dragStateRef.current = {
       kind: 'drag',
       index,
       startX: e.clientX,
       startY: e.clientY,
+      initialLayout: normalizeLayout(draftContent[index]?.layout),
     };
 
     window.addEventListener('pointermove', onPointerMove);
@@ -651,6 +939,7 @@ function SeriesDetail() {
       index,
       startX: e.clientX,
       startY: e.clientY,
+      initialLayout: normalizeLayout(draftContent[index]?.layout),
     };
 
     window.addEventListener('pointermove', onPointerMove);
@@ -665,91 +954,58 @@ function SeriesDetail() {
     const dy = e.clientY - st.startY;
 
     setDraftContent(prev => {
+      if (!prev[st.index]) return prev;
       const next = [...prev];
-      const b = { ...next[st.index] };
-      const l = { ...(b.layout || {}) };
-
-      const canvasH = getCanvasHeight(prev);
-      const canvasW = CANVAS_WIDTH;
+      const base = st.initialLayout || normalizeLayout(next[st.index].layout);
+      let layout = { ...base };
 
       if (st.kind === 'drag') {
-        let x = (l.x || 0) + dx;
-        let y = (l.y || 0) + dy;
-
-        const w = l.w || 600;
-        const h = l.h || 300;
-
-        if (w >= canvasW) x = 0;
-        else x = clamp(x, 0, canvasW - w);
-
-        if (h >= canvasH) y = 0;
-        else y = clamp(y, 0, canvasH - h);
-
-        x = snap(x);
-        y = snap(y);
-
-        x = snapEdges(x, canvasW - w);
-        y = snapEdges(y, canvasH - h);
-
-        b.layout = { ...l, x, y };
+        layout = { ...layout, x: base.x + dx, y: base.y + dy };
       } else {
-        let x = l.x || 0;
-        let y = l.y || 0;
-        let w = l.w || 600;
-        let h = l.h || 300;
-
+        let { x, y, w, h } = layout;
         const dir = st.dir;
 
-        if (dir.includes('e')) w = w + dx;
-        if (dir.includes('s')) h = h + dy;
-        if (dir.includes('w')) { w = w - dx; x = x + dx; }
-        if (dir.includes('n')) { h = h - dy; y = y + dy; }
+        if (dir.includes('e')) w = base.w + dx;
+        if (dir.includes('s')) h = base.h + dy;
+        if (dir.includes('w')) { w = base.w - dx; x = base.x + dx; }
+        if (dir.includes('n')) { h = base.h - dy; y = base.y + dy; }
 
-        w = Math.max(MIN_W, w);
-        h = Math.max(MIN_H, h);
-
-        // never allow resize beyond canvas bounds
-        if (w > canvasW) { w = canvasW; x = 0; }
-        if (h > canvasH) { h = canvasH; y = 0; }
-
-        // clamp position again after width/height adjustments
-        x = clamp(x, 0, canvasW - w);
-        y = clamp(y, 0, canvasH - h);
-
-        x = clamp(x, 0, canvasW - w);
-        y = clamp(y, 0, canvasH - h);
-
-        x = snap(x);
-        y = snap(y);
-        w = snap(w);
-        h = snap(h);
-
-        x = snapEdges(x, canvasW - w);
-        y = snapEdges(y, canvasH - h);
-
-        b.layout = { ...l, x, y, w, h };
+        layout = { x, y, w, h };
       }
 
-      next[st.index] = b;
+      const constrained = constrainLayout(layout, next);
+      const resolved = resolveCollisions(st.index, constrained, next);
+      next[st.index] = { ...next[st.index], layout: resolved };
       return next;
     });
-
-    st.startX = e.clientX;
-    st.startY = e.clientY;
   };
 
   const onPointerUp = () => {
     window.removeEventListener('pointermove', onPointerMove);
+    const st = dragStateRef.current;
     dragStateRef.current = null;
+    if (!st) return;
+
+    setDraftContent(prev => {
+      if (!prev[st.index]) return prev;
+      const next = [...prev];
+      const current = normalizeLayout(next[st.index].layout);
+      const snapped = constrainLayout(current, next);
+      const resolved = resolveCollisions(st.index, snapped, next);
+      next[st.index] = { ...next[st.index], layout: resolved };
+      return resolveAllCollisions(sanitizeContent(next));
+    });
   };
 
 
   const handleSaveLayout = async () => {
     try {
+      const cleanContent = resolveAllCollisions(sanitizeContent(draftContent));
       await updateSeries(currentSeries.id, {
         ...currentSeries,
-        content: draftContent,
+        content: cleanContent,
       });
+      setDraftContent(cleanContent);
       toast.success('Layout serie salvato ✅');
       setLayoutMode(false);
       if (slug) {
@@ -762,7 +1018,106 @@ function SeriesDetail() {
 
   const handleResetLayout = () => {
     if (!currentSeries) return;
-    setDraftContent(currentSeries.content || []);
+    const prepared = resolveAllCollisions(sanitizeContent(currentSeries.content || []));
+    setDraftContent(prepared);
+  };
+
+  const getViewportInsertPoint = () => {
+    const stage = stageRef.current;
+    const canvas = canvasRef.current;
+    if (!stage || !canvas) return { x: 24, y: 24 };
+
+    // posiziona vicino alla vista attuale
+    const x = (stage.scrollLeft || 0) + 40;
+    const y = (stage.scrollTop || 0) + 40;
+    return { x, y };
+  };
+
+  const updateTextBlock = (index, value) => {
+    setDraftContent((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], content: value };
+      return next;
+    });
+  };
+
+  const setSelectedPhoto = (photoId) => {
+    if (selectedIndex === null) return;
+    setDraftContent(prev => {
+      const next = [...prev];
+      const b = { ...next[selectedIndex] };
+      if (b.type !== 'photo') return prev;
+      b.content = photoId;
+      next[selectedIndex] = b;
+      return next;
+    });
+  };
+
+  const toggleSelectedPhotoInGroup = (photoId) => {
+    if (selectedIndex === null) return;
+    setDraftContent(prev => {
+      const next = [...prev];
+      const b = { ...next[selectedIndex] };
+      if (b.type !== 'photos') return prev;
+      const arr = Array.isArray(b.content) ? b.content : [];
+      const has = arr.includes(photoId);
+      b.content = has ? arr.filter(id => id !== photoId) : [...arr, photoId];
+      next[selectedIndex] = b;
+      return next;
+    });
+  };
+
+  const deleteBlock = (index) => {
+    setDraftContent(prev => prev.filter((_, i) => i !== index));
+
+    setSelectedIndex(prev => {
+      if (prev === null) return null;
+      if (prev === index) return null;
+      if (prev > index) return prev - 1;
+      return prev;
+    });
+  };
+
+  const addLayoutBlock = (type) => {
+    if (!currentSeries) return;
+
+    const seriesIds = Array.isArray(currentSeries.photos) ? currentSeries.photos : [];
+    if ((type === 'photo' || type === 'photos') && seriesIds.length === 0) {
+      toast.error('Aggiungi prima delle foto alla serie (in Seleziona Foto).');
+      return;
+    }
+
+    const { x: rawX, y: rawY } = getViewportInsertPoint();
+
+    setDraftContent((prev) => {
+      const canvasH = getCanvasHeight(prev);
+      const canvasW = CANVAS_WIDTH;
+
+      const defaultW = type === 'text' ? 560 : type === 'photo' ? 620 : 760;
+      const defaultH = type === 'text' ? 260 : type === 'photo' ? 560 : 520;
+
+      const x = clamp(snap(rawX), 0, Math.max(0, canvasW - defaultW));
+      const y = clamp(snap(rawY), 0, Math.max(0, canvasH - defaultH));
+
+      const block = {
+        type,
+        order: prev.length,
+        content:
+          type === 'text'
+            ? 'Scrivi qui…'
+            : type === 'photo'
+              ? seriesIds[0]
+              : seriesIds.slice(0, 12),
+        layout: { x, y, w: defaultW, h: defaultH },
+      };
+
+      return [...prev, block];
+    });
+
+    // seleziona “l’ultimo” al prossimo render (trucco semplice)
+    setTimeout(() => setSelectedIndex((prev) => (prev === null ? 0 : prev + 1)), 0);
+
+    setQuickAddOpen(false);
   };
 
   const getCoverPhoto = () => {
@@ -931,8 +1286,101 @@ function SeriesDetail() {
           {layoutMode ? (
             <LayoutStage
               ref={stageRef}
-              onPointerDown={() => setSelectedIndex(null)}
+              onPointerDown={() => {
+                setSelectedIndex(null);
+                setQuickAddOpen(false);
+              }}
             >
+              <FloatingLayoutTools
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                }}
+              >
+                <AnimatePresence>
+                  {quickAddOpen && (
+                    <FabMenu
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 10 }}
+                      transition={{ duration: 0.18 }}
+                    >
+                      <FabItem type="button" onClick={() => addLayoutBlock('text')} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                        <FabIcon>📝</FabIcon> Testo
+                      </FabItem>
+                      <FabItem type="button" onClick={() => addLayoutBlock('photo')} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                        <FabIcon>📷</FabIcon> Foto
+                      </FabItem>
+                      <FabItem type="button" onClick={() => addLayoutBlock('photos')} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                        <FabIcon>🧩</FabIcon> Gruppo
+                      </FabItem>
+                    </FabMenu>
+                  )}
+                </AnimatePresence>
+
+                <FabButton type="button" onClick={() => setQuickAddOpen(v => !v)} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                  <span style={{ lineHeight: 1, transform: 'translateY(-1px)' }}>
+                    {quickAddOpen ? '×' : '+'}
+                  </span>
+                </FabButton>
+              </FloatingLayoutTools>
+
+              {selectedIndex !== null &&
+                draftContent[selectedIndex] &&
+                (draftContent[selectedIndex].type === 'photo' || draftContent[selectedIndex].type === 'photos') && (
+                  <Inspector onPointerDown={(e) => e.stopPropagation()}>
+                    <InspectorTitle>
+                      <div>
+                        <InspectorHeading>
+                          {draftContent[selectedIndex].type === 'photo' ? 'Scegli foto' : 'Scegli foto del gruppo'}
+                        </InspectorHeading>
+                        <InspectorSmall>
+                          {draftContent[selectedIndex].type === 'photo'
+                            ? 'Clicca una miniatura per sostituire'
+                            : 'Clicca per aggiungere/rimuovere'}
+                        </InspectorSmall>
+                      </div>
+                      <InspectorClose type="button" onClick={() => setSelectedIndex(null)}>
+                        ✕
+                      </InspectorClose>
+                    </InspectorTitle>
+
+                    <InspectorGrid>
+                      {seriesPhotos.map((p) => {
+                        const isActive =
+                          draftContent[selectedIndex].type === 'photo'
+                            ? draftContent[selectedIndex].content === p.id
+                            : (Array.isArray(draftContent[selectedIndex].content) &&
+                              draftContent[selectedIndex].content.includes(p.id));
+
+                        return (
+                          <InspectorThumb
+                            key={p.id}
+                            type="button"
+                            $active={isActive}
+                            onClick={() => {
+                              if (draftContent[selectedIndex].type === 'photo') setSelectedPhoto(p.id);
+                              else toggleSelectedPhotoInGroup(p.id);
+                            }}
+                            title={p.title || ''}
+                          >
+                            <InspectorImg
+                              src={`${IMAGES_BASE_URL}${p.thumbnail || p.image}`}
+                              alt={p.title}
+                              loading="lazy"
+                            />
+                            {isActive && <InspectorBadge>✓</InspectorBadge>}
+                          </InspectorThumb>
+                        );
+                      })}
+                    </InspectorGrid>
+
+                    <InspectorDivider />
+                    <InspectorHint>
+                      Qui scegli solo tra le foto già aggiunte alla serie (in <b>Contenuti</b>).
+                    </InspectorHint>
+                  </Inspector>
+                )}
+
               <Canvas
                 ref={canvasRef}
                 style={{
@@ -942,12 +1390,22 @@ function SeriesDetail() {
                 onPointerDown={(e) => e.stopPropagation()}
               >
                 {draftContent.map((block, index) => {
-                  const layout = block.layout || { x: 24, y: 24, w: 720, h: 320 };
+                  const layout = normalizeLayout(block.layout);
                   const isSelected = selectedIndex === index;
 
                   const renderBlock = () => {
                     if (block.type === 'text') {
-                      return <SeriesText>{block.content}</SeriesText>;
+                      return selectedIndex === index ? (
+                        <SeriesText style={{ padding: 0 }}>
+                          <InlineTextEditor
+                            value={block.content}
+                            onChange={(e) => updateTextBlock(index, e.target.value)}
+                            placeholder="Scrivi qui…"
+                          />
+                        </SeriesText>
+                      ) : (
+                        <SeriesText>{block.content}</SeriesText>
+                      );
                     }
 
                     if (block.type === 'photo') {
@@ -1013,7 +1471,33 @@ function SeriesDetail() {
                         <DragLabel>
                           {block.type === 'text' ? 'Testo' : block.type === 'photo' ? 'Foto' : 'Gruppo foto'}
                         </DragLabel>
-                        <DragHint>drag • resize con maniglie • frecce per nudge</DragHint>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <DragHint>drag • resize • frecce</DragHint>
+
+                          {isSelected && (
+                            <button
+                              type="button"
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteBlock(index);
+                              }}
+                              style={{
+                                border: 'none',
+                                background: 'rgba(255,255,255,0.10)',
+                                color: 'rgba(255,255,255,0.92)',
+                                width: 30,
+                                height: 30,
+                                borderRadius: 999,
+                                cursor: 'pointer',
+                              }}
+                              title="Elimina"
+                            >
+                              🗑
+                            </button>
+                          )}
+                        </div>
                       </DragHandle>
 
                       <BlockBody>
@@ -1023,16 +1507,16 @@ function SeriesDetail() {
                       {isSelected && (
                         <>
                           {/* corners */}
-                          <ResizeHandle style={{ left: '-5px', top: '-5px', cursor: 'nwse-resize' }} onPointerDown={(e) => startResize(index, 'nw', e)} />
-                          <ResizeHandle style={{ right: '-5px', top: '-5px', cursor: 'nesw-resize' }} onPointerDown={(e) => startResize(index, 'ne', e)} />
-                          <ResizeHandle style={{ right: '-5px', bottom: '-5px', cursor: 'nwse-resize' }} onPointerDown={(e) => startResize(index, 'se', e)} />
-                          <ResizeHandle style={{ left: '-5px', bottom: '-5px', cursor: 'nesw-resize' }} onPointerDown={(e) => startResize(index, 'sw', e)} />
+                          <ResizeHandle style={{ left: '-7px', top: '-7px', cursor: 'nwse-resize' }} onPointerDown={(e) => startResize(index, 'nw', e)} />
+                          <ResizeHandle style={{ right: '-7px', top: '-7px', cursor: 'nesw-resize' }} onPointerDown={(e) => startResize(index, 'ne', e)} />
+                          <ResizeHandle style={{ right: '-7px', bottom: '-7px', cursor: 'nwse-resize' }} onPointerDown={(e) => startResize(index, 'se', e)} />
+                          <ResizeHandle style={{ left: '-7px', bottom: '-7px', cursor: 'nesw-resize' }} onPointerDown={(e) => startResize(index, 'sw', e)} />
 
                           {/* edges */}
-                          <ResizeHandle style={{ left: '50%', top: '-5px', transform: 'translateX(-50%)', cursor: 'ns-resize' }} onPointerDown={(e) => startResize(index, 'n', e)} />
-                          <ResizeHandle style={{ right: '-5px', top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' }} onPointerDown={(e) => startResize(index, 'e', e)} />
-                          <ResizeHandle style={{ left: '50%', bottom: '-5px', transform: 'translateX(-50%)', cursor: 'ns-resize' }} onPointerDown={(e) => startResize(index, 's', e)} />
-                          <ResizeHandle style={{ left: '-5px', top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' }} onPointerDown={(e) => startResize(index, 'w', e)} />
+                          <ResizeHandle style={{ left: '50%', top: '-7px', transform: 'translateX(-50%)', cursor: 'ns-resize' }} onPointerDown={(e) => startResize(index, 'n', e)} />
+                          <ResizeHandle style={{ right: '-7px', top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' }} onPointerDown={(e) => startResize(index, 'e', e)} />
+                          <ResizeHandle style={{ left: '50%', bottom: '-7px', transform: 'translateX(-50%)', cursor: 'ns-resize' }} onPointerDown={(e) => startResize(index, 's', e)} />
+                          <ResizeHandle style={{ left: '-7px', top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' }} onPointerDown={(e) => startResize(index, 'w', e)} />
                         </>
                       )}
                     </DraggableBlock>
@@ -1047,15 +1531,15 @@ function SeriesDetail() {
                   <div style={{ width: "100%", overflow: "hidden" }}>
                     <div>
                       <Canvas
-  style={{
-    height: `${getCanvasHeight(currentSeries.content)}px`,
-    backgroundImage: "none",
-    border: "none",
-    background: "transparent",
-  }}
->
+                        style={{
+                          height: `${getCanvasHeight(currentSeries.content)}px`,
+                          backgroundImage: "none",
+                          border: "none",
+                          background: "transparent",
+                        }}
+                      >
                         {currentSeries.content.map((block, index) => {
-                          const layout = block.layout || { x: 24, y: 24, w: 720, h: 320 };
+                          const layout = normalizeLayout(block.layout);
 
                           const renderBlock = () => {
                             if (block.type === 'text') {
