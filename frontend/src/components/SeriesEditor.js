@@ -606,7 +606,7 @@ function SeriesEditor({ series, onClose }) {
 
             <SectionTitle>Layout & Contenuto</SectionTitle>
             <p style={{ color: 'rgba(255,255,255,0.65)', marginTop: 'var(--spacing-sm)', marginBottom: 0 }}>
-              Il contenuto (foto/paragrafi) lo componi principalmente dalla pagina della serie usando <b>Layout (drag/resize)</b>.
+              Il contenuto (foto/paragrafi) lo componi principalmente dalla pagina della serie usando <b>Layout</b>.
               Qui sotto puoi comunque modificare i blocchi, ma è una modalità avanzata.
             </p>
 

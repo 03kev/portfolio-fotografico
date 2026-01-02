@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FileText, Image as ImageIcon, Images, LayoutGrid, PencilLine, RotateCcw, Save, Trash2, X } from 'lucide-react';
+import { ChevronLeft, FileText, Image as ImageIcon, Images, LayoutGrid, PencilLine, RotateCcw, Save, Trash2, Type, X } from 'lucide-react';
 import GridLayout from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
@@ -60,41 +60,32 @@ const HeroContent = styled.div`
   width: 100%;
 `;
 
-const BackButton = styled(motion.button)`
-  position: absolute;
-  top: calc(78px + var(--spacing-lg));
-  left: var(--spacing-xl);
-  background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: var(--color-white);
-  padding: var(--spacing-md) var(--spacing-lg);
-  border-radius: var(--border-radius-full);
-  font-weight: var(--font-weight-medium);
-  cursor: pointer;
-  display: flex;
+const FloatingBackButton = styled(motion.button)`
+  position: fixed;
+  top: calc(78px + 12px);
+  left: 16px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.6);
+  color: rgba(255, 255, 255, 0.9);
+  display: inline-flex;
   align-items: center;
-  gap: var(--spacing-sm);
-  z-index: 3;
+  justify-content: center;
+  backdrop-filter: blur(12px);
+  cursor: pointer;
+  z-index: 4;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.72);
+    border-color: rgba(255, 255, 255, 0.22);
+  }
 
   @media (max-width: 768px) {
-    top: calc(70px + var(--spacing-lg));
-  }
-
-  &:hover {
-    background: rgba(0, 0, 0, 0.9);
-    border-color: rgba(255, 255, 255, 0.3);
-  }
-`;
-
-const EditButton = styled(BackButton)`
-  left: auto;
-  right: var(--spacing-xl);
-  background: var(--primary-gradient);
-  border-color: transparent;
-
-  &:hover {
-    opacity: 0.9;
+    top: calc(70px + 12px);
+    width: 40px;
+    height: 40px;
   }
 `;
 
@@ -112,19 +103,6 @@ const SeriesDescription = styled(motion.p)`
   max-width: 800px;
   line-height: 1.6;
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
-`;
-
-const PhotoCount = styled(motion.div)`
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(10px);
-  padding: var(--spacing-sm) var(--spacing-lg);
-  border-radius: var(--border-radius-full);
-  font-size: var(--font-size-base);
-  color: var(--color-white);
-  margin-top: var(--spacing-lg);
 `;
 
 const HeroMetaRow = styled.div`
@@ -149,7 +127,7 @@ const Pill = styled.div`
 const ContentSection = styled.div`
   max-width: 1200px;
   margin: 0 auto;
-  padding: var(--spacing-4xl) var(--spacing-xl);
+  padding: ${p => (p.$isAdmin ? 'var(--spacing-2xl)' : '6.5rem')} var(--spacing-xl) var(--spacing-4xl);
 `;
 
 const ContentBlock = styled(motion.div)`
@@ -216,16 +194,23 @@ const LayoutStage = styled.div`
 
 const Canvas = styled.div`
   position: relative;
-  width: 1200px;
+  width: var(--canvas-width, 1200px);
   margin: 0 auto;
   border-radius: var(--border-radius-xl);
   background: transparent;
 
   background-image:
     linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px);
-  background-size: var(--grid-step-x, 100px) var(--grid-step-y, 24px);
-  background-position: 0 0;
+    linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px),
+    linear-gradient(to right, transparent calc(100% - 1px), rgba(255,255,255,0.06) calc(100% - 1px)),
+    linear-gradient(to bottom, transparent calc(100% - 1px), rgba(255,255,255,0.06) calc(100% - 1px));
+  background-size:
+    var(--grid-step-x, 100px) var(--grid-step-y, 24px),
+    var(--grid-step-x, 100px) var(--grid-step-y, 24px),
+    100% 100%,
+    100% 100%;
+  background-position: 0 0, 0 0, 0 0, 0 0;
+  background-repeat: repeat, repeat, no-repeat, no-repeat;
 `;
 
 const DraggableBlock = styled.div`
@@ -722,16 +707,29 @@ function SeriesDetail() {
   const stageRef = useRef(null);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(null);
-
-  const CANVAS_WIDTH = 1200;
-  const GRID_COLS = 12;
-  const ROW_HEIGHT = 24;
-  const GRID_GUTTER = 12;
+  const [gridRowsOverride, setGridRowsOverride] = useState(null);
+  const CANVAS_MAX_WIDTH = 1200;
+  const [canvasWidth, setCanvasWidth] = useState(CANVAS_MAX_WIDTH);
+  const GRID_VERSION = 2;
+  const GRID_COLS = 24;
+  const ROW_HEIGHT = 16;
+  const GRID_GUTTER = 8;
+  const BASE_GRID_ROWS = 24;
+  const GRID_ROW_BUFFER = 6;
+  const LEGACY_GRID_COLS = 12;
+  const LEGACY_ROW_HEIGHT = 24;
+  const LEGACY_GRID_GUTTER = 12;
   const MIN_W = 240;
   const MIN_H = 140;
-  const COL_WIDTH = (CANVAS_WIDTH - GRID_GUTTER * (GRID_COLS - 1)) / GRID_COLS;
+  const COL_WIDTH = (canvasWidth - GRID_GUTTER * (GRID_COLS - 1)) / GRID_COLS;
   const GRID_STEP_X = COL_WIDTH + GRID_GUTTER;
   const GRID_STEP_Y = ROW_HEIGHT + GRID_GUTTER;
+  const LEGACY_COL_WIDTH =
+    (canvasWidth - LEGACY_GRID_GUTTER * (LEGACY_GRID_COLS - 1)) / LEGACY_GRID_COLS;
+  const LEGACY_STEP_X = LEGACY_COL_WIDTH + LEGACY_GRID_GUTTER;
+  const LEGACY_STEP_Y = LEGACY_ROW_HEIGHT + LEGACY_GRID_GUTTER;
+  const GRID_SCALE_X = LEGACY_STEP_X / GRID_STEP_X;
+  const GRID_SCALE_Y = LEGACY_STEP_Y / GRID_STEP_Y;
   const MIN_W_COLS = Math.max(1, Math.round((MIN_W + GRID_GUTTER) / GRID_STEP_X));
   const MIN_H_ROWS = Math.max(1, Math.round((MIN_H + GRID_GUTTER) / GRID_STEP_Y));
 
@@ -762,7 +760,37 @@ function SeriesDetail() {
     setDraftContent(prepared);
   }, [currentSeries]);
 
+  useEffect(() => {
+    if (!layoutMode) {
+      setCanvasWidth(CANVAS_MAX_WIDTH);
+      return;
+    }
+
+    const updateWidth = () => {
+      const stage = stageRef.current;
+      if (!stage) return;
+      const styles = window.getComputedStyle(stage);
+      const paddingX =
+        parseFloat(styles.paddingLeft || '0') + parseFloat(styles.paddingRight || '0');
+      const innerWidth = stage.clientWidth - paddingX;
+      if (Number.isFinite(innerWidth) && innerWidth > 0) {
+        setCanvasWidth(Math.min(CANVAS_MAX_WIDTH, innerWidth));
+      }
+    };
+
+    updateWidth();
+    window.addEventListener('resize', updateWidth);
+    return () => window.removeEventListener('resize', updateWidth);
+  }, [layoutMode, CANVAS_MAX_WIDTH]);
+
   const clamp = (v, min, max) => Math.max(min, Math.min(v, max));
+
+  const scaleGridLayout = (layout, scaleX, scaleY) => ({
+    x: Math.max(0, Math.round((layout.x ?? 0) * scaleX)),
+    y: Math.max(0, Math.round((layout.y ?? 0) * scaleY)),
+    w: Math.max(1, Math.round((layout.w ?? MIN_W_COLS) * scaleX)),
+    h: Math.max(1, Math.round((layout.h ?? MIN_H_ROWS) * scaleY)),
+  });
 
   const createBlockId = () =>
     `block-${Math.random().toString(16).slice(2)}-${Date.now().toString(36)}`;
@@ -781,16 +809,18 @@ function SeriesDetail() {
       (Number.isFinite(layout.w) && layout.w <= GRID_COLS && Number.isFinite(layout.x) && layout.x <= GRID_COLS))
   );
 
-  const getDefaultGridSize = (type) => {
-    if (type === 'text') return { w: Math.max(MIN_W_COLS, 7), h: Math.max(MIN_H_ROWS, 8) };
-    if (type === 'photo') return { w: Math.max(MIN_W_COLS, 8), h: Math.max(MIN_H_ROWS, 18) };
-    return { w: Math.max(MIN_W_COLS, 9), h: Math.max(MIN_H_ROWS, 14) };
-  };
-
   const getDefaultPxSize = (type) => {
     if (type === 'text') return { w: 720, h: 220 };
     if (type === 'photo') return { w: 720, h: 520 };
     return { w: 760, h: 420 };
+  };
+
+  const getDefaultGridSize = (type) => {
+    const fallbackPx = getDefaultPxSize(type);
+    return {
+      w: Math.max(MIN_W_COLS, pxToColSpan(fallbackPx.w)),
+      h: Math.max(MIN_H_ROWS, pxToRowSpan(fallbackPx.h)),
+    };
   };
 
   const pxToColPos = (px) => Math.max(0, Math.round(px / GRID_STEP_X));
@@ -803,7 +833,7 @@ function SeriesDetail() {
     const h = Math.max(layout.h || MIN_H_ROWS, MIN_H_ROWS);
     const x = clamp(layout.x || 0, 0, GRID_COLS - w);
     const y = Math.max(layout.y || 0, 0);
-    return { x, y, w, h, unit: 'grid' };
+    return { x, y, w, h, unit: 'grid', gridVersion: GRID_VERSION };
   };
 
   const prepareContent = (content = [], assignIds = false) => {
@@ -818,15 +848,19 @@ function SeriesDetail() {
       let layout;
 
       if (baseLayout && isGridLayout(baseLayout)) {
-        layout = {
+        const base = {
           x: baseLayout.x ?? 0,
           y: baseLayout.y ?? yCursor,
           w: baseLayout.w ?? defaults.w,
           h: baseLayout.h ?? defaults.h,
         };
+        const version = baseLayout.gridVersion ?? 1;
+        layout = version === GRID_VERSION
+          ? base
+          : scaleGridLayout(base, GRID_SCALE_X, GRID_SCALE_Y);
       } else if (baseLayout) {
         const xPx = typeof baseLayout.x === 'number' ? baseLayout.x : 24;
-        const yPx = typeof baseLayout.y === 'number' ? baseLayout.y : yCursor * ROW_HEIGHT;
+        const yPx = typeof baseLayout.y === 'number' ? baseLayout.y : yCursor * GRID_STEP_Y;
         const wPx = typeof baseLayout.w === 'number' ? baseLayout.w : fallbackPx.w;
         const hPx = typeof baseLayout.h === 'number' ? baseLayout.h : fallbackPx.h;
         layout = {
@@ -843,22 +877,52 @@ function SeriesDetail() {
       const placed = findAvailablePosition(clamped, nextContent, id);
       yCursor = Math.max(yCursor, placed.y + placed.h + 1);
 
-      nextContent.push({ ...block, id, layout: placed });
+      const nextBlock = { ...block, id, layout: placed };
+      if (block.type === 'photo' && typeof block.showTitle !== 'boolean') {
+        nextBlock.showTitle = true;
+      }
+      nextContent.push(nextBlock);
     });
 
     return nextContent;
   };
 
   const buildGridLayout = (content = []) =>
-    (content || []).map((block) => ({
-      i: String(block.id),
-      x: block.layout?.x ?? 0,
-      y: block.layout?.y ?? 0,
-      w: block.layout?.w ?? MIN_W_COLS,
-      h: block.layout?.h ?? MIN_H_ROWS,
-      minW: MIN_W_COLS,
-      minH: MIN_H_ROWS,
-    }));
+    (content || []).map((block) => {
+      const clamped = clampGridLayout({
+        x: block.layout?.x ?? 0,
+        y: block.layout?.y ?? 0,
+        w: block.layout?.w ?? MIN_W_COLS,
+        h: block.layout?.h ?? MIN_H_ROWS,
+      });
+
+      return {
+        i: String(block.id),
+        x: clamped.x,
+        y: clamped.y,
+        w: clamped.w,
+        h: clamped.h,
+        minW: MIN_W_COLS,
+        minH: MIN_H_ROWS,
+      };
+    });
+
+  const getGridRows = (content = []) => {
+    let maxRow = 0;
+    (content || []).forEach((block) => {
+      const layout = block.layout || {};
+      const end = (layout.y ?? 0) + (layout.h ?? MIN_H_ROWS);
+      if (end > maxRow) maxRow = end;
+    });
+    return Math.max(BASE_GRID_ROWS, maxRow);
+  };
+
+  const bumpGridRows = (rows) => {
+    setGridRowsOverride((prev) => {
+      if (prev === null) return rows;
+      return rows > prev ? rows : prev;
+    });
+  };
 
   const hasGridOverlap = (layout, content, ignoreId) => {
     return (content || []).some((b) => {
@@ -926,6 +990,16 @@ function SeriesDetail() {
     setDraftContent((prev) => {
       const next = [...prev];
       next[index] = { ...next[index], content: value };
+      return next;
+    });
+  };
+
+  const togglePhotoTitle = (index) => {
+    setDraftContent((prev) => {
+      const next = [...prev];
+      const block = next[index];
+      if (!block || block.type !== 'photo') return prev;
+      next[index] = { ...block, showTitle: !block.showTitle };
       return next;
     });
   };
@@ -1000,6 +1074,9 @@ function SeriesDetail() {
               : seriesIds.slice(0, 12),
         layout: findAvailablePosition(layout, prev, id),
       };
+      if (type === 'photo') {
+        block.showTitle = true;
+      }
 
       const next = [...prev, block];
       setSelectedIndex(next.length - 1);
@@ -1029,11 +1106,29 @@ function SeriesDetail() {
   const handleGridDragStart = (layout, oldItem) => {
     const index = draftContent.findIndex(block => String(block.id) === String(oldItem.i));
     if (index !== -1) setSelectedIndex(index);
+    bumpGridRows(getGridRows(draftContent) + GRID_ROW_BUFFER);
+  };
+
+  const handleGridDrag = (layout, oldItem, newItem) => {
+    bumpGridRows(Math.max(BASE_GRID_ROWS, newItem.y + newItem.h + GRID_ROW_BUFFER));
+  };
+
+  const handleGridDragStop = () => {
+    setGridRowsOverride(null);
   };
 
   const handleGridResizeStart = (layout, oldItem) => {
     const index = draftContent.findIndex(block => String(block.id) === String(oldItem.i));
     if (index !== -1) setSelectedIndex(index);
+    bumpGridRows(getGridRows(draftContent) + GRID_ROW_BUFFER);
+  };
+
+  const handleGridResize = (layout, oldItem, newItem) => {
+    bumpGridRows(Math.max(BASE_GRID_ROWS, newItem.y + newItem.h + GRID_ROW_BUFFER));
+  };
+
+  const handleGridResizeStop = () => {
+    setGridRowsOverride(null);
   };
 
   const handleCanvasPointerDown = (e) => {
@@ -1053,6 +1148,8 @@ function SeriesDetail() {
   };
 
   const viewContent = prepareContent(currentSeries?.content || [], false);
+  const gridRows = Math.max(getGridRows(draftContent), gridRowsOverride || 0);
+  const gridCanvasHeight = gridRows * GRID_STEP_Y - GRID_GUTTER;
 
   if (loading) {
     return (
@@ -1093,6 +1190,14 @@ function SeriesDetail() {
   return (
     <>
       <PageContainer>
+        <FloatingBackButton
+          onClick={() => navigate('/')}
+          whileHover={{ scale: 1.03 }}
+          whileTap={{ scale: 0.97 }}
+          aria-label="Torna indietro"
+        >
+          <ChevronLeft size={20} />
+        </FloatingBackButton>
         <HeroSection>
           {coverPhoto && (
             <CoverImage
@@ -1101,26 +1206,6 @@ function SeriesDetail() {
               animate={{ scale: 1 }}
               transition={{ duration: 1.5 }}
             />
-          )}
-
-          <BackButton
-            onClick={() => navigate('/')}
-            whileHover={{ x: -5 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            <span>←</span> Indietro
-          </BackButton>
-
-          {isAdmin && (
-            <EditButton
-              onClick={() => setShowEditor(true)}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                <PencilLine size={18} /> Modifica
-              </span>
-            </EditButton>
           )}
 
           <HeroContent>
@@ -1138,17 +1223,11 @@ function SeriesDetail() {
             >
               {currentSeries.description}
             </SeriesDescription>
-            <PhotoCount
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.7 }}
-            >
-              Foto: {seriesPhotos.length}
-            </PhotoCount>
           </HeroContent>
         </HeroSection>
 
-        <ContentSection>
+        <ContentSection $isAdmin={isAdmin}>
+
           {isAdmin && (
             <AdminBar>
               <AdminBarButton
@@ -1158,7 +1237,7 @@ function SeriesDetail() {
                 whileTap={{ scale: 0.97 }}
               >
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                  <FileText size={16} /> Contenuti
+                  <PencilLine size={16} /> Modifica
                 </span>
               </AdminBarButton>
 
@@ -1170,7 +1249,7 @@ function SeriesDetail() {
               >
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                   {layoutMode ? <X size={16} /> : <LayoutGrid size={16} />}
-                  {layoutMode ? 'Esci layout' : 'Layout (drag/resize)'}
+                  {layoutMode ? 'Esci layout' : 'Layout'}
                 </span>
               </AdminBarButton>
 
@@ -1303,7 +1382,13 @@ function SeriesDetail() {
                 )}
 
               <Canvas
-                style={{ '--grid-step-x': `${GRID_STEP_X}px`, '--grid-step-y': `${GRID_STEP_Y}px` }}
+                style={{
+                  '--canvas-width': `${canvasWidth}px`,
+                  '--grid-step-x': `${GRID_STEP_X}px`,
+                  '--grid-step-y': `${GRID_STEP_Y}px`,
+                  minHeight: `${gridCanvasHeight}px`,
+                  height: `${gridCanvasHeight}px`,
+                }}
                 onPointerDown={(e) => {
                   e.stopPropagation();
                   handleCanvasPointerDown(e);
@@ -1319,9 +1404,11 @@ function SeriesDetail() {
                   layout={buildGridLayout(draftContent)}
                   cols={GRID_COLS}
                   rowHeight={ROW_HEIGHT}
-                  width={CANVAS_WIDTH}
+                  width={canvasWidth}
                   margin={[GRID_GUTTER, GRID_GUTTER]}
                   containerPadding={[0, 0]}
+                  autoSize={false}
+                  style={{ height: gridCanvasHeight }}
                   isResizable
                   isDraggable
                   preventCollision
@@ -1332,7 +1419,11 @@ function SeriesDetail() {
                   draggableCancel=".series-editable,textarea,input,button"
                   onLayoutChange={handleGridLayoutChange}
                   onDragStart={handleGridDragStart}
+                  onDrag={handleGridDrag}
+                  onDragStop={handleGridDragStop}
                   onResizeStart={handleGridResizeStart}
+                  onResize={handleGridResize}
+                  onResizeStop={handleGridResizeStop}
                 >
                   {draftContent.map((block, index) => {
                     const isSelected = selectedIndex === index;
@@ -1365,7 +1456,9 @@ function SeriesDetail() {
                               onClick={() => handlePhotoClick(photo)}
                               style={{ cursor: 'pointer' }}
                             />
-                            {photo.title && <CanvasCaption>{photo.title}</CanvasCaption>}
+                            {block.showTitle !== false && photo.title && (
+                              <CanvasCaption>{photo.title}</CanvasCaption>
+                            )}
                           </PhotoFrame>
                         );
                       }
@@ -1423,6 +1516,32 @@ function SeriesDetail() {
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                             <DragHint>drag • resize</DragHint>
 
+                            {isSelected && block.type === 'photo' && (
+                              <button
+                                type="button"
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  togglePhotoTitle(index);
+                                }}
+                                style={{
+                                  border: 'none',
+                                  background: block.showTitle
+                                    ? 'rgba(255,255,255,0.18)'
+                                    : 'rgba(255,255,255,0.08)',
+                                  color: 'rgba(255,255,255,0.92)',
+                                  width: 30,
+                                  height: 30,
+                                  borderRadius: 999,
+                                  cursor: 'pointer',
+                                }}
+                                title={block.showTitle ? 'Nascondi titolo' : 'Mostra titolo'}
+                                aria-pressed={block.showTitle ? 'true' : 'false'}
+                              >
+                                <Type size={14} />
+                              </button>
+                            )}
+
                             {isSelected && (
                               <button
                                 type="button"
@@ -1468,6 +1587,7 @@ function SeriesDetail() {
                           backgroundImage: "none",
                           border: "none",
                           background: "transparent",
+                          '--canvas-width': `${canvasWidth}px`,
                           '--grid-step-x': `${GRID_STEP_X}px`,
                           '--grid-step-y': `${GRID_STEP_Y}px`,
                         }}
@@ -1476,7 +1596,7 @@ function SeriesDetail() {
                           layout={buildGridLayout(viewContent)}
                           cols={GRID_COLS}
                           rowHeight={ROW_HEIGHT}
-                          width={CANVAS_WIDTH}
+                          width={canvasWidth}
                           margin={[GRID_GUTTER, GRID_GUTTER]}
                           containerPadding={[0, 0]}
                           isDraggable={false}
@@ -1502,7 +1622,9 @@ function SeriesDetail() {
                                       onClick={() => handlePhotoClick(photo)}
                                       style={{ cursor: "pointer" }}
                                     />
-                                    {photo.title && <CanvasCaption>{photo.title}</CanvasCaption>}
+                                    {block.showTitle !== false && photo.title && (
+                                      <CanvasCaption>{photo.title}</CanvasCaption>
+                                    )}
                                   </PhotoFrame>
                                 );
                               }
