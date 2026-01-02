@@ -9,7 +9,7 @@ import { IMAGES_BASE_URL } from '../utils/constants';
 
 const PageContainer = styled.div`
   min-height: 100vh;
-  background: linear-gradient(135deg, #0c0c0c 0%, #1a1a1a 50%, #0c0c0c 100%);
+  background: transparent;
   padding-top: 80px;
 `;
 
@@ -26,7 +26,7 @@ const HeroSection = styled(motion.div)`
     left: 0;
     right: 0;
     bottom: 0;
-    background: linear-gradient(to bottom, transparent 0%, rgba(12, 12, 12, 0.8) 70%, #0c0c0c 100%);
+    background: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.72) 70%, rgba(0,0,0,0.95) 100%);
     z-index: 1;
   }
 `;
@@ -377,7 +377,7 @@ function SeriesDetail() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 0.7 }}
             >
-              📸 {seriesPhotos.length} {seriesPhotos.length === 1 ? 'foto' : 'foto'}
+              Foto: {seriesPhotos.length}
             </PhotoCount>
           </HeroContent>
         </HeroSection>

@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
+import { MapPin, Camera } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { IMAGES_BASE_URL } from '../utils/constants';
 
@@ -48,7 +49,10 @@ const Title = styled.h2`
   font-size: var(--font-size-2xl);
   font-weight: var(--font-weight-bold);
   margin: 0 0 var(--spacing-sm) 0;
-  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
 
   @media (max-width: 768px) {
     font-size: var(--font-size-xl);
@@ -192,6 +196,9 @@ const PhotoLocation = styled.p`
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   margin: 0 0 var(--spacing-sm) 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 `;
 
 const PhotoDescription = styled.p`
@@ -341,7 +348,7 @@ const GalleryModal = () => {
             </CloseButton>
 
             <Header>
-              <Title>📍 {getClusterLocation()}</Title>
+              <Title><MapPin size={18} /> {getClusterLocation()}</Title>
               <Subtitle>
                 {galleryPhotos.length} {galleryPhotos.length === 1 ? 'foto' : 'foto'} in questa zona
               </Subtitle>
@@ -362,7 +369,7 @@ const GalleryModal = () => {
                   
                   <PhotoInfo>
                     <PhotoTitle>{photo.title}</PhotoTitle>
-                    <PhotoLocation>📍 {photo.location}</PhotoLocation>
+                    <PhotoLocation><MapPin size={14} /> {photo.location}</PhotoLocation>
                     {photo.description && (
                       <PhotoDescription>{photo.description}</PhotoDescription>
                     )}
@@ -373,7 +380,7 @@ const GalleryModal = () => {
 
             {galleryPhotos.length === 0 && (
               <EmptyState>
-                <div className="icon">📷</div>
+                <div className="icon"><Camera size={28} /></div>
                 <div className="title">Nessuna foto trovata</div>
                 <div className="description">
                   Non ci sono foto da mostrare in questa località.

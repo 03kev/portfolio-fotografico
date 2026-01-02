@@ -1,264 +1,172 @@
 import React from 'react';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
+import { Link } from 'react-router-dom';
+import { ArrowDownRight } from 'lucide-react';
 
 const HeroSection = styled.section`
-  height: 100vh;
+  min-height: 100vh;
   display: flex;
   align-items: center;
-  justify-content: center;
-  text-align: center;
   position: relative;
-  background: var(--dark-gradient);
   overflow: hidden;
+  padding: 80px 0 80px;
+  background: var(--dark-gradient);
 
   &::before {
     content: '';
     position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="1" fill="rgba(255,255,255,0.05)"/></svg>') repeat;
-    background-size: 100px 100px;
-    animation: float 20s infinite linear;
+    inset: -1px;
+    background:
+      radial-gradient(900px 520px at 20% 12%, rgba(214, 179, 106, 0.16) 0%, rgba(214, 179, 106, 0) 60%),
+      radial-gradient(900px 520px at 80% 18%, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0) 62%);
     pointer-events: none;
   }
 
-  @keyframes float {
-    0% { transform: translateY(0px); }
-    100% { transform: translateY(-100px); }
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(900px 520px at 50% 110%, rgba(0, 0, 0, 0.70) 0%, rgba(0, 0, 0, 0) 60%);
+    pointer-events: none;
   }
 `;
 
-const ParticleContainer = styled.div`
-  position: absolute;
-  top: 0;
-  left: 0;
+const Container = styled.div`
   width: 100%;
-  height: 100%;
-  overflow: hidden;
-  pointer-events: none;
-`;
-
-const Particle = styled(motion.div)`
-  position: absolute;
-  width: ${props => props.size}px;
-  height: ${props => props.size}px;
-  background: ${props => props.color};
-  border-radius: 50%;
-  opacity: 0.6;
-`;
-
-const HeroContent = styled(motion.div)`
-  position: relative;
-  z-index: 10;
-  max-width: 800px;
+  max-width: 1100px;
   margin: 0 auto;
-  padding: 0 var(--spacing-lg);
+  padding: 0 var(--spacing-xl);
+  position: relative;
+  z-index: 1;
+
+  @media (max-width: 768px) {
+    padding: 0 var(--spacing-lg);
+  }
+`;
+
+const Eyebrow = styled(motion.div)`
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--border-radius-full);
+  border: 1px solid var(--color-border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: var(--spacing-lg);
 `;
 
 const Title = styled(motion.h1)`
-  font-size: clamp(3rem, 8vw, 6rem);
-  font-weight: var(--font-weight-black);
+  font-size: clamp(2.6rem, 6vw, 4.2rem);
+  font-weight: var(--font-weight-extrabold);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
   margin-bottom: var(--spacing-lg);
-  background: var(--primary-gradient);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  line-height: 1.1;
+  color: var(--color-text);
+
+  span {
+    color: var(--color-accent);
+  }
 `;
 
 const Subtitle = styled(motion.p)`
-  font-size: clamp(1.1rem, 3vw, 1.5rem);
-  margin-bottom: var(--spacing-2xl);
-  opacity: 0.9;
-  font-weight: var(--font-weight-normal);
-  line-height: 1.6;
+  max-width: 720px;
+  font-size: clamp(1.05rem, 2.2vw, 1.25rem);
+  color: var(--color-muted);
+  line-height: 1.7;
+  margin: 0 0 var(--spacing-2xl) 0;
 `;
 
-const CTAButton = styled(motion.a)`
-  display: inline-block;
-  padding: var(--spacing-lg) var(--spacing-2xl);
-  background: var(--accent-gradient);
-  color: var(--color-white);
-  text-decoration: none;
-  border-radius: var(--border-radius-full);
-  font-weight: var(--font-weight-semibold);
-  font-size: var(--font-size-lg);
-  position: relative;
-  overflow: hidden;
-  transition: all var(--transition-normal);
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(
-      90deg,
-      transparent,
-      rgba(255, 255, 255, 0.2),
-      transparent
-    );
-    transition: left 0.5s;
-  }
-
-  &:hover::before {
-    left: 100%;
-  }
-
-  &:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 20px 40px rgba(79, 172, 254, 0.4);
-  }
-`;
-
-const ScrollIndicator = styled(motion.div)`
-  position: absolute;
-  bottom: var(--spacing-2xl);
-  left: 50%;
-  transform: translateX(-50%);
+const CTAGroup = styled(motion.div)`
   display: flex;
-  flex-direction: column;
+  gap: var(--spacing-md);
   align-items: center;
-  gap: var(--spacing-sm);
-  cursor: pointer;
-  opacity: 0.7;
-  transition: opacity var(--transition-normal);
+  flex-wrap: wrap;
+`;
+
+const PrimaryButton = styled(motion(Link))`
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  border-radius: var(--border-radius-full);
+  background: rgba(214, 179, 106, 0.16);
+  border: 1px solid rgba(214, 179, 106, 0.45);
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+  transition: background var(--transition-normal), transform var(--transition-normal), box-shadow var(--transition-normal);
 
   &:hover {
-    opacity: 1;
-  }
-
-  span {
-    font-size: var(--font-size-sm);
-    color: var(--color-white);
-    font-weight: var(--font-weight-medium);
+    background: rgba(214, 179, 106, 0.22);
+    box-shadow: var(--shadow-medium);
+    transform: translateY(-1px);
   }
 `;
 
-const ScrollArrow = styled(motion.div)`
-  width: 24px;
-  height: 24px;
-  border: 2px solid var(--color-white);
-  border-left: none;
-  border-top: none;
-  transform: rotate(45deg);
+const SecondaryLink = styled(motion(Link))`
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 14px;
+  border-radius: var(--border-radius-full);
+  border: 1px solid var(--color-border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--color-muted);
+  font-weight: var(--font-weight-semibold);
+
+  &:hover {
+    color: var(--color-text);
+    border-color: rgba(255, 255, 255, 0.18);
+    transform: translateY(-1px);
+  }
 `;
 
 const Hero = () => {
-  const scrollToMap = () => {
-    const mapSection = document.getElementById('mappa');
-    if (mapSection) {
-      mapSection.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
-
-  // Generate particles
-  const particles = Array.from({ length: 20 }, (_, i) => ({
-    id: i,
-    size: Math.random() * 6 + 2,
-    color: `rgba(${Math.random() > 0.5 ? '103, 126, 234' : '79, 172, 254'}, ${Math.random() * 0.5 + 0.2})`,
-    x: Math.random() * 100,
-    y: Math.random() * 100,
-    duration: Math.random() * 10 + 10
-  }));
-
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: {
-        duration: 0.8,
-        staggerChildren: 0.2
-      }
-    }
-  };
-
-  const itemVariants = {
-    hidden: { opacity: 0, y: 30 },
-    visible: {
+  const container = {
+    hidden: { opacity: 0, y: 10 },
+    show: {
       opacity: 1,
       y: 0,
-      transition: {
-        duration: 0.8,
-        ease: "easeOut"
-      }
+      transition: { duration: 0.6, ease: 'easeOut', staggerChildren: 0.08 }
     }
+  };
+
+  const item = {
+    hidden: { opacity: 0, y: 10 },
+    show: { opacity: 1, y: 0, transition: { duration: 0.45, ease: 'easeOut' } }
   };
 
   return (
-    <HeroSection id="home">
-      <ParticleContainer>
-        {particles.map(particle => (
-          <Particle
-            key={particle.id}
-            size={particle.size}
-            color={particle.color}
-            initial={{
-              x: `${particle.x}vw`,
-              y: `${particle.y}vh`,
-              opacity: 0
-            }}
-            animate={{
-              x: `${particle.x + (Math.random() - 0.5) * 20}vw`,
-              y: `${particle.y - 20}vh`,
-              opacity: [0, 1, 0]
-            }}
-            transition={{
-              duration: particle.duration,
-              repeat: Infinity,
-              ease: "linear"
-            }}
-          />
-        ))}
-      </ParticleContainer>
+    <HeroSection>
+      <Container>
+        <motion.div variants={container} initial="hidden" animate="show">
+          <Eyebrow variants={item}>Fotografia • Viaggi • Serie</Eyebrow>
 
-      <HeroContent
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
-      >
-        <Title variants={itemVariants}>
-          Portfolio Fotografico
-        </Title>
-        
-        <Subtitle variants={itemVariants}>
-          Esplora il mondo attraverso i miei scatti. Ogni foto racconta una storia,
-          ogni luogo nasconde un'emozione.
-        </Subtitle>
-        
-        <motion.div variants={itemVariants}>
-          <CTAButton
-            href="#mappa"
-            onClick={(e) => {
-              e.preventDefault();
-              scrollToMap();
-            }}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            Esplora la Mappa
-          </CTAButton>
+          <Title variants={item}>
+            Portfolio <span>fotografico</span>
+          </Title>
+
+          <Subtitle variants={item}>
+            Una selezione curata di scatti, organizzati per luoghi e serie.
+            Esplora per progetto o tramite la mappa.
+          </Subtitle>
+
+          <CTAGroup variants={item}>
+            <PrimaryButton to="/map" whileTap={{ scale: 0.98 }}>
+              Esplora la mappa
+              <ArrowDownRight size={18} />
+            </PrimaryButton>
+
+            <SecondaryLink to="/gallery" whileTap={{ scale: 0.98 }}>
+              Vai alla galleria
+            </SecondaryLink>
+          </CTAGroup>
         </motion.div>
-      </HeroContent>
-
-      <ScrollIndicator
-        onClick={scrollToMap}
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 0.7, y: 0 }}
-        transition={{ duration: 1, delay: 2 }}
-        whileHover={{ opacity: 1, scale: 1.1 }}
-      >
-        <span>Scorri per esplorare</span>
-        <ScrollArrow
-          animate={{ y: [0, 5, 0] }}
-          transition={{ duration: 1.5, repeat: Infinity }}
-        />
-      </ScrollIndicator>
+      </Container>
     </HeroSection>
   );
 };

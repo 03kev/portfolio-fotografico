@@ -1,28 +1,27 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Camera, Menu, X } from 'lucide-react';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 
 const HeaderContainer = styled(motion.header)`
   position: fixed;
   top: 0;
   width: 100%;
   z-index: var(--z-fixed);
-  background: ${props => props.scrolled 
-    ? 'rgba(0, 0, 0, 0.95)' 
-    : 'rgba(0, 0, 0, 0.8)'};
-  backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  transition: all var(--transition-normal);
+  background: ${(props) => (props.scrolled ? 'rgba(11, 11, 13, 0.92)' : 'rgba(11, 11, 13, 0.72)')};
+  backdrop-filter: blur(18px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 `;
 
 const Nav = styled.nav`
-  max-width: 1400px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 0 var(--spacing-xl);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  height: 80px;
+  height: 78px;
 
   @media (max-width: 768px) {
     padding: 0 var(--spacing-lg);
@@ -30,82 +29,118 @@ const Nav = styled.nav`
   }
 `;
 
-const Logo = styled(motion.div)`
-  font-size: var(--font-size-2xl);
-  font-weight: var(--font-weight-black);
-  background: var(--primary-gradient);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  cursor: pointer;
+const Logo = styled(motion(Link))`
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.02em;
+  font-size: 1.05rem;
 
-  @media (max-width: 768px) {
-    font-size: var(--font-size-xl);
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--color-accent);
+    display: inline-block;
   }
 `;
 
 const NavLinks = styled.ul`
   display: flex;
-  gap: var(--spacing-2xl);
-  list-style: none;
+  gap: var(--spacing-xl);
 
   @media (max-width: 768px) {
     display: none;
   }
 `;
 
-const NavLink = styled(motion.li)`
-  a {
-    color: var(--color-white);
-    text-decoration: none;
-    font-weight: var(--font-weight-medium);
-    font-size: var(--font-size-base);
-    position: relative;
-    transition: all var(--transition-normal);
+const StyledNavLink = styled(NavLink)`
+  color: var(--color-muted);
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-sm);
+  letter-spacing: 0.01em;
+  padding: 10px 0;
+  position: relative;
 
-    &:hover {
-      color: var(--color-accent);
-    }
+  &:hover {
+    color: var(--color-text);
+  }
 
-    &::after {
-      content: '';
-      position: absolute;
-      bottom: -8px;
-      left: 0;
-      width: 0;
-      height: 2px;
-      background: var(--accent-gradient);
-      transition: width var(--transition-normal);
-    }
+  &::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    bottom: 2px;
+    width: 0;
+    height: 2px;
+    background: rgba(214, 179, 106, 0.65);
+    transition: width var(--transition-normal);
+  }
 
-    &:hover::after {
-      width: 100%;
-    }
+  &:hover::after {
+    width: 100%;
+  }
+
+  &.active {
+    color: var(--color-text);
+  }
+
+  &.active::after {
+    width: 100%;
+  }
+`;
+
+const Right = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+`;
+
+const UploadButton = styled(motion.button)`
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--border-radius-full);
+  border: 1px solid rgba(214, 179, 106, 0.45);
+  background: rgba(214, 179, 106, 0.12);
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-sm);
+
+  &:hover {
+    background: rgba(214, 179, 106, 0.18);
+    box-shadow: var(--shadow-small);
+    transform: translateY(-1px);
+  }
+
+  @media (max-width: 768px) {
+    padding: 9px 12px;
+    font-size: var(--font-size-xs);
   }
 `;
 
 const MobileMenuButton = styled(motion.button)`
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--color-text);
   display: none;
-  flex-direction: column;
-  justify-content: space-around;
-  width: 30px;
-  height: 30px;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  padding: 0;
+  align-items: center;
+  justify-content: center;
+
+  &:hover {
+    border-color: rgba(255, 255, 255, 0.16);
+    transform: translateY(-1px);
+  }
 
   @media (max-width: 768px) {
-    display: flex;
+    display: inline-flex;
   }
-`;
-
-const MenuLine = styled(motion.span)`
-  width: 30px;
-  height: 3px;
-  background: var(--color-white);
-  border-radius: 10px;
-  transform-origin: center;
 `;
 
 const MobileMenu = styled(motion.div)`
@@ -113,10 +148,10 @@ const MobileMenu = styled(motion.div)`
   top: 100%;
   left: 0;
   right: 0;
-  background: rgba(0, 0, 0, 0.95);
-  backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  padding: var(--spacing-lg) 0;
+  background: rgba(11, 11, 13, 0.96);
+  backdrop-filter: blur(18px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 14px 0;
 `;
 
 const MobileNavLinks = styled.ul`
@@ -124,218 +159,108 @@ const MobileNavLinks = styled.ul`
   padding: 0 var(--spacing-lg);
 `;
 
-const MobileNavLink = styled(motion.li)`
-  margin-bottom: var(--spacing-lg);
-
-  a {
-    color: var(--color-white);
-    text-decoration: none;
-    font-weight: var(--font-weight-medium);
-    font-size: var(--font-size-lg);
-    display: block;
-    padding: var(--spacing-sm) 0;
-    transition: all var(--transition-normal);
-
-    &:hover {
-      color: var(--color-accent);
-      padding-left: var(--spacing-md);
-    }
-  }
+const MobileNavItem = styled(motion.li)`
+  margin: 8px 0;
 `;
 
-const UploadButton = styled(motion.button)`
-  background: var(--primary-gradient);
-  border: none;
-  color: white;
-  padding: 12px 20px;
-  border-radius: 25px;
-  font-weight: var(--font-weight-semibold);
-  font-size: var(--font-size-sm);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
-  transition: all var(--transition-normal);
+const MobileLink = styled(NavLink)`
+  color: var(--color-muted);
+  text-decoration: none;
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-lg);
+  display: block;
+  padding: 10px 0;
 
   &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+    color: var(--color-text);
   }
 
-  @media (max-width: 768px) {
-    padding: 10px 16px;
-    font-size: var(--font-size-xs);
+  &.active {
+    color: var(--color-text);
   }
 `;
 
-const Header = ({ onOpenUpload }) => {
+const Header = ({ onOpenUpload, isAdmin = false }) => {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const location = useLocation();
 
   useEffect(() => {
-    const handleScroll = () => {
-      const offset = window.scrollY;
-      setScrolled(offset > 100);
-    };
-
-    window.addEventListener('scroll', handleScroll);
+    const handleScroll = () => setScrolled(window.scrollY > 24);
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const scrollToSection = (sectionId) => {
-    const element = document.getElementById(sectionId);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth' });
-      setMobileMenuOpen(false);
-    }
-  };
-
-  const scrollToTop = () => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  // Close mobile menu on navigation
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
 
   const navItems = [
-    { id: 'home', label: 'Home', onClick: scrollToTop },
-    { id: 'mappa', label: 'Mappa' },
-    { id: 'serie', label: 'Serie' },
-    { id: 'galleria', label: 'Galleria' },
-    { id: 'contatti', label: 'Contatti' }
+    { to: '/', label: 'Home' },
+    { to: '/series', label: 'Serie' },
+    { to: '/gallery', label: 'Galleria' },
+    { to: '/map', label: 'Mappa' },
+    { to: '/about', label: 'Chi sono' },
+    { to: '/contact', label: 'Contatti' }
   ];
 
   return (
     <HeaderContainer
       scrolled={scrolled}
-      initial={{ y: -100 }}
-      animate={{ y: 0 }}
-      transition={{ duration: 0.6 }}
+      initial={{ y: -80, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      transition={{ duration: 0.45, ease: 'easeOut' }}
     >
       <Nav>
-        <Logo
-          onClick={scrollToTop}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-        >
-          FotoPortfolio
+        <Logo to="/" whileTap={{ scale: 0.98 }} aria-label="Torna alla home">
+          FotoPortfolio <span className="dot" />
         </Logo>
 
         <NavLinks>
-          {navItems.map((item, index) => (
-            <NavLink
-              key={item.id}
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: index * 0.1 }}
-              whileHover={{ y: -2 }}
-            >
-              <a
-                href={`#${item.id}`}
-                onClick={(e) => {
-                  e.preventDefault();
-                  if (item.onClick) {
-                    item.onClick();
-                  } else {
-                    scrollToSection(item.id);
-                  }
-                }}
-              >
+          {navItems.map((item) => (
+            <li key={item.to}>
+              <StyledNavLink to={item.to} end={item.to === '/'}>
                 {item.label}
-              </a>
-            </NavLink>
+              </StyledNavLink>
+            </li>
           ))}
         </NavLinks>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          {onOpenUpload && (
-            <UploadButton
-              onClick={onOpenUpload}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.4, delay: 0.4 }}
-            >
-              📸 Carica Foto
+        <Right>
+          {isAdmin && onOpenUpload && (
+            <UploadButton onClick={onOpenUpload} whileTap={{ scale: 0.98 }}>
+              <Camera size={16} />
+              Carica
             </UploadButton>
           )}
 
           <MobileMenuButton
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            whileTap={{ scale: 0.9 }}
+            onClick={() => setMobileMenuOpen((v) => !v)}
+            whileTap={{ scale: 0.95 }}
+            aria-label={mobileMenuOpen ? 'Chiudi menu' : 'Apri menu'}
           >
-            <MenuLine
-              animate={{
-                rotate: mobileMenuOpen ? 45 : 0,
-                y: mobileMenuOpen ? 8 : 0
-              }}
-              transition={{ duration: 0.3 }}
-            />
-            <MenuLine
-              animate={{
-                opacity: mobileMenuOpen ? 0 : 1
-              }}
-              transition={{ duration: 0.3 }}
-            />
-            <MenuLine
-              animate={{
-                rotate: mobileMenuOpen ? -45 : 0,
-                y: mobileMenuOpen ? -8 : 0
-              }}
-              transition={{ duration: 0.3 }}
-            />
+            {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
           </MobileMenuButton>
-        </div>
+        </Right>
       </Nav>
 
       <AnimatePresence>
         {mobileMenuOpen && (
           <MobileMenu
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.3 }}
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
           >
             <MobileNavLinks>
-              {onOpenUpload && (
-                <MobileNavLink
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.3, delay: 0 }}
-                >
-                  <a
-                    href="#upload"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      onOpenUpload();
-                      setMobileMenuOpen(false);
-                    }}
-                    style={{ color: 'var(--color-accent)' }}
-                  >
-                    📸 Carica Foto
-                  </a>
-                </MobileNavLink>
-              )}
-              {navItems.map((item, index) => (
-                <MobileNavLink
-                  key={item.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.3, delay: (index + 1) * 0.1 }}
-                >
-                  <a
-                    href={`#${item.id}`}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      if (item.onClick) {
-                        item.onClick();
-                      } else {
-                        scrollToSection(item.id);
-                      }
-                    }}
-                  >
+              {navItems.map((item) => (
+                <MobileNavItem key={item.to} whileTap={{ scale: 0.98 }}>
+                  <MobileLink to={item.to} end={item.to === '/'}>
                     {item.label}
-                  </a>
-                </MobileNavLink>
+                  </MobileLink>
+                </MobileNavItem>
               ))}
             </MobileNavLinks>
           </MobileMenu>

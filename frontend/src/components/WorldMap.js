@@ -34,7 +34,7 @@ const START_LON_OFFSET_DEG = -105; // rome longitude offset
 
 const MapSection = styled(motion.section)`
   padding: var(--spacing-4xl) 0;
-  background: linear-gradient(135deg, #0c0c0c 0%, #1a1a1a 100%);
+  background: transparent;
   min-height: 100vh;
   display: flex;
   align-items: center;

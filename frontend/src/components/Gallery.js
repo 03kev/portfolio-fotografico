@@ -1,35 +1,34 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Search } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { IMAGES_BASE_URL } from '../utils/constants';
 
 const DEBOUNCE_DELAY_FILTER = 200;
 
 function useDebounce(value, delay) {
-    const [debounced, setDebounced] = useState(value);
-    useEffect(() => {
-        const handler = setTimeout(() => setDebounced(value), delay);
-        return () => clearTimeout(handler);
-    }, [value, delay]);
-    return debounced;
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const handler = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+  return debounced;
 }
 
 const cardVariants = {
-    hidden: { opacity: 0, scale: 0.8, y: 20 },
-    visible: { opacity: 1, scale: 1, y: 0, transition: { duration: 0.4 } },
-    exit:    { opacity: 0, scale: 0.8, y: -20, transition: { duration: 0.3 } }
+  hidden: { opacity: 0, scale: 0.98, y: 8 },
+  visible: { opacity: 1, scale: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' } },
+  exit: { opacity: 0, scale: 0.98, y: -8, transition: { duration: 0.25 } }
 };
 
 const GallerySection = styled(motion.section)`
-  padding-top: 125px !important;
-  padding-bottom: 125px !important;
   padding: var(--spacing-4xl) 0;
-  background: linear-gradient(135deg, #1a1a1a 0%, #0c0c0c 100%);
+  background: transparent;
 `;
 
 const Container = styled.div`
-  max-width: 1400px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 0 var(--spacing-xl);
 
@@ -38,126 +37,115 @@ const Container = styled.div`
   }
 `;
 
+const SectionHeader = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: var(--spacing-2xl);
+`;
+
 const SectionTitle = styled(motion.h2)`
-  font-size: clamp(2.5rem, 5vw, 4rem);
-  font-weight: var(--font-weight-black);
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: var(--font-weight-extrabold);
+  letter-spacing: -0.03em;
+  color: var(--color-text);
+  margin: 0;
+`;
+
+const SectionSubtitle = styled(motion.p)`
+  max-width: 680px;
   text-align: center;
-  margin-bottom: var(--spacing-xl);
-  background: var(--secondary-gradient);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  margin: 0;
+  color: var(--color-muted);
+`;
+
+const ControlsRow = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-2xl);
+`;
+
+const SearchContainer = styled(motion.div)`
+  max-width: 560px;
+  margin: 0 auto;
+  position: relative;
+`;
+
+const SearchInput = styled.input`
+  width: 100%;
+  padding: 12px 44px 12px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: var(--border-radius-xl);
+  color: var(--color-text);
+  font-size: var(--font-size-base);
+
+  &:focus {
+    border-color: rgba(214, 179, 106, 0.55);
+    box-shadow: 0 0 0 3px rgba(214, 179, 106, 0.10);
+  }
+`;
+
+const SearchIcon = styled.div`
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: rgba(255, 255, 255, 0.55);
+  pointer-events: none;
 `;
 
 const FilterContainer = styled(motion.div)`
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: var(--spacing-md);
-  margin-bottom: var(--spacing-3xl);
-
-  @media (max-width: 768px) {
-    gap: var(--spacing-sm);
-  }
+  gap: 10px;
 `;
 
 const FilterButton = styled(motion.button)`
-  background: ${props => props.active 
-? 'var(--accent-gradient)' 
-: 'rgba(255, 255, 255, 0.1)'};
-  color: var(--color-white);
-  border: 1px solid ${props => props.active 
-? 'transparent' 
-: 'rgba(255, 255, 255, 0.2)'};
-  padding: var(--spacing-sm) var(--spacing-lg);
+  background: ${props => props.active ? 'rgba(214, 179, 106, 0.14)' : 'rgba(255, 255, 255, 0.03)'};
+  color: ${props => props.active ? 'var(--color-text)' : 'var(--color-muted)'};
+  border: 1px solid ${props => props.active ? 'rgba(214, 179, 106, 0.45)' : 'rgba(255, 255, 255, 0.10)'};
+  padding: 8px 12px;
   border-radius: var(--border-radius-full);
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
-  cursor: pointer;
-  transition: all var(--transition-normal);
-  backdrop-filter: blur(10px);
 
   &:hover {
-    background: ${props => props.active 
-? 'var(--accent-gradient)' 
-: 'rgba(255, 255, 255, 0.15)'};
-    transform: translateY(-2px);
+    color: var(--color-text);
+    border-color: rgba(255, 255, 255, 0.16);
+    transform: translateY(-1px);
   }
-
-  @media (max-width: 768px) {
-    padding: var(--spacing-xs) var(--spacing-md);
-    font-size: var(--font-size-xs);
-  }
-`;
-
-const SearchContainer = styled(motion.div)`
-  max-width: 500px;
-  margin: 0 auto var(--spacing-2xl);
-  position: relative;
-`;
-
-const SearchInput = styled.input`
-  width: 100%;
-  padding: var(--spacing-md) var(--spacing-xl);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: var(--border-radius-full);
-  color: var(--color-white);
-  font-size: var(--font-size-base);
-  backdrop-filter: blur(10px);
-  transition: all var(--transition-normal);
-
-  &:focus {
-    outline: none;
-    border-color: var(--color-accent);
-    background: rgba(255, 255, 255, 0.08);
-    box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.1);
-  }
-
-  &::placeholder {
-    color: rgba(255, 255, 255, 0.5);
-  }
-`;
-
-const SearchIcon = styled.div`
-  position: absolute;
-  right: var(--spacing-lg);
-  top: 50%;
-  transform: translateY(-50%);
-  color: rgba(255, 255, 255, 0.5);
-  pointer-events: none;
 `;
 
 const GalleryGrid = styled(motion.div).attrs({ layout: true })`
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: var(--spacing-xl);
-  margin-top: var(--spacing-2xl);
 
   @media (max-width: 768px) {
     grid-template-columns: 1fr;
     gap: var(--spacing-lg);
   }
-
-  @media (max-width: 480px) {
-    grid-template-columns: 1fr;
-    gap: var(--spacing-md);
-  }
 `;
 
 const PhotoCard = styled(motion.div)`
   position: relative;
-  border-radius: var(--border-radius-xl);
+  border-radius: var(--border-radius-2xl);
   overflow: hidden;
   aspect-ratio: 4/3;
   cursor: pointer;
-  background: var(--color-dark-light);
-  box-shadow: var(--shadow-large);
-  transition: all var(--transition-normal);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: var(--shadow-medium);
+  transition: transform var(--transition-normal), box-shadow var(--transition-normal), border-color var(--transition-normal);
 
   &:hover {
-    transform: translateY(-10px);
-    box-shadow: var(--shadow-2xl);
+    transform: translateY(-4px);
+    border-color: rgba(214, 179, 106, 0.22);
+    box-shadow: var(--shadow-large);
   }
 `;
 
@@ -165,77 +153,81 @@ const PhotoImage = styled(motion.img)`
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: all var(--transition-slow);
+  transition: transform 0.45s ease;
 
   ${PhotoCard}:hover & {
-    transform: scale(1.1);
+    transform: scale(1.03);
   }
 `;
 
 const PhotoOverlay = styled(motion.div)`
   position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.9));
-  padding: var(--spacing-2xl) var(--spacing-lg) var(--spacing-lg);
-  transform: translateY(100%);
-  transition: all var(--transition-normal);
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.82), rgba(0, 0, 0, 0.15) 55%, rgba(0, 0, 0, 0.0));
+  padding: var(--spacing-lg);
+  opacity: 0;
+  transition: opacity var(--transition-normal);
 
   ${PhotoCard}:hover & {
-    transform: translateY(0);
+    opacity: 1;
   }
 `;
 
+const OverlayContent = styled.div`
+  width: 100%;
+`;
+
 const PhotoTitle = styled.h3`
-  color: var(--color-accent);
-  margin: 0 0 var(--spacing-sm) 0;
+  color: var(--color-text);
+  margin: 0 0 6px 0;
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-semibold);
 `;
 
 const PhotoLocation = styled.p`
-  color: rgba(255, 255, 255, 0.8);
-  margin: 0 0 var(--spacing-sm) 0;
+  color: rgba(255, 255, 255, 0.78);
+  margin: 0 0 6px 0;
   font-size: var(--font-size-sm);
 `;
 
 const PhotoDescription = styled.p`
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.70);
   margin: 0;
   font-size: var(--font-size-sm);
-  line-height: 1.4;
+  line-height: 1.45;
 `;
 
 const PhotoTags = styled.div`
   display: flex;
   flex-wrap: wrap;
-  gap: var(--spacing-xs);
-  margin-top: var(--spacing-sm);
+  gap: 6px;
+  margin-top: 10px;
 `;
 
 const Tag = styled.span`
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.8);
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border-radius: var(--border-radius);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  color: rgba(255, 255, 255, 0.80);
+  padding: 4px 8px;
+  border-radius: var(--border-radius-full);
+  font-size: 0.72rem;
 `;
 
 const LoadingContainer = styled.div`
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 400px;
+  min-height: 320px;
 `;
 
 const LoadingSpinner = styled.div`
-  width: 48px;
-  height: 48px;
-  border: 4px solid rgba(255, 255, 255, 0.2);
+  width: 42px;
+  height: 42px;
+  border: 3px solid rgba(255, 255, 255, 0.18);
   border-radius: 50%;
-  border-top-color: var(--color-accent);
+  border-top-color: rgba(214, 179, 106, 0.85);
   animation: spin 1s ease-in-out infinite;
 
   @keyframes spin {
@@ -245,188 +237,178 @@ const LoadingSpinner = styled.div`
 
 const NoResults = styled(motion.div)`
   text-align: center;
-  padding: var(--spacing-3xl);
-  color: rgba(255, 255, 255, 0.7);
+  padding: var(--spacing-3xl) var(--spacing-lg);
+  color: var(--color-muted);
 
   h3 {
     font-size: var(--font-size-xl);
-    margin-bottom: var(--spacing-md);
-    color: var(--color-white);
+    margin-bottom: var(--spacing-sm);
+    color: var(--color-text);
   }
 
   p {
+    margin: 0;
     font-size: var(--font-size-base);
   }
 `;
 
 const Gallery = () => {
-    const { photos, filteredPhotos, loading, actions, filters } = usePhotos();
-    
-    // Inizializza lo stato locale con i valori del context
-    const [activeFilter, setActiveFilter] = useState(() => {
-        return filters.tags && filters.tags.length > 0 ? filters.tags[0] : 'all';
-    });
-    const [searchTerm, setSearchTerm] = useState(() => {
-        return filters.search || '';
-    });
-    const debouncedSearchTerm = useDebounce(searchTerm, DEBOUNCE_DELAY_FILTER);
-    
-    const allTags = useMemo(() =>
-        [...new Set(photos.flatMap(photo => Array.isArray(photo.tags) ? photo.tags : []))],
-    [photos]);
-    
-    const filterOptions = useMemo(() => ['all', ...allTags], [allTags]);
-    
-    // Apply search + tag filters to context whenever inputs change (debounced)
-    useEffect(() => {
-        if (debouncedSearchTerm.trim()) {
-            // c'è un testo di ricerca: applicalo sempre
-            if (activeFilter !== 'all') {
-                actions.setFilter({ search: debouncedSearchTerm, tags: [activeFilter] });
-            } else {
-                actions.setFilter({ search: debouncedSearchTerm, tags: [] });
-            }
-        } else {
-            // campo ricerca vuoto: togli solo search, mantieni o togli i tag
-            if (activeFilter !== 'all') {
-                actions.setFilter({ search: '', tags: [activeFilter] });
-            } else {
-                actions.clearFilters(); // nessun filtro attivo
-            }
-        }
-    }, [debouncedSearchTerm, activeFilter]);
-    
-    // Effetto per sincronizzare quando i filtri vengono impostati dall'esterno (es. PhotoModal)
-    // Ma solo quando il componente non sta già gestendo l'aggiornamento
-    useEffect(() => {
-        const currentTag = filters.tags && filters.tags.length > 0 ? filters.tags[0] : 'all';
-        const currentSearch = filters.search || '';
-        
-        // Aggiorna solo se i valori sono effettivamente diversi
-        if (currentTag !== activeFilter) {
-            setActiveFilter(currentTag);
-        }
-        if (currentSearch !== searchTerm) {
-            setSearchTerm(currentSearch);
-        }
-    }, [filters.tags?.join(','), filters.search]); // Solo quando questi valori cambiano realmente
-    
-    const handleFilterClick = (filter) => {
-        setActiveFilter(filter);
-        
-        // Se clicchiamo su "Tutti", resettiamo completamente i filtri
-        if (filter === 'all') {
-            actions.clearFilters();
-            setSearchTerm('');
-        }
-    };
-    
-    const handleSearchChange = (e) => {
-        setSearchTerm(e.target.value);
-    };
-    
-    const handlePhotoClick = (photo) => {
-        actions.openPhotoModal(photo);
-    };
-    
-    if (loading) {
-        return (
-            <GallerySection>
-            <Container>
-            <LoadingContainer>
-            <LoadingSpinner />
-            </LoadingContainer>
-            </Container>
-            </GallerySection>
-        );
+  const { photos, filteredPhotos, loading, actions, filters } = usePhotos();
+
+  const [activeFilter, setActiveFilter] = useState(() => {
+    return filters.tags && filters.tags.length > 0 ? filters.tags[0] : 'all';
+  });
+  const [searchTerm, setSearchTerm] = useState(() => {
+    return filters.search || '';
+  });
+
+  const debouncedSearchTerm = useDebounce(searchTerm, DEBOUNCE_DELAY_FILTER);
+
+  const allTags = useMemo(() =>
+    [...new Set(photos.flatMap(photo => Array.isArray(photo.tags) ? photo.tags : []))],
+  [photos]);
+
+  const filterOptions = useMemo(() => ['all', ...allTags], [allTags]);
+
+  useEffect(() => {
+    if (debouncedSearchTerm.trim()) {
+      if (activeFilter !== 'all') {
+        actions.setFilter({ search: debouncedSearchTerm, tags: [activeFilter] });
+      } else {
+        actions.setFilter({ search: debouncedSearchTerm, tags: [] });
+      }
+    } else {
+      if (activeFilter !== 'all') {
+        actions.setFilter({ search: '', tags: [activeFilter] });
+      } else {
+        actions.clearFilters();
+      }
     }
-    
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearchTerm, activeFilter]);
+
+  useEffect(() => {
+    const currentTag = filters.tags && filters.tags.length > 0 ? filters.tags[0] : 'all';
+    const currentSearch = filters.search || '';
+
+    if (currentTag !== activeFilter) setActiveFilter(currentTag);
+    if (currentSearch !== searchTerm) setSearchTerm(currentSearch);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.tags?.join(','), filters.search]);
+
+  const handleFilterClick = (filter) => {
+    setActiveFilter(filter);
+    if (filter === 'all') {
+      actions.clearFilters();
+      setSearchTerm('');
+    }
+  };
+
+  const handlePhotoClick = (photo) => {
+    actions.openPhotoModal(photo);
+  };
+
+  if (loading) {
     return (
-        <GallerySection
-        id="gallery"
-        >
+      <GallerySection>
         <Container>
-        <SectionTitle>
-        Galleria Fotografica
-        </SectionTitle>
-        
-        <SearchContainer>
-        <SearchInput
-        type="text"
-        placeholder="Cerca per titolo, luogo o descrizione..."
-        value={searchTerm}
-        onChange={handleSearchChange}
-        />
-        <SearchIcon>🔍</SearchIcon>
-        </SearchContainer>
-        
-        <FilterContainer>
-        {filterOptions.map((filter, index) => (
-            <FilterButton
-            key={filter}
-            active={activeFilter === filter}
-            onClick={() => handleFilterClick(filter)}
-            >
-            {filter === 'all' ? 'Tutti' : filter}
-            </FilterButton>
-        ))}
-        </FilterContainer>
-        
-        {filteredPhotos.length === 0 ? (
-            <NoResults
-            key="no-results"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            >
-            <h3>Nessuna foto trovata</h3>
-            <p>Prova a modificare i filtri di ricerca</p>
-            </NoResults>
-        ) : (
-            <GalleryGrid
-            key="gallery-grid"
-            >
-            <AnimatePresence mode="popLayout" initial={false}>
-            {filteredPhotos.map(photo => (
-                <motion.div
-                key={photo.id}
-                layout
-                variants={cardVariants}
-                initial="hidden"
-                animate="visible"
-                exit="exit"
-                onClick={() => handlePhotoClick(photo)}
-                >
-                <PhotoCard>
-                <PhotoImage
-                src={`${IMAGES_BASE_URL}${photo.image || photo.thumbnail}`}
-                alt={photo.title}
-                loading="eager"
-                onError={(e) => {
-                    e.target.src = `https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop`;
-                }}
-                />
-                <PhotoOverlay>
-                <PhotoTitle>{photo.title}</PhotoTitle>
-                <PhotoLocation>{photo.location}</PhotoLocation>
-                <PhotoDescription>{photo.description}</PhotoDescription>
-                {Array.isArray(photo.tags) && photo.tags.length > 0 && (
-                    <PhotoTags>
-                    {photo.tags.slice(0, 3).map(tag => (
-                        <Tag key={tag}>{tag}</Tag>
-                    ))}
-                    </PhotoTags>
-                )}
-                </PhotoOverlay>
-                </PhotoCard>
-                </motion.div>
-            ))}
-            </AnimatePresence>
-            </GalleryGrid>
-        )}
+          <LoadingContainer>
+            <LoadingSpinner />
+          </LoadingContainer>
         </Container>
-        </GallerySection>
+      </GallerySection>
     );
+  }
+
+  return (
+    <GallerySection>
+      <Container>
+        <SectionHeader>
+          <SectionTitle initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.45, ease: 'easeOut' }}>
+            Galleria
+          </SectionTitle>
+          <SectionSubtitle initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.45, ease: 'easeOut', delay: 0.05 }}>
+            Filtra per tag o cerca per titolo, luogo e descrizione.
+          </SectionSubtitle>
+        </SectionHeader>
+
+        <ControlsRow>
+          <SearchContainer initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.35 }}>
+            <SearchInput
+              type="text"
+              placeholder="Cerca…"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            <SearchIcon>
+              <Search size={18} />
+            </SearchIcon>
+          </SearchContainer>
+
+          <FilterContainer initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ duration: 0.35 }}>
+            {filterOptions.map((filter) => (
+              <FilterButton
+                key={filter}
+                active={activeFilter === filter}
+                onClick={() => handleFilterClick(filter)}
+                whileTap={{ scale: 0.98 }}
+              >
+                {filter === 'all' ? 'Tutti' : filter}
+              </FilterButton>
+            ))}
+          </FilterContainer>
+        </ControlsRow>
+
+        {filteredPhotos.length === 0 ? (
+          <NoResults initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <h3>Nessuna foto trovata</h3>
+            <p>Prova a cambiare filtri o ricerca.</p>
+          </NoResults>
+        ) : (
+          <GalleryGrid key="gallery-grid">
+            <AnimatePresence mode="popLayout" initial={false}>
+              {filteredPhotos.map(photo => (
+                <motion.div
+                  key={photo.id}
+                  layout
+                  variants={cardVariants}
+                  initial="hidden"
+                  animate="visible"
+                  exit="exit"
+                  onClick={() => handlePhotoClick(photo)}
+                >
+                  <PhotoCard>
+                    <PhotoImage
+                      src={`${IMAGES_BASE_URL}${photo.image || photo.thumbnail}`}
+                      alt={photo.title}
+                      loading="eager"
+                      onError={(e) => {
+                        e.target.src = 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop';
+                      }}
+                    />
+                    <PhotoOverlay>
+                      <OverlayContent>
+                        <PhotoTitle>{photo.title}</PhotoTitle>
+                        <PhotoLocation>{photo.location}</PhotoLocation>
+                        <PhotoDescription>{photo.description}</PhotoDescription>
+                        {Array.isArray(photo.tags) && photo.tags.length > 0 && (
+                          <PhotoTags>
+                            {photo.tags.slice(0, 3).map(tag => (
+                              <Tag key={tag}>{tag}</Tag>
+                            ))}
+                          </PhotoTags>
+                        )}
+                      </OverlayContent>
+                    </PhotoOverlay>
+                  </PhotoCard>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </GalleryGrid>
+        )}
+      </Container>
+    </GallerySection>
+  );
 };
 
 export default Gallery;

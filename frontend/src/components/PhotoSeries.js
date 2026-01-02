@@ -1,234 +1,210 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Camera, Plus } from 'lucide-react';
+
 import { useSeries } from '../contexts/SeriesContext';
 import { usePhotos } from '../contexts/PhotoContext';
 import SeriesEditor from './SeriesEditor';
 import { IMAGES_BASE_URL } from '../utils/constants';
 
-const SeriesSection = styled(motion.section)`
+const SectionRoot = styled(motion.section)`
   padding: var(--spacing-4xl) 0;
-  background: linear-gradient(135deg, #0c0c0c 0%, #1a1a1a 50%, #0c0c0c 100%);
-  position: relative;
-  overflow: hidden;
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: radial-gradient(circle at 20% 50%, rgba(102, 126, 234, 0.1) 0%, transparent 50%),
-                radial-gradient(circle at 80% 50%, rgba(245, 87, 108, 0.1) 0%, transparent 50%);
-    pointer-events: none;
-  }
 `;
 
 const Container = styled.div`
-  max-width: 1400px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 0 var(--spacing-xl);
-  position: relative;
-  z-index: 1;
 
   @media (max-width: 768px) {
     padding: 0 var(--spacing-lg);
   }
 `;
 
-const SectionHeader = styled.div`
-  text-align: center;
-  margin-bottom: var(--spacing-4xl);
-  position: relative;
+const Header = styled.div`
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: var(--spacing-2xl);
+
+  @media (max-width: 768px) {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 `;
 
-const SectionTitle = styled(motion.h2)`
-  font-size: clamp(2.5rem, 5vw, 4rem);
-  font-weight: var(--font-weight-black);
-  margin-bottom: var(--spacing-lg);
-  background: var(--primary-gradient);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+const Heading = styled.div`
+  max-width: 740px;
 `;
 
-const SectionDescription = styled(motion.p)`
-  font-size: var(--font-size-lg);
-  color: rgba(255, 255, 255, 0.7);
-  max-width: 600px;
-  margin: 0 auto;
-  line-height: 1.6;
+const Title = styled.h2`
+  margin: 0 0 8px;
+  font-size: clamp(1.9rem, 3.5vw, 2.6rem);
+  font-weight: var(--font-weight-extrabold);
+  letter-spacing: -0.03em;
+  color: var(--color-text);
+`;
+
+const Subtitle = styled.p`
+  margin: 0;
+  color: var(--color-muted);
+  line-height: 1.7;
 `;
 
 const CreateButton = styled(motion.button)`
-  position: absolute;
-  top: 0;
-  right: 0;
-  background: var(--primary-gradient);
-  border: none;
-  color: var(--color-white);
-  padding: var(--spacing-md) var(--spacing-xl);
-  border-radius: var(--border-radius-full);
-  font-weight: var(--font-weight-semibold);
-  font-size: var(--font-size-base);
-  cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: var(--spacing-sm);
-  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: var(--border-radius-full);
+  border: 1px solid rgba(214, 179, 106, 0.45);
+  background: rgba(214, 179, 106, 0.12);
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
 
   &:hover {
-    opacity: 0.9;
-  }
-
-  @media (max-width: 768px) {
-    position: static;
-    margin: var(--spacing-lg) auto 0;
+    background: rgba(214, 179, 106, 0.18);
+    box-shadow: var(--shadow-small);
+    transform: translateY(-1px);
   }
 `;
 
-const SeriesGrid = styled(motion.div)`
+const Grid = styled(motion.div)`
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-  gap: var(--spacing-2xl);
-  margin-bottom: var(--spacing-3xl);
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--spacing-xl);
 
   @media (max-width: 768px) {
     grid-template-columns: 1fr;
-    gap: var(--spacing-xl);
   }
 `;
 
-const SeriesCard = styled(motion.div)`
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: var(--border-radius-xl);
+const Card = styled(motion.div)`
+  border-radius: var(--border-radius-2xl);
   overflow: hidden;
   cursor: pointer;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  transition: all var(--transition-normal);
-  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: transform var(--transition-normal), border-color var(--transition-normal), box-shadow var(--transition-normal);
 
   &:hover {
-    transform: translateY(-8px);
-    border-color: rgba(102, 126, 234, 0.5);
-    box-shadow: 0 20px 40px rgba(102, 126, 234, 0.2);
+    transform: translateY(-4px);
+    border-color: rgba(214, 179, 106, 0.35);
+    box-shadow: var(--shadow-medium);
   }
 `;
 
-const SeriesCover = styled.div`
+const Cover = styled.div`
   position: relative;
-  height: 250px;
-  overflow: hidden;
-  background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);
+  aspect-ratio: 16 / 10;
+  background: rgba(255, 255, 255, 0.03);
 `;
 
 const CoverImage = styled.img`
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform var(--transition-slow);
+  display: block;
+  transform: scale(1.01);
+  transition: transform var(--transition-normal);
 
-  ${SeriesCard}:hover & {
-    transform: scale(1.1);
+  ${Card}:hover & {
+    transform: scale(1.06);
   }
 `;
 
-const PhotoCount = styled.div`
+const Count = styled.div`
   position: absolute;
-  top: var(--spacing-md);
-  right: var(--spacing-md);
-  background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(10px);
-  color: var(--color-white);
-  padding: var(--spacing-sm) var(--spacing-md);
-  border-radius: var(--border-radius-full);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  display: flex;
+  top: 12px;
+  right: 12px;
+  display: inline-flex;
   align-items: center;
-  gap: var(--spacing-xs);
-
-  &::before {
-    content: '📸';
-  }
-`;
-
-const SeriesInfo = styled.div`
-  padding: var(--spacing-xl);
-`;
-
-const SeriesTitle = styled.h3`
-  font-size: var(--font-size-2xl);
-  font-weight: var(--font-weight-bold);
-  color: var(--color-white);
-  margin-bottom: var(--spacing-sm);
-`;
-
-const SeriesDescription = styled.p`
-  font-size: var(--font-size-base);
-  color: rgba(255, 255, 255, 0.7);
-  line-height: 1.6;
-  margin-bottom: var(--spacing-md);
-`;
-
-const SeriesMeta = styled.div`
-  display: flex;
-  gap: var(--spacing-md);
-  flex-wrap: wrap;
-`;
-
-const MetaTag = styled.span`
-  background: rgba(102, 126, 234, 0.2);
-  color: rgba(102, 126, 234, 1);
-  padding: var(--spacing-xs) var(--spacing-md);
+  gap: 6px;
+  padding: 6px 10px;
   border-radius: var(--border-radius-full);
+  background: rgba(0, 0, 0, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+  backdrop-filter: blur(10px);
+`;
+
+const Info = styled.div`
+  padding: 14px 16px 16px;
+`;
+
+const CardTitle = styled.h3`
+  margin: 0 0 6px;
+  font-size: 1.05rem;
+  color: var(--color-text);
+  letter-spacing: -0.01em;
+`;
+
+const CardDesc = styled.p`
+  margin: 0 0 12px;
+  color: var(--color-muted);
   font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  border: 1px solid rgba(102, 126, 234, 0.3);
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 `;
 
-const EmptyState = styled.div`
+const Tags = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+`;
+
+const Tag = styled.span`
+  padding: 6px 10px;
+  border-radius: var(--border-radius-full);
+  font-size: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--color-muted);
+`;
+
+const Empty = styled.div`
   text-align: center;
-  padding: var(--spacing-4xl);
-  color: rgba(255, 255, 255, 0.5);
+  padding: var(--spacing-4xl) 0;
+  color: var(--color-muted);
 `;
 
-const EmptyIcon = styled.div`
-  font-size: 4rem;
-  margin-bottom: var(--spacing-lg);
-`;
-
-const EmptyText = styled.p`
-  font-size: var(--font-size-lg);
-  margin-bottom: var(--spacing-md);
-`;
-
-// Componente principale
-function PhotoSeries() {
+export default function PhotoSeries({ showAdmin = false, title = 'Serie', subtitle = "Progetti coerenti: un filo narrativo, un luogo, un'idea." }) {
   const navigate = useNavigate();
   const { series, loading } = useSeries();
   const { photos } = usePhotos();
   const [showEditor, setShowEditor] = useState(false);
 
-  // Filtra solo le serie pubblicate
-  const publishedSeries = React.useMemo(() => {
-    return series.filter(s => s.published);
-  }, [series]);
+  const publishedSeries = useMemo(() => series.filter(s => s.published), [series]);
 
-  // Ottieni le foto per ogni serie
   const getSeriesPhotos = (seriesItem) => {
-    return photos.filter(photo => seriesItem.photos.includes(photo.id));
+    const ids = seriesItem.photos || [];
+    return photos.filter(photo => ids.includes(photo.id));
   };
 
   const getCoverPhoto = (seriesItem) => {
     if (seriesItem.coverImage) {
-      const coverPhoto = photos.find(p => p.id === seriesItem.coverImage);
-      if (coverPhoto) return coverPhoto;
+      const cover = photos.find(p => p.id === seriesItem.coverImage);
+      if (cover) return cover;
     }
-    const seriesPhotos = getSeriesPhotos(seriesItem);
-    return seriesPhotos[0] || null;
+    const list = getSeriesPhotos(seriesItem);
+    return list[0] || null;
+  };
+
+  const getTopLocations = (seriesItem) => {
+    const list = getSeriesPhotos(seriesItem);
+    const locs = list
+      .map(p => p.location)
+      .filter(Boolean)
+      .map(l => String(l).trim())
+      .filter(l => l.length > 0);
+    return [...new Set(locs)].slice(0, 3);
   };
 
   const handleSeriesClick = (seriesItem) => {
@@ -237,105 +213,89 @@ function PhotoSeries() {
 
   return (
     <>
-      <SeriesSection
-        id="series"
+      <SectionRoot
         initial={{ opacity: 0 }}
         whileInView={{ opacity: 1 }}
         viewport={{ once: true }}
-        transition={{ duration: 0.6 }}
+        transition={{ duration: 0.5 }}
       >
         <Container>
-          <SectionHeader>
-            <SectionTitle
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.6 }}
-            >
-              Serie Fotografiche
-            </SectionTitle>
-            <SectionDescription
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.6, delay: 0.1 }}
-            >
-              Esplora le mie collezioni tematiche e scopri le storie dietro ogni scatto
-            </SectionDescription>
-            <CreateButton
-              onClick={() => setShowEditor(true)}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.6, delay: 0.2 }}
-            >
-              <span>+</span> Nuova Serie
-            </CreateButton>
-          </SectionHeader>
+          <Header>
+            <Heading>
+              <Title>{title}</Title>
+              <Subtitle>{subtitle}</Subtitle>
+            </Heading>
+
+            {showAdmin && (
+              <CreateButton
+                onClick={() => setShowEditor(true)}
+                whileTap={{ scale: 0.98 }}
+              >
+                <Plus size={16} />
+                Nuova serie
+              </CreateButton>
+            )}
+          </Header>
 
           {!loading && publishedSeries.length > 0 ? (
-            <SeriesGrid>
-              {publishedSeries.map((seriesItem, index) => {
-                const coverPhoto = getCoverPhoto(seriesItem);
-                const seriesPhotos = getSeriesPhotos(seriesItem);
-                
+            <Grid>
+              {publishedSeries.map((s, idx) => {
+                const cover = getCoverPhoto(s);
+                const count = s.photos?.length || 0;
+                const locs = getTopLocations(s);
+
                 return (
-                  <SeriesCard
-                    key={seriesItem.id}
-                    onClick={() => handleSeriesClick(seriesItem)}
-                    initial={{ opacity: 0, y: 30 }}
+                  <Card
+                    key={s.id}
+                    onClick={() => handleSeriesClick(s)}
+                    initial={{ opacity: 0, y: 10 }}
                     whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ duration: 0.5, delay: index * 0.1 }}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
+                    viewport={{ once: true, margin: '-120px' }}
+                    transition={{ duration: 0.35, ease: 'easeOut', delay: Math.min(0.24, idx * 0.04) }}
+                    whileTap={{ scale: 0.99 }}
                   >
-                    <SeriesCover>
-                      {coverPhoto && (
+                    <Cover>
+                      {cover && (
                         <CoverImage
-                          src={`${IMAGES_BASE_URL}${coverPhoto.thumbnail || coverPhoto.image}`}
-                          alt={seriesItem.title}
+                          src={`${IMAGES_BASE_URL}${cover.thumbnail || cover.image || '/' + cover.filename}`}
+                          alt={s.title}
                           loading="lazy"
                         />
                       )}
-                      <PhotoCount>{seriesPhotos.length}</PhotoCount>
-                    </SeriesCover>
-                    <SeriesInfo>
-                      <SeriesTitle>{seriesItem.title}</SeriesTitle>
-                      <SeriesDescription>{seriesItem.description}</SeriesDescription>
-                      <SeriesMeta>
-                        {seriesPhotos.slice(0, 3).map((photo, idx) => (
-                          <MetaTag key={idx}>{photo.location}</MetaTag>
-                        ))}
-                        {seriesPhotos.length > 3 && (
-                          <MetaTag>+{seriesPhotos.length - 3} altre</MetaTag>
-                        )}
-                      </SeriesMeta>
-                    </SeriesInfo>
-                  </SeriesCard>
+                      <Count><Camera size={14} /> {count}</Count>
+                    </Cover>
+
+                    <Info>
+                      <CardTitle>{s.title}</CardTitle>
+                      <CardDesc>{s.description || 'Serie fotografica'}</CardDesc>
+                      {locs.length > 0 && (
+                        <Tags>
+                          {locs.map((l) => <Tag key={l}>{l}</Tag>)}
+                        </Tags>
+                      )}
+                    </Info>
+                  </Card>
                 );
               })}
-            </SeriesGrid>
+            </Grid>
           ) : (
-            <EmptyState>
-              <EmptyIcon>📷</EmptyIcon>
-              <EmptyText>Nessuna serie fotografica disponibile</EmptyText>
-              <p>Crea la tua prima serie fotografica cliccando sul pulsante "Nuova Serie"</p>
-            </EmptyState>
+            <Empty>
+              <p style={{ margin: 0, fontSize: '1.05rem', color: 'var(--color-text)' }}>
+                Nessuna serie disponibile
+              </p>
+              {showAdmin ? (
+                <p style={{ margin: '10px 0 0', color: 'var(--color-muted)' }}>
+                  Crea la tua prima serie con “Nuova serie”.
+                </p>
+              ) : null}
+            </Empty>
           )}
         </Container>
-      </SeriesSection>
+      </SectionRoot>
 
-      {/* Editor per nuova serie */}
       <AnimatePresence>
-        {showEditor && (
-          <SeriesEditor onClose={() => setShowEditor(false)} />
-        )}
+        {showEditor && <SeriesEditor onClose={() => setShowEditor(false)} />}
       </AnimatePresence>
     </>
   );
 }
-
-export default PhotoSeries;
