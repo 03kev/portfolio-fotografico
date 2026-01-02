@@ -26,7 +26,8 @@ const ModalOverlay = styled(motion.div)`
 
 const ModalContent = styled(motion.div)`
   position: relative;
-  max-width: 95vw;
+  width: 100%;
+  max-width: 800px;
   max-height: 90vh;
   background: rgba(0, 0, 0, 0.9);
   border-radius: var(--border-radius-xl);
@@ -35,6 +36,10 @@ const ModalContent = styled(motion.div)`
   box-shadow: var(--shadow-2xl);
   display: flex;
   flex-direction: column;
+
+  @media (max-width: 900px) {
+    max-width: 95vw;
+  }
 `;
 
 const Header = styled.div`
@@ -103,12 +108,12 @@ const PhotoGrid = styled.div`
   padding: var(--spacing-xl);
   overflow-y: auto;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: var(--spacing-lg);
   max-height: 70vh;
 
   @media (max-width: 768px) {
-    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: var(--spacing-md);
     padding: var(--spacing-lg);
   }

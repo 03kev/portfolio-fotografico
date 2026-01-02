@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { usePhotos } from '../contexts/PhotoContext';
 import { IMAGES_BASE_URL } from '../utils/constants';
 
@@ -45,8 +46,11 @@ const ModalContent = styled(motion.div)`
 const ImageContainer = styled.div`
   flex: 2;
   position: relative;
-  min-height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: var(--color-dark);
+  overflow: hidden;
 
   @media (max-width: 1024px) {
     min-height: 300px;
@@ -54,10 +58,16 @@ const ImageContainer = styled.div`
 `;
 
 const ModalImage = styled(motion.img)`
-  width: 100%;
-  height: 100%;
+  max-width: 100%;
+  max-height: 90vh;
+  width: auto;
+  height: auto;
   object-fit: contain;
   display: block;
+
+  @media (max-width: 1024px) {
+    max-height: 60vh;
+  }
 `;
 
 const InfoPanel = styled.div`
@@ -264,6 +274,7 @@ const ActionButton = styled(motion.button)`
 
 const PhotoModal = () => {
     const { modalOpen, selectedPhoto, actions, galleryModalOpen } = usePhotos();
+    const navigate = useNavigate();
     
     useEffect(() => {
         if (modalOpen) {
@@ -302,31 +313,26 @@ const PhotoModal = () => {
     const handleLocationClick = () => {
         if (selectedPhoto) {
             if (galleryModalOpen) actions.closeGalleryModal();
-            // Passa un flag per indicare che stiamo navigando alla mappa
             
-            setTimeout(() => {
-                actions.focusOnPhoto(selectedPhoto);
-                actions.closePhotoModal(true);
-                const mapSection = document.getElementById('world-map-3d');
-                if (mapSection) {
-                    mapSection.scrollIntoView({ behavior: 'smooth' });
-                }
-            }, 100);
+            // Imposta la foto da focalizzare quando la mappa sarà pronta
+            actions.setPendingMapFocus(selectedPhoto);
+            
+            // Chiudi il modal
+            actions.closePhotoModal(true);
+            
+            // Naviga alla pagina della mappa
+            navigate('/map');
         }
     };
     
     const handleTagClick = (tag) => {
         // Resettiamo tutti i filtri e impostiamo solo il tag selezionato
-        // Usando setFilterAndSync per forzare la sincronizzazione con la Gallery
         if (galleryModalOpen) actions.closeGalleryModal();
         actions.setFilterAndSync({ search: '', tags: [tag], location: '' });
         actions.closePhotoModal();
-        const gallerySection = document.getElementById('galleria');
-        if (gallerySection) {
-            setTimeout(() => {
-                gallerySection.scrollIntoView({ behavior: 'smooth' });
-            }, 150);
-        }
+        
+        // Naviga alla pagina della galleria
+        navigate('/gallery');
     };
     
     const formatDate = (dateString) => {

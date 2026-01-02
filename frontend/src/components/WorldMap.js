@@ -291,7 +291,7 @@ const InfoPopup = styled(motion.div)`
 `;
 
 const WorldMap = () => {
-    const { photos, loading, actions, modalOpen, galleryModalOpen } = usePhotos();
+    const { photos, loading, actions, modalOpen, galleryModalOpen, pendingMapFocus } = usePhotos();
     const mountRef = useRef(null);
     const sceneRef = useRef(null);
     const rendererRef = useRef(null);
@@ -1393,6 +1393,19 @@ const focusOnPhoto = (
 useEffect(() => {
     actions.registerFocusHandler(focusOnPhoto);
 }, [actions, focusOnPhoto]);
+
+// Handle pending map focus when map is loaded
+useEffect(() => {
+    if (mapLoaded && pendingMapFocus && !loading) {
+        // Wait a bit for everything to be ready
+        const timer = setTimeout(() => {
+            actions.focusOnPhoto(pendingMapFocus);
+            actions.clearPendingMapFocus();
+        }, 500);
+        
+        return () => clearTimeout(timer);
+    }
+}, [mapLoaded, pendingMapFocus, loading, actions]);
 
 // Gestisci la rotazione della terra in base allo stato del modal
 // effetto completo per gestire l’apertura/chiusura del modal

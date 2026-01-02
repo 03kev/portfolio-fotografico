@@ -98,7 +98,13 @@ export default function FeaturedGallery({ limit = 18 }) {
 
   return (
     <>
-      <Grid variants={variants} initial="hidden" whileInView="show" viewport={{ once: true, margin: '-120px' }}>
+      <Grid 
+        key={items.map(p => p.id).join('-')}
+        variants={variants} 
+        initial="hidden" 
+        whileInView="show" 
+        viewport={{ once: true, margin: '-120px' }}
+      >
         {items.map((p) => (
           <Tile
             key={p.id}
@@ -106,7 +112,11 @@ export default function FeaturedGallery({ limit = 18 }) {
             onClick={() => actions.openPhotoModal(p)}
             aria-label={p.title || 'Apri foto'}
           >
-            <Img src={`${IMAGES_BASE_URL}/${p.filename}`} alt={p.title || 'Foto'} loading="lazy" />
+            <Img 
+              src={`${IMAGES_BASE_URL}${p.url}?t=${p.id}`} 
+              alt={p.title || 'Foto'} 
+              loading="lazy" 
+            />
           </Tile>
         ))}
       </Grid>

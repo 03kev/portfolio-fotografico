@@ -6,6 +6,7 @@ import { useSeries } from '../contexts/SeriesContext';
 import { usePhotos } from '../contexts/PhotoContext';
 import SeriesEditor from './SeriesEditor';
 import { IMAGES_BASE_URL } from '../utils/constants';
+import useAdminMode from '../hooks/useAdminMode';
 
 const PageContainer = styled.div`
   min-height: 100vh;
@@ -263,9 +264,10 @@ function SeriesDetail() {
   const { slug } = useParams();
   const navigate = useNavigate();
   const { currentSeries, fetchSeriesBySlug, loading, error } = useSeries();
-  const { photos, openGalleryModal } = usePhotos();
+  const { photos, actions } = usePhotos();
   const [showEditor, setShowEditor] = useState(false);
   const [seriesPhotos, setSeriesPhotos] = useState([]);
+  const isAdmin = useAdminMode();
 
   useEffect(() => {
     if (slug) {
@@ -283,8 +285,7 @@ function SeriesDetail() {
   }, [currentSeries, photos]);
 
   const handlePhotoClick = (photo) => {
-    const photoIndex = seriesPhotos.indexOf(photo);
-    openGalleryModal(seriesPhotos, photoIndex);
+    actions.openPhotoModal(photo);
   };
 
   const getCoverPhoto = () => {
@@ -349,13 +350,15 @@ function SeriesDetail() {
             <span>←</span> Indietro
           </BackButton>
 
-          <EditButton
-            onClick={() => setShowEditor(true)}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            <span>✏️</span> Modifica
-          </EditButton>
+          {isAdmin && (
+            <EditButton
+              onClick={() => setShowEditor(true)}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <span>✏️</span> Modifica
+            </EditButton>
+          )}
 
           <HeroContent>
             <SeriesTitle

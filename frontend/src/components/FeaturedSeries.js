@@ -114,7 +114,7 @@ export default function FeaturedSeries({ limit = 6 }) {
     const coverId = s.coverImage || s.photos?.[0];
     const photo = photos.find(p => p.id === coverId);
     if (!photo) return null;
-    return `${IMAGES_BASE_URL}${photo.image}`;
+    return { url: `${IMAGES_BASE_URL}${photo.url}?t=${photo.id}`, alt: s.title };
   };
 
   const variants = {
@@ -129,14 +129,14 @@ export default function FeaturedSeries({ limit = 6 }) {
 
   return (
     <>
-      <Grid variants={variants} initial="hidden" whileInView="show" viewport={{ once: true, margin: '-120px' }}>
+      <Grid key={top.map(s => s.id).join('-')} variants={variants} initial="hidden" whileInView="show" viewport={{ once: true, margin: '-120px' }}>
         {top.map((s) => {
           const cover = getCover(s);
           const count = s.photos?.length || 0;
           return (
             <Card key={s.id} to={`/series/${s.slug}`} variants={item}>
               <Cover>
-                {cover ? <Img src={cover} alt={s.title} loading="lazy" /> : null}
+                {cover ? <Img src={cover.url} alt={cover.alt} loading="lazy" /> : null}
                 <Count><Camera size={14} /> {count}</Count>
               </Cover>
               <Meta>

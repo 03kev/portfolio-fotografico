@@ -105,6 +105,25 @@ export function SeriesProvider({ children }) {
             dispatch({ type: ACTIONS.SET_ERROR, payload: error.message || 'Errore nel caricamento delle serie' });
         }
     }, []);
+    
+    // Listen for photo deletion events and refetch series
+    useEffect(() => {
+        const handlePhotoDeleted = () => {
+            fetchSeries();
+        };
+        
+        const handlePhotoAdded = () => {
+            fetchSeries();
+        };
+        
+        window.addEventListener('photoDeleted', handlePhotoDeleted);
+        window.addEventListener('photoAdded', handlePhotoAdded);
+        
+        return () => {
+            window.removeEventListener('photoDeleted', handlePhotoDeleted);
+            window.removeEventListener('photoAdded', handlePhotoAdded);
+        };
+    }, [fetchSeries]);
 
     const fetchSeriesBySlug = useCallback(async (slug) => {
         try {

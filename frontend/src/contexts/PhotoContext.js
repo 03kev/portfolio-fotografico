@@ -14,10 +14,12 @@ const ACTIONS = {
     SET_GALLERY_PHOTOS: 'SET_GALLERY_PHOTOS',
     SET_GALLERY_MODAL_OPEN: 'SET_GALLERY_MODAL_OPEN',
     ADD_PHOTO: 'ADD_PHOTO',
+    UPDATE_PHOTO: 'UPDATE_PHOTO',
     DELETE_PHOTO: 'DELETE_PHOTO',
     SET_MAP_CENTER: 'SET_MAP_CENTER',
     SET_FILTER: 'SET_FILTER',
-    FORCE_GALLERY_SYNC: 'FORCE_GALLERY_SYNC'
+    FORCE_GALLERY_SYNC: 'FORCE_GALLERY_SYNC',
+    SET_PENDING_MAP_FOCUS: 'SET_PENDING_MAP_FOCUS'
 };
 
 // Initial State
@@ -37,7 +39,8 @@ const initialState = {
         tags: [],
         location: ''
     },
-    gallerySyncTrigger: 0 // Contatore per forzare re-render della gallery
+    gallerySyncTrigger: 0, // Contatore per forzare re-render della gallery
+    pendingMapFocus: null // Foto da focalizzare quando si arriva alla mappa
 };
 
 // Reducer
@@ -100,7 +103,18 @@ function photoReducer(state, action) {
         case ACTIONS.ADD_PHOTO:
         return {
             ...state,
-            photos: [action.payload, ...state.photos]
+            photos: [{
+                ...action.payload,
+                url: action.payload.url || action.payload.thumbnail || action.payload.image || ''
+            }, ...state.photos]
+        };
+        
+        case ACTIONS.UPDATE_PHOTO:
+        return {
+            ...state,
+            photos: state.photos.map(photo => 
+                photo.id === action.payload.id ? action.payload : photo
+            )
         };
         
         case ACTIONS.DELETE_PHOTO:
@@ -131,6 +145,12 @@ function photoReducer(state, action) {
             gallerySyncTrigger: state.gallerySyncTrigger + 1
         };
         
+        case ACTIONS.SET_PENDING_MAP_FOCUS:
+        return {
+            ...state,
+            pendingMapFocus: action.payload
+        };
+        
         default:
         return state;
     }
@@ -149,7 +169,12 @@ export function PhotoProvider({ children }) {
                 dispatch({ type: ACTIONS.SET_LOADING, payload: true });
                 const response = await photoService.getAll();
                 const photos = response.data?.data || response.data || [];
-                dispatch({ type: ACTIONS.SET_PHOTOS, payload: photos });
+                // Normalizza tutte le foto aggiungendo il campo url se mancante
+                const normalizedPhotos = photos.map(photo => ({
+                    ...photo,
+                    url: photo.url || photo.thumbnail || photo.image || ''
+                }));
+                dispatch({ type: ACTIONS.SET_PHOTOS, payload: normalizedPhotos });
             } catch (error) {
                 console.error('Error fetching photos:', error);
                 dispatch({ type: ACTIONS.SET_ERROR, payload: 'Errore nel caricamento delle foto' });
@@ -204,11 +229,11 @@ export function PhotoProvider({ children }) {
                 const response = await photoService.upload(photoData);
                 const newPhoto = response.data?.data || response.data;
                 
-                // Aggiungi immediatamente la foto allo stato locale
-                dispatch({ type: ACTIONS.ADD_PHOTO, payload: newPhoto });
-                dispatch({ type: ACTIONS.SET_LOADING, payload: false });
+                // Ricarica tutte le foto dal server per assicurare coerenza
+                await actions.fetchPhotos();
                 
-                // Nota: non ricarichiamo tutte le foto per evitare chiamate duplicate
+                // Emetti evento per notificare altri contesti
+                window.dispatchEvent(new CustomEvent('photoAdded', { detail: { photo: newPhoto } }));
                 
                 return newPhoto;
             } catch (error) {
@@ -218,11 +243,32 @@ export function PhotoProvider({ children }) {
             }
         },
         
+        // Update photo
+        updatePhoto: async (photoId, photoData) => {
+            try {
+                dispatch({ type: ACTIONS.SET_LOADING, payload: true });
+                const response = await photoService.update(photoId, photoData);
+                const updatedPhoto = response.data?.data || response.data;
+                
+                dispatch({ type: ACTIONS.UPDATE_PHOTO, payload: updatedPhoto });
+                dispatch({ type: ACTIONS.SET_LOADING, payload: false });
+                
+                return updatedPhoto;
+            } catch (error) {
+                console.error('Error updating photo:', error);
+                dispatch({ type: ACTIONS.SET_ERROR, payload: 'Errore durante l\'aggiornamento della foto' });
+                throw error;
+            }
+        },
+        
         // Delete photo
         deletePhoto: async (photoId) => {
             try {
                 await photoService.delete(photoId);
                 dispatch({ type: ACTIONS.DELETE_PHOTO, payload: photoId });
+                
+                // Emetti evento per notificare altri contesti
+                window.dispatchEvent(new CustomEvent('photoDeleted', { detail: { photoId } }));
             } catch (error) {
                 console.error('Error deleting photo:', error);
                 throw error;
@@ -251,6 +297,16 @@ export function PhotoProvider({ children }) {
         // Reset navigating to map flag
         resetNavigatingToMap: () => {
             dispatch({ type: ACTIONS.SET_NAVIGATING_TO_MAP, payload: false });
+        },
+        
+        // Set pending map focus photo
+        setPendingMapFocus: (photo) => {
+            dispatch({ type: ACTIONS.SET_PENDING_MAP_FOCUS, payload: photo });
+        },
+        
+        // Clear pending map focus
+        clearPendingMapFocus: () => {
+            dispatch({ type: ACTIONS.SET_PENDING_MAP_FOCUS, payload: null });
         }
     };
     

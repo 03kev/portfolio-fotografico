@@ -5,21 +5,51 @@ import { AnimatePresence } from 'framer-motion';
 import exifr from 'exifr';  // Libreria per leggere metadati EXIF [oai_citation:1‡stackoverflow.com](https://stackoverflow.com/questions/59580568/read-exif-data-in-react#:~:text=there%27s%20a%20simple%20library%20for,that%20called%20exifr)
 import './PhotoUpload.css';
 
-const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
+const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) => {
     const { actions } = usePhotos();
     
     // Stato iniziale dei campi del form
-    const [formData, setFormData] = useState({
-        title: '',
-        description: '',
-        date: new Date().toISOString().split('T')[0],
-        location: '',
-        lat: '',
-        lng: '',
-        camera: '',
-        lens: '',
-        settings: { aperture: '', shutter: '', iso: '', focal: '' },
-        tags: []
+    const [formData, setFormData] = useState(() => {
+        if (photoToEdit) {
+            // Modalità editing: popola con i dati esistenti
+            let settings = { aperture: '', shutter: '', iso: '', focal: '' };
+            if (typeof photoToEdit.settings === 'string') {
+                try {
+                    settings = JSON.parse(photoToEdit.settings);
+                } catch (e) {
+                    console.error('Error parsing settings:', e);
+                }
+            } else if (photoToEdit.settings) {
+                settings = photoToEdit.settings;
+            }
+            
+            return {
+                title: photoToEdit.title || '',
+                description: photoToEdit.description || '',
+                date: photoToEdit.date || new Date().toISOString().split('T')[0],
+                location: photoToEdit.location || '',
+                lat: photoToEdit.lat || '',
+                lng: photoToEdit.lng || '',
+                camera: photoToEdit.camera || '',
+                lens: photoToEdit.lens || '',
+                settings,
+                tags: Array.isArray(photoToEdit.tags) ? photoToEdit.tags : []
+            };
+        }
+        
+        // Modalità nuovo upload
+        return {
+            title: '',
+            description: '',
+            date: new Date().toISOString().split('T')[0],
+            location: '',
+            lat: '',
+            lng: '',
+            camera: '',
+            lens: '',
+            settings: { aperture: '', shutter: '', iso: '', focal: '' },
+            tags: []
+        };
     });
     const [selectedFile, setSelectedFile] = useState(null);
     const [preview, setPreview] = useState(null);
@@ -28,9 +58,9 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
     const [loading, setLoading] = useState(false);
     const [locationLoading, setLocationLoading] = useState(false);
     const [showMapSelector, setShowMapSelector] = useState(false);
-    const [currentStep, setCurrentStep] = useState(1);
+    const [currentStep, setCurrentStep] = useState(photoToEdit ? 2 : 1);
     const [isClosing, setIsClosing] = useState(false);
-    const totalSteps = 3;
+    const totalSteps = photoToEdit ? 2 : 3;
     
     const fileInputRef = useRef(null);
     const tagInputRef  = useRef(null);
@@ -249,7 +279,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
     const nextStep = useCallback(() => {
         if (loading) return;
         // Validazioni prima di avanzare
-        if (currentStep === 1 && !selectedFile) {
+        if (currentStep === 1 && !selectedFile && !photoToEdit) {
             setError('Seleziona un\'immagine prima di continuare');
             return;
         }
@@ -259,7 +289,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
         }
         setError('');  // pulisci eventuale messaggio errore precedente
         setCurrentStep(prev => Math.min(prev + 1, totalSteps));
-    }, [currentStep, selectedFile, formData.title, loading]);
+    }, [currentStep, selectedFile, formData.title, loading, photoToEdit]);
     
     // Navigazione Wizard: step precedente
     const prevStep = useCallback(() => {
@@ -270,7 +300,8 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
     
     // Upload finale della foto (Step 4 - ultimo step)
     const handleUpload = async () => {
-        if (!selectedFile) {
+        // In modalità edit, il file non è obbligatorio
+        if (!photoToEdit && !selectedFile) {
             setError('Nessuna immagine selezionata');
             return;
         }
@@ -281,17 +312,29 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
         setLoading(true);
         setError('');
         try {
-            // Prepara FormData per invio (includendo file, campi e convertendo oggetti in JSON string)
-            const uploadData = uploadUtils.createFormData({
-                ...formData,
-                image: selectedFile,
-                settings: JSON.stringify(formData.settings),
-                tags: formData.tags
-            });
+            if (photoToEdit) {
+                // Modalità UPDATE
+                const updateData = {
+                    ...formData,
+                    settings: JSON.stringify(formData.settings),
+                    tags: formData.tags
+                };
+                
+                const result = await actions.updatePhoto(photoToEdit.id, updateData);
+                if (onUploadSuccess) onUploadSuccess(result);
+            } else {
+                // Modalità CREATE (nuovo upload)
+                const uploadData = uploadUtils.createFormData({
+                    ...formData,
+                    image: selectedFile,
+                    settings: JSON.stringify(formData.settings),
+                    tags: formData.tags
+                });
 
-            const result = await actions.addPhoto(uploadData);
-            // Se upload ha successo, callback esterno
-            if (onUploadSuccess) onUploadSuccess(result.data);
+                const result = await actions.addPhoto(uploadData);
+                if (onUploadSuccess) onUploadSuccess(result.data);
+            }
+            
             // Reset form e chiudi modal
             setFormData({
                 title: '', description: '', date: new Date().toISOString().split('T')[0],
@@ -329,16 +372,16 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
             // Se non siamo all’ultimo step, prova ad andare avanti (se il pulsante non è disabled)
             if (currentStep < totalSteps) {
                 const disabledNext =
-                (currentStep === 1 && !selectedFile) ||
+                (currentStep === 1 && !selectedFile && !photoToEdit) ||
                 (currentStep === 2 && !formData.title.trim());
                 if (!disabledNext) {
                     nextStep();
                 }
             }
-            // Se siamo all’ultimo step, prova a caricare (se il pulsante non è disabled)
+            // Se siamo all'ultimo step, prova a caricare (se il pulsante non è disabled)
             else if (
                 currentStep === totalSteps &&
-                selectedFile &&
+                (selectedFile || photoToEdit) &&
                 formData.title.trim() &&
                 !loading
             ) {
@@ -363,7 +406,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
         >
         {/* Header Modal */}
         <div className="upload-header">
-        <h2>📸 Carica Nuova Foto</h2>
+        <h2>{photoToEdit ? '✏️ Modifica Foto' : '📸 Carica Nuova Foto'}</h2>
         {onClose && (
             <button
             className="close-btn"
@@ -377,27 +420,30 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
         
         {/* Navbar di navigazione tra gli step */}
         <nav className="step-navbar">
-        {['Upload','Info & Posizione','Dettagli'].map((label, idx) => (
+        {(photoToEdit ? ['Info & Posizione','Dettagli'] : ['Upload','Info & Posizione','Dettagli']).map((label, idx) => {
+            const stepNumber = photoToEdit ? idx + 2 : idx + 1;
+            return (
             <button
             key={idx}
-            className={currentStep === idx+1 ? 'active' : ''}
+            className={currentStep === stepNumber ? 'active' : ''}
             onClick={() => {
                 if (!loading) {
                     setError('');
-                    setCurrentStep(idx+1);
+                    setCurrentStep(stepNumber);
                 }
             }}
             disabled={loading}
             >
             {label}
             </button>
-        ))}
+            );
+        })}
         </nav>
         
         {/* Contenuto del Wizard */}
         <div className="steps-container">
-        {/* Step 1: Selezione immagine */}
-        {currentStep === 1 && (
+        {/* Step 1: Selezione immagine (solo in modalità upload) */}
+        {!photoToEdit && currentStep === 1 && (
             <div className="step-content">
             <div 
             className={`upload-area ${selectedFile ? 'has-file' : ''}`}
@@ -615,7 +661,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
         {/* Navigazione Wizard / Azioni Upload */}
         <div className="upload-actions">
         {/* Pulsante Indietro */}
-        {currentStep > 1 && (
+        {currentStep > (photoToEdit ? 2 : 1) && (
             <button 
             type="button"
             className="cancel-btn" 
@@ -633,7 +679,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
             onClick={nextStep}
             disabled={
                 loading || 
-                (currentStep === 1 && !selectedFile) || 
+                (currentStep === 1 && !selectedFile && !photoToEdit) || 
                 (currentStep === 2 && !formData.title.trim())
             }
             >
@@ -645,9 +691,9 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose }) => {
             type="button"
             className="upload-btn"
             onClick={handleUpload}
-            disabled={loading || !selectedFile}
+            disabled={loading || (!selectedFile && !photoToEdit)}
             >
-            {loading ? '📤 Caricamento...' : '📸 Carica Foto'}
+            {loading ? (photoToEdit ? '💾 Salvataggio...' : '📤 Caricamento...') : (photoToEdit ? '💾 Salva Modifiche' : '📸 Carica Foto')}
             </button>
             {onClose && (
                 <button 

@@ -1,34 +1,50 @@
 [
   {
-    "id": 1767314011259,
-    "title": "Palazzo della Cultura",
-    "location": "Mirow",
-    "lat": 52.230284,
-    "lng": 20.999872,
-    "image": "/uploads/photo_1767314011259.webp",
-    "thumbnail": "/uploads/thumbnails/photo_1767314011259_thumb.webp",
+    "id": 1767357918231,
+    "title": "Nebbia",
+    "location": "Srodmiescie Polnocne",
+    "lat": 52.231707,
+    "lng": 21.005994,
+    "image": "/uploads/photo_1767357918231.webp",
+    "thumbnail": "/uploads/thumbnails/photo_1767357918231_thumb.webp",
+    "url": "/uploads/thumbnails/photo_1767357918231_thumb.webp",
     "description": "",
-    "date": "2025-11-30",
+    "date": "2025-11-29",
     "camera": "samsung Galaxy S25 Ultra",
     "lens": "",
-    "settings": "{\"aperture\":\"f/1.7\",\"shutter\":\"1/25s\",\"iso\":\"640\",\"focal\":\"6.3mm\"}",
-    "tags": [
-      "Varsavia"
-    ]
+    "settings": "{\"aperture\":\"f/3.4\",\"shutter\":\"1/100s\",\"iso\":\"80\",\"focal\":\"18.6mm\"}",
+    "tags": []
   },
   {
-    "id": 1767313915630,
-    "title": "Skyline",
-    "location": "Mirow",
+    "id": 1767354244527,
+    "title": "Warsaw Skyline",
+    "location": "Warsaw, Poland",
     "lat": 52.228925,
     "lng": 21.000266,
-    "image": "/uploads/photo_1767313915630.webp",
-    "thumbnail": "/uploads/thumbnails/photo_1767313915630_thumb.webp",
+    "image": "/uploads/photo_1767354244527.webp",
+    "thumbnail": "/uploads/thumbnails/photo_1767354244527_thumb.webp",
     "description": "",
     "date": "2025-11-30",
     "camera": "samsung Galaxy S25 Ultra",
     "lens": "",
     "settings": "{\"aperture\":\"f/1.7\",\"shutter\":\"1/25s\",\"iso\":\"1000\",\"focal\":\"6.3mm\"}",
+    "tags": [
+      "Varsavia"
+    ]
+  },
+  {
+    "id": 1767351827175,
+    "title": "Flusso Metropolitano",
+    "location": "Warsaw, Poland",
+    "lat": 52.231086,
+    "lng": 21.010357,
+    "image": "/uploads/photo_1767351827175.webp",
+    "thumbnail": "/uploads/thumbnails/photo_1767351827175_thumb.webp",
+    "description": "",
+    "date": "2025-11-29",
+    "camera": "samsung Galaxy S25 Ultra",
+    "lens": "",
+    "settings": "{\"aperture\":\"f/1.7\",\"shutter\":\"1/100s\",\"iso\":\"800\",\"focal\":\"6.3mm\"}",
     "tags": [
       "Varsavia"
     ]

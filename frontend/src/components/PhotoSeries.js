@@ -238,10 +238,11 @@ export default function PhotoSeries({ showAdmin = false, title = 'Serie', subtit
           </Header>
 
           {!loading && publishedSeries.length > 0 ? (
-            <Grid>
+            <Grid key={publishedSeries.map(s => s.id).join('-')}>
               {publishedSeries.map((s, idx) => {
                 const cover = getCoverPhoto(s);
-                const count = s.photos?.length || 0;
+                const seriesPhotos = getSeriesPhotos(s);
+                const count = seriesPhotos.length;
                 const locs = getTopLocations(s);
 
                 return (
@@ -257,7 +258,7 @@ export default function PhotoSeries({ showAdmin = false, title = 'Serie', subtit
                     <Cover>
                       {cover && (
                         <CoverImage
-                          src={`${IMAGES_BASE_URL}${cover.thumbnail || cover.image || '/' + cover.filename}`}
+                          src={`${IMAGES_BASE_URL}${cover.url}?t=${cover.id}`}
                           alt={s.title}
                           loading="lazy"
                         />

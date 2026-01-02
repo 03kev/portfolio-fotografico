@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search } from 'lucide-react';
+import { Search, Trash2, Edit3 } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { IMAGES_BASE_URL } from '../utils/constants';
+import useAdminMode from '../hooks/useAdminMode';
+import PhotoUpload from './PhotoUpload';
 
 const DEBOUNCE_DELAY_FILTER = 200;
 
@@ -175,6 +177,60 @@ const PhotoOverlay = styled(motion.div)`
   }
 `;
 
+const DeleteButton = styled(motion.button)`
+  position: absolute;
+  top: var(--spacing-md);
+  right: var(--spacing-md);
+  background: rgba(220, 38, 38, 0.9);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  padding: 8px;
+  border-radius: var(--border-radius-full);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity var(--transition-normal), background var(--transition-normal);
+  z-index: 10;
+
+  ${PhotoCard}:hover & {
+    opacity: 1;
+  }
+
+  &:hover {
+    background: rgba(185, 28, 28, 1);
+  }
+`;
+
+const EditButton = styled(motion.button)`
+  position: absolute;
+  top: var(--spacing-md);
+  right: calc(var(--spacing-md) + 48px);
+  background: rgba(214, 179, 106, 0.9);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  padding: 8px;
+  border-radius: var(--border-radius-full);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity var(--transition-normal), background var(--transition-normal);
+  z-index: 10;
+
+  ${PhotoCard}:hover & {
+    opacity: 1;
+  }
+
+  &:hover {
+    background: rgba(184, 149, 76, 1);
+  }
+`;
+
 const OverlayContent = styled.div`
   width: 100%;
 `;
@@ -254,6 +310,7 @@ const NoResults = styled(motion.div)`
 
 const Gallery = () => {
   const { photos, filteredPhotos, loading, actions, filters } = usePhotos();
+  const isAdmin = useAdminMode();
 
   const [activeFilter, setActiveFilter] = useState(() => {
     return filters.tags && filters.tags.length > 0 ? filters.tags[0] : 'all';
@@ -261,6 +318,7 @@ const Gallery = () => {
   const [searchTerm, setSearchTerm] = useState(() => {
     return filters.search || '';
   });
+  const [editingPhoto, setEditingPhoto] = useState(null);
 
   const debouncedSearchTerm = useDebounce(searchTerm, DEBOUNCE_DELAY_FILTER);
 
@@ -306,6 +364,23 @@ const Gallery = () => {
 
   const handlePhotoClick = (photo) => {
     actions.openPhotoModal(photo);
+  };
+
+  const handleDelete = async (e, photoId) => {
+    e.stopPropagation();
+    if (window.confirm('Sei sicuro di voler eliminare questa foto?')) {
+      try {
+        await actions.deletePhoto(photoId);
+      } catch (error) {
+        console.error('Errore nell\'eliminazione della foto:', error);
+        alert('Errore nell\'eliminazione della foto');
+      }
+    }
+  };
+
+  const handleEdit = (e, photo) => {
+    e.stopPropagation();
+    setEditingPhoto(photo);
   };
 
   if (loading) {
@@ -378,6 +453,24 @@ const Gallery = () => {
                   onClick={() => handlePhotoClick(photo)}
                 >
                   <PhotoCard>
+                    {isAdmin && (
+                      <>
+                        <EditButton
+                          onClick={(e) => handleEdit(e, photo)}
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                        >
+                          <Edit3 size={18} />
+                        </EditButton>
+                        <DeleteButton
+                          onClick={(e) => handleDelete(e, photo.id)}
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                        >
+                          <Trash2 size={18} />
+                        </DeleteButton>
+                      </>
+                    )}
                     <PhotoImage
                       src={`${IMAGES_BASE_URL}${photo.image || photo.thumbnail}`}
                       alt={photo.title}
@@ -405,6 +498,17 @@ const Gallery = () => {
               ))}
             </AnimatePresence>
           </GalleryGrid>
+        )}
+
+        {isAdmin && editingPhoto && (
+          <PhotoUpload
+            photoToEdit={editingPhoto}
+            onClose={() => setEditingPhoto(null)}
+            onUploadSuccess={() => {
+              setEditingPhoto(null);
+              actions.fetchPhotos();
+            }}
+          />
         )}
       </Container>
     </GallerySection>

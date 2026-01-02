@@ -4,23 +4,28 @@
     "title": "Frammenti di Varsavia",
     "slug": "frammenti-di-varsavia",
     "description": " ",
-    "coverImage": 1767313915630,
+    "coverImage": 1767354244527,
     "photos": [
-      1767313915630,
-      1767314011259
+      1767354244527,
+      1767351827175
     ],
     "content": [
       {
+        "type": "text",
+        "content": "Varsavia, immersa nella nebbia.",
+        "order": 1
+      },
+      {
         "type": "photos",
         "content": [
-          1767313915630,
-          1767314011259
+          1767354244527,
+          1767351827175
         ],
-        "order": 0
+        "order": 1
       }
     ],
     "published": true,
     "createdAt": "2026-01-02T00:34:11.494Z",
-    "updatedAt": "2026-01-02T00:34:11.494Z"
+    "updatedAt": "2026-01-02T12:41:15.835Z"
   }
 ]
