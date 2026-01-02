@@ -14,7 +14,13 @@
       {
         "type": "text",
         "content": "Varsavia, immersa nella nebbia.",
-        "order": 1
+        "order": 1,
+        "layout": {
+          "x": 472,
+          "y": 696.5,
+          "w": 240,
+          "h": 140
+        }
       },
       {
         "type": "photos",
@@ -23,11 +29,28 @@
           1767351827175,
           1767357918231
         ],
-        "order": 1
+        "order": 1,
+        "layout": {
+          "x": 56,
+          "y": 88,
+          "w": 504,
+          "h": 248
+        }
+      },
+      {
+        "type": "photo",
+        "content": 1767354244527,
+        "order": 2,
+        "layout": {
+          "x": 653.5,
+          "y": 41,
+          "w": 379,
+          "h": 552
+        }
       }
     ],
     "published": true,
     "createdAt": "2026-01-02T00:34:11.494Z",
-    "updatedAt": "2026-01-02T13:52:41.149Z"
+    "updatedAt": "2026-01-02T17:27:34.245Z"
   }
 ]

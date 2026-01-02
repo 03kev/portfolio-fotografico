@@ -329,6 +329,8 @@ function SeriesEditor({ series, onClose }) {
     published: false,
   });
 
+  const [showAdvancedContent, setShowAdvancedContent] = useState(false);
+
   useEffect(() => {
     if (series) {
       setFormData({
@@ -367,7 +369,7 @@ function SeriesEditor({ series, onClose }) {
   const addContentBlock = (type) => {
     const newBlock = {
       type,
-      content: type === 'text' ? '' : [],
+      content: type === 'text' ? '' : type === 'photo' ? '' : [],
       order: formData.content.length
     };
     setFormData(prev => ({
@@ -540,85 +542,138 @@ function SeriesEditor({ series, onClose }) {
               </>
             )}
 
-            <SectionTitle>Contenuto della Serie</SectionTitle>
-            <ContentBlocks>
-              <AnimatePresence>
-                {formData.content.map((block, index) => (
-                  <ContentBlock
-                    key={index}
-                    initial={{ opacity: 0, y: -20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                  >
-                    <BlockHeader>
-                      <BlockType>
-                        {block.type === 'text' ? '📝 Paragrafo' : '📷 Gruppo Foto'}
-                      </BlockType>
-                      <DeleteBlockButton
-                        type="button"
-                        onClick={() => deleteContentBlock(index)}
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                      >
-                        Elimina
-                      </DeleteBlockButton>
-                    </BlockHeader>
+            <SectionTitle>Layout & Contenuto</SectionTitle>
+            <p style={{ color: 'rgba(255,255,255,0.65)', marginTop: 'var(--spacing-sm)' }}>
+              Il contenuto (foto/paragrafi) lo componi principalmente dalla pagina della serie usando <b>Layout (drag/resize)</b>.
+              Qui sotto puoi comunque modificare i blocchi, ma è una modalità avanzata.
+            </p>
 
-                    {block.type === 'text' ? (
-                      <TextArea
-                        value={block.content}
-                        onChange={(e) => updateContentBlock(index, e.target.value)}
-                        placeholder="Scrivi il tuo paragrafo..."
-                      />
-                    ) : (
-                      <PhotoSelector>
-                        {photos.filter(p => formData.photos.includes(p.id)).map(photo => (
-                          <PhotoOption
-                            key={photo.id}
-                            selected={block.content.includes(photo.id)}
-                            onClick={() => {
-                              const newContent = block.content.includes(photo.id)
-                                ? block.content.filter(id => id !== photo.id)
-                                : [...block.content, photo.id];
-                              updateContentBlock(index, newContent);
-                            }}
+            <AddBlockButton
+              type="button"
+              onClick={() => setShowAdvancedContent(v => !v)}
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              style={{ marginTop: 'var(--spacing-lg)' }}
+            >
+              {showAdvancedContent ? 'Nascondi contenuto avanzato' : 'Mostra contenuto avanzato'}
+            </AddBlockButton>
+
+            {showAdvancedContent && (
+              <>
+                <ContentBlocks>
+                  <AnimatePresence>
+                    {formData.content.map((block, index) => (
+                      <ContentBlock
+                        key={index}
+                        initial={{ opacity: 0, y: -20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                      >
+                        <BlockHeader>
+                          <BlockType>
+                            {block.type === 'text' ? '📝 Paragrafo' : block.type === 'photo' ? '📷 Foto' : '📷 Gruppo Foto'}
+                          </BlockType>
+                          <DeleteBlockButton
+                            type="button"
+                            onClick={() => deleteContentBlock(index)}
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                           >
-                            <img 
-                              src={`${IMAGES_BASE_URL}${photo.thumbnail || photo.image}`} 
-                              alt={photo.title}
-                            />
-                            {block.content.includes(photo.id) && (
-                              <SelectedBadge>✓</SelectedBadge>
-                            )}
-                          </PhotoOption>
-                        ))}
-                      </PhotoSelector>
-                    )}
-                  </ContentBlock>
-                ))}
-              </AnimatePresence>
-            </ContentBlocks>
+                            Elimina
+                          </DeleteBlockButton>
+                        </BlockHeader>
 
-            <AddBlockButtons>
-              <AddBlockButton
-                type="button"
-                onClick={() => addContentBlock('text')}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <span>📝</span> Aggiungi Paragrafo
-              </AddBlockButton>
-              <AddBlockButton
-                type="button"
-                onClick={() => addContentBlock('photos')}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <span>📷</span> Aggiungi Gruppo Foto
-              </AddBlockButton>
-            </AddBlockButtons>
+                        {block.type === 'text' ? (
+                          <TextArea
+                            value={block.content}
+                            onChange={(e) => updateContentBlock(index, e.target.value)}
+                            placeholder="Scrivi il tuo paragrafo..."
+                          />
+                        ) : block.type === 'photo' ? (
+                          <>
+                            <Label>Seleziona una singola foto (poi la posizioni e ridimensioni dalla pagina della serie)</Label>
+                            <PhotoSelector>
+                              {photos.filter(p => formData.photos.includes(p.id)).map(photo => (
+                                <PhotoOption
+                                  key={photo.id}
+                                  selected={block.content === photo.id}
+                                  onClick={() => updateContentBlock(index, photo.id)}
+                                  whileHover={{ scale: 1.05 }}
+                                  whileTap={{ scale: 0.95 }}
+                                >
+                                  <img 
+                                    src={`${IMAGES_BASE_URL}${photo.thumbnail || photo.image}`} 
+                                    alt={photo.title}
+                                  />
+                                  {block.content === photo.id && (
+                                    <SelectedBadge>✓</SelectedBadge>
+                                  )}
+                                </PhotoOption>
+                              ))}
+                            </PhotoSelector>
+                          </>
+                        ) : (
+                          <>
+                            <Label>Seleziona un gruppo di foto</Label>
+                            <PhotoSelector>
+                              {photos.filter(p => formData.photos.includes(p.id)).map(photo => (
+                                <PhotoOption
+                                  key={photo.id}
+                                  selected={block.content.includes(photo.id)}
+                                  onClick={() => {
+                                    const newContent = block.content.includes(photo.id)
+                                      ? block.content.filter(id => id !== photo.id)
+                                      : [...block.content, photo.id];
+                                    updateContentBlock(index, newContent);
+                                  }}
+                                  whileHover={{ scale: 1.05 }}
+                                  whileTap={{ scale: 0.95 }}
+                                >
+                                  <img 
+                                    src={`${IMAGES_BASE_URL}${photo.thumbnail || photo.image}`} 
+                                    alt={photo.title}
+                                  />
+                                  {block.content.includes(photo.id) && (
+                                    <SelectedBadge>✓</SelectedBadge>
+                                  )}
+                                </PhotoOption>
+                              ))}
+                            </PhotoSelector>
+                          </>
+                        )}
+                      </ContentBlock>
+                    ))}
+                  </AnimatePresence>
+                </ContentBlocks>
+
+                <AddBlockButtons>
+                  <AddBlockButton
+                    type="button"
+                    onClick={() => addContentBlock('text')}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    <span>📝</span> Aggiungi Paragrafo
+                  </AddBlockButton>
+                  <AddBlockButton
+                    type="button"
+                    onClick={() => addContentBlock('photo')}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    <span>📷</span> Aggiungi Foto
+                  </AddBlockButton>
+                  <AddBlockButton
+                    type="button"
+                    onClick={() => addContentBlock('photos')}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    <span>📷</span> Aggiungi Gruppo Foto
+                  </AddBlockButton>
+                </AddBlockButtons>
+              </>
+            )}
           </EditorBody>
 
           <EditorFooter>
