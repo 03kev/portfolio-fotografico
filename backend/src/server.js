@@ -6,6 +6,7 @@ const path = require('path');
 require('dotenv').config();
 
 const photoRoutes = require('./routes/photos');
+const seriesRoutes = require('./routes/series');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -74,6 +75,7 @@ app.use('/uploads', (req, res, next) => {
 
 // Routes
 app.use('/api/photos', photoRoutes);
+app.use('/api/series', seriesRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

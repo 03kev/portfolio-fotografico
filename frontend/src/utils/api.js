@@ -78,6 +78,30 @@ export const photoService = {
   filterByLocation: (location) => api.get(`/photos/location/${encodeURIComponent(location)}`),
 };
 
+// Servizi per le serie fotografiche
+export const seriesService = {
+  // Ottieni tutte le serie
+  getAll: (includeUnpublished = false) => api.get(`/series?all=${includeUnpublished}`),
+  
+  // Ottieni serie per slug o ID
+  getBySlug: (slug) => api.get(`/series/${slug}`),
+  
+  // Crea nuova serie
+  create: (data) => api.post('/series', data),
+  
+  // Aggiorna serie
+  update: (id, data) => api.put(`/series/${id}`, data),
+  
+  // Elimina serie
+  delete: (id) => api.delete(`/series/${id}`),
+  
+  // Aggiungi foto a serie
+  addPhoto: (seriesId, photoId) => api.post(`/series/${seriesId}/photos/${photoId}`),
+  
+  // Rimuovi foto da serie
+  removePhoto: (seriesId, photoId) => api.delete(`/series/${seriesId}/photos/${photoId}`),
+};
+
 // Servizi per le statistiche (future implementazioni)
 export const statsService = {
   getDashboard: () => api.get('/stats/dashboard'),

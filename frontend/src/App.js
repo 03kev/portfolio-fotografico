@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { PhotoProvider, usePhotos } from './contexts/PhotoContext';
+import { SeriesProvider } from './contexts/SeriesContext';
 import Header from './components/Header';
 import Hero from './components/Hero';
 import WorldMap from './components/WorldMap';
 import Gallery from './components/Gallery';
+import PhotoSeries from './components/PhotoSeries';
+import SeriesDetail from './components/SeriesDetail';
 import PhotoModal from './components/PhotoModal';
 import GalleryModal from './components/GalleryModal';
 import PhotoUpload from './components/PhotoUpload';
@@ -84,11 +87,15 @@ function AppContent() {
             <section id="mappa">
             <WorldMap />
             </section>
+            <section id="serie">
+            <PhotoSeries />
+            </section>
             <section id="galleria">
             <Gallery />
             </section>
             </>
         } />
+        <Route path="/series/:slug" element={<SeriesDetail />} />
         </Routes>
         </main>
         <Footer />
@@ -110,7 +117,9 @@ function AppContent() {
 function App() {
     return (
         <PhotoProvider>
+        <SeriesProvider>
         <AppContent />
+        </SeriesProvider>
         </PhotoProvider>
     );
 }

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "1767314051494",
+    "title": "Frammenti di Varsavia",
+    "slug": "frammenti-di-varsavia",
+    "description": " ",
+    "coverImage": 1767313915630,
+    "photos": [
+      1767313915630,
+      1767314011259
+    ],
+    "content": [
+      {
+        "type": "photos",
+        "content": [
+          1767313915630,
+          1767314011259
+        ],
+        "order": 0
+      }
+    ],
+    "published": true,
+    "createdAt": "2026-01-02T00:34:11.494Z",
+    "updatedAt": "2026-01-02T00:34:11.494Z"
+  }
+]

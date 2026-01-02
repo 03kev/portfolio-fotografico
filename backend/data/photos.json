@@ -1,5 +1,39 @@
 [
   {
+    "id": 1767314011259,
+    "title": "Palazzo della Cultura",
+    "location": "Mirow",
+    "lat": 52.230284,
+    "lng": 20.999872,
+    "image": "/uploads/photo_1767314011259.webp",
+    "thumbnail": "/uploads/thumbnails/photo_1767314011259_thumb.webp",
+    "description": "",
+    "date": "2025-11-30",
+    "camera": "samsung Galaxy S25 Ultra",
+    "lens": "",
+    "settings": "{\"aperture\":\"f/1.7\",\"shutter\":\"1/25s\",\"iso\":\"640\",\"focal\":\"6.3mm\"}",
+    "tags": [
+      "Varsavia"
+    ]
+  },
+  {
+    "id": 1767313915630,
+    "title": "Skyline",
+    "location": "Mirow",
+    "lat": 52.228925,
+    "lng": 21.000266,
+    "image": "/uploads/photo_1767313915630.webp",
+    "thumbnail": "/uploads/thumbnails/photo_1767313915630_thumb.webp",
+    "description": "",
+    "date": "2025-11-30",
+    "camera": "samsung Galaxy S25 Ultra",
+    "lens": "",
+    "settings": "{\"aperture\":\"f/1.7\",\"shutter\":\"1/25s\",\"iso\":\"1000\",\"focal\":\"6.3mm\"}",
+    "tags": [
+      "Varsavia"
+    ]
+  },
+  {
     "id": 1753922032716,
     "title": "Sotto il Tetto di Stelle",
     "location": "Vezzano sul Crostolo, Italia",

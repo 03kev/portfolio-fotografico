@@ -198,6 +198,7 @@ const Header = ({ onOpenUpload }) => {
   const navItems = [
     { id: 'home', label: 'Home', onClick: scrollToTop },
     { id: 'mappa', label: 'Mappa' },
+    { id: 'serie', label: 'Serie' },
     { id: 'galleria', label: 'Galleria' },
     { id: 'contatti', label: 'Contatti' }
   ];
