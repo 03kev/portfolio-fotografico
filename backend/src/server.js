@@ -27,8 +27,8 @@ app.use(helmet({
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minuti
-  max: 100 // limite di 100 richieste per finestra per IP
+  windowMs: 10 * 60 * 1000, // 10 minuti
+  max: 500 // limite di 500 richieste per finestra per IP (aumentato per sviluppo)
 });
 app.use(limiter);
 

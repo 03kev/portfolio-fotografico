@@ -160,11 +160,22 @@ function photoReducer(state, action) {
 export function PhotoProvider({ children }) {
     const [state, dispatch] = useReducer(photoReducer, initialState);
     const focusHandlerRef = useRef(null);
+    const fetchTimeoutRef = useRef(null);
+    const lastFetchTimeRef = useRef(0);
     
     // Actions
     const actions = {
-        // Fetch photos from API
+        // Fetch photos from API with debouncing
         fetchPhotos: async () => {
+            // Evita fetch multipli troppo ravvicinati
+            const now = Date.now();
+            if (now - lastFetchTimeRef.current < 500) {
+                console.log('Fetch troppo ravvicinato, ignorato');
+                return;
+            }
+            
+            lastFetchTimeRef.current = now;
+            
             try {
                 dispatch({ type: ACTIONS.SET_LOADING, payload: true });
                 const response = await photoService.getAll();
@@ -312,19 +323,7 @@ export function PhotoProvider({ children }) {
     
     // Load photos on mount
     useEffect(() => {
-        const fetchPhotos = async () => {
-            try {
-                dispatch({ type: ACTIONS.SET_LOADING, payload: true });
-                const response = await photoService.getAll();
-                const photos = response.data?.data || response.data || [];
-                dispatch({ type: ACTIONS.SET_PHOTOS, payload: photos });
-            } catch (error) {
-                console.error('Error fetching photos:', error);
-                dispatch({ type: ACTIONS.SET_ERROR, payload: 'Errore nel caricamento delle foto' });
-            }
-        };
-        
-        fetchPhotos();
+        actions.fetchPhotos();
     }, []);
     
     // Filtered photos based on current filters

@@ -2,7 +2,7 @@
   {
     "id": 1767357918231,
     "title": "Nebbia",
-    "location": "Srodmiescie Polnocne",
+    "location": "Warsaw, Poland",
     "lat": 52.231707,
     "lng": 21.005994,
     "image": "/uploads/photo_1767357918231.webp",
@@ -13,7 +13,9 @@
     "camera": "samsung Galaxy S25 Ultra",
     "lens": "",
     "settings": "{\"aperture\":\"f/3.4\",\"shutter\":\"1/100s\",\"iso\":\"80\",\"focal\":\"18.6mm\"}",
-    "tags": []
+    "tags": [
+      "Varsavia"
+    ]
   },
   {
     "id": 1767354244527,

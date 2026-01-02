@@ -180,9 +180,10 @@ const Footer = () => {
           <motion.div variants={fade}>
             <Title>Contatti</Title>
             <ContactList>
-              <div className="row"><Mail size={16} /> <a href="mailto:foto@portfolio.com">foto@portfolio.com</a></div>
-              <div className="row"><MapPin size={16} /> <span>Italia</span></div>
+              <div className="row"><Mail size={16} /> <a href="mailto:kevinmuka03@gmail.com">kevinmuka03@gmail.com</a></div>
               <div className="row"><Globe size={16} /> <Link to="/">fotoportfolio.com</Link></div>
+              <div className="row"><Instagram size={16} /> <a href="https://instagram.com/kev.muka" target="_blank" rel="noreferrer">@kev.muka</a></div>
+              <div className="row"><MapPin size={16} /> <span>Italia</span></div>
             </ContactList>
           </motion.div>
         </FooterGrid>

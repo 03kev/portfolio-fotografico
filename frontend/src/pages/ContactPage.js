@@ -46,21 +46,17 @@ export default function ContactPage() {
   return (
     <Section
       title="Contatti"
-      subtitle="Sostituisci i link con quelli reali."
+      subtitle="Se vuoi saperne di più, questi sono i modi migliori per contattarmi."
     >
       <Wrap>
         <Card>
           <Row>
             <Label>Email</Label>
-            <Value href="mailto:foto@portfolio.com">foto@portfolio.com</Value>
+            <Value href="mailto:kevinmuka03@gmail.com">kevinmuka03@gmail.com</Value>
           </Row>
           <Row>
             <Label>Instagram</Label>
-            <Value href="https://instagram.com" target="_blank" rel="noreferrer">@username</Value>
-          </Row>
-          <Row>
-            <Label>Stampe / Collaborazioni</Label>
-            <Value href="mailto:foto@portfolio.com?subject=Portfolio%20-%20Info">Scrivimi</Value>
+            <Value href="https://instagram.com/kev.muka" target="_blank" rel="noreferrer">@kev.muka</Value>
           </Row>
         </Card>
       </Wrap>

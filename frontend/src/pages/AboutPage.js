@@ -23,19 +23,16 @@ export default function AboutPage() {
   return (
     <Section
       title="Chi sono"
-      subtitle="Due righe su di me e su come lavoro. (Testo placeholder: personalizzalo)"
+      subtitle="Due righe su di me e su come lavoro."
     >
       <Wrap>
         <Card>
           <P>
-            Mi chiamo <strong>[Il tuo nome]</strong> e fotografo <strong>[cosa]</strong> tra <strong>[luoghi]</strong>.
+            Mi chiamo <strong>Kevin</strong> e fotografo <strong>momenti</strong> in <strong>luoghi significativi</strong>.
             Mi interessa raccontare storie semplici e coerenti: una luce, una strada, una stagione.
           </P>
           <P>
             In questo portfolio trovi serie tematiche e una galleria completa. Se ti va, parti dalla mappa per esplorare gli scatti per posizione.
-          </P>
-          <P style={{ marginBottom: 0 }}>
-            Disponibile per <strong>[stampe / commissioni / progetti]</strong>. Scrivimi dalla pagina Contatti.
           </P>
         </Card>
       </Wrap>

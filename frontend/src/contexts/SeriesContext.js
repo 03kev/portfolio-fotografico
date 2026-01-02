@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useCallback, useRef } from 'react';
 import { seriesService } from '../utils/api';
 
 const SeriesContext = createContext();
@@ -94,8 +94,18 @@ function seriesReducer(state, action) {
 // Provider Component
 export function SeriesProvider({ children }) {
     const [state, dispatch] = useReducer(seriesReducer, initialState);
+    const lastFetchTimeRef = useRef(0);
 
     const fetchSeries = useCallback(async (includeUnpublished = false) => {
+        // Evita fetch multipli troppo ravvicinati
+        const now = Date.now();
+        if (now - lastFetchTimeRef.current < 500) {
+            console.log('Series fetch troppo ravvicinato, ignorato');
+            return;
+        }
+        
+        lastFetchTimeRef.current = now;
+        
         try {
             dispatch({ type: ACTIONS.SET_LOADING, payload: true });
             const response = await seriesService.getAll(includeUnpublished);
