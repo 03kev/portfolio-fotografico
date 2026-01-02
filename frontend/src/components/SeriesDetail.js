@@ -2,6 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
+import { FileText, Image as ImageIcon, Images, LayoutGrid, PencilLine, RotateCcw, Save, Trash2, X } from 'lucide-react';
+import GridLayout from 'react-grid-layout';
+import 'react-grid-layout/css/styles.css';
+import 'react-resizable/css/styles.css';
 import { useSeries } from '../contexts/SeriesContext';
 import { usePhotos } from '../contexts/PhotoContext';
 import SeriesEditor from './SeriesEditor';
@@ -12,7 +16,7 @@ import useAdminMode from '../hooks/useAdminMode';
 const PageContainer = styled.div`
   min-height: 100vh;
   background: transparent;
-  padding-top: 80px;
+  padding-top: 0;
 `;
 
 const HeroSection = styled(motion.div)`
@@ -58,7 +62,7 @@ const HeroContent = styled.div`
 
 const BackButton = styled(motion.button)`
   position: absolute;
-  top: var(--spacing-2xl);
+  top: calc(78px + var(--spacing-lg));
   left: var(--spacing-xl);
   background: rgba(0, 0, 0, 0.8);
   backdrop-filter: blur(10px);
@@ -72,6 +76,10 @@ const BackButton = styled(motion.button)`
   align-items: center;
   gap: var(--spacing-sm);
   z-index: 3;
+
+  @media (max-width: 768px) {
+    top: calc(70px + var(--spacing-lg));
+  }
 
   &:hover {
     background: rgba(0, 0, 0, 0.9);
@@ -119,6 +127,25 @@ const PhotoCount = styled(motion.div)`
   margin-top: var(--spacing-lg);
 `;
 
+const HeroMetaRow = styled.div`
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  margin-top: var(--spacing-md);
+`;
+
+const Pill = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: var(--font-size-sm);
+  color: var(--color-white);
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+`;
+
 const ContentSection = styled.div`
   max-width: 1200px;
   margin: 0 auto;
@@ -150,6 +177,7 @@ const AdminBar = styled.div`
   align-items: center;
   justify-content: flex-end;
   margin-bottom: var(--spacing-2xl);
+  flex-wrap: wrap;
 `;
 
 const AdminBarButton = styled(motion.button)`
@@ -179,9 +207,11 @@ const LayoutStage = styled.div`
   position: relative;
   min-height: 70vh;
   border-radius: var(--border-radius-xl);
-  background: transparent;
+  background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.02) 100%);
   overflow: auto;
   padding: var(--spacing-lg);
+  border: 1px solid rgba(255,255,255,0.06);
+  box-shadow: 0 18px 36px rgba(0,0,0,0.28);
 `;
 
 const Canvas = styled.div`
@@ -194,18 +224,32 @@ const Canvas = styled.div`
   background-image:
     linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px);
-  background-size: 8px 8px;
+  background-size: var(--grid-step-x, 100px) var(--grid-step-y, 24px);
   background-position: 0 0;
 `;
 
 const DraggableBlock = styled.div`
-  position: absolute;
+  position: relative;
+  width: 100%;
+  height: 100%;
   border-radius: var(--border-radius-xl);
-  border: 1px solid ${props => (props.$selected ? 'rgba(255, 255, 255, 0.40)' : 'rgba(255, 255, 255, 0.06)')};  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid ${props => (
+    props.$media
+      ? 'transparent'
+      : props.$plain
+        ? 'transparent'
+        : (props.$selected ? 'rgba(255, 255, 255, 0.40)' : 'rgba(255, 255, 255, 0.06)')
+  )};
+  background: ${props => (props.$media || props.$plain ? 'transparent' : 'rgba(0, 0, 0, 0.35)')};
   backdrop-filter: blur(10px);
   overflow: hidden;
-  touch-action: none;
-  box-shadow: ${props => (props.$selected ? '0 0 0 2px rgba(255,255,255,0.28), 0 16px 40px rgba(0,0,0,0.35)' : '0 12px 28px rgba(0,0,0,0.28)')};
+  box-shadow: ${props => (
+    props.$media
+      ? 'none'
+      : props.$plain
+        ? 'none'
+        : (props.$selected ? '0 0 0 2px rgba(255,255,255,0.28), 0 16px 40px rgba(0,0,0,0.35)' : '0 12px 28px rgba(0,0,0,0.28)')
+  )};
 `;
 
 
@@ -339,18 +383,8 @@ const InspectorHint = styled.div`
 const BlockBody = styled.div`
   width: 100%;
   height: calc(100% - 38px);
-  overflow: auto;
-  padding: var(--spacing-md);
-`;
-
-const ResizeHandle = styled.div`
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(0, 0, 0, 0.45);
-  z-index: 3;
+  overflow: ${p => (p.$flush ? 'hidden' : 'auto')};
+  padding: ${p => (p.$flush ? '0' : 'var(--spacing-md)')};
 `;
 
 const FloatingLayoutTools = styled.div`
@@ -358,6 +392,20 @@ const FloatingLayoutTools = styled.div`
   right: 28px;
   bottom: 28px;
   z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+`;
+
+const EmptyState = styled.div`
+  border: 1px dashed rgba(255,255,255,0.18);
+  border-radius: var(--border-radius-xl);
+  padding: var(--spacing-2xl);
+  color: rgba(255,255,255,0.72);
+  text-align: center;
+  margin: var(--spacing-xl) auto;
+  max-width: 520px;
+  background: rgba(255,255,255,0.04);
 `;
 
 const FabButton = styled(motion.button)`
@@ -423,10 +471,11 @@ const InlineTextEditor = styled.textarea`
   border: none;
   outline: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.92);
-  font-size: var(--font-size-lg);
-  line-height: 1.85;
-  letter-spacing: 0.01em;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: var(--font-size-sm);
+  line-height: 1.75;
+  letter-spacing: 0.02em;
+  text-transform: none;
   padding: var(--spacing-lg);
   font-family: inherit;
   box-sizing: border-box;
@@ -437,20 +486,17 @@ const SeriesText = styled.div`
   width: 100%;
   height: 100%;
   padding: var(--spacing-lg);
-  color: rgba(255, 255, 255, 0.88);
-  font-size: var(--font-size-lg);
-  line-height: 1.85;
-  letter-spacing: 0.01em;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: var(--font-size-sm);
+  line-height: 1.75;
+  letter-spacing: 0.02em;
+  text-transform: none;
   white-space: pre-wrap;
   box-sizing: border-box;
   overflow: auto;
 
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.04) 0%,
-    rgba(255, 255, 255, 0.02) 100%
-  );
-  border-radius: var(--border-radius-xl);
+  background: transparent;
+  border-radius: 0;
 `;
 
 const PhotoFrame = styled.figure`
@@ -461,6 +507,7 @@ const PhotoFrame = styled.figure`
   flex-direction: column;
   gap: 0;
   padding: 0;
+  align-items: center;
 `;
 
 const CanvasPhoto = styled.img`
@@ -471,13 +518,16 @@ const CanvasPhoto = styled.img`
   object-fit: contain;
   display: block;
   border-radius: var(--border-radius-xl);
-  background: rgba(255, 255, 255, 0.04);
+  background: transparent;
 `;
 
 const CanvasCaption = styled.figcaption`
-  color: rgba(255, 255, 255, 0.55);
-  font-size: var(--font-size-sm);
-  padding: 0 var(--spacing-sm);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-top: 10px;
+  text-align: center;
 `;
 
 const ThumbGrid = styled.div`
@@ -507,7 +557,8 @@ const ThumbImage = styled.img`
   height: 140px;
   object-fit: contain;
   display: block;
-  background: rgba(255, 255, 255, 0.04);
+  background: transparent;
+  border-radius: var(--border-radius-lg);
 `;
 
 const ClassicFigure = styled.figure`
@@ -518,13 +569,16 @@ const ClassicFigure = styled.figure`
     height: auto;
     display: block;
     border-radius: var(--border-radius-xl);
-    background: rgba(255, 255, 255, 0.04);
+    background: transparent;
   }
 
   figcaption {
     margin-top: var(--spacing-sm);
     color: rgba(255, 255, 255, 0.6);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-xs);
+    text-align: center;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
 `;
 
@@ -659,26 +713,27 @@ function SeriesDetail() {
   const { slug } = useParams();
   const navigate = useNavigate();
   const { currentSeries, fetchSeriesBySlug, updateSeries, loading, error } = useSeries();
-  const { photos, actions } = usePhotos();
+  const { photos } = usePhotos();
   const [showEditor, setShowEditor] = useState(false);
   const [seriesPhotos, setSeriesPhotos] = useState([]);
   const [layoutMode, setLayoutMode] = useState(false);
   const [draftContent, setDraftContent] = useState([]);
   const [lightboxPhoto, setLightboxPhoto] = useState(null);
   const stageRef = useRef(null);
-  const dragStateRef = useRef(null);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
-
-  const canvasRef = useRef(null);
   const [selectedIndex, setSelectedIndex] = useState(null);
-  const [snapEnabled, setSnapEnabled] = useState(true);
-  const [showGrid, setShowGrid] = useState(true);
 
   const CANVAS_WIDTH = 1200;
-  const GRID_SIZE = 8;
-  const SNAP_THRESHOLD = 6;
+  const GRID_COLS = 12;
+  const ROW_HEIGHT = 24;
+  const GRID_GUTTER = 12;
   const MIN_W = 240;
   const MIN_H = 140;
+  const COL_WIDTH = (CANVAS_WIDTH - GRID_GUTTER * (GRID_COLS - 1)) / GRID_COLS;
+  const GRID_STEP_X = COL_WIDTH + GRID_GUTTER;
+  const GRID_STEP_Y = ROW_HEIGHT + GRID_GUTTER;
+  const MIN_W_COLS = Math.max(1, Math.round((MIN_W + GRID_GUTTER) / GRID_STEP_X));
+  const MIN_H_ROWS = Math.max(1, Math.round((MIN_H + GRID_GUTTER) / GRID_STEP_Y));
 
   const isAdmin = useAdminMode();
   const toast = useToast();
@@ -699,308 +754,143 @@ function SeriesDetail() {
     }
   }, [currentSeries, photos]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!currentSeries) return;
 
-    const withDefaults = (content = []) => {
-      let yCursor = 24;
-      return content.map((block) => {
-        const base = { ...block };
-        if (!base.layout) {
-          const isText = base.type === 'text';
-          const isSingle = base.type === 'photo';
-          base.layout = {
-            x: 24,
-            y: yCursor,
-            w: 720,
-            h: isText ? 220 : isSingle ? 520 : 420,
-          };
-        }
-        yCursor += (base.layout?.h || 260) + 24;
-        return base;
-      });
-    };
-
-    const prepared = resolveAllCollisions(sanitizeContent(withDefaults(currentSeries.content || [])));
+    const prepared = prepareContent(currentSeries.content || [], true);
     setDraftContent(prepared);
   }, [currentSeries]);
 
-  useEffect(() => {
-    if (!layoutMode) return;
-    if (selectedIndex === null) return;
-
-    const onKeyDown = (e) => {
-      const tag = (e.target?.tagName || '').toLowerCase();
-      if (tag === 'textarea' || tag === 'input') return;
-
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIndex !== null) {
-        e.preventDefault();
-        deleteBlock(selectedIndex);
-        return;
-      }
-
-      const keys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'];
-      if (!keys.includes(e.key)) return;
-      e.preventDefault();
-
-      const step = e.shiftKey ? 10 : e.altKey ? 1 : 2;
-
-      setDraftContent(prev => {
-        if (!prev[selectedIndex]?.layout) return prev;
-        const next = [...prev];
-        const b = { ...next[selectedIndex] };
-        const l = { ...b.layout };
-
-        const canvasH = getCanvasHeight(prev);
-        const canvasW = CANVAS_WIDTH;
-
-        const w = l.w || 600;
-        const h = l.h || 300;
-
-        let x = l.x || 0;
-        let y = l.y || 0;
-
-        if (e.key === 'ArrowLeft') x -= step;
-        if (e.key === 'ArrowRight') x += step;
-        if (e.key === 'ArrowUp') y -= step;
-        if (e.key === 'ArrowDown') y += step;
-
-        x = clamp(x, 0, canvasW - w);
-        y = clamp(y, 0, canvasH - h);
-
-        if (snapEnabled) {
-          x = snap(x);
-          y = snap(y);
-          x = snapEdges(x, canvasW - w);
-          y = snapEdges(y, canvasH - h);
-        }
-
-        b.layout = { ...l, x, y };
-        next[selectedIndex] = b;
-        return next;
-      });
-    };
-
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [layoutMode, selectedIndex, snapEnabled]);
-
-  const normalizeLayout = (layout = {}) => ({
-    x: typeof layout.x === 'number' ? layout.x : 24,
-    y: typeof layout.y === 'number' ? layout.y : 24,
-    w: typeof layout.w === 'number' ? layout.w : 720,
-    h: typeof layout.h === 'number' ? layout.h : 320,
-  });
-
-  const getCanvasHeight = (content) => {
-    const maxBottom = (content || []).reduce((max, b) => {
-      const l = normalizeLayout(b?.layout);
-      return Math.max(max, l.y + l.h);
-    }, 0);
-    return Math.max(720, maxBottom + 120);
-  };
-
-  const snap = (v) => {
-    if (!snapEnabled) return v;
-    return Math.round(v / GRID_SIZE) * GRID_SIZE;
-  };
-
-  const snapEdges = (value, maxValue) => {
-    if (!snapEnabled) return value;
-    if (Math.abs(value - 0) <= SNAP_THRESHOLD) return 0;
-    if (Math.abs(value - maxValue) <= SNAP_THRESHOLD) return maxValue;
-    return value;
-  };
-
   const clamp = (v, min, max) => Math.max(min, Math.min(v, max));
 
-  const constrainLayout = (layout, content) => {
-    const canvasH = getCanvasHeight(content);
-    const canvasW = CANVAS_WIDTH;
-    let { x, y, w, h } = normalizeLayout(layout);
+  const createBlockId = () =>
+    `block-${Math.random().toString(16).slice(2)}-${Date.now().toString(36)}`;
 
-    w = clamp(w, MIN_W, canvasW);
-    h = clamp(h, MIN_H, canvasH);
-    x = clamp(x, 0, canvasW - w);
-    y = clamp(y, 0, canvasH - h);
-
-    if (snapEnabled) {
-      x = snap(x);
-      y = snap(y);
-      w = snap(w);
-      h = snap(h);
-      x = snapEdges(x, canvasW - w);
-      y = snapEdges(y, canvasH - h);
-    }
-
-    return { x, y, w, h };
+  const getBlockId = (block, index, assignNew) => {
+    if (block.id) return block.id;
+    if (block._id) return block._id;
+    if (block.uid) return block.uid;
+    if (assignNew) return createBlockId();
+    return `block-${index}`;
   };
 
-  const sanitizeContent = (content = []) => {
-    const base = (content || []).map((b) => ({ ...b, layout: normalizeLayout(b.layout) }));
-    return base.map((b) => ({ ...b, layout: constrainLayout(b.layout, base) }));
+  const isGridLayout = (layout) => (
+    layout &&
+    (layout.unit === 'grid' ||
+      (Number.isFinite(layout.w) && layout.w <= GRID_COLS && Number.isFinite(layout.x) && layout.x <= GRID_COLS))
+  );
+
+  const getDefaultGridSize = (type) => {
+    if (type === 'text') return { w: Math.max(MIN_W_COLS, 7), h: Math.max(MIN_H_ROWS, 8) };
+    if (type === 'photo') return { w: Math.max(MIN_W_COLS, 8), h: Math.max(MIN_H_ROWS, 18) };
+    return { w: Math.max(MIN_W_COLS, 9), h: Math.max(MIN_H_ROWS, 14) };
   };
 
-  const resolveCollisions = (index, layout, content) => {
-    const padding = GRID_SIZE;
-    const canvasH = getCanvasHeight(content);
-    let resolved = { ...layout };
-
-    const overlaps = (a, b) => {
-      if (!b) return false;
-      const other = normalizeLayout(b);
-      return !(
-        a.x + a.w + padding <= other.x ||
-        a.x >= other.x + other.w + padding ||
-        a.y + a.h + padding <= other.y ||
-        a.y >= other.y + other.h + padding
-      );
-    };
-
-    let guard = content.length * 3;
-    while (guard > 0) {
-      const hasCollision = content.some((b, i) => i !== index && overlaps(resolved, b?.layout));
-      if (!hasCollision) break;
-      const nextY = snapEnabled ? snap(resolved.y + GRID_SIZE) : resolved.y + GRID_SIZE;
-      resolved = { ...resolved, y: clamp(nextY, 0, canvasH - resolved.h) };
-      guard -= 1;
-    }
-
-    return resolved;
+  const getDefaultPxSize = (type) => {
+    if (type === 'text') return { w: 720, h: 220 };
+    if (type === 'photo') return { w: 720, h: 520 };
+    return { w: 760, h: 420 };
   };
 
-  const resolveAllCollisions = (content = []) => {
-    const padding = GRID_SIZE;
-    const sorted = content
-      .map((b, i) => ({ ...b, _i: i, layout: normalizeLayout(b.layout) }))
-      .sort((a, b) => a.layout.y - b.layout.y || a._i - b._i);
+  const pxToColPos = (px) => Math.max(0, Math.round(px / GRID_STEP_X));
+  const pxToRowPos = (px) => Math.max(0, Math.round(px / GRID_STEP_Y));
+  const pxToColSpan = (px) => Math.max(1, Math.round((px + GRID_GUTTER) / GRID_STEP_X));
+  const pxToRowSpan = (px) => Math.max(1, Math.round((px + GRID_GUTTER) / GRID_STEP_Y));
 
-    const placed = [];
-    const overlaps = (a, b) => {
-      const l1 = normalizeLayout(a.layout);
-      const l2 = normalizeLayout(b.layout);
-      return !(
-        l1.x + l1.w + padding <= l2.x ||
-        l1.x >= l2.x + l2.w + padding ||
-        l1.y + l1.h + padding <= l2.y ||
-        l1.y >= l2.y + l2.h + padding
-      );
-    };
+  const clampGridLayout = (layout) => {
+    const w = clamp(layout.w || MIN_W_COLS, MIN_W_COLS, GRID_COLS);
+    const h = Math.max(layout.h || MIN_H_ROWS, MIN_H_ROWS);
+    const x = clamp(layout.x || 0, 0, GRID_COLS - w);
+    const y = Math.max(layout.y || 0, 0);
+    return { x, y, w, h, unit: 'grid' };
+  };
 
-    const contentHeight = getCanvasHeight(content);
+  const prepareContent = (content = [], assignIds = false) => {
+    let yCursor = 0;
+    const nextContent = [];
 
-    sorted.forEach((item) => {
-      let layout = constrainLayout(item.layout, content);
-      let guard = content.length * 4;
-      while (placed.some(p => overlaps({ layout }, p)) && guard > 0) {
+    (content || []).forEach((block, index) => {
+      const id = getBlockId(block, index, assignIds);
+      const defaults = getDefaultGridSize(block.type);
+      const fallbackPx = getDefaultPxSize(block.type);
+      const baseLayout = block.layout;
+      let layout;
+
+      if (baseLayout && isGridLayout(baseLayout)) {
         layout = {
-          ...layout,
-          y: clamp((snapEnabled ? snap(layout.y + GRID_SIZE) : layout.y + GRID_SIZE), 0, contentHeight - layout.h),
+          x: baseLayout.x ?? 0,
+          y: baseLayout.y ?? yCursor,
+          w: baseLayout.w ?? defaults.w,
+          h: baseLayout.h ?? defaults.h,
         };
-        guard -= 1;
+      } else if (baseLayout) {
+        const xPx = typeof baseLayout.x === 'number' ? baseLayout.x : 24;
+        const yPx = typeof baseLayout.y === 'number' ? baseLayout.y : yCursor * ROW_HEIGHT;
+        const wPx = typeof baseLayout.w === 'number' ? baseLayout.w : fallbackPx.w;
+        const hPx = typeof baseLayout.h === 'number' ? baseLayout.h : fallbackPx.h;
+        layout = {
+          x: pxToColPos(xPx),
+          y: pxToRowPos(yPx),
+          w: pxToColSpan(wPx),
+          h: pxToRowSpan(hPx),
+        };
+      } else {
+        layout = { x: 0, y: yCursor, w: defaults.w, h: defaults.h };
       }
-      placed.push({ ...item, layout });
+
+      const clamped = clampGridLayout(layout);
+      const placed = findAvailablePosition(clamped, nextContent, id);
+      yCursor = Math.max(yCursor, placed.y + placed.h + 1);
+
+      nextContent.push({ ...block, id, layout: placed });
     });
 
-    return placed
-      .sort((a, b) => a._i - b._i)
-      .map(({ _i, ...rest }) => rest);
+    return nextContent;
+  };
+
+  const buildGridLayout = (content = []) =>
+    (content || []).map((block) => ({
+      i: String(block.id),
+      x: block.layout?.x ?? 0,
+      y: block.layout?.y ?? 0,
+      w: block.layout?.w ?? MIN_W_COLS,
+      h: block.layout?.h ?? MIN_H_ROWS,
+      minW: MIN_W_COLS,
+      minH: MIN_H_ROWS,
+    }));
+
+  const hasGridOverlap = (layout, content, ignoreId) => {
+    return (content || []).some((b) => {
+      if (String(b.id) === String(ignoreId)) return false;
+      const other = b.layout;
+      if (!other) return false;
+      return !(
+        layout.x + layout.w <= other.x ||
+        layout.x >= other.x + other.w ||
+        layout.y + layout.h <= other.y ||
+        layout.y >= other.y + other.h
+      );
+    });
+  };
+
+  const findAvailablePosition = (layout, content, ignoreId) => {
+    let next = { ...layout };
+    let guard = 200;
+    while (hasGridOverlap(next, content, ignoreId) && guard > 0) {
+      next = { ...next, y: next.y + 1 };
+      guard -= 1;
+    }
+    return next;
   };
 
   const handlePhotoClick = (photo) => {
     setLightboxPhoto(photo);
   };
 
-  const startDrag = (index, e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setSelectedIndex(index);
-
-    dragStateRef.current = {
-      kind: 'drag',
-      index,
-      startX: e.clientX,
-      startY: e.clientY,
-      initialLayout: normalizeLayout(draftContent[index]?.layout),
-    };
-
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp, { once: true });
-  };
-
-  const startResize = (index, dir, e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setSelectedIndex(index);
-
-    dragStateRef.current = {
-      kind: 'resize',
-      dir,
-      index,
-      startX: e.clientX,
-      startY: e.clientY,
-      initialLayout: normalizeLayout(draftContent[index]?.layout),
-    };
-
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp, { once: true });
-  };
-
-  const onPointerMove = (e) => {
-    const st = dragStateRef.current;
-    if (!st) return;
-
-    const dx = e.clientX - st.startX;
-    const dy = e.clientY - st.startY;
-
-    setDraftContent(prev => {
-      if (!prev[st.index]) return prev;
-      const next = [...prev];
-      const base = st.initialLayout || normalizeLayout(next[st.index].layout);
-      let layout = { ...base };
-
-      if (st.kind === 'drag') {
-        layout = { ...layout, x: base.x + dx, y: base.y + dy };
-      } else {
-        let { x, y, w, h } = layout;
-        const dir = st.dir;
-
-        if (dir.includes('e')) w = base.w + dx;
-        if (dir.includes('s')) h = base.h + dy;
-        if (dir.includes('w')) { w = base.w - dx; x = base.x + dx; }
-        if (dir.includes('n')) { h = base.h - dy; y = base.y + dy; }
-
-        layout = { x, y, w, h };
-      }
-
-      const constrained = constrainLayout(layout, next);
-      const resolved = resolveCollisions(st.index, constrained, next);
-      next[st.index] = { ...next[st.index], layout: resolved };
-      return next;
-    });
-  };
-
-  const onPointerUp = () => {
-    window.removeEventListener('pointermove', onPointerMove);
-    const st = dragStateRef.current;
-    dragStateRef.current = null;
-    if (!st) return;
-
-    setDraftContent(prev => {
-      if (!prev[st.index]) return prev;
-      const next = [...prev];
-      const current = normalizeLayout(next[st.index].layout);
-      const snapped = constrainLayout(current, next);
-      const resolved = resolveCollisions(st.index, snapped, next);
-      next[st.index] = { ...next[st.index], layout: resolved };
-      return resolveAllCollisions(sanitizeContent(next));
-    });
-  };
-
-
   const handleSaveLayout = async () => {
     try {
-      const cleanContent = resolveAllCollisions(sanitizeContent(draftContent));
+      const cleanContent = prepareContent(draftContent, true);
       await updateSeries(currentSeries.id, {
         ...currentSeries,
         content: cleanContent,
@@ -1018,18 +908,17 @@ function SeriesDetail() {
 
   const handleResetLayout = () => {
     if (!currentSeries) return;
-    const prepared = resolveAllCollisions(sanitizeContent(currentSeries.content || []));
+    const prepared = prepareContent(currentSeries.content || [], true);
     setDraftContent(prepared);
   };
 
   const getViewportInsertPoint = () => {
     const stage = stageRef.current;
-    const canvas = canvasRef.current;
-    if (!stage || !canvas) return { x: 24, y: 24 };
+    if (!stage) return { x: 0, y: 0 };
 
     // posiziona vicino alla vista attuale
-    const x = (stage.scrollLeft || 0) + 40;
-    const y = (stage.scrollTop || 0) + 40;
+    const x = Math.max(0, Math.round(((stage.scrollLeft || 0) + 40) / GRID_STEP_X));
+    const y = Math.max(0, Math.round(((stage.scrollTop || 0) + 40) / GRID_STEP_Y));
     return { x, y };
   };
 
@@ -1090,16 +979,17 @@ function SeriesDetail() {
     const { x: rawX, y: rawY } = getViewportInsertPoint();
 
     setDraftContent((prev) => {
-      const canvasH = getCanvasHeight(prev);
-      const canvasW = CANVAS_WIDTH;
-
-      const defaultW = type === 'text' ? 560 : type === 'photo' ? 620 : 760;
-      const defaultH = type === 'text' ? 260 : type === 'photo' ? 560 : 520;
-
-      const x = clamp(snap(rawX), 0, Math.max(0, canvasW - defaultW));
-      const y = clamp(snap(rawY), 0, Math.max(0, canvasH - defaultH));
+      const defaults = getDefaultGridSize(type);
+      const id = createBlockId();
+      const layout = clampGridLayout({
+        x: rawX,
+        y: rawY,
+        w: defaults.w,
+        h: defaults.h,
+      });
 
       const block = {
+        id,
         type,
         order: prev.length,
         content:
@@ -1108,16 +998,49 @@ function SeriesDetail() {
             : type === 'photo'
               ? seriesIds[0]
               : seriesIds.slice(0, 12),
-        layout: { x, y, w: defaultW, h: defaultH },
+        layout: findAvailablePosition(layout, prev, id),
       };
 
-      return [...prev, block];
+      const next = [...prev, block];
+      setSelectedIndex(next.length - 1);
+      return next;
     });
 
-    // seleziona “l’ultimo” al prossimo render (trucco semplice)
-    setTimeout(() => setSelectedIndex((prev) => (prev === null ? 0 : prev + 1)), 0);
-
     setQuickAddOpen(false);
+  };
+
+  const handleGridLayoutChange = (layout) => {
+    const layoutById = new Map(layout.map(item => [String(item.i), item]));
+    setDraftContent(prev => prev.map((block) => {
+      const nextLayout = layoutById.get(String(block.id));
+      if (!nextLayout) return block;
+      return {
+        ...block,
+        layout: clampGridLayout({
+          x: nextLayout.x,
+          y: nextLayout.y,
+          w: nextLayout.w,
+          h: nextLayout.h,
+        }),
+      };
+    }));
+  };
+
+  const handleGridDragStart = (layout, oldItem) => {
+    const index = draftContent.findIndex(block => String(block.id) === String(oldItem.i));
+    if (index !== -1) setSelectedIndex(index);
+  };
+
+  const handleGridResizeStart = (layout, oldItem) => {
+    const index = draftContent.findIndex(block => String(block.id) === String(oldItem.i));
+    if (index !== -1) setSelectedIndex(index);
+  };
+
+  const handleCanvasPointerDown = (e) => {
+    if (!e.target.closest('.react-grid-item')) {
+      setSelectedIndex(null);
+      setQuickAddOpen(false);
+    }
   };
 
   const getCoverPhoto = () => {
@@ -1128,6 +1051,8 @@ function SeriesDetail() {
     }
     return seriesPhotos[0] || null;
   };
+
+  const viewContent = prepareContent(currentSeries?.content || [], false);
 
   if (loading) {
     return (
@@ -1161,7 +1086,7 @@ function SeriesDetail() {
 
   const hasSavedLayout =
     Array.isArray(currentSeries?.content) &&
-    currentSeries.content.some(b => b?.layout && typeof b.layout.x === "number");
+    currentSeries.content.some(b => b?.layout);
 
   const coverPhoto = getCoverPhoto();
 
@@ -1192,7 +1117,9 @@ function SeriesDetail() {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
             >
-              <span>✏️</span> Modifica
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <PencilLine size={18} /> Modifica
+              </span>
             </EditButton>
           )}
 
@@ -1230,7 +1157,9 @@ function SeriesDetail() {
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.97 }}
               >
-                ✏️ Contenuti
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                  <FileText size={16} /> Contenuti
+                </span>
               </AdminBarButton>
 
               <AdminBarButton
@@ -1239,7 +1168,10 @@ function SeriesDetail() {
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.97 }}
               >
-                {layoutMode ? '✓ Esci layout' : '↔︎ Layout (drag/resize)'}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                  {layoutMode ? <X size={16} /> : <LayoutGrid size={16} />}
+                  {layoutMode ? 'Esci layout' : 'Layout (drag/resize)'}
+                </span>
               </AdminBarButton>
 
               {layoutMode && (
@@ -1250,7 +1182,9 @@ function SeriesDetail() {
                     whileHover={{ scale: 1.03 }}
                     whileTap={{ scale: 0.97 }}
                   >
-                    Salva layout
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                      <Save size={16} /> Salva layout
+                    </span>
                   </PrimaryAdminButton>
 
                   <AdminBarButton
@@ -1259,36 +1193,23 @@ function SeriesDetail() {
                     whileHover={{ scale: 1.03 }}
                     whileTap={{ scale: 0.97 }}
                   >
-                    Reset
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                      <RotateCcw size={16} /> Reset
+                    </span>
                   </AdminBarButton>
                 </>
               )}
-              <AdminBarButton
-                type="button"
-                onClick={() => setSnapEnabled(v => !v)}
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-              >
-                Snap: {snapEnabled ? 'ON' : 'OFF'}
-              </AdminBarButton>
-
-              <AdminBarButton
-                type="button"
-                onClick={() => setShowGrid(v => !v)}
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-              >
-                Grid: {showGrid ? 'ON' : 'OFF'}
-              </AdminBarButton>
             </AdminBar>
           )}
 
           {layoutMode ? (
             <LayoutStage
               ref={stageRef}
-              onPointerDown={() => {
-                setSelectedIndex(null);
-                setQuickAddOpen(false);
+              onPointerDown={(e) => {
+                if (e.target === e.currentTarget) {
+                  setSelectedIndex(null);
+                  setQuickAddOpen(false);
+                }
               }}
             >
               <FloatingLayoutTools
@@ -1305,13 +1226,13 @@ function SeriesDetail() {
                       transition={{ duration: 0.18 }}
                     >
                       <FabItem type="button" onClick={() => addLayoutBlock('text')} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                        <FabIcon>📝</FabIcon> Testo
+                        <FabIcon><FileText size={16} /></FabIcon> Testo
                       </FabItem>
                       <FabItem type="button" onClick={() => addLayoutBlock('photo')} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                        <FabIcon>📷</FabIcon> Foto
+                        <FabIcon><ImageIcon size={16} /></FabIcon> Foto
                       </FabItem>
                       <FabItem type="button" onClick={() => addLayoutBlock('photos')} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                        <FabIcon>🧩</FabIcon> Gruppo
+                        <FabIcon><Images size={16} /></FabIcon> Gruppo
                       </FabItem>
                     </FabMenu>
                   )}
@@ -1382,146 +1303,158 @@ function SeriesDetail() {
                 )}
 
               <Canvas
-                ref={canvasRef}
-                style={{
-                  height: `${getCanvasHeight(draftContent)}px`,
-                  backgroundImage: showGrid ? undefined : 'none',
+                style={{ '--grid-step-x': `${GRID_STEP_X}px`, '--grid-step-y': `${GRID_STEP_Y}px` }}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  handleCanvasPointerDown(e);
                 }}
-                onPointerDown={(e) => e.stopPropagation()}
               >
-                {draftContent.map((block, index) => {
-                  const layout = normalizeLayout(block.layout);
-                  const isSelected = selectedIndex === index;
+                {draftContent.length === 0 && (
+                  <EmptyState>
+                    Nessun blocco ancora. Usa il pulsante + per aggiungere testo o foto e inizia a comporre la serie.
+                  </EmptyState>
+                )}
 
-                  const renderBlock = () => {
-                    if (block.type === 'text') {
-                      return selectedIndex === index ? (
-                        <SeriesText style={{ padding: 0 }}>
-                          <InlineTextEditor
-                            value={block.content}
-                            onChange={(e) => updateTextBlock(index, e.target.value)}
-                            placeholder="Scrivi qui…"
-                          />
-                        </SeriesText>
-                      ) : (
-                        <SeriesText>{block.content}</SeriesText>
-                      );
-                    }
+                <GridLayout
+                  layout={buildGridLayout(draftContent)}
+                  cols={GRID_COLS}
+                  rowHeight={ROW_HEIGHT}
+                  width={CANVAS_WIDTH}
+                  margin={[GRID_GUTTER, GRID_GUTTER]}
+                  containerPadding={[0, 0]}
+                  isResizable
+                  isDraggable
+                  preventCollision
+                  compactType={null}
+                  isBounded
+                  resizeHandles={['se', 'sw', 'ne', 'nw']}
+                  draggableHandle=".series-drag-handle"
+                  draggableCancel=".series-editable,textarea,input,button"
+                  onLayoutChange={handleGridLayoutChange}
+                  onDragStart={handleGridDragStart}
+                  onResizeStart={handleGridResizeStart}
+                >
+                  {draftContent.map((block, index) => {
+                    const isSelected = selectedIndex === index;
 
-                    if (block.type === 'photo') {
-                      const photo = photos.find(p => p.id === block.content);
-                      if (!photo) return null;
-                      return (
-                        <PhotoFrame>
-                          <CanvasPhoto
-                            src={`${IMAGES_BASE_URL}${photo.image}`}
-                            alt={photo.title}
-                            loading="lazy"
-                            onClick={() => handlePhotoClick(photo)}
-                            style={{ cursor: 'pointer' }}
-                          />
-                          {photo.title && <CanvasCaption>{photo.title}</CanvasCaption>}
-                        </PhotoFrame>
-                      );
-                    }
+                    const renderBlock = () => {
+                      if (block.type === 'text') {
+                        return selectedIndex === index ? (
+                          <SeriesText style={{ padding: 0 }}>
+                            <InlineTextEditor
+                              className="series-editable"
+                              value={block.content}
+                              onChange={(e) => updateTextBlock(index, e.target.value)}
+                              placeholder="Scrivi qui…"
+                            />
+                          </SeriesText>
+                        ) : (
+                          <SeriesText>{block.content}</SeriesText>
+                        );
+                      }
 
-                    if (block.type === 'photos') {
-                      return (
-                        <ThumbGrid>
-                          {block.content.map(photoId => {
-                            const photo = photos.find(p => p.id === photoId);
-                            return photo ? (
-                              <ThumbButton
-                                key={photo.id}
+                      if (block.type === 'photo') {
+                        const photo = photos.find(p => p.id === block.content);
+                        if (!photo) return null;
+                        return (
+                          <PhotoFrame>
+                            <CanvasPhoto
+                              src={`${IMAGES_BASE_URL}${photo.image}`}
+                              alt={photo.title}
+                              loading="lazy"
+                              onClick={() => handlePhotoClick(photo)}
+                              style={{ cursor: 'pointer' }}
+                            />
+                            {photo.title && <CanvasCaption>{photo.title}</CanvasCaption>}
+                          </PhotoFrame>
+                        );
+                      }
+
+                      if (block.type === 'photos') {
+                        const group = Array.isArray(block.content) ? block.content : [];
+                        return (
+                          <ThumbGrid>
+                            {group.map(photoId => {
+                              const photo = photos.find(p => p.id === photoId);
+                              return photo ? (
+                                <ThumbButton
+                                  key={photo.id}
+                                  type="button"
+                                  onClick={() => handlePhotoClick(photo)}
+                                  title={photo.title || ''}
+                                >
+                                  <ThumbImage
+                                    src={`${IMAGES_BASE_URL}${photo.image}`}
+                                    alt={photo.title}
+                                    loading="lazy"
+                                  />
+                                </ThumbButton>
+                              ) : null;
+                            })}
+                          </ThumbGrid>
+                        );
+                      }
+
+                      return null;
+                    };
+
+                    return (
+                      <DraggableBlock
+                        key={block.id}
+                        $selected={isSelected}
+                        $media={block.type === 'photo' || block.type === 'photos'}
+                        $plain={block.type === 'text'}
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          setSelectedIndex(index);
+                        }}
+                      >
+                        <DragHandle
+                          className="series-drag-handle"
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            setSelectedIndex(index);
+                          }}
+                        >
+                          <DragLabel>
+                            {block.type === 'text' ? 'Testo' : block.type === 'photo' ? 'Foto' : 'Gruppo foto'}
+                          </DragLabel>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <DragHint>drag • resize</DragHint>
+
+                            {isSelected && (
+                              <button
                                 type="button"
-                                onClick={() => handlePhotoClick(photo)}
-                                title={photo.title || ''}
-                              >
-                                <ThumbImage
-                                  src={`${IMAGES_BASE_URL}${photo.image}`}
-                                  alt={photo.title}
-                                  loading="lazy"
-                                />
-                              </ThumbButton>
-                            ) : null;
-                          })}
-                        </ThumbGrid>
-                      );
-                    }
-
-                    return null;
-                  };
-
-                  return (
-                    <DraggableBlock
-                      key={index}
-                      $selected={isSelected}
-                      style={{
-                        left: layout.x,
-                        top: layout.y,
-                        width: layout.w,
-                        height: layout.h,
-                      }}
-                      onPointerDown={(e) => {
-                        e.stopPropagation();
-                        setSelectedIndex(index);
-                      }}
-                    >
-                      <DragHandle onPointerDown={(e) => startDrag(index, e)}>
-                        <DragLabel>
-                          {block.type === 'text' ? 'Testo' : block.type === 'photo' ? 'Foto' : 'Gruppo foto'}
-                        </DragLabel>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <DragHint>drag • resize • frecce</DragHint>
-
-                          {isSelected && (
-                            <button
-                              type="button"
-                              onPointerDown={(e) => e.stopPropagation()}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                deleteBlock(index);
-                              }}
-                              style={{
-                                border: 'none',
-                                background: 'rgba(255,255,255,0.10)',
-                                color: 'rgba(255,255,255,0.92)',
-                                width: 30,
-                                height: 30,
-                                borderRadius: 999,
-                                cursor: 'pointer',
-                              }}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  deleteBlock(index);
+                                }}
+                                style={{
+                                  border: 'none',
+                                  background: 'rgba(255,255,255,0.10)',
+                                  color: 'rgba(255,255,255,0.92)',
+                                  width: 30,
+                                  height: 30,
+                                  borderRadius: 999,
+                                  cursor: 'pointer',
+                                }}
                               title="Elimina"
                             >
-                              🗑
+                              <Trash2 size={14} />
                             </button>
                           )}
                         </div>
-                      </DragHandle>
+                        </DragHandle>
 
-                      <BlockBody>
-                        {renderBlock()}
-                      </BlockBody>
-
-                      {isSelected && (
-                        <>
-                          {/* corners */}
-                          <ResizeHandle style={{ left: '-7px', top: '-7px', cursor: 'nwse-resize' }} onPointerDown={(e) => startResize(index, 'nw', e)} />
-                          <ResizeHandle style={{ right: '-7px', top: '-7px', cursor: 'nesw-resize' }} onPointerDown={(e) => startResize(index, 'ne', e)} />
-                          <ResizeHandle style={{ right: '-7px', bottom: '-7px', cursor: 'nwse-resize' }} onPointerDown={(e) => startResize(index, 'se', e)} />
-                          <ResizeHandle style={{ left: '-7px', bottom: '-7px', cursor: 'nesw-resize' }} onPointerDown={(e) => startResize(index, 'sw', e)} />
-
-                          {/* edges */}
-                          <ResizeHandle style={{ left: '50%', top: '-7px', transform: 'translateX(-50%)', cursor: 'ns-resize' }} onPointerDown={(e) => startResize(index, 'n', e)} />
-                          <ResizeHandle style={{ right: '-7px', top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' }} onPointerDown={(e) => startResize(index, 'e', e)} />
-                          <ResizeHandle style={{ left: '50%', bottom: '-7px', transform: 'translateX(-50%)', cursor: 'ns-resize' }} onPointerDown={(e) => startResize(index, 's', e)} />
-                          <ResizeHandle style={{ left: '-7px', top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' }} onPointerDown={(e) => startResize(index, 'w', e)} />
-                        </>
-                      )}
-                    </DraggableBlock>
-                  );
-                })}
+                        <BlockBody $flush={block.type === 'photo' || block.type === 'photos'}>
+                          {renderBlock()}
+                        </BlockBody>
+                      </DraggableBlock>
+                    );
+                  })}
+                </GridLayout>
               </Canvas>
             </LayoutStage>
           ) : (
@@ -1532,81 +1465,89 @@ function SeriesDetail() {
                     <div>
                       <Canvas
                         style={{
-                          height: `${getCanvasHeight(currentSeries.content)}px`,
                           backgroundImage: "none",
                           border: "none",
                           background: "transparent",
+                          '--grid-step-x': `${GRID_STEP_X}px`,
+                          '--grid-step-y': `${GRID_STEP_Y}px`,
                         }}
                       >
-                        {currentSeries.content.map((block, index) => {
-                          const layout = normalizeLayout(block.layout);
+                        <GridLayout
+                          layout={buildGridLayout(viewContent)}
+                          cols={GRID_COLS}
+                          rowHeight={ROW_HEIGHT}
+                          width={CANVAS_WIDTH}
+                          margin={[GRID_GUTTER, GRID_GUTTER]}
+                          containerPadding={[0, 0]}
+                          isDraggable={false}
+                          isResizable={false}
+                          compactType={null}
+                          isBounded
+                        >
+                          {viewContent.map((block) => {
+                            const renderBlock = () => {
+                              if (block.type === 'text') {
+                                return <SeriesText>{block.content}</SeriesText>;
+                              }
 
-                          const renderBlock = () => {
-                            if (block.type === 'text') {
-                              return <SeriesText>{block.content}</SeriesText>;
-                            }
+                              if (block.type === "photo") {
+                                const photo = photos.find(p => p.id === block.content);
+                                if (!photo) return null;
+                                return (
+                                  <PhotoFrame>
+                                    <CanvasPhoto
+                                      src={`${IMAGES_BASE_URL}${photo.image}`}
+                                      alt={photo.title}
+                                      loading="lazy"
+                                      onClick={() => handlePhotoClick(photo)}
+                                      style={{ cursor: "pointer" }}
+                                    />
+                                    {photo.title && <CanvasCaption>{photo.title}</CanvasCaption>}
+                                  </PhotoFrame>
+                                );
+                              }
 
-                            if (block.type === "photo") {
-                              const photo = photos.find(p => p.id === block.content);
-                              if (!photo) return null;
-                              return (
-                                <PhotoFrame>
-                                  <CanvasPhoto
-                                    src={`${IMAGES_BASE_URL}${photo.image}`}
-                                    alt={photo.title}
-                                    loading="lazy"
-                                    onClick={() => handlePhotoClick(photo)}
-                                    style={{ cursor: "pointer" }}
-                                  />
-                                  {photo.title && <CanvasCaption>{photo.title}</CanvasCaption>}
-                                </PhotoFrame>
-                              );
-                            }
+                              if (block.type === "photos") {
+                                const group = Array.isArray(block.content) ? block.content : [];
+                                return (
+                                  <ThumbGrid>
+                                    {group.map(photoId => {
+                                      const photo = photos.find(p => p.id === photoId);
+                                      return photo ? (
+                                        <ThumbButton
+                                          key={photo.id}
+                                          type="button"
+                                          onClick={() => handlePhotoClick(photo)}
+                                          title={photo.title || ''}
+                                        >
+                                          <ThumbImage
+                                            src={`${IMAGES_BASE_URL}${photo.image}`}
+                                            alt={photo.title}
+                                            loading="lazy"
+                                          />
+                                        </ThumbButton>
+                                      ) : null;
+                                    })}
+                                  </ThumbGrid>
+                                );
+                              }
 
-                            if (block.type === "photos") {
-                              return (
-                                <ThumbGrid>
-                                  {block.content.map(photoId => {
-                                    const photo = photos.find(p => p.id === photoId);
-                                    return photo ? (
-                                      <ThumbButton
-                                        key={photo.id}
-                                        type="button"
-                                        onClick={() => handlePhotoClick(photo)}
-                                        title={photo.title || ''}
-                                      >
-                                        <ThumbImage
-                                          src={`${IMAGES_BASE_URL}${photo.image}`}
-                                          alt={photo.title}
-                                          loading="lazy"
-                                        />
-                                      </ThumbButton>
-                                    ) : null;
-                                  })}
-                                </ThumbGrid>
-                              );
-                            }
+                              return null;
+                            };
 
-                            return null;
-                          };
-
-                          return (
-                            <div
-                              key={index}
-                              style={{
-                                position: "absolute",
-                                left: layout.x,
-                                top: layout.y,
-                                width: layout.w,
-                                height: layout.h,
-                                borderRadius: "var(--border-radius-xl)",
-                                overflow: "auto",
-                              }}
-                            >
-                              {renderBlock()}
-                            </div>
-                          );
-                        })}
+                            return (
+                              <DraggableBlock
+                                key={block.id}
+                                $media={block.type === 'photo' || block.type === 'photos'}
+                                $plain={block.type === 'text'}
+                              >
+                                <BlockBody $flush={block.type === 'photo' || block.type === 'photos'}>
+                                  {renderBlock()}
+                                </BlockBody>
+                              </DraggableBlock>
+                            );
+                          })}
+                        </GridLayout>
                       </Canvas>
                     </div>
                   </div>

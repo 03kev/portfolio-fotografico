@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { FileText, Image as ImageIcon, Images, Trash2 } from 'lucide-react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSeries } from '../contexts/SeriesContext';
@@ -333,6 +334,34 @@ const CheckboxLabel = styled.label`
   cursor: pointer;
 `;
 
+const MetaBar = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-xl);
+`;
+
+const StatCard = styled.div`
+  padding: var(--spacing-lg);
+  border-radius: var(--border-radius-lg);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.9);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+`;
+
+const StatLabel = styled.span`
+  font-size: var(--font-size-sm);
+  color: rgba(255,255,255,0.65);
+`;
+
+const StatValue = styled.span`
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+`;
+
 function SeriesEditor({ series, onClose }) {
   const { createSeries, updateSeries, deleteSeries } = useSeries();
   const { photos } = usePhotos();
@@ -418,10 +447,10 @@ function SeriesEditor({ series, onClose }) {
     try {
       if (series) {
         await updateSeries(series.id, formData);
-        toast.success('Serie aggiornata con successo! ✨');
+        toast.success('Serie aggiornata con successo.');
       } else {
         await createSeries(formData);
-        toast.success('Serie creata con successo! 🎉');
+        toast.success('Serie creata con successo.');
       }
       onClose();
     } catch (error) {
@@ -439,7 +468,7 @@ function SeriesEditor({ series, onClose }) {
     if (confirmed) {
       try {
         await deleteSeries(series.id);
-        toast.success('Serie eliminata con successo! 🗑️');
+        toast.success('Serie eliminata con successo.');
         onClose();
         // Naviga alla home dopo l'eliminazione
         window.location.href = '/';
@@ -476,6 +505,21 @@ function SeriesEditor({ series, onClose }) {
           </EditorHeader>
 
           <EditorBody>
+            <MetaBar>
+              <StatCard>
+                <StatLabel>Stato</StatLabel>
+                <StatValue>{formData.published ? 'Pubblicata' : 'Bozza'}</StatValue>
+              </StatCard>
+              <StatCard>
+                <StatLabel>Foto selezionate</StatLabel>
+                <StatValue>{formData.photos.length}</StatValue>
+              </StatCard>
+              <StatCard>
+                <StatLabel>Blocchi contenuto</StatLabel>
+                <StatValue>{formData.content.length}</StatValue>
+              </StatCard>
+            </MetaBar>
+
             <FormGroup>
               <Label htmlFor="title">Titolo *</Label>
               <Input
@@ -592,7 +636,10 @@ function SeriesEditor({ series, onClose }) {
                       >
                         <BlockHeader>
                           <BlockType>
-                            {block.type === 'text' ? '📝 Paragrafo' : block.type === 'photo' ? '📷 Foto' : '📷 Gruppo Foto'}
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                              {block.type === 'text' ? <FileText size={16} /> : block.type === 'photo' ? <ImageIcon size={16} /> : <Images size={16} />}
+                              {block.type === 'text' ? 'Paragrafo' : block.type === 'photo' ? 'Foto' : 'Gruppo Foto'}
+                            </span>
                           </BlockType>
                           <DeleteBlockButton
                             type="button"
@@ -674,7 +721,9 @@ function SeriesEditor({ series, onClose }) {
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                   >
-                    <span>📝</span> Aggiungi Paragrafo
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                      <FileText size={16} /> Aggiungi Paragrafo
+                    </span>
                   </AddBlockButton>
                   <AddBlockButton
                     type="button"
@@ -682,7 +731,9 @@ function SeriesEditor({ series, onClose }) {
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                   >
-                    <span>📷</span> Aggiungi Foto
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                      <ImageIcon size={16} /> Aggiungi Foto
+                    </span>
                   </AddBlockButton>
                   <AddBlockButton
                     type="button"
@@ -690,7 +741,9 @@ function SeriesEditor({ series, onClose }) {
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                   >
-                    <span>📷</span> Aggiungi Gruppo Foto
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                      <Images size={16} /> Aggiungi Gruppo Foto
+                    </span>
                   </AddBlockButton>
                 </AddBlockButtons>
               </>
@@ -705,7 +758,9 @@ function SeriesEditor({ series, onClose }) {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
               >
-                🗑️ Elimina Serie
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                  <Trash2 size={16} /> Elimina Serie
+                </span>
               </DeleteButton>
             )}
             <CancelButton

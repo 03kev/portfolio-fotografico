@@ -1596,7 +1596,7 @@ return (
     >
     <Container>
     <SectionTitle variants={itemVariants}>
-    Il Mio Mondo in 3D
+    Il Mondo in Foto
     </SectionTitle>
     
     <GlobeWrapper variants={itemVariants}>

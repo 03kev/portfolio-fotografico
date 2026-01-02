@@ -1,4 +1,6 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';import { usePhotos } from '../contexts/PhotoContext';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { AlertTriangle, FolderOpen, Globe, Loader2, MapPin, PencilLine, Save, Upload } from 'lucide-react';
+import { usePhotos } from '../contexts/PhotoContext';
 import { uploadUtils } from '../utils/api';
 import MapSelector from './MapSelector';
 import { AnimatePresence } from 'framer-motion';
@@ -406,7 +408,12 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         >
         {/* Header Modal */}
         <div className="upload-header">
-        <h2>{photoToEdit ? '✏️ Modifica Foto' : '📸 Carica Nuova Foto'}</h2>
+        <h2>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            {photoToEdit ? <PencilLine size={18} /> : <Upload size={18} />}
+            {photoToEdit ? 'Modifica Foto' : 'Carica Nuova Foto'}
+            </span>
+        </h2>
         {onClose && (
             <button
             className="close-btn"
@@ -460,7 +467,9 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                 </div>
             ) : (
                 <div className="upload-placeholder">
-                <div className="upload-icon">📁</div>
+                <div className="upload-icon">
+                  <FolderOpen size={28} />
+                </div>
                 <p>Clicca per selezionare un'immagine</p>
                 <p className="upload-hint">Formati JPG, PNG, WebP - Max 50MB</p>
                 </div>
@@ -515,7 +524,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             disabled={locationLoading || loading}
             title="Usa GPS"
             >
-            {locationLoading ? '⏳' : '📍'}
+            {locationLoading ? <Loader2 size={16} /> : <MapPin size={16} />}
             </button>
             <button
             className="location-btn map-btn"
@@ -523,7 +532,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             disabled={loading}
             title="Mappa"
             >
-            🌍
+            <Globe size={16} />
             </button>
             </div>
             <div className="coordinates-group">
@@ -654,7 +663,9 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         {/* Messaggio di errore (se presente) */}
         {error && (
             <div className="error-message">
-            ⚠️ {error}
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <AlertTriangle size={16} /> {error}
+            </span>
             </div>
         )}
         
@@ -693,7 +704,12 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             onClick={handleUpload}
             disabled={loading || (!selectedFile && !photoToEdit)}
             >
-            {loading ? (photoToEdit ? '💾 Salvataggio...' : '📤 Caricamento...') : (photoToEdit ? '💾 Salva Modifiche' : '📸 Carica Foto')}
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                {loading ? <Loader2 size={16} /> : photoToEdit ? <Save size={16} /> : <Upload size={16} />}
+                {loading
+                  ? (photoToEdit ? 'Salvataggio...' : 'Caricamento...')
+                  : (photoToEdit ? 'Salva Modifiche' : 'Carica Foto')}
+            </span>
             </button>
             {onClose && (
                 <button 

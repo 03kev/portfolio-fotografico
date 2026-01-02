@@ -47,6 +47,8 @@
   },
   "homepage": "https://github.com/tuousername/portfolio-fotografico#readme",
   "dependencies": {
+    "react-grid-layout": "^2.2.2",
+    "react-moveable": "^0.56.0",
     "three-slippy-map-globe": "^1.0.3"
   }
 }
