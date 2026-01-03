@@ -18,8 +18,8 @@
         "layout": {
           "x": 0,
           "y": 0,
-          "w": 9,
-          "h": 27,
+          "w": 11,
+          "h": 29,
           "unit": "grid",
           "gridVersion": 2
         },
@@ -27,31 +27,43 @@
         "showTitle": true
       },
       {
-        "type": "text",
-        "order": 1,
-        "content": "Prova\n",
-        "layout": {
-          "x": 14,
-          "y": 32,
-          "w": 10,
-          "h": 9,
-          "unit": "grid",
-          "gridVersion": 2
-        },
-        "id": "block-153a0431bdfe18-mjxbzxns"
-      },
-      {
         "id": "block-932a3a1d62ed88-mjxc3dt7",
         "type": "photos",
         "order": 2,
         "content": [
-          1767351827175
+          {
+            "id": 1767354244527,
+            "layout": {
+              "x": 2,
+              "y": 0,
+              "w": 4,
+              "h": 6
+            }
+          },
+          {
+            "id": 1767351827175,
+            "layout": {
+              "x": 0,
+              "y": 1,
+              "w": 2,
+              "h": 2
+            }
+          },
+          {
+            "id": 1767357918231,
+            "layout": {
+              "x": 0,
+              "y": 3,
+              "w": 2,
+              "h": 2
+            }
+          }
         ],
         "layout": {
-          "x": 14,
-          "y": 41,
-          "w": 10,
-          "h": 17,
+          "x": 8,
+          "y": 35,
+          "w": 11,
+          "h": 20,
           "unit": "grid",
           "gridVersion": 2
         }
@@ -62,25 +74,25 @@
         "order": 3,
         "content": 1767357918231,
         "layout": {
-          "x": 2,
-          "y": 57,
+          "x": 11,
+          "y": 5,
           "w": 10,
-          "h": 26,
+          "h": 27,
           "unit": "grid",
           "gridVersion": 2
         },
-        "showTitle": false
+        "showTitle": true
       },
       {
         "type": "text",
-        "content": "Varsavia rimane NEBBIA",
+        "content": "Le forme della città svaniscono, avvolte nella nebbia",
         "order": 4,
         "id": "block-98446c0cc2487-mjxcm9lz",
         "layout": {
-          "x": 0,
-          "y": 32,
+          "x": 11,
+          "y": 0,
           "w": 10,
-          "h": 9,
+          "h": 5,
           "unit": "grid",
           "gridVersion": 2
         }
@@ -88,6 +100,6 @@
     ],
     "published": true,
     "createdAt": "2026-01-02T00:34:11.494Z",
-    "updatedAt": "2026-01-02T23:49:30.261Z"
+    "updatedAt": "2026-01-03T01:07:23.518Z"
   }
 ]

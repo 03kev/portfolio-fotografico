@@ -368,7 +368,7 @@ const InspectorHint = styled.div`
 const BlockBody = styled.div`
   width: 100%;
   height: calc(100% - 38px);
-  overflow: ${p => (p.$flush ? 'hidden' : 'auto')};
+  overflow: hidden;
   padding: ${p => (p.$flush ? '0' : 'var(--spacing-md)')};
 `;
 
@@ -461,7 +461,7 @@ const InlineTextEditor = styled.textarea`
   line-height: 1.75;
   letter-spacing: 0.02em;
   text-transform: none;
-  padding: var(--spacing-lg);
+  padding: var(--spacing-md);
   font-family: inherit;
   box-sizing: border-box;
   overflow: auto;
@@ -470,7 +470,6 @@ const InlineTextEditor = styled.textarea`
 const SeriesText = styled.div`
   width: 100%;
   height: 100%;
-  padding: var(--spacing-lg);
   color: rgba(255, 255, 255, 0.68);
   font-size: var(--font-size-sm);
   line-height: 1.75;
@@ -478,10 +477,11 @@ const SeriesText = styled.div`
   text-transform: none;
   white-space: pre-wrap;
   box-sizing: border-box;
-  overflow: auto;
+  overflow: hidden;
 
   background: transparent;
   border-radius: 0;
+  padding: var(--spacing-md);
 `;
 
 const PhotoFrame = styled.figure`
@@ -515,12 +515,17 @@ const CanvasCaption = styled.figcaption`
   text-align: center;
 `;
 
-const ThumbGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: var(--spacing-md);
-  padding: var(--spacing-sm);
-  align-content: start;
+const GroupGrid = styled.div`
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+`;
+
+const GroupItem = styled.div`
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: var(--border-radius-lg);
 `;
 
 const ThumbButton = styled.button`
@@ -531,6 +536,9 @@ const ThumbButton = styled.button`
   padding: 0;
   overflow: hidden;
   cursor: pointer;
+  width: 100%;
+  height: 100%;
+  display: block;
 
   &:hover {
     filter: brightness(1.05);
@@ -539,7 +547,7 @@ const ThumbButton = styled.button`
 
 const ThumbImage = styled.img`
   width: 100%;
-  height: 140px;
+  height: 100%;
   object-fit: contain;
   display: block;
   background: transparent;
@@ -716,6 +724,14 @@ function SeriesDetail() {
   const GRID_GUTTER = 8;
   const BASE_GRID_ROWS = 24;
   const GRID_ROW_BUFFER = 6;
+  const TEXT_MIN_H_ROWS = 2;
+  const GROUP_GRID_COLS = 6;
+  const GROUP_ROW_HEIGHT = 70;
+  const GROUP_GUTTER = 8;
+  const GROUP_MIN_W = 1;
+  const GROUP_MIN_H = 1;
+  const GROUP_DEFAULT_W = 2;
+  const GROUP_DEFAULT_H = 2;
   const LEGACY_GRID_COLS = 12;
   const LEGACY_ROW_HEIGHT = 24;
   const LEGACY_GRID_GUTTER = 12;
@@ -785,6 +801,8 @@ function SeriesDetail() {
 
   const clamp = (v, min, max) => Math.max(min, Math.min(v, max));
 
+  const getBlockMinRows = (type) => (type === 'text' ? TEXT_MIN_H_ROWS : MIN_H_ROWS);
+
   const scaleGridLayout = (layout, scaleX, scaleY) => ({
     x: Math.max(0, Math.round((layout.x ?? 0) * scaleX)),
     y: Math.max(0, Math.round((layout.y ?? 0) * scaleY)),
@@ -828,9 +846,9 @@ function SeriesDetail() {
   const pxToColSpan = (px) => Math.max(1, Math.round((px + GRID_GUTTER) / GRID_STEP_X));
   const pxToRowSpan = (px) => Math.max(1, Math.round((px + GRID_GUTTER) / GRID_STEP_Y));
 
-  const clampGridLayout = (layout) => {
+  const clampGridLayout = (layout, minRows = MIN_H_ROWS) => {
     const w = clamp(layout.w || MIN_W_COLS, MIN_W_COLS, GRID_COLS);
-    const h = Math.max(layout.h || MIN_H_ROWS, MIN_H_ROWS);
+    const h = Math.max(layout.h || minRows, minRows);
     const x = clamp(layout.x || 0, 0, GRID_COLS - w);
     const y = Math.max(layout.y || 0, 0);
     return { x, y, w, h, unit: 'grid', gridVersion: GRID_VERSION };
@@ -873,13 +891,16 @@ function SeriesDetail() {
         layout = { x: 0, y: yCursor, w: defaults.w, h: defaults.h };
       }
 
-      const clamped = clampGridLayout(layout);
+      const clamped = clampGridLayout(layout, getBlockMinRows(block.type));
       const placed = findAvailablePosition(clamped, nextContent, id);
       yCursor = Math.max(yCursor, placed.y + placed.h + 1);
 
       const nextBlock = { ...block, id, layout: placed };
       if (block.type === 'photo' && typeof block.showTitle !== 'boolean') {
         nextBlock.showTitle = true;
+      }
+      if (block.type === 'photos') {
+        nextBlock.content = prepareGroupItems(block.content || []);
       }
       nextContent.push(nextBlock);
     });
@@ -889,12 +910,13 @@ function SeriesDetail() {
 
   const buildGridLayout = (content = []) =>
     (content || []).map((block) => {
+      const minRows = getBlockMinRows(block.type);
       const clamped = clampGridLayout({
         x: block.layout?.x ?? 0,
         y: block.layout?.y ?? 0,
         w: block.layout?.w ?? MIN_W_COLS,
-        h: block.layout?.h ?? MIN_H_ROWS,
-      });
+        h: block.layout?.h ?? minRows,
+      }, minRows);
 
       return {
         i: String(block.id),
@@ -903,7 +925,44 @@ function SeriesDetail() {
         w: clamped.w,
         h: clamped.h,
         minW: MIN_W_COLS,
-        minH: MIN_H_ROWS,
+        minH: minRows,
+      };
+    });
+
+  const getBlockPixelWidth = (layout) => {
+    const w = layout?.w ?? MIN_W_COLS;
+    return Math.round(COL_WIDTH * w + Math.max(0, w - 1) * GRID_GUTTER);
+  };
+
+  const getBlockPixelHeight = (layout) => {
+    const h = layout?.h ?? MIN_H_ROWS;
+    return Math.round(ROW_HEIGHT * h + Math.max(0, h - 1) * GRID_GUTTER);
+  };
+
+  const getGroupMaxRows = (layout) => {
+    const height = getBlockPixelHeight(layout);
+    return Math.max(1, Math.floor((height + GROUP_GUTTER) / (GROUP_ROW_HEIGHT + GROUP_GUTTER)));
+  };
+
+  const buildGroupLayout = (items = [], maxRows) =>
+    (items || []).map((item) => {
+      const clamped = clampGroupLayout({
+        x: item.layout?.x ?? 0,
+        y: item.layout?.y ?? 0,
+        w: item.layout?.w ?? GROUP_DEFAULT_W,
+        h: item.layout?.h ?? GROUP_DEFAULT_H,
+      }, maxRows);
+
+      return {
+        i: String(item.id),
+        x: clamped.x,
+        y: clamped.y,
+        w: clamped.w,
+        h: clamped.h,
+        minW: GROUP_MIN_W,
+        minH: GROUP_MIN_H,
+        maxW: GROUP_GRID_COLS,
+        maxH: maxRows,
       };
     });
 
@@ -946,6 +1005,78 @@ function SeriesDetail() {
       guard -= 1;
     }
     return next;
+  };
+
+  const getGroupItemId = (item, index) => {
+    if (item && typeof item === 'object') {
+      return item.id ?? item.photoId ?? item._id ?? item.uid ?? item;
+    }
+    return item ?? `photo-${index}`;
+  };
+
+  const clampGroupLayout = (layout, maxRows) => {
+    const w = clamp(layout.w || GROUP_DEFAULT_W, GROUP_MIN_W, GROUP_GRID_COLS);
+    const h = Math.max(layout.h || GROUP_DEFAULT_H, GROUP_MIN_H);
+    const x = clamp(layout.x || 0, 0, GROUP_GRID_COLS - w);
+    const maxRow = typeof maxRows === 'number' ? Math.max(0, maxRows - h) : null;
+    const y = maxRow === null ? Math.max(layout.y || 0, 0) : clamp(layout.y || 0, 0, maxRow);
+    return { x, y, w, h };
+  };
+
+  const hasGroupOverlap = (layout, items, ignoreId) => {
+    return (items || []).some((b) => {
+      if (String(b.id) === String(ignoreId)) return false;
+      const other = b.layout;
+      if (!other) return false;
+      return !(
+        layout.x + layout.w <= other.x ||
+        layout.x >= other.x + other.w ||
+        layout.y + layout.h <= other.y ||
+        layout.y >= other.y + other.h
+      );
+    });
+  };
+
+  const findAvailableGroupPosition = (layout, items, ignoreId) => {
+    let next = { ...layout };
+    let guard = 200;
+    while (hasGroupOverlap(next, items, ignoreId) && guard > 0) {
+      next = { ...next, y: next.y + 1 };
+      guard -= 1;
+    }
+    return next;
+  };
+
+  const prepareGroupItems = (content = []) => {
+    let yCursor = 0;
+    const items = [];
+
+    (content || []).forEach((item, index) => {
+      const id = getGroupItemId(item, index);
+      if (id === undefined || id === null) return;
+      const base = item && typeof item === 'object' ? { ...item } : {};
+      const baseLayout = base.layout || null;
+      const layout = baseLayout
+        ? {
+          x: baseLayout.x ?? 0,
+          y: baseLayout.y ?? yCursor,
+          w: baseLayout.w ?? GROUP_DEFAULT_W,
+          h: baseLayout.h ?? GROUP_DEFAULT_H,
+        }
+        : {
+          x: 0,
+          y: yCursor,
+          w: GROUP_DEFAULT_W,
+          h: GROUP_DEFAULT_H,
+        };
+
+      const clamped = clampGroupLayout(layout);
+      const placed = findAvailableGroupPosition(clamped, items, id);
+      yCursor = Math.max(yCursor, placed.y + placed.h + 1);
+      items.push({ ...base, id, layout: placed });
+    });
+
+    return items;
   };
 
   const handlePhotoClick = (photo) => {
@@ -1022,10 +1153,51 @@ function SeriesDetail() {
       const next = [...prev];
       const b = { ...next[selectedIndex] };
       if (b.type !== 'photos') return prev;
-      const arr = Array.isArray(b.content) ? b.content : [];
-      const has = arr.includes(photoId);
-      b.content = has ? arr.filter(id => id !== photoId) : [...arr, photoId];
+      const items = prepareGroupItems(b.content || []);
+      const ids = items.map(item => item.id);
+      const has = ids.includes(photoId);
+      let nextItems = items;
+      if (has) {
+        nextItems = items.filter(item => item.id !== photoId);
+      } else {
+        const yCursor = items.reduce(
+          (max, item) => Math.max(max, item.layout.y + item.layout.h + 1),
+          0
+        );
+        const layout = findAvailableGroupPosition(
+          clampGroupLayout({ x: 0, y: yCursor, w: GROUP_DEFAULT_W, h: GROUP_DEFAULT_H }),
+          items,
+          photoId
+        );
+        nextItems = [...items, { id: photoId, layout }];
+      }
+      b.content = nextItems;
       next[selectedIndex] = b;
+      return next;
+    });
+  };
+
+  const handleGroupLayoutChange = (blockIndex, maxRows) => (layout) => {
+    const layoutById = new Map(layout.map(item => [String(item.i), item]));
+    setDraftContent((prev) => {
+      const next = [...prev];
+      const block = next[blockIndex];
+      if (!block || block.type !== 'photos') return prev;
+      const items = prepareGroupItems(block.content || []);
+      const updated = items.map((item) => {
+        const nextLayout = layoutById.get(String(item.id));
+        if (!nextLayout) return item;
+        return {
+          ...item,
+          layout: clampGroupLayout({
+            x: nextLayout.x,
+            y: nextLayout.y,
+            w: nextLayout.w,
+            h: nextLayout.h,
+          }, maxRows),
+        };
+      });
+      next[blockIndex] = { ...block, content: updated };
       return next;
     });
   };
@@ -1055,12 +1227,13 @@ function SeriesDetail() {
     setDraftContent((prev) => {
       const defaults = getDefaultGridSize(type);
       const id = createBlockId();
+      const minRows = getBlockMinRows(type);
       const layout = clampGridLayout({
         x: rawX,
         y: rawY,
         w: defaults.w,
         h: defaults.h,
-      });
+      }, minRows);
 
       const block = {
         id,
@@ -1071,7 +1244,7 @@ function SeriesDetail() {
             ? 'Scrivi qui…'
             : type === 'photo'
               ? seriesIds[0]
-              : seriesIds.slice(0, 12),
+              : prepareGroupItems(seriesIds.slice(0, 12)),
         layout: findAvailablePosition(layout, prev, id),
       };
       if (type === 'photo') {
@@ -1091,6 +1264,7 @@ function SeriesDetail() {
     setDraftContent(prev => prev.map((block) => {
       const nextLayout = layoutById.get(String(block.id));
       if (!nextLayout) return block;
+      const minRows = getBlockMinRows(block.type);
       return {
         ...block,
         layout: clampGridLayout({
@@ -1098,7 +1272,7 @@ function SeriesDetail() {
           y: nextLayout.y,
           w: nextLayout.w,
           h: nextLayout.h,
-        }),
+        }, minRows),
       };
     }));
   };
@@ -1148,6 +1322,11 @@ function SeriesDetail() {
   };
 
   const viewContent = prepareContent(currentSeries?.content || [], false);
+  const selectedBlock = selectedIndex !== null ? draftContent[selectedIndex] : null;
+  const selectedGroupIds =
+    selectedBlock?.type === 'photos'
+      ? prepareGroupItems(selectedBlock.content || []).map(item => item.id)
+      : [];
   const gridRows = Math.max(getGridRows(draftContent), gridRowsOverride || 0);
   const gridCanvasHeight = gridRows * GRID_STEP_Y - GRID_GUTTER;
 
@@ -1324,17 +1503,16 @@ function SeriesDetail() {
                 </FabButton>
               </FloatingLayoutTools>
 
-              {selectedIndex !== null &&
-                draftContent[selectedIndex] &&
-                (draftContent[selectedIndex].type === 'photo' || draftContent[selectedIndex].type === 'photos') && (
+              {selectedBlock &&
+                (selectedBlock.type === 'photo' || selectedBlock.type === 'photos') && (
                   <Inspector onPointerDown={(e) => e.stopPropagation()}>
                     <InspectorTitle>
                       <div>
                         <InspectorHeading>
-                          {draftContent[selectedIndex].type === 'photo' ? 'Scegli foto' : 'Scegli foto del gruppo'}
+                          {selectedBlock.type === 'photo' ? 'Scegli foto' : 'Scegli foto del gruppo'}
                         </InspectorHeading>
                         <InspectorSmall>
-                          {draftContent[selectedIndex].type === 'photo'
+                          {selectedBlock.type === 'photo'
                             ? 'Clicca una miniatura per sostituire'
                             : 'Clicca per aggiungere/rimuovere'}
                         </InspectorSmall>
@@ -1347,10 +1525,9 @@ function SeriesDetail() {
                     <InspectorGrid>
                       {seriesPhotos.map((p) => {
                         const isActive =
-                          draftContent[selectedIndex].type === 'photo'
-                            ? draftContent[selectedIndex].content === p.id
-                            : (Array.isArray(draftContent[selectedIndex].content) &&
-                              draftContent[selectedIndex].content.includes(p.id));
+                          selectedBlock.type === 'photo'
+                            ? selectedBlock.content === p.id
+                            : selectedGroupIds.includes(p.id);
 
                         return (
                           <InspectorThumb
@@ -1358,7 +1535,7 @@ function SeriesDetail() {
                             type="button"
                             $active={isActive}
                             onClick={() => {
-                              if (draftContent[selectedIndex].type === 'photo') setSelectedPhoto(p.id);
+                              if (selectedBlock.type === 'photo') setSelectedPhoto(p.id);
                               else toggleSelectedPhotoInGroup(p.id);
                             }}
                             title={p.title || ''}
@@ -1464,27 +1641,46 @@ function SeriesDetail() {
                       }
 
                       if (block.type === 'photos') {
-                        const group = Array.isArray(block.content) ? block.content : [];
+                        const groupItems = prepareGroupItems(block.content || []);
+                        const groupMaxRows = getGroupMaxRows(block.layout);
+                        const groupWidth = getBlockPixelWidth(block.layout);
+                        const groupHeight = getBlockPixelHeight(block.layout);
+
                         return (
-                          <ThumbGrid>
-                            {group.map(photoId => {
-                              const photo = photos.find(p => p.id === photoId);
-                              return photo ? (
-                                <ThumbButton
-                                  key={photo.id}
-                                  type="button"
-                                  onClick={() => handlePhotoClick(photo)}
-                                  title={photo.title || ''}
-                                >
-                                  <ThumbImage
-                                    src={`${IMAGES_BASE_URL}${photo.image}`}
-                                    alt={photo.title}
-                                    loading="lazy"
-                                  />
-                                </ThumbButton>
-                              ) : null;
-                            })}
-                          </ThumbGrid>
+                          <GroupGrid>
+                            <GridLayout
+                              layout={buildGroupLayout(groupItems, groupMaxRows)}
+                              cols={GROUP_GRID_COLS}
+                              rowHeight={GROUP_ROW_HEIGHT}
+                              width={groupWidth}
+                              margin={[GROUP_GUTTER, GROUP_GUTTER]}
+                              containerPadding={[0, 0]}
+                              autoSize={false}
+                              maxRows={groupMaxRows}
+                              style={{ height: groupHeight }}
+                              isResizable
+                              isDraggable
+                              preventCollision
+                              compactType={null}
+                              isBounded
+                              resizeHandles={['se', 'sw', 'ne', 'nw']}
+                              onLayoutChange={handleGroupLayoutChange(index, groupMaxRows)}
+                            >
+                              {groupItems.map((item) => {
+                                const photo = photos.find(p => p.id === item.id);
+                                if (!photo) return null;
+                                return (
+                                  <GroupItem key={item.id}>
+                                    <ThumbImage
+                                      src={`${IMAGES_BASE_URL}${photo.image}`}
+                                      alt={photo.title}
+                                      loading="lazy"
+                                    />
+                                  </GroupItem>
+                                );
+                              })}
+                            </GridLayout>
+                          </GroupGrid>
                         );
                       }
 
@@ -1630,27 +1826,48 @@ function SeriesDetail() {
                               }
 
                               if (block.type === "photos") {
-                                const group = Array.isArray(block.content) ? block.content : [];
+                                const groupItems = prepareGroupItems(block.content || []);
+                                const groupMaxRows = getGroupMaxRows(block.layout);
+                                const groupWidth = getBlockPixelWidth(block.layout);
+                                const groupHeight = getBlockPixelHeight(block.layout);
+
                                 return (
-                                  <ThumbGrid>
-                                    {group.map(photoId => {
-                                      const photo = photos.find(p => p.id === photoId);
-                                      return photo ? (
-                                        <ThumbButton
-                                          key={photo.id}
-                                          type="button"
-                                          onClick={() => handlePhotoClick(photo)}
-                                          title={photo.title || ''}
-                                        >
-                                          <ThumbImage
-                                            src={`${IMAGES_BASE_URL}${photo.image}`}
-                                            alt={photo.title}
-                                            loading="lazy"
-                                          />
-                                        </ThumbButton>
-                                      ) : null;
-                                    })}
-                                  </ThumbGrid>
+                                  <GroupGrid>
+                                    <GridLayout
+                                      layout={buildGroupLayout(groupItems, groupMaxRows)}
+                                      cols={GROUP_GRID_COLS}
+                                      rowHeight={GROUP_ROW_HEIGHT}
+                                      width={groupWidth}
+                                      margin={[GROUP_GUTTER, GROUP_GUTTER]}
+                                      containerPadding={[0, 0]}
+                                      autoSize={false}
+                                      maxRows={groupMaxRows}
+                                      style={{ height: groupHeight }}
+                                      isResizable={false}
+                                      isDraggable={false}
+                                      compactType={null}
+                                      isBounded
+                                    >
+                                      {groupItems.map((item) => {
+                                        const photo = photos.find(p => p.id === item.id);
+                                        return photo ? (
+                                          <GroupItem key={item.id}>
+                                            <ThumbButton
+                                              type="button"
+                                              onClick={() => handlePhotoClick(photo)}
+                                              title={photo.title || ''}
+                                            >
+                                              <ThumbImage
+                                                src={`${IMAGES_BASE_URL}${photo.image}`}
+                                                alt={photo.title}
+                                                loading="lazy"
+                                              />
+                                            </ThumbButton>
+                                          </GroupItem>
+                                        ) : null;
+                                      })}
+                                    </GridLayout>
+                                  </GroupGrid>
                                 );
                               }
 
