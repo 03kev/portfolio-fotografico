@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -186,39 +186,51 @@ const LayoutStage = styled.div`
   min-height: 70vh;
   border-radius: var(--border-radius-xl);
   background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.02) 100%);
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0;
+  border: none;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 18px 36px rgba(0,0,0,0.28);
+`;
+
+const CanvasFrame = styled.div`
+  width: 100%;
   padding: var(--spacing-lg);
-  border: 1px solid rgba(255,255,255,0.06);
-  box-shadow: 0 18px 36px rgba(0,0,0,0.28);
+  box-sizing: border-box;
+  border-radius: var(--border-radius-xl);
+  box-shadow: ${props => (props.$showBorder ? '0 0 0 1px rgba(255,255,255,0.08)' : 'none')};
 `;
 
 const Canvas = styled.div`
   position: relative;
   width: var(--canvas-width, 1200px);
+  max-width: 100%;
   margin: 0 auto;
   border-radius: var(--border-radius-xl);
   background: transparent;
+  z-index: 0;
+
+  .react-grid-item {
+    transition: none !important;
+  }
 
   background-image: ${props => (props.$showGrid ? `
     linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px),
-    linear-gradient(to right, transparent calc(100% - 1px), rgba(255,255,255,0.06) calc(100% - 1px)),
-    linear-gradient(to bottom, transparent calc(100% - 1px), rgba(255,255,255,0.06) calc(100% - 1px))
+    linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px)
   ` : 'none')};
   background-size:
     var(--grid-step-x, 100px) var(--grid-step-y, 24px),
-    var(--grid-step-x, 100px) var(--grid-step-y, 24px),
-    100% 100%,
-    100% 100%;
-  background-position: 0 0, 0 0, 0 0, 0 0;
-  background-repeat: repeat, repeat, no-repeat, no-repeat;
+    var(--grid-step-x, 100px) var(--grid-step-y, 24px);
+  background-position: 0 0, 0 0;
+  background-repeat: repeat, repeat;
+  box-shadow: ${props => (props.$showGrid ? '0 0 0 1px rgba(255,255,255,0.08)' : 'none')};
 `;
 
 const DraggableBlock = styled.div`
   position: relative;
   width: 100%;
   height: 100%;
-  border-radius: var(--border-radius-xl);
+  border-radius: ${props => (props.$media ? '0' : 'var(--border-radius-xl)')};
   border: 1px solid ${props => (
     props.$editing
       ? 'rgba(255, 255, 255, 0.08)'
@@ -535,7 +547,7 @@ const CanvasPhoto = styled.img`
   max-height: 100%;
   object-fit: contain;
   display: block;
-  border-radius: var(--border-radius-xl);
+  border-radius: 0;
   background: transparent;
 `;
 
@@ -558,7 +570,7 @@ const GroupItem = styled.div`
   width: 100%;
   height: 100%;
   overflow: hidden;
-  border-radius: var(--border-radius-lg);
+  border-radius: 0;
 `;
 
 const ThumbButton = styled.button`
@@ -584,7 +596,7 @@ const ThumbImage = styled.img`
   object-fit: contain;
   display: block;
   background: transparent;
-  border-radius: var(--border-radius-lg);
+  border-radius: 0;
 `;
 
 const ClassicFigure = styled.figure`
@@ -746,12 +758,12 @@ function SeriesDetail() {
   const [draftContent, setDraftContent] = useState([]);
   const [lightboxPhoto, setLightboxPhoto] = useState(null);
   const stageRef = useRef(null);
+  const canvasFrameRef = useRef(null);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(null);
   const [gridRowsOverride, setGridRowsOverride] = useState(null);
   const CANVAS_MAX_WIDTH = 1200;
   const [canvasWidth, setCanvasWidth] = useState(CANVAS_MAX_WIDTH);
-  const viewWrapRef = useRef(null);
   const GRID_VERSION = 2;
   const GRID_COLS = 24;
   const ROW_HEIGHT = 16;
@@ -810,10 +822,11 @@ function SeriesDetail() {
     setDraftContent(prepared);
   }, [currentSeries]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const container = canvasFrameRef.current;
+    if (!container) return;
+
     const updateWidth = () => {
-      const container = layoutMode ? stageRef.current : viewWrapRef.current;
-      if (!container) return;
       const styles = window.getComputedStyle(container);
       const paddingX =
         parseFloat(styles.paddingLeft || '0') + parseFloat(styles.paddingRight || '0');
@@ -824,8 +837,22 @@ function SeriesDetail() {
     };
 
     updateWidth();
-    window.addEventListener('resize', updateWidth);
-    return () => window.removeEventListener('resize', updateWidth);
+
+    let observer;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(() => updateWidth());
+      observer.observe(container);
+    } else {
+      window.addEventListener('resize', updateWidth);
+    }
+
+    return () => {
+      if (observer) {
+        observer.disconnect();
+      } else {
+        window.removeEventListener('resize', updateWidth);
+      }
+    };
   }, [layoutMode, CANVAS_MAX_WIDTH, currentSeries]);
 
   const clamp = (v, min, max) => Math.max(min, Math.min(v, max));
@@ -1489,474 +1516,494 @@ function SeriesDetail() {
             </AdminBar>
           )}
 
-          {layoutMode ? (
-            <LayoutStage
-              ref={stageRef}
-              onPointerDown={(e) => {
-                if (e.target === e.currentTarget) {
-                  setSelectedIndex(null);
-                  setQuickAddOpen(false);
-                }
-              }}
-            >
-              <FloatingLayoutTools
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                }}
+          <AnimatePresence mode="wait" initial={false}>
+            {layoutMode ? (
+              <motion.div
+                key="layout"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
               >
-                <AnimatePresence>
-                  {quickAddOpen && (
-                    <FabMenu
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 10 }}
-                      transition={{ duration: 0.18 }}
+                <LayoutStage
+                  ref={stageRef}
+                  onPointerDown={(e) => {
+                    if (e.target === e.currentTarget) {
+                      setSelectedIndex(null);
+                      setQuickAddOpen(false);
+                    }
+                  }}
+                >
+                  <FloatingLayoutTools
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                    }}
+                  >
+                    <AnimatePresence>
+                      {quickAddOpen && (
+                        <FabMenu
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 10 }}
+                          transition={{ duration: 0.18 }}
+                        >
+                          <FabItem type="button" onClick={() => addLayoutBlock('text')} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                            <FabIcon><FileText size={16} /></FabIcon> Testo
+                          </FabItem>
+                          <FabItem type="button" onClick={() => addLayoutBlock('photo')} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                            <FabIcon><ImageIcon size={16} /></FabIcon> Foto
+                          </FabItem>
+                          <FabItem type="button" onClick={() => addLayoutBlock('photos')} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                            <FabIcon><Images size={16} /></FabIcon> Gruppo
+                          </FabItem>
+                        </FabMenu>
+                      )}
+                    </AnimatePresence>
+
+                    <FabButton type="button" onClick={() => setQuickAddOpen(v => !v)} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                      <span style={{ lineHeight: 1, transform: 'translateY(-1px)' }}>
+                        {quickAddOpen ? '×' : '+'}
+                      </span>
+                    </FabButton>
+                  </FloatingLayoutTools>
+
+                  {selectedBlock &&
+                    (selectedBlock.type === 'photo' || selectedBlock.type === 'photos') && (
+                      <Inspector onPointerDown={(e) => e.stopPropagation()}>
+                        <InspectorTitle>
+                          <div>
+                            <InspectorHeading>
+                              {selectedBlock.type === 'photo' ? 'Scegli foto' : 'Scegli foto del gruppo'}
+                            </InspectorHeading>
+                            <InspectorSmall>
+                              {selectedBlock.type === 'photo'
+                                ? 'Clicca una miniatura per sostituire'
+                                : 'Clicca per aggiungere/rimuovere'}
+                            </InspectorSmall>
+                          </div>
+                          <InspectorClose type="button" onClick={() => setSelectedIndex(null)}>
+                            ✕
+                          </InspectorClose>
+                        </InspectorTitle>
+
+                        <InspectorGrid>
+                          {seriesPhotos.map((p) => {
+                            const isActive =
+                              selectedBlock.type === 'photo'
+                                ? selectedBlock.content === p.id
+                                : selectedGroupIds.includes(p.id);
+
+                            return (
+                              <InspectorThumb
+                                key={p.id}
+                                type="button"
+                                $active={isActive}
+                                onClick={() => {
+                                  if (selectedBlock.type === 'photo') setSelectedPhoto(p.id);
+                                  else toggleSelectedPhotoInGroup(p.id);
+                                }}
+                                title={p.title || ''}
+                              >
+                                <InspectorImg
+                                  src={`${IMAGES_BASE_URL}${p.thumbnail || p.image}`}
+                                  alt={p.title}
+                                  loading="lazy"
+                                />
+                                {isActive && <InspectorBadge>✓</InspectorBadge>}
+                              </InspectorThumb>
+                            );
+                          })}
+                        </InspectorGrid>
+
+                        <InspectorDivider />
+                        <InspectorHint>
+                          Qui scegli solo tra le foto già aggiunte alla serie (in <b>Contenuti</b>).
+                        </InspectorHint>
+                      </Inspector>
+                    )}
+
+                  <CanvasFrame ref={canvasFrameRef} $showBorder>
+                    <Canvas
+                      $showGrid
+                      style={{
+                        '--canvas-width': `${canvasWidth}px`,
+                        '--grid-step-x': `${GRID_STEP_X}px`,
+                        '--grid-step-y': `${GRID_STEP_Y}px`,
+                        minHeight: `${gridCanvasHeight}px`,
+                        height: `${gridCanvasHeight}px`,
+                      }}
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        handleCanvasPointerDown(e);
+                      }}
                     >
-                      <FabItem type="button" onClick={() => addLayoutBlock('text')} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                        <FabIcon><FileText size={16} /></FabIcon> Testo
-                      </FabItem>
-                      <FabItem type="button" onClick={() => addLayoutBlock('photo')} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                        <FabIcon><ImageIcon size={16} /></FabIcon> Foto
-                      </FabItem>
-                      <FabItem type="button" onClick={() => addLayoutBlock('photos')} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                        <FabIcon><Images size={16} /></FabIcon> Gruppo
-                      </FabItem>
-                    </FabMenu>
-                  )}
-                </AnimatePresence>
+                      {draftContent.length === 0 && (
+                        <EmptyState>
+                          Nessun blocco ancora. Usa il pulsante + per aggiungere testo o foto e inizia a comporre la serie.
+                        </EmptyState>
+                      )}
 
-                <FabButton type="button" onClick={() => setQuickAddOpen(v => !v)} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                  <span style={{ lineHeight: 1, transform: 'translateY(-1px)' }}>
-                    {quickAddOpen ? '×' : '+'}
-                  </span>
-                </FabButton>
-              </FloatingLayoutTools>
+                      <GridLayout
+                        layout={buildGridLayout(draftContent)}
+                        cols={GRID_COLS}
+                        rowHeight={ROW_HEIGHT}
+                        width={canvasWidth}
+                        margin={[GRID_GUTTER, GRID_GUTTER]}
+                        containerPadding={[0, 0]}
+                        autoSize={false}
+                        style={{ height: gridCanvasHeight }}
+                        isResizable
+                        isDraggable
+                        preventCollision
+                        compactType={null}
+                        isBounded
+                        resizeHandles={['se', 'sw', 'ne', 'nw']}
+                        draggableHandle=".series-drag-handle"
+                        draggableCancel=".series-editable,textarea,input,button"
+                        onLayoutChange={handleGridLayoutChange}
+                        onDragStart={handleGridDragStart}
+                        onDrag={handleGridDrag}
+                        onDragStop={handleGridDragStop}
+                        onResizeStart={handleGridResizeStart}
+                        onResize={handleGridResize}
+                        onResizeStop={handleGridResizeStop}
+                      >
+                        {draftContent.map((block, index) => {
+                        const isSelected = selectedIndex === index;
 
-              {selectedBlock &&
-                (selectedBlock.type === 'photo' || selectedBlock.type === 'photos') && (
-                  <Inspector onPointerDown={(e) => e.stopPropagation()}>
-                    <InspectorTitle>
-                      <div>
-                        <InspectorHeading>
-                          {selectedBlock.type === 'photo' ? 'Scegli foto' : 'Scegli foto del gruppo'}
-                        </InspectorHeading>
-                        <InspectorSmall>
-                          {selectedBlock.type === 'photo'
-                            ? 'Clicca una miniatura per sostituire'
-                            : 'Clicca per aggiungere/rimuovere'}
-                        </InspectorSmall>
-                      </div>
-                      <InspectorClose type="button" onClick={() => setSelectedIndex(null)}>
-                        ✕
-                      </InspectorClose>
-                    </InspectorTitle>
+                        const renderBlock = () => {
+                          if (block.type === 'text') {
+                            return selectedIndex === index ? (
+                              <SeriesText style={{ padding: 0 }}>
+                                <InlineTextEditor
+                                  className="series-editable"
+                                  value={block.content}
+                                  onChange={(e) => updateTextBlock(index, e.target.value)}
+                                  placeholder="Scrivi qui…"
+                                />
+                              </SeriesText>
+                            ) : (
+                              <SeriesText>{block.content}</SeriesText>
+                            );
+                          }
 
-                    <InspectorGrid>
-                      {seriesPhotos.map((p) => {
-                        const isActive =
-                          selectedBlock.type === 'photo'
-                            ? selectedBlock.content === p.id
-                            : selectedGroupIds.includes(p.id);
+                          if (block.type === 'photo') {
+                            const photo = photos.find(p => p.id === block.content);
+                            if (!photo) return null;
+                            return (
+                              <PhotoFrame>
+                                <CanvasPhoto
+                                  src={`${IMAGES_BASE_URL}${photo.image}`}
+                                  alt={photo.title}
+                                  loading="lazy"
+                                  onClick={() => handlePhotoClick(photo)}
+                                  style={{ cursor: 'pointer' }}
+                                />
+                                {block.showTitle !== false && photo.title && (
+                                  <CanvasCaption>{photo.title}</CanvasCaption>
+                                )}
+                              </PhotoFrame>
+                            );
+                          }
+
+                          if (block.type === 'photos') {
+                            const groupItems = prepareGroupItems(block.content || []);
+                            const groupMaxRows = getGroupMaxRows(block.layout);
+                            const groupWidth = getBlockPixelWidth(block.layout);
+                            const groupHeight = getBlockPixelHeight(block.layout);
+
+                            return (
+                              <GroupGrid>
+                                <GridLayout
+                                  layout={buildGroupLayout(groupItems, groupMaxRows)}
+                                  cols={GROUP_GRID_COLS}
+                                  rowHeight={GROUP_ROW_HEIGHT}
+                                  width={groupWidth}
+                                  margin={[GROUP_GUTTER, GROUP_GUTTER]}
+                                  containerPadding={[0, 0]}
+                                  autoSize={false}
+                                  maxRows={groupMaxRows}
+                                  style={{ height: groupHeight }}
+                                  isResizable
+                                  isDraggable
+                                  preventCollision
+                                  compactType={null}
+                                  isBounded
+                                  resizeHandles={['se', 'sw', 'ne', 'nw']}
+                                  onLayoutChange={handleGroupLayoutChange(index, groupMaxRows)}
+                                >
+                                  {groupItems.map((item) => {
+                                    const photo = photos.find(p => p.id === item.id);
+                                    if (!photo) return null;
+                                    return (
+                                      <GroupItem key={item.id}>
+                                        <ThumbImage
+                                          src={`${IMAGES_BASE_URL}${photo.image}`}
+                                          alt={photo.title}
+                                          loading="lazy"
+                                        />
+                                      </GroupItem>
+                                    );
+                                  })}
+                                </GridLayout>
+                              </GroupGrid>
+                            );
+                          }
+
+                          return null;
+                        };
 
                         return (
-                          <InspectorThumb
-                            key={p.id}
-                            type="button"
-                            $active={isActive}
-                            onClick={() => {
-                              if (selectedBlock.type === 'photo') setSelectedPhoto(p.id);
-                              else toggleSelectedPhotoInGroup(p.id);
+                          <DraggableBlock
+                            key={block.id}
+                            $selected={isSelected}
+                            $media={block.type === 'photo' || block.type === 'photos'}
+                            $plain={block.type === 'text'}
+                            $editing={layoutMode}
+                            onPointerDown={(e) => {
+                              e.stopPropagation();
+                              setSelectedIndex(index);
                             }}
-                            title={p.title || ''}
                           >
-                            <InspectorImg
-                              src={`${IMAGES_BASE_URL}${p.thumbnail || p.image}`}
-                              alt={p.title}
-                              loading="lazy"
-                            />
-                            {isActive && <InspectorBadge>✓</InspectorBadge>}
-                          </InspectorThumb>
+                            <DragHandle
+                              className="series-drag-handle"
+                              $solid={block.type === 'text'}
+                              onPointerDown={(e) => {
+                                e.stopPropagation();
+                                setSelectedIndex(index);
+                              }}
+                            >
+                              <DragLabel>
+                                {block.type === 'text' ? 'Testo' : block.type === 'photo' ? 'Foto' : 'Gruppo foto'}
+                              </DragLabel>
+
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <DragHint>drag • resize</DragHint>
+
+                                {isSelected && block.type === 'photo' && (
+                                  <button
+                                    type="button"
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      togglePhotoTitle(index);
+                                    }}
+                                    style={{
+                                      border: 'none',
+                                      background: block.showTitle
+                                        ? 'rgba(255,255,255,0.18)'
+                                        : 'rgba(255,255,255,0.08)',
+                                      color: 'rgba(255,255,255,0.92)',
+                                      width: 30,
+                                      height: 30,
+                                      borderRadius: 999,
+                                      cursor: 'pointer',
+                                    }}
+                                    title={block.showTitle ? 'Nascondi titolo' : 'Mostra titolo'}
+                                    aria-pressed={block.showTitle ? 'true' : 'false'}
+                                  >
+                                    <Type size={14} />
+                                  </button>
+                                )}
+
+                                {isSelected && (
+                                  <button
+                                    type="button"
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      deleteBlock(index);
+                                    }}
+                                    style={{
+                                      border: 'none',
+                                      background: 'rgba(255,255,255,0.10)',
+                                      color: 'rgba(255,255,255,0.92)',
+                                      width: 30,
+                                      height: 30,
+                                      borderRadius: 999,
+                                      cursor: 'pointer',
+                                    }}
+                                  title="Elimina"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              )}
+                            </div>
+                            </DragHandle>
+
+                            <BlockBody $flush={block.type === 'photo' || block.type === 'photos'}>
+                              {renderBlock()}
+                            </BlockBody>
+                          </DraggableBlock>
                         );
                       })}
-                    </InspectorGrid>
-
-                    <InspectorDivider />
-                    <InspectorHint>
-                      Qui scegli solo tra le foto già aggiunte alla serie (in <b>Contenuti</b>).
-                    </InspectorHint>
-                  </Inspector>
-                )}
-
-              <Canvas
-                $showGrid
-                style={{
-                  '--canvas-width': `${canvasWidth}px`,
-                  '--grid-step-x': `${GRID_STEP_X}px`,
-                  '--grid-step-y': `${GRID_STEP_Y}px`,
-                  minHeight: `${gridCanvasHeight}px`,
-                  height: `${gridCanvasHeight}px`,
-                }}
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                  handleCanvasPointerDown(e);
-                }}
+                      </GridLayout>
+                    </Canvas>
+                  </CanvasFrame>
+                </LayoutStage>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="view"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
               >
-                {draftContent.length === 0 && (
-                  <EmptyState>
-                    Nessun blocco ancora. Usa il pulsante + per aggiungere testo o foto e inizia a comporre la serie.
-                  </EmptyState>
-                )}
+                {hasSavedLayout ? (
+                  <div style={{ overflowX: "hidden", overflowY: "auto" }}>
+                    <div style={{ width: "100%", overflow: "hidden" }}>
+                      <div>
+                        <CanvasFrame ref={canvasFrameRef} $showBorder={false}>
+                          <Canvas
+                            $showGrid={false}
+                            style={{
+                              '--canvas-width': `${canvasWidth}px`,
+                              '--grid-step-x': `${GRID_STEP_X}px`,
+                              '--grid-step-y': `${GRID_STEP_Y}px`,
+                            }}
+                          >
+                            <GridLayout
+                              layout={buildGridLayout(viewContent)}
+                              cols={GRID_COLS}
+                              rowHeight={ROW_HEIGHT}
+                              width={canvasWidth}
+                              margin={[GRID_GUTTER, GRID_GUTTER]}
+                              containerPadding={[0, 0]}
+                              isDraggable={false}
+                              isResizable={false}
+                              compactType={null}
+                              isBounded
+                            >
+                              {viewContent.map((block) => {
+                              const renderBlock = () => {
+                                if (block.type === 'text') {
+                                  return <SeriesText>{block.content}</SeriesText>;
+                                }
 
-                <GridLayout
-                  layout={buildGridLayout(draftContent)}
-                  cols={GRID_COLS}
-                  rowHeight={ROW_HEIGHT}
-                  width={canvasWidth}
-                  margin={[GRID_GUTTER, GRID_GUTTER]}
-                  containerPadding={[0, 0]}
-                  autoSize={false}
-                  style={{ height: gridCanvasHeight }}
-                  isResizable
-                  isDraggable
-                  preventCollision
-                  compactType={null}
-                  isBounded
-                  resizeHandles={['se', 'sw', 'ne', 'nw']}
-                  draggableHandle=".series-drag-handle"
-                  draggableCancel=".series-editable,textarea,input,button"
-                  onLayoutChange={handleGridLayoutChange}
-                  onDragStart={handleGridDragStart}
-                  onDrag={handleGridDrag}
-                  onDragStop={handleGridDragStop}
-                  onResizeStart={handleGridResizeStart}
-                  onResize={handleGridResize}
-                  onResizeStop={handleGridResizeStop}
-                >
-                  {draftContent.map((block, index) => {
-                    const isSelected = selectedIndex === index;
+                                if (block.type === "photo") {
+                                  const photo = photos.find(p => p.id === block.content);
+                                  if (!photo) return null;
+                                  return (
+                                    <PhotoFrame>
+                                      <CanvasPhoto
+                                        src={`${IMAGES_BASE_URL}${photo.image}`}
+                                        alt={photo.title}
+                                        loading="lazy"
+                                        onClick={() => handlePhotoClick(photo)}
+                                        style={{ cursor: "pointer" }}
+                                      />
+                                      {block.showTitle !== false && photo.title && (
+                                        <CanvasCaption>{photo.title}</CanvasCaption>
+                                      )}
+                                    </PhotoFrame>
+                                  );
+                                }
 
-                    const renderBlock = () => {
-                      if (block.type === 'text') {
-                        return selectedIndex === index ? (
-                          <SeriesText style={{ padding: 0 }}>
-                            <InlineTextEditor
-                              className="series-editable"
-                              value={block.content}
-                              onChange={(e) => updateTextBlock(index, e.target.value)}
-                              placeholder="Scrivi qui…"
-                            />
-                          </SeriesText>
-                        ) : (
-                          <SeriesText>{block.content}</SeriesText>
-                        );
-                      }
+                                if (block.type === "photos") {
+                                  const groupItems = prepareGroupItems(block.content || []);
+                                  const groupMaxRows = getGroupMaxRows(block.layout);
+                                  const groupWidth = getBlockPixelWidth(block.layout);
+                                  const groupHeight = getBlockPixelHeight(block.layout);
 
-                      if (block.type === 'photo') {
-                        const photo = photos.find(p => p.id === block.content);
-                        if (!photo) return null;
-                        return (
-                          <PhotoFrame>
-                            <CanvasPhoto
+                                  return (
+                                    <GroupGrid>
+                                      <GridLayout
+                                        layout={buildGroupLayout(groupItems, groupMaxRows)}
+                                        cols={GROUP_GRID_COLS}
+                                        rowHeight={GROUP_ROW_HEIGHT}
+                                        width={groupWidth}
+                                        margin={[GROUP_GUTTER, GROUP_GUTTER]}
+                                        containerPadding={[0, 0]}
+                                        autoSize={false}
+                                        maxRows={groupMaxRows}
+                                        style={{ height: groupHeight }}
+                                        isResizable={false}
+                                        isDraggable={false}
+                                        compactType={null}
+                                        isBounded
+                                      >
+                                        {groupItems.map((item) => {
+                                          const photo = photos.find(p => p.id === item.id);
+                                          return photo ? (
+                                            <GroupItem key={item.id}>
+                                              <ThumbButton
+                                                type="button"
+                                                onClick={() => handlePhotoClick(photo)}
+                                                title={photo.title || ''}
+                                              >
+                                                <ThumbImage
+                                                  src={`${IMAGES_BASE_URL}${photo.image}`}
+                                                  alt={photo.title}
+                                                  loading="lazy"
+                                                />
+                                              </ThumbButton>
+                                            </GroupItem>
+                                          ) : null;
+                                        })}
+                                      </GridLayout>
+                                    </GroupGrid>
+                                  );
+                                }
+
+                                return null;
+                              };
+
+                              return (
+                                <DraggableBlock
+                                  key={block.id}
+                                  $media={block.type === 'photo' || block.type === 'photos'}
+                                  $plain={block.type === 'text'}
+                                  $editing={false}
+                                >
+                                  <BlockBody $flush={block.type === 'photo' || block.type === 'photos'}>
+                                    {renderBlock()}
+                                  </BlockBody>
+                                </DraggableBlock>
+                              );
+                            })}
+                            </GridLayout>
+                          </Canvas>
+                        </CanvasFrame>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  // fallback: la tua view classica attuale
+                  <>
+                    {currentSeries.content && currentSeries.content.length > 0 ? (
+                      currentSeries.content.map((block, index) => (
+                        <ContentBlock
+                          key={index}
+                          initial={{ opacity: 0, y: 30 }}
+                          whileInView={{ opacity: 1, y: 0 }}
+                          viewport={{ once: true }}
+                          transition={{ duration: 0.6, delay: index * 0.1 }}
+                        >
+                          {/* ...tuo rendering classico... */}
+                        </ContentBlock>
+                      ))
+                    ) : (
+                      <>
+                        {seriesPhotos.map(photo => (
+                          <ClassicFigure key={photo.id} style={{ marginBottom: "var(--spacing-4xl)" }}>
+                            <img
                               src={`${IMAGES_BASE_URL}${photo.image}`}
                               alt={photo.title}
                               loading="lazy"
                               onClick={() => handlePhotoClick(photo)}
-                              style={{ cursor: 'pointer' }}
+                              style={{ cursor: "pointer" }}
                             />
-                            {block.showTitle !== false && photo.title && (
-                              <CanvasCaption>{photo.title}</CanvasCaption>
-                            )}
-                          </PhotoFrame>
-                        );
-                      }
-
-                      if (block.type === 'photos') {
-                        const groupItems = prepareGroupItems(block.content || []);
-                        const groupMaxRows = getGroupMaxRows(block.layout);
-                        const groupWidth = getBlockPixelWidth(block.layout);
-                        const groupHeight = getBlockPixelHeight(block.layout);
-
-                        return (
-                          <GroupGrid>
-                            <GridLayout
-                              layout={buildGroupLayout(groupItems, groupMaxRows)}
-                              cols={GROUP_GRID_COLS}
-                              rowHeight={GROUP_ROW_HEIGHT}
-                              width={groupWidth}
-                              margin={[GROUP_GUTTER, GROUP_GUTTER]}
-                              containerPadding={[0, 0]}
-                              autoSize={false}
-                              maxRows={groupMaxRows}
-                              style={{ height: groupHeight }}
-                              isResizable
-                              isDraggable
-                              preventCollision
-                              compactType={null}
-                              isBounded
-                              resizeHandles={['se', 'sw', 'ne', 'nw']}
-                              onLayoutChange={handleGroupLayoutChange(index, groupMaxRows)}
-                            >
-                              {groupItems.map((item) => {
-                                const photo = photos.find(p => p.id === item.id);
-                                if (!photo) return null;
-                                return (
-                                  <GroupItem key={item.id}>
-                                    <ThumbImage
-                                      src={`${IMAGES_BASE_URL}${photo.image}`}
-                                      alt={photo.title}
-                                      loading="lazy"
-                                    />
-                                  </GroupItem>
-                                );
-                              })}
-                            </GridLayout>
-                          </GroupGrid>
-                        );
-                      }
-
-                      return null;
-                    };
-
-                    return (
-                      <DraggableBlock
-                        key={block.id}
-                        $selected={isSelected}
-                        $media={block.type === 'photo' || block.type === 'photos'}
-                        $plain={block.type === 'text'}
-                        $editing={layoutMode}
-                        onPointerDown={(e) => {
-                          e.stopPropagation();
-                          setSelectedIndex(index);
-                        }}
-                      >
-                        <DragHandle
-                          className="series-drag-handle"
-                          $solid={block.type === 'text'}
-                          onPointerDown={(e) => {
-                            e.stopPropagation();
-                            setSelectedIndex(index);
-                          }}
-                        >
-                          <DragLabel>
-                            {block.type === 'text' ? 'Testo' : block.type === 'photo' ? 'Foto' : 'Gruppo foto'}
-                          </DragLabel>
-
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <DragHint>drag • resize</DragHint>
-
-                            {isSelected && block.type === 'photo' && (
-                              <button
-                                type="button"
-                                onPointerDown={(e) => e.stopPropagation()}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  togglePhotoTitle(index);
-                                }}
-                                style={{
-                                  border: 'none',
-                                  background: block.showTitle
-                                    ? 'rgba(255,255,255,0.18)'
-                                    : 'rgba(255,255,255,0.08)',
-                                  color: 'rgba(255,255,255,0.92)',
-                                  width: 30,
-                                  height: 30,
-                                  borderRadius: 999,
-                                  cursor: 'pointer',
-                                }}
-                                title={block.showTitle ? 'Nascondi titolo' : 'Mostra titolo'}
-                                aria-pressed={block.showTitle ? 'true' : 'false'}
-                              >
-                                <Type size={14} />
-                              </button>
-                            )}
-
-                            {isSelected && (
-                              <button
-                                type="button"
-                                onPointerDown={(e) => e.stopPropagation()}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  deleteBlock(index);
-                                }}
-                                style={{
-                                  border: 'none',
-                                  background: 'rgba(255,255,255,0.10)',
-                                  color: 'rgba(255,255,255,0.92)',
-                                  width: 30,
-                                  height: 30,
-                                  borderRadius: 999,
-                                  cursor: 'pointer',
-                                }}
-                              title="Elimina"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          )}
-                        </div>
-                        </DragHandle>
-
-                        <BlockBody $flush={block.type === 'photo' || block.type === 'photos'}>
-                          {renderBlock()}
-                        </BlockBody>
-                      </DraggableBlock>
-                    );
-                  })}
-                </GridLayout>
-              </Canvas>
-            </LayoutStage>
-          ) : (
-            <>
-              {hasSavedLayout ? (
-                <div style={{ overflow: "auto" }} ref={viewWrapRef}>
-                  <div style={{ width: "100%", overflow: "hidden" }}>
-                    <div>
-                      <Canvas
-                        $showGrid={false}
-                        style={{
-                          '--canvas-width': `${canvasWidth}px`,
-                          '--grid-step-x': `${GRID_STEP_X}px`,
-                          '--grid-step-y': `${GRID_STEP_Y}px`,
-                        }}
-                      >
-                        <GridLayout
-                          layout={buildGridLayout(viewContent)}
-                          cols={GRID_COLS}
-                          rowHeight={ROW_HEIGHT}
-                          width={canvasWidth}
-                          margin={[GRID_GUTTER, GRID_GUTTER]}
-                          containerPadding={[0, 0]}
-                          isDraggable={false}
-                          isResizable={false}
-                          compactType={null}
-                          isBounded
-                        >
-                          {viewContent.map((block) => {
-                            const renderBlock = () => {
-                              if (block.type === 'text') {
-                                return <SeriesText>{block.content}</SeriesText>;
-                              }
-
-                              if (block.type === "photo") {
-                                const photo = photos.find(p => p.id === block.content);
-                                if (!photo) return null;
-                                return (
-                                  <PhotoFrame>
-                                    <CanvasPhoto
-                                      src={`${IMAGES_BASE_URL}${photo.image}`}
-                                      alt={photo.title}
-                                      loading="lazy"
-                                      onClick={() => handlePhotoClick(photo)}
-                                      style={{ cursor: "pointer" }}
-                                    />
-                                    {block.showTitle !== false && photo.title && (
-                                      <CanvasCaption>{photo.title}</CanvasCaption>
-                                    )}
-                                  </PhotoFrame>
-                                );
-                              }
-
-                              if (block.type === "photos") {
-                                const groupItems = prepareGroupItems(block.content || []);
-                                const groupMaxRows = getGroupMaxRows(block.layout);
-                                const groupWidth = getBlockPixelWidth(block.layout);
-                                const groupHeight = getBlockPixelHeight(block.layout);
-
-                                return (
-                                  <GroupGrid>
-                                    <GridLayout
-                                      layout={buildGroupLayout(groupItems, groupMaxRows)}
-                                      cols={GROUP_GRID_COLS}
-                                      rowHeight={GROUP_ROW_HEIGHT}
-                                      width={groupWidth}
-                                      margin={[GROUP_GUTTER, GROUP_GUTTER]}
-                                      containerPadding={[0, 0]}
-                                      autoSize={false}
-                                      maxRows={groupMaxRows}
-                                      style={{ height: groupHeight }}
-                                      isResizable={false}
-                                      isDraggable={false}
-                                      compactType={null}
-                                      isBounded
-                                    >
-                                      {groupItems.map((item) => {
-                                        const photo = photos.find(p => p.id === item.id);
-                                        return photo ? (
-                                          <GroupItem key={item.id}>
-                                            <ThumbButton
-                                              type="button"
-                                              onClick={() => handlePhotoClick(photo)}
-                                              title={photo.title || ''}
-                                            >
-                                              <ThumbImage
-                                                src={`${IMAGES_BASE_URL}${photo.image}`}
-                                                alt={photo.title}
-                                                loading="lazy"
-                                              />
-                                            </ThumbButton>
-                                          </GroupItem>
-                                        ) : null;
-                                      })}
-                                    </GridLayout>
-                                  </GroupGrid>
-                                );
-                              }
-
-                              return null;
-                            };
-
-                            return (
-                              <DraggableBlock
-                                key={block.id}
-                                $media={block.type === 'photo' || block.type === 'photos'}
-                                $plain={block.type === 'text'}
-                                $editing={false}
-                              >
-                                <BlockBody $flush={block.type === 'photo' || block.type === 'photos'}>
-                                  {renderBlock()}
-                                </BlockBody>
-                              </DraggableBlock>
-                            );
-                          })}
-                        </GridLayout>
-                      </Canvas>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                // fallback: la tua view classica attuale
-                <>
-                  {currentSeries.content && currentSeries.content.length > 0 ? (
-                    currentSeries.content.map((block, index) => (
-                      <ContentBlock
-                        key={index}
-                        initial={{ opacity: 0, y: 30 }}
-                        whileInView={{ opacity: 1, y: 0 }}
-                        viewport={{ once: true }}
-                        transition={{ duration: 0.6, delay: index * 0.1 }}
-                      >
-                        {/* ...tuo rendering classico... */}
-                      </ContentBlock>
-                    ))
-                  ) : (
-                    <>
-                      {seriesPhotos.map(photo => (
-                        <ClassicFigure key={photo.id} style={{ marginBottom: "var(--spacing-4xl)" }}>
-                          <img
-                            src={`${IMAGES_BASE_URL}${photo.image}`}
-                            alt={photo.title}
-                            loading="lazy"
-                            onClick={() => handlePhotoClick(photo)}
-                            style={{ cursor: "pointer" }}
-                          />
-                          {photo.title && <figcaption>{photo.title}</figcaption>}
-                        </ClassicFigure>
-                      ))}
-                    </>
-                  )}
-                </>
-              )}
-            </>
-          )}
+                            {photo.title && <figcaption>{photo.title}</figcaption>}
+                          </ClassicFigure>
+                        ))}
+                      </>
+                    )}
+                  </>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </ContentSection>
       </PageContainer>
 
