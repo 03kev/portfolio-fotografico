@@ -200,8 +200,8 @@ const Header = ({ onOpenUpload, isAdmin = false }) => {
   const navItems = [
     { to: '/', label: 'Home' },
     { to: '/series', label: 'Serie' },
-    { to: '/gallery', label: 'Galleria' },
     { to: '/map', label: 'Mappa' },
+    { to: '/gallery', label: 'Archivio' },
     { to: '/about', label: 'Chi sono' },
     { to: '/contact', label: 'Contatti' }
   ];

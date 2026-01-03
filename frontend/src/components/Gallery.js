@@ -400,7 +400,7 @@ const Gallery = () => {
       <Container>
         <SectionHeader>
           <SectionTitle initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.45, ease: 'easeOut' }}>
-            Galleria
+            Archivio
           </SectionTitle>
           <SectionSubtitle initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.45, ease: 'easeOut', delay: 0.05 }}>
             Filtra per tag o cerca per titolo, luogo e descrizione.

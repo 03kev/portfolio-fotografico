@@ -123,7 +123,7 @@ export default function FeaturedGallery({ limit = 18 }) {
 
       {photos.length > limit && (
         <CTA>
-          <Button to="/gallery">Vedi tutta la galleria</Button>
+          <Button to="/gallery">Vedi tutto l'archivio</Button>
         </CTA>
       )}
     </>

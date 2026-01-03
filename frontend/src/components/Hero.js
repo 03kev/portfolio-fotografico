@@ -162,7 +162,7 @@ const Hero = () => {
             </PrimaryButton>
 
             <SecondaryLink to="/gallery" whileTap={{ scale: 0.98 }}>
-              Vai alla galleria
+              Vai all'archivio
             </SecondaryLink>
           </CTAGroup>
         </motion.div>

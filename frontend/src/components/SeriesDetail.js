@@ -199,11 +199,12 @@ const Canvas = styled.div`
   border-radius: var(--border-radius-xl);
   background: transparent;
 
-  background-image:
+  background-image: ${props => (props.$showGrid ? `
     linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px),
     linear-gradient(to right, transparent calc(100% - 1px), rgba(255,255,255,0.06) calc(100% - 1px)),
-    linear-gradient(to bottom, transparent calc(100% - 1px), rgba(255,255,255,0.06) calc(100% - 1px));
+    linear-gradient(to bottom, transparent calc(100% - 1px), rgba(255,255,255,0.06) calc(100% - 1px))
+  ` : 'none')};
   background-size:
     var(--grid-step-x, 100px) var(--grid-step-y, 24px),
     var(--grid-step-x, 100px) var(--grid-step-y, 24px),
@@ -219,35 +220,67 @@ const DraggableBlock = styled.div`
   height: 100%;
   border-radius: var(--border-radius-xl);
   border: 1px solid ${props => (
-    props.$media
-      ? 'transparent'
-      : props.$plain
+    props.$editing
+      ? 'rgba(255, 255, 255, 0.08)'
+      : props.$media
         ? 'transparent'
-        : (props.$selected ? 'rgba(255, 255, 255, 0.40)' : 'rgba(255, 255, 255, 0.06)')
+        : props.$plain
+          ? 'transparent'
+          : (props.$selected ? 'rgba(255, 255, 255, 0.40)' : 'rgba(255, 255, 255, 0.06)')
   )};
-  background: ${props => (props.$media || props.$plain ? 'transparent' : 'rgba(0, 0, 0, 0.35)')};
+  background: ${props => (
+    props.$editing
+      ? 'rgba(255, 255, 255, 0.035)'
+      : (props.$media || props.$plain ? 'transparent' : 'rgba(0, 0, 0, 0.35)')
+  )};
   backdrop-filter: blur(10px);
   overflow: hidden;
   box-shadow: ${props => (
-    props.$media
-      ? 'none'
-      : props.$plain
+    props.$editing
+      ? '0 0 0 1px rgba(255,255,255,0.06)'
+      : props.$media
         ? 'none'
-        : (props.$selected ? '0 0 0 2px rgba(255,255,255,0.28), 0 16px 40px rgba(0,0,0,0.35)' : '0 12px 28px rgba(0,0,0,0.28)')
+        : props.$plain
+          ? 'none'
+          : (props.$selected ? '0 0 0 2px rgba(255,255,255,0.28), 0 16px 40px rgba(0,0,0,0.35)' : '0 12px 28px rgba(0,0,0,0.28)')
   )};
+
+  &:hover .series-drag-handle {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+
+  ${props => (props.$selected ? `
+    .series-drag-handle {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+  ` : '')}
 `;
 
 
 const DragHandle = styled.div`
-  height: 38px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 34px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 var(--spacing-md);
+  padding: 0 10px;
   cursor: grab;
   user-select: none;
-  background: rgba(0, 0, 0, 0.55);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: ${props => (props.$solid ? '#000' : 'rgba(0, 0, 0, 0.85)')};
+  border-bottom: 1px solid ${props => (props.$solid ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.08)')};
+  backdrop-filter: ${props => (props.$solid ? 'none' : 'blur(8px)')};
+  z-index: 2;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  pointer-events: none;
 
   &:active {
     cursor: grabbing;
@@ -367,9 +400,9 @@ const InspectorHint = styled.div`
 
 const BlockBody = styled.div`
   width: 100%;
-  height: calc(100% - 38px);
+  height: 100%;
   overflow: hidden;
-  padding: ${p => (p.$flush ? '0' : 'var(--spacing-md)')};
+  padding: 0;
 `;
 
 const FloatingLayoutTools = styled.div`
@@ -461,7 +494,7 @@ const InlineTextEditor = styled.textarea`
   line-height: 1.75;
   letter-spacing: 0.02em;
   text-transform: none;
-  padding: var(--spacing-md);
+  padding: var(--spacing-sm);
   font-family: inherit;
   box-sizing: border-box;
   overflow: auto;
@@ -481,15 +514,15 @@ const SeriesText = styled.div`
 
   background: transparent;
   border-radius: 0;
-  padding: var(--spacing-md);
+  padding: var(--spacing-sm);
 `;
 
 const PhotoFrame = styled.figure`
   margin: 0;
   width: 100%;
   height: 100%;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: 1fr auto;
   gap: 0;
   padding: 0;
   align-items: center;
@@ -498,8 +531,8 @@ const PhotoFrame = styled.figure`
 const CanvasPhoto = styled.img`
   width: 100%;
   height: 100%;
-  flex: 1;
   min-height: 0;
+  max-height: 100%;
   object-fit: contain;
   display: block;
   border-radius: var(--border-radius-xl);
@@ -718,6 +751,7 @@ function SeriesDetail() {
   const [gridRowsOverride, setGridRowsOverride] = useState(null);
   const CANVAS_MAX_WIDTH = 1200;
   const [canvasWidth, setCanvasWidth] = useState(CANVAS_MAX_WIDTH);
+  const viewWrapRef = useRef(null);
   const GRID_VERSION = 2;
   const GRID_COLS = 24;
   const ROW_HEIGHT = 16;
@@ -777,18 +811,13 @@ function SeriesDetail() {
   }, [currentSeries]);
 
   useEffect(() => {
-    if (!layoutMode) {
-      setCanvasWidth(CANVAS_MAX_WIDTH);
-      return;
-    }
-
     const updateWidth = () => {
-      const stage = stageRef.current;
-      if (!stage) return;
-      const styles = window.getComputedStyle(stage);
+      const container = layoutMode ? stageRef.current : viewWrapRef.current;
+      if (!container) return;
+      const styles = window.getComputedStyle(container);
       const paddingX =
         parseFloat(styles.paddingLeft || '0') + parseFloat(styles.paddingRight || '0');
-      const innerWidth = stage.clientWidth - paddingX;
+      const innerWidth = container.clientWidth - paddingX;
       if (Number.isFinite(innerWidth) && innerWidth > 0) {
         setCanvasWidth(Math.min(CANVAS_MAX_WIDTH, innerWidth));
       }
@@ -797,7 +826,7 @@ function SeriesDetail() {
     updateWidth();
     window.addEventListener('resize', updateWidth);
     return () => window.removeEventListener('resize', updateWidth);
-  }, [layoutMode, CANVAS_MAX_WIDTH]);
+  }, [layoutMode, CANVAS_MAX_WIDTH, currentSeries]);
 
   const clamp = (v, min, max) => Math.max(min, Math.min(v, max));
 
@@ -1559,6 +1588,7 @@ function SeriesDetail() {
                 )}
 
               <Canvas
+                $showGrid
                 style={{
                   '--canvas-width': `${canvasWidth}px`,
                   '--grid-step-x': `${GRID_STEP_X}px`,
@@ -1693,6 +1723,7 @@ function SeriesDetail() {
                         $selected={isSelected}
                         $media={block.type === 'photo' || block.type === 'photos'}
                         $plain={block.type === 'text'}
+                        $editing={layoutMode}
                         onPointerDown={(e) => {
                           e.stopPropagation();
                           setSelectedIndex(index);
@@ -1700,6 +1731,7 @@ function SeriesDetail() {
                       >
                         <DragHandle
                           className="series-drag-handle"
+                          $solid={block.type === 'text'}
                           onPointerDown={(e) => {
                             e.stopPropagation();
                             setSelectedIndex(index);
@@ -1775,14 +1807,12 @@ function SeriesDetail() {
           ) : (
             <>
               {hasSavedLayout ? (
-                <div style={{ overflow: "auto" }}>
+                <div style={{ overflow: "auto" }} ref={viewWrapRef}>
                   <div style={{ width: "100%", overflow: "hidden" }}>
                     <div>
                       <Canvas
+                        $showGrid={false}
                         style={{
-                          backgroundImage: "none",
-                          border: "none",
-                          background: "transparent",
                           '--canvas-width': `${canvasWidth}px`,
                           '--grid-step-x': `${GRID_STEP_X}px`,
                           '--grid-step-y': `${GRID_STEP_Y}px`,
@@ -1879,6 +1909,7 @@ function SeriesDetail() {
                                 key={block.id}
                                 $media={block.type === 'photo' || block.type === 'photos'}
                                 $plain={block.type === 'text'}
+                                $editing={false}
                               >
                                 <BlockBody $flush={block.type === 'photo' || block.type === 'photos'}>
                                   {renderBlock()}
