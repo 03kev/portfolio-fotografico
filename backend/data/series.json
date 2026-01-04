@@ -24,9 +24,9 @@
         "content": 1767351827175,
         "order": 2,
         "layout": {
-          "x": 0,
-          "y": 4,
-          "w": 12,
+          "x": 1,
+          "y": 7,
+          "w": 13,
           "h": 31,
           "unit": "grid",
           "gridVersion": 2
@@ -40,14 +40,14 @@
         "order": 1,
         "content": 1767482556728,
         "layout": {
-          "x": 14,
-          "y": 9,
+          "x": 15,
+          "y": 13,
           "w": 8,
-          "h": 20,
+          "h": 21,
           "unit": "grid",
           "gridVersion": 2
         },
-        "showTitle": true
+        "showTitle": false
       },
       {
         "id": "block-cd7cb3ab61ba4-mjyy8wcn",
@@ -55,13 +55,15 @@
         "order": 2,
         "content": "Tutto inizia dal basso. Dal battito dei passi sul pavimento freddo e dal ritmo meccanico dei binari che tagliano la notte.",
         "layout": {
-          "x": 5,
+          "x": 1,
           "y": 0,
-          "w": 10,
-          "h": 3,
+          "w": 13,
+          "h": 4,
           "unit": "grid",
           "gridVersion": 2
-        }
+        },
+        "textAlign": "center",
+        "textSize": "lg"
       },
       {
         "id": "block-a59d1fd18df7c-mjyybq7u",
@@ -69,13 +71,15 @@
         "order": 3,
         "content": "Poi, il rumore del mondo si fa eco. Lo sguardo sale, la città si stacca dalla terra e diventa una costellazione di luci che trema nel buio.",
         "layout": {
-          "x": 14,
-          "y": 33,
-          "w": 10,
-          "h": 5,
+          "x": 3,
+          "y": 42,
+          "w": 18,
+          "h": 4,
           "unit": "grid",
           "gridVersion": 2
-        }
+        },
+        "textAlign": "left",
+        "textSize": "lg"
       },
       {
         "id": "block-588518f9afbb-mjyyeb1s",
@@ -84,9 +88,9 @@
         "content": 1767481359015,
         "layout": {
           "x": 14,
-          "y": 39,
+          "y": 48,
           "w": 10,
-          "h": 26,
+          "h": 27,
           "unit": "grid",
           "gridVersion": 2
         },
@@ -99,9 +103,9 @@
         "content": 1767354244527,
         "layout": {
           "x": 0,
-          "y": 43,
-          "w": 13,
-          "h": 34,
+          "y": 52,
+          "w": 12,
+          "h": 32,
           "unit": "grid",
           "gridVersion": 2
         },
@@ -113,13 +117,15 @@
         "order": 6,
         "content": "Finché la materia si arrende. I confini svaniscono nella nebbia, il peso del cemento si fa aria. È qui che il reale scivola nel sonno.",
         "layout": {
-          "x": 15,
-          "y": 74,
-          "w": 8,
+          "x": 12,
+          "y": 87,
+          "w": 12,
           "h": 5,
           "unit": "grid",
           "gridVersion": 2
-        }
+        },
+        "textAlign": "justify-right",
+        "textSize": "lg"
       },
       {
         "id": "block-748b17a5330b48-mjyyg5k4",
@@ -127,10 +133,10 @@
         "order": 7,
         "content": 1767357918231,
         "layout": {
-          "x": 13,
-          "y": 81,
-          "w": 11,
-          "h": 27,
+          "x": 2,
+          "y": 95,
+          "w": 17,
+          "h": 36,
           "unit": "grid",
           "gridVersion": 2
         },
@@ -142,10 +148,10 @@
         "order": 8,
         "content": 1767481851195,
         "layout": {
-          "x": 2,
-          "y": 109,
-          "w": 15,
-          "h": 34,
+          "x": 13,
+          "y": 137,
+          "w": 9,
+          "h": 24,
           "unit": "grid",
           "gridVersion": 2
         },
@@ -155,19 +161,21 @@
         "id": "block-f03b35653c0ef8-mjyyh1ty",
         "type": "text",
         "order": 9,
-        "content": "Resta solo un’ombra, sospesa sopra le nuvole. Il ricordo sbiadito di un viaggio che, forse, è stato solo un sogno.",
+        "content": "Infine resta solo un’ombra, sospesa sopra le nuvole. Il ricordo sbiadito di un viaggio che, forse, è stato solo un sogno.",
         "layout": {
           "x": 2,
-          "y": 101,
-          "w": 10,
-          "h": 4,
+          "y": 145,
+          "w": 9,
+          "h": 5,
           "unit": "grid",
           "gridVersion": 2
-        }
+        },
+        "textAlign": "justify",
+        "textSize": "base"
       }
     ],
     "published": true,
     "createdAt": "2026-01-02T00:34:11.494Z",
-    "updatedAt": "2026-01-04T00:38:18.597Z"
+    "updatedAt": "2026-01-04T03:49:23.703Z"
   }
 ]

@@ -209,7 +209,8 @@
     "lens": "Tamron SP 15-30mm F2.8 Di VC USD",
     "settings": "{\"aperture\":\"f/2.8\",\"shutter\":\"4min\",\"iso\":\"1600\",\"focal\":\"19mm\"}",
     "tags": [
-      "Via Lattea"
+      "Via Lattea",
+      "Italia"
     ]
   },
   {
@@ -227,7 +228,8 @@
     "settings": "{\"aperture\":\"f/2.8\",\"shutter\":\"6min\",\"iso\":\"3200\",\"focal\":\"15mm\"}",
     "tags": [
       "Via Lattea",
-      "Alpe di Siusi"
+      "Alpe di Siusi",
+      "Italia"
     ]
   },
   {
@@ -244,8 +246,7 @@
     "lens": "",
     "settings": "{\"aperture\":\"f/1.8\",\"shutter\":\"1/9s\",\"iso\":\"1600\",\"focal\":\"5.4mm\"}",
     "tags": [
-      "Dubrovnik",
-      "Croazia"
+      "Dubrovnik"
     ]
   },
   {

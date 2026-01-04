@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, FileText, Image as ImageIcon, Images, LayoutGrid, PencilLine, RotateCcw, Save, Trash2, Type, X } from 'lucide-react';
+import { AlignCenter, AlignJustify, AlignLeft, AlignRight, ChevronLeft, FileText, Image as ImageIcon, Images, LayoutGrid, PencilLine, RotateCcw, Save, Trash2, Type, X } from 'lucide-react';
 import GridLayout from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
@@ -23,7 +23,7 @@ const HeroSection = styled(motion.div)`
   position: relative;
   height: 60vh;
   min-height: 400px;
-  overflow: hidden;
+  overflow: ${props => (props.$floatingHandle ? 'visible' : 'hidden')};
 
   &::before {
     content: '';
@@ -156,10 +156,17 @@ const AdminBar = styled.div`
   justify-content: flex-end;
   margin-bottom: var(--spacing-2xl);
   flex-wrap: wrap;
+  position: sticky;
+  top: calc(78px + 12px);
+  z-index: var(--z-sticky);
+
+  @media (max-width: 768px) {
+    top: calc(70px + 12px);
+  }
 `;
 
 const AdminBarButton = styled(motion.button)`
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(30, 30, 30, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.16);
   color: var(--color-white);
   padding: var(--spacing-sm) var(--spacing-lg);
@@ -168,7 +175,7 @@ const AdminBarButton = styled(motion.button)`
   cursor: pointer;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.12);
+    background: rgba(30, 30, 30, 0.75);
   }
 `;
 
@@ -214,6 +221,7 @@ const Canvas = styled.div`
 
   .react-grid-item {
     transition: none !important;
+    overflow: visible;
   }
 
   &::before {
@@ -288,7 +296,7 @@ const DraggableBlock = styled.div`
 
 const DragHandle = styled.div`
   position: absolute;
-  top: 0;
+   top: ${props => (props.$floating ? '-34px' : '0')};
   left: 0;
   right: 0;
   height: 34px;
@@ -299,12 +307,15 @@ const DragHandle = styled.div`
   cursor: grab;
   user-select: none;
   background: ${props => (props.$solid ? '#000' : 'rgba(0, 0, 0, 0.85)')};
-  border-bottom: 1px solid ${props => (props.$solid ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.08)')};
+  border-bottom: ${props => (props.$floating ? 'none' : (props.$solid ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(255, 255, 255, 0.08)'))};
+  border: ${props => (props.$floating ? '1px solid rgba(255, 255, 255, 0.12)' : 'none')};
+  border-radius: ${props => (props.$floating ? '999px' : '0')};
   backdrop-filter: ${props => (props.$solid ? 'none' : 'blur(8px)')};
   z-index: 2;
   opacity: 0;
   transform: translateY(-6px);
   transition: opacity 0.18s ease, transform 0.18s ease;
+  box-shadow: ${props => (props.$floating ? '0 12px 26px rgba(0,0,0,0.35)' : 'none')};
   pointer-events: none;
 
   &:active {
@@ -423,6 +434,80 @@ const InspectorHint = styled.div`
   line-height: 1.5;
 `;
 
+const InspectorSection = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: var(--spacing-md);
+`;
+
+const InspectorLabel = styled.div`
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.55);
+`;
+
+const InspectorRow = styled.div`
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+`;
+
+const InspectorIconButton = styled.button`
+  border: 1px solid ${p => (p.$active ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.16)')};
+  background: ${p => (p.$active ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.35)')};
+  color: rgba(255,255,255,0.9);
+  width: 38px;
+  height: 34px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+
+  &:hover {
+    background: rgba(255,255,255,0.12);
+    border-color: rgba(255,255,255,0.32);
+  }
+
+  &:active {
+    transform: scale(0.98);
+  }
+`;
+
+const InspectorIconWrap = styled.span`
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+`;
+
+const InspectorIconBadge = styled.span`
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  padding: 0 3px;
+  background: rgba(255,255,255,0.85);
+  color: rgba(0,0,0,0.9);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+`;
+
+const InspectorTextSizeButton = styled(InspectorIconButton)`
+  width: 46px;
+  font-weight: 600;
+  font-size: ${p => p.$preview || 'var(--font-size-sm)'};
+`;
+
 const BlockBody = styled.div`
   width: 100%;
   height: 100%;
@@ -515,24 +600,32 @@ const InlineTextEditor = styled.textarea`
   outline: none;
   background: transparent;
   color: rgba(255, 255, 255, 0.68);
-  font-size: var(--font-size-sm);
+  font-size: ${props => props.$size || 'var(--font-size-sm)'};
   line-height: 1.75;
   letter-spacing: 0.02em;
   text-transform: none;
+  text-align: ${props => props.$align || 'left'};
+  text-align-last: ${props => props.$alignLast || 'auto'};
   padding: var(--spacing-sm);
   font-family: inherit;
   box-sizing: border-box;
   overflow: auto;
+
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.35);
+  }
 `;
 
 const SeriesText = styled.div`
   width: 100%;
   height: 100%;
   color: rgba(255, 255, 255, 0.68);
-  font-size: var(--font-size-sm);
+  font-size: ${props => props.$size || 'var(--font-size-sm)'};
   line-height: 1.75;
   letter-spacing: 0.02em;
   text-transform: none;
+  text-align: ${props => props.$align || 'left'};
+  text-align-last: ${props => props.$alignLast || 'auto'};
   white-space: pre-wrap;
   box-sizing: border-box;
   overflow: hidden;
@@ -784,6 +877,25 @@ function SeriesDetail() {
   const BASE_GRID_ROWS = 24;
   const GRID_ROW_BUFFER = 6;
   const TEXT_MIN_H_ROWS = 2;
+  const TEXT_SIZE_MAP = {
+    sm: 'var(--font-size-sm)',
+    base: 'calc(var(--font-size-base) - 0.5px)',
+    lg: 'var(--font-size-lg)',
+    xl: 'var(--font-size-xl)',
+  };
+  const TEXT_SIZE_OPTIONS = [
+    { id: 'sm', label: 'A', size: TEXT_SIZE_MAP.sm, title: 'Piccolo' },
+    { id: 'base', label: 'A', size: TEXT_SIZE_MAP.base, title: 'Normale' },
+    { id: 'lg', label: 'A', size: TEXT_SIZE_MAP.lg, title: 'Grande' },
+    { id: 'xl', label: 'A', size: TEXT_SIZE_MAP.xl, title: 'Extra' },
+  ];
+  const TEXT_ALIGN_OPTIONS = [
+    { id: 'left', icon: AlignLeft, label: 'Allinea a sinistra' },
+    { id: 'center', icon: AlignCenter, label: 'Allinea al centro' },
+    { id: 'right', icon: AlignRight, label: 'Allinea a destra' },
+    { id: 'justify', icon: AlignJustify, label: 'Giustifica' },
+    { id: 'justify-right', icon: AlignJustify, label: 'Giustifica a destra', badge: 'R' },
+  ];
   const GROUP_GRID_COLS = 6;
   const GROUP_ROW_HEIGHT = 70;
   const GROUP_GUTTER = 8;
@@ -970,6 +1082,14 @@ function SeriesDetail() {
       }
       if (block.type === 'photos') {
         nextBlock.content = prepareGroupItems(block.content || []);
+      }
+      if (block.type === 'text') {
+        nextBlock.content = typeof nextBlock.content === 'string' ? nextBlock.content : '';
+        if (nextBlock.content === 'Scrivi qui…') {
+          nextBlock.content = '';
+        }
+        nextBlock.textAlign = nextBlock.textAlign || 'left';
+        nextBlock.textSize = nextBlock.textSize || 'base';
       }
       nextContent.push(nextBlock);
     });
@@ -1191,6 +1311,14 @@ function SeriesDetail() {
     });
   };
 
+  const updateTextBlockStyle = (index, updates) => {
+    setDraftContent((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], ...updates };
+      return next;
+    });
+  };
+
   const togglePhotoTitle = (index) => {
     setDraftContent((prev) => {
       const next = [...prev];
@@ -1307,12 +1435,16 @@ function SeriesDetail() {
         order: prev.length,
         content:
           type === 'text'
-            ? 'Scrivi qui…'
+            ? ''
             : type === 'photo'
               ? seriesIds[0]
-              : prepareGroupItems(seriesIds.slice(0, 12)),
+              : [],
         layout: findAvailablePosition(layout, prev, id),
       };
+      if (type === 'text') {
+        block.textAlign = 'left';
+        block.textSize = 'base';
+      }
       if (type === 'photo') {
         block.showTitle = true;
       }
@@ -1576,61 +1708,114 @@ function SeriesDetail() {
                 </FloatingLayoutTools>
               )}
 
-              {layoutMode &&
-                selectedBlock &&
-                (selectedBlock.type === 'photo' || selectedBlock.type === 'photos') && (
-                  <Inspector onPointerDown={(e) => e.stopPropagation()}>
-                    <InspectorTitle>
-                      <div>
-                        <InspectorHeading>
-                          {selectedBlock.type === 'photo' ? 'Scegli foto' : 'Scegli foto del gruppo'}
-                        </InspectorHeading>
-                        <InspectorSmall>
-                          {selectedBlock.type === 'photo'
+              {layoutMode && selectedBlock && (
+                <Inspector onPointerDown={(e) => e.stopPropagation()}>
+                  <InspectorTitle>
+                    <div>
+                      <InspectorHeading>
+                        {selectedBlock.type === 'text'
+                          ? 'Formato testo'
+                          : selectedBlock.type === 'photo'
+                            ? 'Scegli foto'
+                            : 'Scegli foto del gruppo'}
+                      </InspectorHeading>
+                      <InspectorSmall>
+                        {selectedBlock.type === 'text'
+                          ? 'Allineamento e dimensione del testo'
+                          : selectedBlock.type === 'photo'
                             ? 'Clicca una miniatura per sostituire'
                             : 'Clicca per aggiungere/rimuovere'}
-                        </InspectorSmall>
-                      </div>
-                      <InspectorClose type="button" onClick={() => setSelectedIndex(null)}>
-                        ✕
-                      </InspectorClose>
-                    </InspectorTitle>
+                      </InspectorSmall>
+                    </div>
+                    <InspectorClose type="button" onClick={() => setSelectedIndex(null)}>
+                      ✕
+                    </InspectorClose>
+                  </InspectorTitle>
 
-                    <InspectorGrid>
-                      {seriesPhotos.map((p) => {
-                        const isActive =
-                          selectedBlock.type === 'photo'
-                            ? selectedBlock.content === p.id
-                            : selectedGroupIds.includes(p.id);
+                  {selectedBlock.type === 'text' ? (
+                    <>
+                      <InspectorSection>
+                        <InspectorLabel>Dimensione</InspectorLabel>
+                        <InspectorRow>
+                          {TEXT_SIZE_OPTIONS.map((option) => (
+                            <InspectorTextSizeButton
+                              key={option.id}
+                              type="button"
+                              $active={(selectedBlock.textSize || 'base') === option.id}
+                              $preview={option.size}
+                              onClick={() => updateTextBlockStyle(selectedIndex, { textSize: option.id })}
+                              title={option.title}
+                            >
+                              {option.label}
+                            </InspectorTextSizeButton>
+                          ))}
+                        </InspectorRow>
+                      </InspectorSection>
 
-                        return (
-                          <InspectorThumb
-                            key={p.id}
-                            type="button"
-                            $active={isActive}
-                            onClick={() => {
-                              if (selectedBlock.type === 'photo') setSelectedPhoto(p.id);
-                              else toggleSelectedPhotoInGroup(p.id);
-                            }}
-                            title={p.title || ''}
-                          >
-                            <InspectorImg
-                              src={`${IMAGES_BASE_URL}${p.thumbnail || p.image}`}
-                              alt={p.title}
-                              loading="lazy"
-                            />
-                            {isActive && <InspectorBadge>✓</InspectorBadge>}
-                          </InspectorThumb>
-                        );
-                      })}
-                    </InspectorGrid>
+                      <InspectorSection>
+                        <InspectorLabel>Allineamento</InspectorLabel>
+                        <InspectorRow>
+                          {TEXT_ALIGN_OPTIONS.map((option) => {
+                            const Icon = option.icon;
+                            return (
+                              <InspectorIconButton
+                                key={option.id}
+                                type="button"
+                                $active={(selectedBlock.textAlign || 'left') === option.id}
+                                onClick={() => updateTextBlockStyle(selectedIndex, { textAlign: option.id })}
+                                title={option.label}
+                              >
+                                <InspectorIconWrap>
+                                  <Icon size={18} />
+                                  {option.badge && (
+                                    <InspectorIconBadge>{option.badge}</InspectorIconBadge>
+                                  )}
+                                </InspectorIconWrap>
+                              </InspectorIconButton>
+                            );
+                          })}
+                        </InspectorRow>
+                      </InspectorSection>
+                    </>
+                  ) : (
+                    <>
+                      <InspectorGrid>
+                        {seriesPhotos.map((p) => {
+                          const isActive =
+                            selectedBlock.type === 'photo'
+                              ? selectedBlock.content === p.id
+                              : selectedGroupIds.includes(p.id);
 
-                    <InspectorDivider />
-                    <InspectorHint>
-                      Qui scegli solo tra le foto già aggiunte alla serie (in <b>Contenuti</b>).
-                    </InspectorHint>
-                  </Inspector>
-                )}
+                          return (
+                            <InspectorThumb
+                              key={p.id}
+                              type="button"
+                              $active={isActive}
+                              onClick={() => {
+                                if (selectedBlock.type === 'photo') setSelectedPhoto(p.id);
+                                else toggleSelectedPhotoInGroup(p.id);
+                              }}
+                              title={p.title || ''}
+                            >
+                              <InspectorImg
+                                src={`${IMAGES_BASE_URL}${p.thumbnail || p.image}`}
+                                alt={p.title}
+                                loading="lazy"
+                              />
+                              {isActive && <InspectorBadge>✓</InspectorBadge>}
+                            </InspectorThumb>
+                          );
+                        })}
+                      </InspectorGrid>
+
+                      <InspectorDivider />
+                      <InspectorHint>
+                        Qui scegli solo tra le foto già aggiunte alla serie (in <b>Contenuti</b>).
+                      </InspectorHint>
+                    </>
+                  )}
+                </Inspector>
+              )}
 
               <CanvasFrame ref={canvasFrameRef} $showBorder={layoutMode}>
                 <Canvas
@@ -1685,6 +1870,10 @@ function SeriesDetail() {
 
                       const renderBlock = () => {
                         if (block.type === 'text') {
+                          const textAlign = block.textAlign || 'left';
+                          const textAlignCss = textAlign === 'justify-right' ? 'justify' : textAlign;
+                          const textAlignLast = textAlign === 'justify-right' ? 'right' : 'auto';
+                          const textSize = TEXT_SIZE_MAP[block.textSize] || TEXT_SIZE_MAP.base;
                           return layoutMode && isSelected ? (
                             <SeriesText style={{ padding: 0 }}>
                               <InlineTextEditor
@@ -1692,10 +1881,19 @@ function SeriesDetail() {
                                 value={block.content}
                                 onChange={(e) => updateTextBlock(index, e.target.value)}
                                 placeholder="Scrivi qui…"
+                                $align={textAlignCss}
+                                $alignLast={textAlignLast}
+                                $size={textSize}
                               />
                             </SeriesText>
                           ) : (
-                            <SeriesText>{block.content}</SeriesText>
+                            <SeriesText
+                              $align={textAlignCss}
+                              $alignLast={textAlignLast}
+                              $size={textSize}
+                            >
+                              {block.content}
+                            </SeriesText>
                           );
                         }
 
@@ -1786,6 +1984,7 @@ function SeriesDetail() {
                           $media={block.type === 'photo' || block.type === 'photos'}
                           $plain={block.type === 'text'}
                           $editing={layoutMode}
+                          $floatingHandle={layoutMode && block.type === 'text'}
                           onPointerDown={(e) => {
                             if (!layoutMode) return;
                             e.stopPropagation();
@@ -1796,6 +1995,7 @@ function SeriesDetail() {
                             <DragHandle
                               className="series-drag-handle"
                               $solid={block.type === 'text'}
+                              $floating={block.type === 'text'}
                               onPointerDown={(e) => {
                                 e.stopPropagation();
                                 setSelectedIndex(index);
