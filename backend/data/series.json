@@ -3,23 +3,31 @@
     "id": "1767314051494",
     "title": "Frammenti di Varsavia",
     "slug": "frammenti-di-varsavia",
-    "description": "As it disappears",
+    "description": "Mentre sparisce",
     "coverImage": 1767357918231,
     "photos": [
       1767354244527,
       1767351827175,
-      1767357918231
+      1767357918231,
+      1767481359015,
+      1767481563548,
+      1767481851195,
+      1767482368621,
+      1767482556728,
+      1767482450651,
+      1767482686888,
+      1767482804791
     ],
     "content": [
       {
         "type": "photo",
-        "content": 1767354244527,
+        "content": 1767351827175,
         "order": 2,
         "layout": {
           "x": 0,
-          "y": 0,
-          "w": 11,
-          "h": 30,
+          "y": 4,
+          "w": 12,
+          "h": 31,
           "unit": "grid",
           "gridVersion": 2
         },
@@ -27,94 +35,139 @@
         "showTitle": true
       },
       {
-        "id": "block-932a3a1d62ed88-mjxc3dt7",
-        "type": "photos",
-        "order": 2,
-        "content": [
-          {
-            "id": 1767354244527,
-            "layout": {
-              "x": 2,
-              "y": 0,
-              "w": 4,
-              "h": 6
-            }
-          },
-          {
-            "id": 1767351827175,
-            "layout": {
-              "x": 0,
-              "y": 0,
-              "w": 2,
-              "h": 3
-            }
-          },
-          {
-            "id": 1767357918231,
-            "layout": {
-              "x": 0,
-              "y": 3,
-              "w": 2,
-              "h": 2
-            }
-          }
-        ],
-        "layout": {
-          "x": 11,
-          "y": 27,
-          "w": 11,
-          "h": 20,
-          "unit": "grid",
-          "gridVersion": 2
-        }
-      },
-      {
-        "id": "block-adb0337c4dd6f8-mjxc3r20",
+        "id": "block-9673650111297-mjyy64lb",
         "type": "photo",
-        "order": 3,
-        "content": 1767357918231,
+        "order": 1,
+        "content": 1767482556728,
         "layout": {
-          "x": 11,
-          "y": 3,
+          "x": 14,
+          "y": 9,
           "w": 8,
-          "h": 22,
+          "h": 20,
           "unit": "grid",
           "gridVersion": 2
         },
         "showTitle": true
       },
       {
+        "id": "block-cd7cb3ab61ba4-mjyy8wcn",
         "type": "text",
-        "content": "Le forme della città svaniscono, avvolte nella nebbia",
-        "order": 4,
-        "id": "block-98446c0cc2487-mjxcm9lz",
+        "order": 2,
+        "content": "Tutto inizia dal basso. Dal battito dei passi sul pavimento freddo e dal ritmo meccanico dei binari che tagliano la notte.",
         "layout": {
-          "x": 11,
+          "x": 5,
           "y": 0,
-          "w": 8,
+          "w": 10,
           "h": 3,
           "unit": "grid",
           "gridVersion": 2
         }
       },
       {
-        "id": "block-88e34edb4e3df-mjyavcp6",
+        "id": "block-a59d1fd18df7c-mjyybq7u",
+        "type": "text",
+        "order": 3,
+        "content": "Poi, il rumore del mondo si fa eco. Lo sguardo sale, la città si stacca dalla terra e diventa una costellazione di luci che trema nel buio.",
+        "layout": {
+          "x": 14,
+          "y": 33,
+          "w": 10,
+          "h": 5,
+          "unit": "grid",
+          "gridVersion": 2
+        }
+      },
+      {
+        "id": "block-588518f9afbb-mjyyeb1s",
         "type": "photo",
         "order": 4,
-        "content": 1767351827175,
+        "content": 1767481359015,
         "layout": {
-          "x": 19,
-          "y": 0,
-          "w": 5,
-          "h": 16,
+          "x": 14,
+          "y": 39,
+          "w": 10,
+          "h": 26,
           "unit": "grid",
           "gridVersion": 2
         },
         "showTitle": true
+      },
+      {
+        "id": "block-9a52ee9e33e1f8-mjyyeork",
+        "type": "photo",
+        "order": 5,
+        "content": 1767354244527,
+        "layout": {
+          "x": 0,
+          "y": 43,
+          "w": 13,
+          "h": 34,
+          "unit": "grid",
+          "gridVersion": 2
+        },
+        "showTitle": true
+      },
+      {
+        "id": "block-dc99b852c3c39-mjyyfuog",
+        "type": "text",
+        "order": 6,
+        "content": "Finché la materia si arrende. I confini svaniscono nella nebbia, il peso del cemento si fa aria. È qui che il reale scivola nel sonno.",
+        "layout": {
+          "x": 15,
+          "y": 74,
+          "w": 8,
+          "h": 5,
+          "unit": "grid",
+          "gridVersion": 2
+        }
+      },
+      {
+        "id": "block-748b17a5330b48-mjyyg5k4",
+        "type": "photo",
+        "order": 7,
+        "content": 1767357918231,
+        "layout": {
+          "x": 13,
+          "y": 81,
+          "w": 11,
+          "h": 27,
+          "unit": "grid",
+          "gridVersion": 2
+        },
+        "showTitle": true
+      },
+      {
+        "id": "block-a418f6d4d361f-mjyygllo",
+        "type": "photo",
+        "order": 8,
+        "content": 1767481851195,
+        "layout": {
+          "x": 2,
+          "y": 109,
+          "w": 15,
+          "h": 34,
+          "unit": "grid",
+          "gridVersion": 2
+        },
+        "showTitle": true
+      },
+      {
+        "id": "block-f03b35653c0ef8-mjyyh1ty",
+        "type": "text",
+        "order": 9,
+        "content": "Resta solo un’ombra, sospesa sopra le nuvole. Il ricordo sbiadito di un viaggio che, forse, è stato solo un sogno.",
+        "layout": {
+          "x": 2,
+          "y": 101,
+          "w": 10,
+          "h": 4,
+          "unit": "grid",
+          "gridVersion": 2
+        }
       }
     ],
     "published": true,
     "createdAt": "2026-01-02T00:34:11.494Z",
-    "updatedAt": "2026-01-03T22:53:54.200Z"
+    "updatedAt": "2026-01-04T00:38:18.597Z"
   }
 ]

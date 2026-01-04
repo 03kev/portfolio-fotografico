@@ -1,7 +1,151 @@
 [
   {
+    "id": 1767482804791,
+    "title": "Bosco che si apre",
+    "location": "Warsaw, Poland",
+    "lat": 52.213892,
+    "lng": 21.030102,
+    "image": "/uploads/photo_1767482804791.webp",
+    "thumbnail": "/uploads/thumbnails/photo_1767482804791_thumb.webp",
+    "url": "/uploads/thumbnails/photo_1767482804791_thumb.webp",
+    "description": "",
+    "date": "2025-11-30",
+    "camera": "Samsung Galaxy S25 Ultra",
+    "lens": "",
+    "settings": "{\"aperture\":\"f/3.4\",\"shutter\":\"1/100s\",\"iso\":\"500\",\"focal\":\"18.6mm\"}",
+    "tags": [
+      "Varsavia"
+    ]
+  },
+  {
+    "id": 1767482686888,
+    "title": "Attimo di quiete",
+    "location": "Warsaw, Poland",
+    "lat": 52.209704,
+    "lng": 21.035202,
+    "image": "/uploads/photo_1767482686888.webp",
+    "thumbnail": "/uploads/thumbnails/photo_1767482686888_thumb.webp",
+    "url": "/uploads/thumbnails/photo_1767482686888_thumb.webp",
+    "description": "",
+    "date": "2025-11-30",
+    "camera": "Samsung Galaxy S25 Ultra",
+    "lens": "",
+    "settings": "{\"aperture\":\"f/3.4\",\"shutter\":\"1/100s\",\"iso\":\"100\",\"focal\":\"18.6mm\"}",
+    "tags": [
+      "Varsavia"
+    ]
+  },
+  {
+    "id": 1767482556728,
+    "title": "Notte fra le linee",
+    "location": "Warsaw, Poland",
+    "lat": 52.247254,
+    "lng": 20.9889,
+    "image": "/uploads/photo_1767482556728.webp",
+    "thumbnail": "/uploads/thumbnails/photo_1767482556728_thumb.webp",
+    "url": "/uploads/thumbnails/photo_1767482556728_thumb.webp",
+    "description": "",
+    "date": "2025-11-29",
+    "camera": "Samsung Galaxy S25 Ultra",
+    "lens": "",
+    "settings": "{\"aperture\":\"f/3.4\",\"shutter\":\"1/25s\",\"iso\":\"2000\",\"focal\":\"18.6mm\"}",
+    "tags": [
+      "Varsavia"
+    ]
+  },
+  {
+    "id": 1767482450651,
+    "title": "Il Golgi",
+    "location": "Warsaw, Poland",
+    "lat": 52.240266,
+    "lng": 21.018202,
+    "image": "/uploads/photo_1767482450651.webp",
+    "thumbnail": "/uploads/thumbnails/photo_1767482450651_thumb.webp",
+    "url": "/uploads/thumbnails/photo_1767482450651_thumb.webp",
+    "description": "",
+    "date": "2025-11-29",
+    "camera": "Samsung Galaxy S25 Ultra",
+    "lens": "",
+    "settings": "{\"aperture\":\"f/1.7\",\"shutter\":\"1/50s\",\"iso\":\"500\",\"focal\":\"6.3mm\"}",
+    "tags": [
+      "Varsavia"
+    ]
+  },
+  {
+    "id": 1767482368621,
+    "title": "Alba",
+    "location": "Bergamo",
+    "lat": 45.664746,
+    "lng": 9.701672,
+    "image": "/uploads/photo_1767482368621.webp",
+    "thumbnail": "/uploads/thumbnails/photo_1767482368621_thumb.webp",
+    "url": "/uploads/thumbnails/photo_1767482368621_thumb.webp",
+    "description": "",
+    "date": "2025-11-29",
+    "camera": "Samsung Galaxy S25 Ultra",
+    "lens": "",
+    "settings": "{\"aperture\":\"f/3.4\",\"shutter\":\"1/2134s\",\"iso\":\"64\",\"focal\":\"18.6mm\"}",
+    "tags": [
+      "Varsavia"
+    ]
+  },
+  {
+    "id": 1767481851195,
+    "title": "Proiezione in transito",
+    "location": "Modlin, Poland",
+    "lat": 52.450779,
+    "lng": 20.649211,
+    "image": "/uploads/photo_1767481851195.webp",
+    "thumbnail": "/uploads/thumbnails/photo_1767481851195_thumb.webp",
+    "url": "/uploads/thumbnails/photo_1767481851195_thumb.webp",
+    "description": "",
+    "date": "2025-11-29",
+    "camera": "Samsung Galaxy S24 Ultra",
+    "lens": "",
+    "settings": "{\"aperture\":\"f/1.7\",\"shutter\":\"1/897s\",\"iso\":\"12\",\"focal\":\"6.3mm\"}",
+    "tags": [
+      "Varsavia"
+    ]
+  },
+  {
+    "id": 1767481563548,
+    "title": "Soffitto della sinagoga",
+    "location": "Warsaw, Poland",
+    "lat": 52.249378,
+    "lng": 20.993181,
+    "image": "/uploads/photo_1767481563548.webp",
+    "thumbnail": "/uploads/thumbnails/photo_1767481563548_thumb.webp",
+    "url": "/uploads/thumbnails/photo_1767481563548_thumb.webp",
+    "description": "",
+    "date": "2025-12-01",
+    "camera": "Samsung Galaxy S25 Ultra",
+    "lens": "",
+    "settings": "{\"aperture\":\"f/1.7\",\"shutter\":\"1/50s\",\"iso\":\"500\",\"focal\":\"6.3mm\"}",
+    "tags": [
+      "Varsavia"
+    ]
+  },
+  {
+    "id": 1767481359015,
+    "title": "Movimento statico",
+    "location": "Warsaw, Poland",
+    "lat": 52.230283,
+    "lng": 20.999867,
+    "image": "/uploads/photo_1767481359015.webp",
+    "thumbnail": "/uploads/thumbnails/photo_1767481359015_thumb.webp",
+    "url": "/uploads/thumbnails/photo_1767481359015_thumb.webp",
+    "description": "",
+    "date": "2025-11-30",
+    "camera": "Samsung Galaxy S25 Ultra",
+    "lens": "",
+    "settings": "{\"aperture\":\"f/1.7\",\"shutter\":\"1/25s\",\"iso\":\"640\",\"focal\":\"6.3mm\"}",
+    "tags": [
+      "Varsavia"
+    ]
+  },
+  {
     "id": 1767357918231,
-    "title": "Nebbia",
+    "title": "Verticale nel vuoto",
     "location": "Warsaw, Poland",
     "lat": 52.231707,
     "lng": 21.005994,
@@ -19,7 +163,7 @@
   },
   {
     "id": 1767354244527,
-    "title": "Warsaw Skyline",
+    "title": "Smeraldo urbano",
     "location": "Warsaw, Poland",
     "lat": 52.228925,
     "lng": 21.000266,
@@ -36,7 +180,7 @@
   },
   {
     "id": 1767351827175,
-    "title": "Flusso Metropolitano",
+    "title": "L'attesa",
     "location": "Warsaw, Poland",
     "lat": 52.231086,
     "lng": 21.010357,
