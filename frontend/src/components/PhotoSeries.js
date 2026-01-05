@@ -72,6 +72,19 @@ const CreateButton = styled(motion.button)`
   }
 `;
 
+const StickyCreate = styled.div`
+  position: sticky;
+  top: calc(78px + 12px);
+  z-index: var(--z-sticky);
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--spacing-2xl);
+
+  @media (max-width: 768px) {
+    top: calc(70px + 12px);
+  }
+`;
+
 const Grid = styled(motion.div)`
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -226,7 +239,10 @@ export default function PhotoSeries({ showAdmin = false, title = 'Serie', subtit
               <Subtitle>{subtitle}</Subtitle>
             </Heading>
 
-            {showAdmin && (
+          </Header>
+
+          {showAdmin && (
+            <StickyCreate>
               <CreateButton
                 onClick={() => setShowEditor(true)}
                 whileTap={{ scale: 0.98 }}
@@ -234,8 +250,8 @@ export default function PhotoSeries({ showAdmin = false, title = 'Serie', subtit
                 <Plus size={16} />
                 Nuova serie
               </CreateButton>
-            )}
-          </Header>
+            </StickyCreate>
+          )}
 
           {!loading && publishedSeries.length > 0 ? (
             <Grid key={publishedSeries.map(s => s.id).join('-')}>

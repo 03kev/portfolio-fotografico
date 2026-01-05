@@ -32,7 +32,7 @@ export default function AboutPage() {
             Mi interessa raccontare storie semplici e coerenti: una luce, una strada, una stagione.
           </P>
           <P>
-            In questo portfolio trovi serie tematiche e una galleria completa. Se ti va, parti dalla mappa per esplorare gli scatti per posizione.
+            In questo portfolio trovi serie tematiche e un'archivio completo. Se ti va, parti dalla mappa per esplorare gli scatti per posizione.
           </P>
         </Card>
       </Wrap>

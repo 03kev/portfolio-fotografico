@@ -26,13 +26,14 @@
         "layout": {
           "x": 1,
           "y": 7,
-          "w": 13,
+          "w": 14,
           "h": 31,
           "unit": "grid",
           "gridVersion": 2
         },
         "id": "block-c26f91dff217b8-mjxbzxns",
-        "showTitle": true
+        "showTitle": true,
+        "showLightbox": true
       },
       {
         "id": "block-9673650111297-mjyy64lb",
@@ -47,7 +48,8 @@
           "unit": "grid",
           "gridVersion": 2
         },
-        "showTitle": false
+        "showTitle": false,
+        "showLightbox": false
       },
       {
         "id": "block-cd7cb3ab61ba4-mjyy8wcn",
@@ -57,13 +59,13 @@
         "layout": {
           "x": 1,
           "y": 0,
-          "w": 13,
+          "w": 14,
           "h": 4,
           "unit": "grid",
           "gridVersion": 2
         },
-        "textAlign": "center",
-        "textSize": "lg"
+        "textAlign": "justify",
+        "textSize": "xl"
       },
       {
         "id": "block-a59d1fd18df7c-mjyybq7u",
@@ -94,7 +96,8 @@
           "unit": "grid",
           "gridVersion": 2
         },
-        "showTitle": true
+        "showTitle": true,
+        "showLightbox": true
       },
       {
         "id": "block-9a52ee9e33e1f8-mjyyeork",
@@ -109,7 +112,8 @@
           "unit": "grid",
           "gridVersion": 2
         },
-        "showTitle": true
+        "showTitle": true,
+        "showLightbox": true
       },
       {
         "id": "block-dc99b852c3c39-mjyyfuog",
@@ -140,7 +144,8 @@
           "unit": "grid",
           "gridVersion": 2
         },
-        "showTitle": true
+        "showTitle": true,
+        "showLightbox": true
       },
       {
         "id": "block-a418f6d4d361f-mjyygllo",
@@ -155,13 +160,14 @@
           "unit": "grid",
           "gridVersion": 2
         },
-        "showTitle": true
+        "showTitle": true,
+        "showLightbox": true
       },
       {
         "id": "block-f03b35653c0ef8-mjyyh1ty",
         "type": "text",
         "order": 9,
-        "content": "Infine resta solo un’ombra, sospesa sopra le nuvole. Il ricordo sbiadito di un viaggio che, forse, è stato solo un sogno.",
+        "content": "Resta solo un’ombra, sospesa sopra le nuvole. Il ricordo sbiadito di un viaggio che, forse, è stato solo un sogno.",
         "layout": {
           "x": 2,
           "y": 145,
@@ -176,6 +182,6 @@
     ],
     "published": true,
     "createdAt": "2026-01-02T00:34:11.494Z",
-    "updatedAt": "2026-01-04T03:49:23.703Z"
+    "updatedAt": "2026-01-05T18:13:24.908Z"
   }
 ]

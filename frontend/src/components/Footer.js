@@ -170,7 +170,7 @@ const Footer = () => {
             <Links>
               <li><Link to="/">Home</Link></li>
               <li><Link to="/series">Serie</Link></li>
-              <li><Link to="/gallery">Galleria</Link></li>
+              <li><Link to="/gallery">Archivio</Link></li>
               <li><Link to="/map">Mappa</Link></li>
               <li><Link to="/about">Chi sono</Link></li>
               <li><Link to="/contact">Contatti</Link></li>
@@ -190,7 +190,7 @@ const Footer = () => {
 
         <Bottom>
           <Small>© {currentYear} Portfolio Fotografico</Small>
-          <Small>Realizzato con React</Small>
+          <Small>Kevin Muka</Small>
         </Bottom>
       </Container>
     </FooterContainer>

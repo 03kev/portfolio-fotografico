@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlignCenter, AlignJustify, AlignLeft, AlignRight, ChevronLeft, FileText, Image as ImageIcon, Images, LayoutGrid, PencilLine, RotateCcw, Save, Trash2, Type, X } from 'lucide-react';
+import { AlignCenter, AlignJustify, AlignLeft, AlignRight, ChevronLeft, FileText, Image as ImageIcon, Images, LayoutGrid, Maximize2, PencilLine, RotateCcw, Save, Trash2, Type, X } from 'lucide-react';
 import GridLayout from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
@@ -194,11 +194,12 @@ const LayoutStage = styled.div`
   border-radius: ${props => (props.$editing ? 'var(--border-radius-xl)' : '0')};
   background: ${props => (props.$editing ? 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.02) 100%)' : 'transparent')};
   overflow-x: hidden;
-  overflow-y: ${props => (props.$editing ? 'auto' : 'visible')};
+  overflow-y: visible;
   padding: 0;
   border: none;
   box-shadow: ${props => (props.$editing ? '0 0 0 1px rgba(255,255,255,0.06), 0 18px 36px rgba(0,0,0,0.28)' : 'none')};
   transition: background 0.2s ease, box-shadow 0.2s ease;
+  touch-action: pan-y;
 `;
 
 const CanvasFrame = styled.div`
@@ -222,6 +223,18 @@ const Canvas = styled.div`
   .react-grid-item {
     transition: none !important;
     overflow: visible;
+    touch-action: pan-y;
+  }
+
+  .react-grid-layout {
+    touch-action: pan-y;
+  }
+
+  .react-resizable-handle {
+    opacity: 1;
+    background-size: 6px 6px;
+    padding: 0 1px 1px 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 6 6'%3E%3Cpath d='M6 6H0V4.2H4V0H6V6Z' fill='%23ffffff' stroke='%239b9b9b' stroke-width='0.4' stroke-linejoin='round'/%3E%3C/svg%3E");
   }
 
   &::before {
@@ -376,6 +389,8 @@ const InspectorClose = styled.button`
   height: 30px;
   border-radius: 50%;
   cursor: pointer;
+  margin-top: -35px;
+  margin-right: -10px;
 
   &:hover { background: rgba(255,255,255,0.12); }
 `;
@@ -643,18 +658,40 @@ const PhotoFrame = styled.figure`
   grid-template-rows: 1fr auto;
   gap: 0;
   padding: 0;
+  align-items: stretch;
+`;
+
+const PhotoMedia = styled.div`
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
   align-items: center;
+  justify-content: center;
+  grid-row: 1 / 2;
+  overflow: hidden;
 `;
 
 const CanvasPhoto = styled.img`
-  width: 100%;
-  height: 100%;
-  min-height: 0;
+  width: auto;
+  height: auto;
+  max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+  object-position: center;
   display: block;
   border-radius: 0;
   background: transparent;
+`;
+
+const PhotoClickArea = styled.button`
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
 `;
 
 const CanvasCaption = styled.figcaption`
@@ -670,6 +707,7 @@ const GroupGrid = styled.div`
   width: 100%;
   height: 100%;
   overflow: hidden;
+  background: ${props => (props.$editing ? 'rgba(255,255,255,0.03)' : 'transparent')};
 `;
 
 const GroupItem = styled.div`
@@ -677,6 +715,7 @@ const GroupItem = styled.div`
   height: 100%;
   overflow: hidden;
   border-radius: 0;
+  background: ${props => (props.$editing ? 'rgba(0,0,0,0.32)' : 'transparent')};
 `;
 
 const ThumbButton = styled.button`
@@ -866,7 +905,7 @@ function SeriesDetail() {
   const stageRef = useRef(null);
   const canvasFrameRef = useRef(null);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
-  const [selectedIndex, setSelectedIndex] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
   const [gridRowsOverride, setGridRowsOverride] = useState(null);
   const CANVAS_MAX_WIDTH = 1200;
   const [canvasWidth, setCanvasWidth] = useState(CANVAS_MAX_WIDTH);
@@ -896,9 +935,10 @@ function SeriesDetail() {
     { id: 'justify', icon: AlignJustify, label: 'Giustifica' },
     { id: 'justify-right', icon: AlignJustify, label: 'Giustifica a destra', badge: 'R' },
   ];
-  const GROUP_GRID_COLS = 6;
-  const GROUP_ROW_HEIGHT = 70;
-  const GROUP_GUTTER = 8;
+  const GROUP_GRID_VERSION = 2;
+  const LEGACY_GROUP_COLS = 6;
+  const LEGACY_GROUP_ROW_HEIGHT = 70;
+  const LEGACY_GROUP_GUTTER = 8;
   const GROUP_MIN_W = 1;
   const GROUP_MIN_H = 1;
   const GROUP_DEFAULT_W = 2;
@@ -979,6 +1019,13 @@ function SeriesDetail() {
       }
     };
   }, [layoutMode, CANVAS_MAX_WIDTH, currentSeries]);
+
+  useLayoutEffect(() => {
+    if (layoutMode) {
+      setSelectedId(null);
+      setQuickAddOpen(false);
+    }
+  }, [layoutMode]);
 
   const clamp = (v, min, max) => Math.max(min, Math.min(v, max));
 
@@ -1080,8 +1127,11 @@ function SeriesDetail() {
       if (block.type === 'photo' && typeof block.showTitle !== 'boolean') {
         nextBlock.showTitle = true;
       }
+      if (block.type === 'photo' && typeof block.showLightbox !== 'boolean') {
+        nextBlock.showLightbox = true;
+      }
       if (block.type === 'photos') {
-        nextBlock.content = prepareGroupItems(block.content || []);
+        nextBlock.content = prepareGroupItems(block.content || [], nextBlock.layout);
       }
       if (block.type === 'text') {
         nextBlock.content = typeof nextBlock.content === 'string' ? nextBlock.content : '';
@@ -1099,7 +1149,16 @@ function SeriesDetail() {
 
   const buildGridLayout = (content = []) =>
     (content || []).map((block) => {
-      const minRows = getBlockMinRows(block.type);
+      const baseMinRows = getBlockMinRows(block.type);
+      let minCols = MIN_W_COLS;
+      let minRows = baseMinRows;
+
+      if (block.type === 'photos') {
+        const required = getGroupContentMinSize(block);
+        minCols = Math.min(GRID_COLS, Math.max(minCols, required.minCols));
+        minRows = Math.max(minRows, required.minRows);
+      }
+
       const clamped = clampGridLayout({
         x: block.layout?.x ?? 0,
         y: block.layout?.y ?? 0,
@@ -1107,13 +1166,24 @@ function SeriesDetail() {
         h: block.layout?.h ?? minRows,
       }, minRows);
 
+      let w = clamped.w;
+      let h = clamped.h;
+      let x = clamped.x;
+      const y = clamped.y;
+
+      if (block.type === 'photos') {
+        w = Math.min(GRID_COLS, Math.max(w, minCols));
+        h = Math.max(h, minRows);
+        x = clamp(x, 0, GRID_COLS - w);
+      }
+
       return {
         i: String(block.id),
-        x: clamped.x,
-        y: clamped.y,
-        w: clamped.w,
-        h: clamped.h,
-        minW: MIN_W_COLS,
+        x,
+        y,
+        w,
+        h,
+        minW: minCols,
         minH: minRows,
       };
     });
@@ -1128,19 +1198,67 @@ function SeriesDetail() {
     return Math.round(ROW_HEIGHT * h + Math.max(0, h - 1) * GRID_GUTTER);
   };
 
-  const getGroupMaxRows = (layout) => {
-    const height = getBlockPixelHeight(layout);
-    return Math.max(1, Math.floor((height + GROUP_GUTTER) / (GROUP_ROW_HEIGHT + GROUP_GUTTER)));
+  const getGroupCols = (layout) =>
+    Math.max(GROUP_MIN_W, layout?.w ?? LEGACY_GROUP_COLS);
+
+  const getGroupRows = (layout) =>
+    Math.max(GROUP_MIN_H, layout?.h ?? GROUP_DEFAULT_H);
+
+  const getGroupMinCols = (groupCols) =>
+    Math.max(GROUP_MIN_W, Math.min(groupCols || LEGACY_GROUP_COLS, MIN_W_COLS));
+
+  const getGroupMinRows = (groupRows) =>
+    Math.max(GROUP_MIN_H, Math.min(groupRows || GROUP_DEFAULT_H, MIN_H_ROWS));
+
+  const getGroupContentMinSize = (block) => {
+    const items = prepareGroupItems(block.content || [], block.layout);
+    let maxCols = GROUP_MIN_W;
+    let maxRows = GROUP_MIN_H;
+
+    items.forEach((item) => {
+      const layout = item.layout || {};
+      const w = layout.w ?? GROUP_DEFAULT_W;
+      const h = layout.h ?? GROUP_DEFAULT_H;
+      const x = layout.x ?? 0;
+      const y = layout.y ?? 0;
+      maxCols = Math.max(maxCols, x + w);
+      maxRows = Math.max(maxRows, y + h);
+    });
+
+    return { minCols: maxCols, minRows: maxRows };
   };
 
-  const buildGroupLayout = (items = [], maxRows) =>
+  const getLegacyGroupColWidth = (width) =>
+    (width - LEGACY_GROUP_GUTTER * (LEGACY_GROUP_COLS - 1)) / LEGACY_GROUP_COLS;
+
+  const scaleLegacyGroupLayout = (layout, groupWidth) => {
+    const legacyColWidth = getLegacyGroupColWidth(groupWidth);
+    const legacyStepX = legacyColWidth + LEGACY_GROUP_GUTTER;
+    const legacyStepY = LEGACY_GROUP_ROW_HEIGHT + LEGACY_GROUP_GUTTER;
+    const xPx = (layout.x ?? 0) * legacyStepX;
+    const yPx = (layout.y ?? 0) * legacyStepY;
+    const wPx = (layout.w ?? GROUP_DEFAULT_W) * legacyStepX - LEGACY_GROUP_GUTTER;
+    const hPx = (layout.h ?? GROUP_DEFAULT_H) * legacyStepY - LEGACY_GROUP_GUTTER;
+
+    return {
+      x: Math.max(0, Math.round(xPx / GRID_STEP_X)),
+      y: Math.max(0, Math.round(yPx / GRID_STEP_Y)),
+      w: Math.max(1, Math.round((wPx + GRID_GUTTER) / GRID_STEP_X)),
+      h: Math.max(1, Math.round((hPx + GRID_GUTTER) / GRID_STEP_Y)),
+      gridVersion: GROUP_GRID_VERSION,
+    };
+  };
+
+  const buildGroupLayout = (items = [], groupCols, groupRows) =>
     (items || []).map((item) => {
+      const minCols = getGroupMinCols(groupCols);
+      const minRows = getGroupMinRows(groupRows);
       const clamped = clampGroupLayout({
         x: item.layout?.x ?? 0,
         y: item.layout?.y ?? 0,
         w: item.layout?.w ?? GROUP_DEFAULT_W,
         h: item.layout?.h ?? GROUP_DEFAULT_H,
-      }, maxRows);
+      }, groupCols, groupRows);
 
       return {
         i: String(item.id),
@@ -1148,10 +1266,10 @@ function SeriesDetail() {
         y: clamped.y,
         w: clamped.w,
         h: clamped.h,
-        minW: GROUP_MIN_W,
-        minH: GROUP_MIN_H,
-        maxW: GROUP_GRID_COLS,
-        maxH: maxRows,
+        minW: minCols,
+        minH: minRows,
+        maxW: groupCols,
+        maxH: groupRows,
       };
     });
 
@@ -1203,13 +1321,17 @@ function SeriesDetail() {
     return item ?? `photo-${index}`;
   };
 
-  const clampGroupLayout = (layout, maxRows) => {
-    const w = clamp(layout.w || GROUP_DEFAULT_W, GROUP_MIN_W, GROUP_GRID_COLS);
-    const h = Math.max(layout.h || GROUP_DEFAULT_H, GROUP_MIN_H);
-    const x = clamp(layout.x || 0, 0, GROUP_GRID_COLS - w);
+  const clampGroupLayout = (layout, groupCols, groupRows) => {
+    const maxCols = Math.max(GROUP_MIN_W, groupCols || LEGACY_GROUP_COLS);
+    const maxRows = Math.max(GROUP_MIN_H, groupRows || GROUP_DEFAULT_H);
+    const minCols = getGroupMinCols(maxCols);
+    const minRows = getGroupMinRows(maxRows);
+    const w = clamp(layout.w || GROUP_DEFAULT_W, minCols, maxCols);
+    const h = clamp(layout.h || GROUP_DEFAULT_H, minRows, maxRows);
+    const x = clamp(layout.x || 0, 0, maxCols - w);
     const maxRow = typeof maxRows === 'number' ? Math.max(0, maxRows - h) : null;
     const y = maxRow === null ? Math.max(layout.y || 0, 0) : clamp(layout.y || 0, 0, maxRow);
-    return { x, y, w, h };
+    return { x, y, w, h, gridVersion: GROUP_GRID_VERSION };
   };
 
   const hasGroupOverlap = (layout, items, ignoreId) => {
@@ -1226,17 +1348,37 @@ function SeriesDetail() {
     });
   };
 
-  const findAvailableGroupPosition = (layout, items, ignoreId) => {
-    let next = { ...layout };
-    let guard = 200;
-    while (hasGroupOverlap(next, items, ignoreId) && guard > 0) {
-      next = { ...next, y: next.y + 1 };
-      guard -= 1;
+  const findAvailableGroupPosition = (layout, items, ignoreId, groupCols = null, groupRows = null, startFromTop = false) => {
+    const next = { ...layout };
+    const maxCols = Math.max(GROUP_MIN_W, groupCols || LEGACY_GROUP_COLS);
+    const maxRows = Math.max(GROUP_MIN_H, groupRows || GROUP_DEFAULT_H);
+    const maxX = Math.max(0, maxCols - next.w);
+    const maxY = Math.max(0, maxRows - next.h);
+
+    const isInside = (candidate) =>
+      candidate.x >= 0 && candidate.x <= maxX && candidate.y >= 0 && candidate.y <= maxY;
+
+    if (!startFromTop && isInside(next) && !hasGroupOverlap(next, items, ignoreId)) {
+      return next;
     }
-    return next;
+
+    const yStart = startFromTop ? 0 : Math.max(0, next.y);
+    for (let y = yStart; y <= maxY; y += 1) {
+      for (let x = 0; x <= maxX; x += 1) {
+        const candidate = { ...next, x, y };
+        if (!hasGroupOverlap(candidate, items, ignoreId)) {
+          return candidate;
+        }
+      }
+    }
+
+    return null;
   };
 
-  const prepareGroupItems = (content = []) => {
+  const prepareGroupItems = (content = [], blockLayout) => {
+    const groupCols = getGroupCols(blockLayout);
+    const groupRows = getGroupRows(blockLayout);
+    const groupWidth = getBlockPixelWidth(blockLayout);
     let yCursor = 0;
     const items = [];
 
@@ -1245,22 +1387,27 @@ function SeriesDetail() {
       if (id === undefined || id === null) return;
       const base = item && typeof item === 'object' ? { ...item } : {};
       const baseLayout = base.layout || null;
+      const fallbackLayout = {
+        x: 0,
+        y: yCursor,
+        w: GROUP_DEFAULT_W,
+        h: GROUP_DEFAULT_H,
+      };
       const layout = baseLayout
         ? {
           x: baseLayout.x ?? 0,
           y: baseLayout.y ?? yCursor,
           w: baseLayout.w ?? GROUP_DEFAULT_W,
           h: baseLayout.h ?? GROUP_DEFAULT_H,
+          gridVersion: baseLayout.gridVersion,
         }
-        : {
-          x: 0,
-          y: yCursor,
-          w: GROUP_DEFAULT_W,
-          h: GROUP_DEFAULT_H,
-        };
+        : fallbackLayout;
+      const normalized = baseLayout && layout.gridVersion !== GROUP_GRID_VERSION
+        ? scaleLegacyGroupLayout(layout, groupWidth)
+        : layout;
 
-      const clamped = clampGroupLayout(layout);
-      const placed = findAvailableGroupPosition(clamped, items, id);
+      const clamped = clampGroupLayout(normalized, groupCols, groupRows);
+      const placed = findAvailableGroupPosition(clamped, items, id, groupCols, groupRows, false) || clamped;
       yCursor = Math.max(yCursor, placed.y + placed.h + 1);
       items.push({ ...base, id, layout: placed });
     });
@@ -1329,25 +1476,39 @@ function SeriesDetail() {
     });
   };
 
-  const setSelectedPhoto = (photoId) => {
-    if (selectedIndex === null) return;
-    setDraftContent(prev => {
+  const togglePhotoLightbox = (index) => {
+    setDraftContent((prev) => {
       const next = [...prev];
-      const b = { ...next[selectedIndex] };
+      const block = next[index];
+      if (!block || block.type !== 'photo') return prev;
+      next[index] = { ...block, showLightbox: !block.showLightbox };
+      return next;
+    });
+  };
+
+  const setSelectedPhoto = (photoId) => {
+    if (selectedId === null) return;
+    setDraftContent(prev => {
+      const index = prev.findIndex(block => String(block.id) === String(selectedId));
+      if (index === -1) return prev;
+      const next = [...prev];
+      const b = { ...next[index] };
       if (b.type !== 'photo') return prev;
       b.content = photoId;
-      next[selectedIndex] = b;
+      next[index] = b;
       return next;
     });
   };
 
   const toggleSelectedPhotoInGroup = (photoId) => {
-    if (selectedIndex === null) return;
+    if (selectedId === null) return;
     setDraftContent(prev => {
+      const index = prev.findIndex(block => String(block.id) === String(selectedId));
+      if (index === -1) return prev;
       const next = [...prev];
-      const b = { ...next[selectedIndex] };
+      const b = { ...next[index] };
       if (b.type !== 'photos') return prev;
-      const items = prepareGroupItems(b.content || []);
+      const items = prepareGroupItems(b.content || [], b.layout);
       const ids = items.map(item => item.id);
       const has = ids.includes(photoId);
       let nextItems = items;
@@ -1358,26 +1519,33 @@ function SeriesDetail() {
           (max, item) => Math.max(max, item.layout.y + item.layout.h + 1),
           0
         );
-        const layout = findAvailableGroupPosition(
-          clampGroupLayout({ x: 0, y: yCursor, w: GROUP_DEFAULT_W, h: GROUP_DEFAULT_H }),
-          items,
-          photoId
+        const groupCols = getGroupCols(b.layout);
+        const groupRows = getGroupRows(b.layout);
+        const baseLayout = clampGroupLayout(
+          { x: 0, y: yCursor, w: GROUP_DEFAULT_W, h: GROUP_DEFAULT_H },
+          groupCols,
+          groupRows
         );
+        const layout = findAvailableGroupPosition(baseLayout, items, photoId, groupCols, groupRows, true);
+        if (!layout) {
+          toast.error('Nessuno spazio disponibile nel gruppo foto.');
+          return prev;
+        }
         nextItems = [...items, { id: photoId, layout }];
       }
       b.content = nextItems;
-      next[selectedIndex] = b;
+      next[index] = b;
       return next;
     });
   };
 
-  const handleGroupLayoutChange = (blockIndex, maxRows) => (layout) => {
+  const handleGroupLayoutChange = (blockIndex, groupCols, groupRows) => (layout) => {
     const layoutById = new Map(layout.map(item => [String(item.i), item]));
     setDraftContent((prev) => {
       const next = [...prev];
       const block = next[blockIndex];
       if (!block || block.type !== 'photos') return prev;
-      const items = prepareGroupItems(block.content || []);
+      const items = prepareGroupItems(block.content || [], block.layout);
       const updated = items.map((item) => {
         const nextLayout = layoutById.get(String(item.id));
         if (!nextLayout) return item;
@@ -1388,7 +1556,7 @@ function SeriesDetail() {
             y: nextLayout.y,
             w: nextLayout.w,
             h: nextLayout.h,
-          }, maxRows),
+          }, groupCols, groupRows),
         };
       });
       next[blockIndex] = { ...block, content: updated };
@@ -1396,15 +1564,9 @@ function SeriesDetail() {
     });
   };
 
-  const deleteBlock = (index) => {
-    setDraftContent(prev => prev.filter((_, i) => i !== index));
-
-    setSelectedIndex(prev => {
-      if (prev === null) return null;
-      if (prev === index) return null;
-      if (prev > index) return prev - 1;
-      return prev;
-    });
+  const deleteBlock = (blockId) => {
+    setDraftContent(prev => prev.filter(block => String(block.id) !== String(blockId)));
+    setSelectedId(prev => (String(prev) === String(blockId) ? null : prev));
   };
 
   const addLayoutBlock = (type) => {
@@ -1447,10 +1609,11 @@ function SeriesDetail() {
       }
       if (type === 'photo') {
         block.showTitle = true;
+        block.showLightbox = true;
       }
 
       const next = [...prev, block];
-      setSelectedIndex(next.length - 1);
+      setSelectedId(id);
       return next;
     });
 
@@ -1476,8 +1639,7 @@ function SeriesDetail() {
   };
 
   const handleGridDragStart = (layout, oldItem) => {
-    const index = draftContent.findIndex(block => String(block.id) === String(oldItem.i));
-    if (index !== -1) setSelectedIndex(index);
+    setSelectedId(oldItem.i);
     bumpGridRows(getGridRows(draftContent) + GRID_ROW_BUFFER);
   };
 
@@ -1490,8 +1652,7 @@ function SeriesDetail() {
   };
 
   const handleGridResizeStart = (layout, oldItem) => {
-    const index = draftContent.findIndex(block => String(block.id) === String(oldItem.i));
-    if (index !== -1) setSelectedIndex(index);
+    setSelectedId(oldItem.i);
     bumpGridRows(getGridRows(draftContent) + GRID_ROW_BUFFER);
   };
 
@@ -1505,7 +1666,7 @@ function SeriesDetail() {
 
   const handleCanvasPointerDown = (e) => {
     if (!e.target.closest('.react-grid-item')) {
-      setSelectedIndex(null);
+      setSelectedId(null);
       setQuickAddOpen(false);
     }
   };
@@ -1521,10 +1682,13 @@ function SeriesDetail() {
 
   const viewContent = prepareContent(currentSeries?.content || [], false);
   const renderContent = layoutMode ? draftContent : viewContent;
-  const selectedBlock = selectedIndex !== null ? draftContent[selectedIndex] : null;
+  const selectedIndex = selectedId !== null
+    ? draftContent.findIndex(block => String(block.id) === String(selectedId))
+    : -1;
+  const selectedBlock = selectedIndex >= 0 ? draftContent[selectedIndex] : null;
   const selectedGroupIds =
     selectedBlock?.type === 'photos'
-      ? prepareGroupItems(selectedBlock.content || []).map(item => item.id)
+      ? prepareGroupItems(selectedBlock.content || [], selectedBlock.layout).map(item => item.id)
       : [];
   const gridRows = layoutMode
     ? Math.max(getGridRows(draftContent), gridRowsOverride || 0)
@@ -1623,7 +1787,13 @@ function SeriesDetail() {
 
               <AdminBarButton
                 type="button"
-                onClick={() => setLayoutMode(v => !v)}
+                onClick={() => {
+                  if (!layoutMode) {
+                    setSelectedId(null);
+                    setQuickAddOpen(false);
+                  }
+                  setLayoutMode(v => !v);
+                }}
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.97 }}
               >
@@ -1668,7 +1838,7 @@ function SeriesDetail() {
               onPointerDown={(e) => {
                 if (!layoutMode) return;
                 if (e.target === e.currentTarget) {
-                  setSelectedIndex(null);
+                  setSelectedId(null);
                   setQuickAddOpen(false);
                 }
               }}
@@ -1727,7 +1897,7 @@ function SeriesDetail() {
                             : 'Clicca per aggiungere/rimuovere'}
                       </InspectorSmall>
                     </div>
-                    <InspectorClose type="button" onClick={() => setSelectedIndex(null)}>
+                    <InspectorClose type="button" onClick={() => setSelectedId(null)}>
                       ✕
                     </InspectorClose>
                   </InspectorTitle>
@@ -1900,15 +2070,24 @@ function SeriesDetail() {
                         if (block.type === 'photo') {
                           const photo = photos.find(p => p.id === block.content);
                           if (!photo) return null;
+                          const canOpenLightbox = !layoutMode && block.showLightbox !== false;
                           return (
                             <PhotoFrame>
-                              <CanvasPhoto
-                                src={`${IMAGES_BASE_URL}${photo.image}`}
-                                alt={photo.title}
-                                loading="lazy"
-                                onClick={() => handlePhotoClick(photo)}
-                                style={{ cursor: 'pointer' }}
-                              />
+                              <PhotoMedia>
+                                <CanvasPhoto
+                                  src={`${IMAGES_BASE_URL}${photo.image}`}
+                                  alt={photo.title}
+                                  loading="lazy"
+                                />
+                                {canOpenLightbox && (
+                                  <PhotoClickArea
+                                    type="button"
+                                    onClick={() => handlePhotoClick(photo)}
+                                    aria-label={photo.title ? `Apri ${photo.title}` : 'Apri foto'}
+                                    title={photo.title || 'Apri foto'}
+                                  />
+                                )}
+                              </PhotoMedia>
                               {block.showTitle !== false && photo.title && (
                                 <CanvasCaption>{photo.title}</CanvasCaption>
                               )}
@@ -1917,22 +2096,23 @@ function SeriesDetail() {
                         }
 
                         if (block.type === 'photos') {
-                          const groupItems = prepareGroupItems(block.content || []);
-                          const groupMaxRows = getGroupMaxRows(block.layout);
+                          const groupCols = getGroupCols(block.layout);
+                          const groupRows = getGroupRows(block.layout);
+                          const groupItems = prepareGroupItems(block.content || [], block.layout);
                           const groupWidth = getBlockPixelWidth(block.layout);
                           const groupHeight = getBlockPixelHeight(block.layout);
 
                           return (
-                            <GroupGrid>
+                            <GroupGrid $editing={layoutMode}>
                               <GridLayout
-                                layout={buildGroupLayout(groupItems, groupMaxRows)}
-                                cols={GROUP_GRID_COLS}
-                                rowHeight={GROUP_ROW_HEIGHT}
+                                layout={buildGroupLayout(groupItems, groupCols, groupRows)}
+                                cols={groupCols}
+                                rowHeight={ROW_HEIGHT}
                                 width={groupWidth}
-                                margin={[GROUP_GUTTER, GROUP_GUTTER]}
+                                margin={[GRID_GUTTER, GRID_GUTTER]}
                                 containerPadding={[0, 0]}
                                 autoSize={false}
-                                maxRows={groupMaxRows}
+                                maxRows={groupRows}
                                 style={{ height: groupHeight }}
                                 isResizable={layoutMode}
                                 isDraggable={layoutMode}
@@ -1940,13 +2120,13 @@ function SeriesDetail() {
                                 compactType={null}
                                 isBounded
                                 resizeHandles={layoutMode ? ['se', 'sw', 'ne', 'nw'] : []}
-                                onLayoutChange={layoutMode ? handleGroupLayoutChange(index, groupMaxRows) : undefined}
+                                onLayoutChange={layoutMode ? handleGroupLayoutChange(index, groupCols, groupRows) : undefined}
                               >
                                 {groupItems.map((item) => {
                                   const photo = photos.find(p => p.id === item.id);
                                   if (!photo) return null;
                                   return (
-                                    <GroupItem key={item.id}>
+                                    <GroupItem key={item.id} $editing={layoutMode}>
                                       {layoutMode ? (
                                         <ThumbImage
                                           src={`${IMAGES_BASE_URL}${photo.image}`}
@@ -1988,7 +2168,7 @@ function SeriesDetail() {
                           onPointerDown={(e) => {
                             if (!layoutMode) return;
                             e.stopPropagation();
-                            setSelectedIndex(index);
+                            setSelectedId(block.id);
                           }}
                         >
                           {layoutMode && (
@@ -1998,7 +2178,7 @@ function SeriesDetail() {
                               $floating={block.type === 'text'}
                               onPointerDown={(e) => {
                                 e.stopPropagation();
-                                setSelectedIndex(index);
+                                setSelectedId(block.id);
                               }}
                             >
                               <DragLabel>
@@ -2008,39 +2188,65 @@ function SeriesDetail() {
                               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                 <DragHint>drag • resize</DragHint>
 
-                                {isSelected && block.type === 'photo' && (
-                                  <button
-                                    type="button"
-                                    onPointerDown={(e) => e.stopPropagation()}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      togglePhotoTitle(index);
-                                    }}
-                                    style={{
-                                      border: 'none',
-                                      background: block.showTitle
-                                        ? 'rgba(255,255,255,0.18)'
-                                        : 'rgba(255,255,255,0.08)',
-                                      color: 'rgba(255,255,255,0.92)',
-                                      width: 30,
-                                      height: 30,
-                                      borderRadius: 999,
-                                      cursor: 'pointer',
-                                    }}
-                                    title={block.showTitle ? 'Nascondi titolo' : 'Mostra titolo'}
-                                    aria-pressed={block.showTitle ? 'true' : 'false'}
-                                  >
-                                    <Type size={14} />
-                                  </button>
-                                )}
+                              {isSelected && block.type === 'photo' && (
+                                <button
+                                  type="button"
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    togglePhotoTitle(index);
+                                  }}
+                                  style={{
+                                    border: 'none',
+                                    background: block.showTitle
+                                      ? 'rgba(255,255,255,0.18)'
+                                      : 'rgba(255,255,255,0.08)',
+                                    color: 'rgba(255,255,255,0.92)',
+                                    width: 30,
+                                    height: 30,
+                                    borderRadius: 999,
+                                    cursor: 'pointer',
+                                  }}
+                                  title={block.showTitle ? 'Nascondi titolo' : 'Mostra titolo'}
+                                  aria-pressed={block.showTitle ? 'true' : 'false'}
+                                >
+                                  <Type size={14} />
+                                </button>
+                              )}
 
-                                {isSelected && (
-                                  <button
-                                    type="button"
-                                    onPointerDown={(e) => e.stopPropagation()}
-                                    onClick={(e) => {
+                              {isSelected && block.type === 'photo' && (
+                                <button
+                                  type="button"
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    togglePhotoLightbox(index);
+                                  }}
+                                  style={{
+                                    border: 'none',
+                                    background: block.showLightbox
+                                      ? 'rgba(255,255,255,0.18)'
+                                      : 'rgba(255,255,255,0.08)',
+                                    color: 'rgba(255,255,255,0.92)',
+                                    width: 30,
+                                    height: 30,
+                                    borderRadius: 999,
+                                    cursor: 'pointer',
+                                  }}
+                                  title={block.showLightbox ? 'Disattiva ingrandimento' : 'Attiva ingrandimento'}
+                                  aria-pressed={block.showLightbox ? 'true' : 'false'}
+                                >
+                                  <Maximize2 size={14} />
+                                </button>
+                              )}
+
+                              {isSelected && (
+                                <button
+                                  type="button"
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => {
                                       e.stopPropagation();
-                                      deleteBlock(index);
+                                      deleteBlock(block.id);
                                     }}
                                     style={{
                                       border: 'none',
