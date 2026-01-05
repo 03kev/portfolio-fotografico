@@ -45,6 +45,9 @@ const GlobalStyles = createGlobalStyle`
     --secondary-gradient: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.55) 100%);
     --accent-gradient: var(--primary-gradient);
     --dark-gradient: radial-gradient(1200px 700px at 50% -10%, rgba(214, 179, 106, 0.10) 0%, rgba(11, 11, 13, 0) 55%), var(--color-bg);
+    --home-surface-bg: radial-gradient(900px 520px at 20% 12%, rgba(214, 179, 106, 0.16) 0%, rgba(214, 179, 106, 0) 60%),
+      radial-gradient(900px 520px at 80% 18%, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0) 62%),
+      var(--dark-gradient);
 
     /* Shadows (softer, less "neon") */
     --shadow-small: 0 1px 2px rgba(0, 0, 0, 0.35);
@@ -138,6 +141,14 @@ const GlobalStyles = createGlobalStyle`
     line-height: 1.65;
     overflow-x: hidden;
     overflow-y: scroll;
+  }
+
+  html.home-surface {
+    background: var(--color-bg);
+  }
+
+  body.home-surface {
+    background: var(--color-bg);
   }
 
   main {

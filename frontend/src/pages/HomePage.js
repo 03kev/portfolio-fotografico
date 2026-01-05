@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import styled from 'styled-components';
 import { Link } from 'react-router-dom';
 
@@ -6,6 +6,33 @@ import Hero from '../components/Hero';
 import Section from '../ui/Section';
 import FeaturedSeries from '../components/FeaturedSeries';
 import FeaturedGallery from '../components/FeaturedGallery';
+
+const HomeSurface = styled.div`
+  position: relative;
+  min-height: 100vh;
+  background: var(--color-bg);
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(900px 520px at 20% 12%, rgba(214, 179, 106, 0.16) 0%, rgba(214, 179, 106, 0) 60%),
+      radial-gradient(900px 520px at 80% 18%, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0) 62%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  > * {
+    position: relative;
+    z-index: 1;
+  }
+`;
+
+const HomeSection = styled(Section)`
+  position: relative;
+  padding-top: var(--spacing-3xl);
+`;
 
 const CTASection = styled.section`
   padding: var(--spacing-4xl) 0;
@@ -82,23 +109,33 @@ const Button = styled(Link)`
 `;
 
 export default function HomePage() {
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.add('home-surface');
+    document.body.classList.add('home-surface');
+    return () => {
+      root.classList.remove('home-surface');
+      document.body.classList.remove('home-surface');
+    };
+  }, []);
+
   return (
-    <>
+    <HomeSurface>
       <Hero />
 
-      <Section
+      <HomeSection
         title="Serie"
         subtitle="Progetti coerenti: un filo narrativo, un luogo, un'idea."
       >
         <FeaturedSeries />
-      </Section>
+      </HomeSection>
 
-      <Section
+      <HomeSection
         title="Selezione"
         subtitle="Una griglia di scatti recenti: clicca per aprire la foto."
       >
         <FeaturedGallery />
-      </Section>
+      </HomeSection>
 
       <CTASection>
         <Container>
@@ -106,7 +143,7 @@ export default function HomePage() {
             <Text>
               <Title>Esplora per luoghi</Title>
               <P>
-                Se preferisci partire dalla geografia, la mappa raccoglie gli scatti per punto e ti permette di navigare i cluster.
+                Se preferisci partire dalla geografia, la mappa raccoglie gli scatti per punto e ti permette di navigarci.
               </P>
             </Text>
             <Buttons>
@@ -116,6 +153,6 @@ export default function HomePage() {
           </Card>
         </Container>
       </CTASection>
-    </>
+    </HomeSurface>
   );
 }

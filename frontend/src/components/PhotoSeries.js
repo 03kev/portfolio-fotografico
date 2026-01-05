@@ -17,27 +17,21 @@ const Container = styled.div`
   max-width: 1200px;
   margin: 0 auto;
   padding: 0 var(--spacing-xl);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--spacing-xl);
+  row-gap: var(--spacing-2xl);
+  align-items: start;
 
   @media (max-width: 768px) {
     padding: 0 var(--spacing-lg);
-  }
-`;
-
-const Header = styled.div`
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: var(--spacing-2xl);
-
-  @media (max-width: 768px) {
-    align-items: flex-start;
-    flex-direction: column;
+    grid-template-columns: 1fr;
   }
 `;
 
 const Heading = styled.div`
   max-width: 740px;
+  grid-column: 1;
 `;
 
 const Title = styled.h2`
@@ -78,14 +72,20 @@ const StickyCreate = styled.div`
   z-index: var(--z-sticky);
   display: flex;
   justify-content: flex-end;
-  margin-bottom: var(--spacing-2xl);
+  align-self: flex-start;
+  margin-top: 4px;
+  grid-column: 2;
+  justify-self: end;
 
   @media (max-width: 768px) {
     top: calc(70px + 12px);
+    grid-column: 1;
+    justify-self: start;
   }
 `;
 
 const Grid = styled(motion.div)`
+  grid-column: 1 / -1;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: var(--spacing-xl);
@@ -183,6 +183,7 @@ const Tag = styled.span`
 `;
 
 const Empty = styled.div`
+  grid-column: 1 / -1;
   text-align: center;
   padding: var(--spacing-4xl) 0;
   color: var(--color-muted);
@@ -233,14 +234,10 @@ export default function PhotoSeries({ showAdmin = false, title = 'Serie', subtit
         transition={{ duration: 0.5 }}
       >
         <Container>
-          <Header>
-            <Heading>
-              <Title>{title}</Title>
-              <Subtitle>{subtitle}</Subtitle>
-            </Heading>
-
-          </Header>
-
+          <Heading>
+            <Title>{title}</Title>
+            <Subtitle>{subtitle}</Subtitle>
+          </Heading>
           {showAdmin && (
             <StickyCreate>
               <CreateButton

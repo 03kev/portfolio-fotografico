@@ -490,7 +490,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             <div className="step-content">
             {/* --- Info Foto --- */}
             <div className="form-group">
-            <label>Titolo *</label>
+            <label>Titolo<span style={{ color: '#999', marginLeft: '2px' }}>*</span></label>
             <input
             type="text"
             value={formData.title}

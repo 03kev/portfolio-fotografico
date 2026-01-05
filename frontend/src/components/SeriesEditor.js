@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { FileText, Image as ImageIcon, Images, Trash2 } from 'lucide-react';
+import React, { useMemo, useState, useEffect } from 'react';
+import { FileText, Image as ImageIcon, Images, Search, Trash2 } from 'lucide-react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSeries } from '../contexts/SeriesContext';
@@ -17,11 +17,11 @@ const EditorOverlay = styled(motion.div)`
   backdrop-filter: blur(10px);
   z-index: var(--z-modal);
   overflow-y: auto;
-  padding: var(--spacing-2xl);
+  padding: var(--spacing-xl);
 `;
 
 const EditorContainer = styled(motion.div)`
-  max-width: 1200px;
+  max-width: 1080px;
   margin: 0 auto;
   background: rgba(26, 26, 26, 0.95);
   border-radius: var(--border-radius-2xl);
@@ -30,7 +30,7 @@ const EditorContainer = styled(motion.div)`
 `;
 
 const EditorHeader = styled.div`
-  padding: var(--spacing-2xl);
+  padding: var(--spacing-xl);
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
   justify-content: space-between;
@@ -63,11 +63,11 @@ const CloseButton = styled(motion.button)`
 `;
 
 const EditorBody = styled.div`
-  padding: var(--spacing-2xl);
+  padding: var(--spacing-xl);
 `;
 
 const FormGroup = styled.div`
-  margin-bottom: var(--spacing-xl);
+  margin-bottom: var(--spacing-lg);
 `;
 
 const Label = styled.label`
@@ -123,40 +123,117 @@ const TextArea = styled.textarea`
   }
 `;
 
-const SectionTitle = styled.h3`
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-bold);
-  color: var(--color-white);
-  margin: var(--spacing-2xl) 0 var(--spacing-lg);
-  padding-top: var(--spacing-2xl);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+const EditorGrid = styled.div`
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: var(--spacing-xl);
+  align-items: start;
 
-  &:first-child {
-    margin-top: 0;
-    padding-top: 0;
-    border-top: none;
+  @media (max-width: 980px) {
+    grid-template-columns: 1fr;
   }
+`;
+
+const Column = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+`;
+
+const Panel = styled.div`
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--border-radius-xl);
+  padding: var(--spacing-lg);
+  box-shadow: var(--shadow-small);
+`;
+
+const PanelHeader = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+`;
+
+const PanelTitle = styled.h4`
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-white);
+`;
+
+const PanelHint = styled.p`
+  margin: 0 0 var(--spacing-md);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+`;
+
+const SelectorMeta = styled.span`
+  font-size: var(--font-size-sm);
+  color: rgba(255, 255, 255, 0.55);
+`;
+
+const SearchRow = styled.div`
+  position: relative;
+  margin-bottom: var(--spacing-md);
+`;
+
+const SearchIcon = styled.span`
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: rgba(255, 255, 255, 0.45);
+  pointer-events: none;
+`;
+
+const SearchInput = styled.input`
+  width: 100%;
+  padding: 10px 12px 10px 38px;
+  border-radius: var(--border-radius-full);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: var(--font-size-sm);
+
+  &:focus {
+    outline: none;
+    border-color: rgba(214, 179, 106, 0.55);
+    box-shadow: 0 0 0 2px rgba(214, 179, 106, 0.15);
+  }
+`;
+
+const EmptyHint = styled.div`
+  color: rgba(255, 255, 255, 0.55);
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-md);
 `;
 
 const ContentBlocks = styled.div`
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-lg);
+  gap: var(--spacing-sm);
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
 `;
 
 const ContentBlock = styled(motion.div)`
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: var(--border-radius-lg);
-  padding: var(--spacing-lg);
+  padding: var(--spacing-md);
   position: relative;
 `;
 
 const BlockHeader = styled.div`
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  margin-bottom: var(--spacing-md);
+  gap: var(--spacing-sm);
+  cursor: pointer;
 `;
 
 const BlockType = styled.span`
@@ -164,6 +241,28 @@ const BlockType = styled.span`
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   text-transform: uppercase;
+`;
+
+const BlockSummary = styled.span`
+  color: rgba(255, 255, 255, 0.55);
+  font-size: var(--font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const BlockToggle = styled.span`
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 18px;
+  line-height: 1;
+  margin-right: 4px;
+`;
+
+const BlockBody = styled.div`
+  margin-top: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
 `;
 
 const DeleteBlockButton = styled(motion.button)`
@@ -224,13 +323,14 @@ const AdvancedToggleButton = styled(motion.button)`
 
 const PhotoSelector = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: var(--spacing-md);
-  max-height: 300px;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--spacing-sm);
+  max-height: 240px;
   overflow-y: auto;
-  padding: var(--spacing-md);
-  background: rgba(0, 0, 0, 0.3);
+  padding: var(--spacing-sm);
+  background: rgba(0, 0, 0, 0.25);
   border-radius: var(--border-radius);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 `;
 
 const PhotoOption = styled(motion.div)`
@@ -338,11 +438,11 @@ const MetaBar = styled.div`
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: var(--spacing-md);
-  margin-bottom: var(--spacing-xl);
+  margin-bottom: var(--spacing-lg);
 `;
 
 const StatCard = styled.div`
-  padding: var(--spacing-lg);
+  padding: var(--spacing-md);
   border-radius: var(--border-radius-lg);
   background: rgba(255,255,255,0.04);
   border: 1px solid rgba(255,255,255,0.08);
@@ -377,6 +477,8 @@ function SeriesEditor({ series, onClose }) {
   });
 
   const [showAdvancedContent, setShowAdvancedContent] = useState(false);
+  const [photoQuery, setPhotoQuery] = useState('');
+  const [expandedBlockIndex, setExpandedBlockIndex] = useState(null);
 
   useEffect(() => {
     if (series) {
@@ -390,6 +492,29 @@ function SeriesEditor({ series, onClose }) {
       });
     }
   }, [series]);
+
+  const normalizedQuery = photoQuery.trim().toLowerCase();
+  const filteredPhotos = useMemo(() => {
+    if (!normalizedQuery) return photos;
+    return photos.filter((photo) => {
+      const tags = Array.isArray(photo.tags) ? photo.tags.join(' ') : photo.tags;
+      const haystack = [
+        photo.title,
+        photo.description,
+        photo.location,
+        tags,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(normalizedQuery);
+    });
+  }, [photos, normalizedQuery]);
+
+  const filteredSelectedPhotos = useMemo(
+    () => filteredPhotos.filter(photo => formData.photos.includes(photo.id)),
+    [filteredPhotos, formData.photos]
+  );
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -439,6 +564,19 @@ function SeriesEditor({ series, onClose }) {
       ...prev,
       content: prev.content.filter((_, i) => i !== index)
     }));
+  };
+
+  const getBlockSummary = (block) => {
+    if (block.type === 'text') {
+      const text = (block.content || '').trim();
+      if (!text) return 'Testo vuoto';
+      return text.length > 48 ? `${text.slice(0, 48)}…` : text;
+    }
+    if (block.type === 'photo') {
+      return block.content ? '1 foto selezionata' : 'Nessuna foto';
+    }
+    const count = Array.isArray(block.content) ? block.content.length : 0;
+    return `${count} foto nel gruppo`;
   };
 
   const handleSubmit = async (e) => {
@@ -505,249 +643,326 @@ function SeriesEditor({ series, onClose }) {
           </EditorHeader>
 
           <EditorBody>
-            <MetaBar>
-              <StatCard>
-                <StatLabel>Stato</StatLabel>
-                <StatValue>{formData.published ? 'Pubblicata' : 'Bozza'}</StatValue>
-              </StatCard>
-              <StatCard>
-                <StatLabel>Foto selezionate</StatLabel>
-                <StatValue>{formData.photos.length}</StatValue>
-              </StatCard>
-              <StatCard>
-                <StatLabel>Blocchi contenuto</StatLabel>
-                <StatValue>{formData.content.length}</StatValue>
-              </StatCard>
-            </MetaBar>
+            <EditorGrid>
+              <Column>
+                <Panel>
+                  <PanelHeader>
+                    <PanelTitle>Dettagli serie</PanelTitle>
+                  </PanelHeader>
+                  <MetaBar>
+                    <StatCard>
+                      <StatLabel>Stato</StatLabel>
+                      <StatValue>{formData.published ? 'Pubblicata' : 'Bozza'}</StatValue>
+                    </StatCard>
+                    <StatCard>
+                      <StatLabel>Foto selezionate</StatLabel>
+                      <StatValue>{formData.photos.length}</StatValue>
+                    </StatCard>
+                    <StatCard>
+                      <StatLabel>Blocchi contenuto</StatLabel>
+                      <StatValue>{formData.content.length}</StatValue>
+                    </StatCard>
+                  </MetaBar>
 
-            <FormGroup>
-              <Label htmlFor="title">Titolo *</Label>
-              <Input
-                type="text"
-                id="title"
-                name="title"
-                value={formData.title}
-                onChange={handleInputChange}
-                placeholder="Es: Paesaggi Islandesi"
-                required
-              />
-            </FormGroup>
+                  <FormGroup>
+                    <Label htmlFor="title">Titolo<span style={{ color: '#999', marginLeft: '2px' }}>*</span></Label>
+                    <Input
+                      type="text"
+                      id="title"
+                      name="title"
+                      value={formData.title}
+                      onChange={handleInputChange}
+                      placeholder="Es: Paesaggi Islandesi"
+                      required
+                    />
+                  </FormGroup>
 
-            <FormGroup>
-              <Label htmlFor="description">Descrizione *</Label>
-              <TextArea
-                id="description"
-                name="description"
-                value={formData.description}
-                onChange={handleInputChange}
-                placeholder="Descrivi la tua serie fotografica..."
-                required
-              />
-            </FormGroup>
+                  <FormGroup>
+                    <Label htmlFor="description">Descrizione<span style={{ color: '#999', marginLeft: '2px' }}>*</span></Label>
+                    <TextArea
+                      id="description"
+                      name="description"
+                      value={formData.description}
+                      onChange={handleInputChange}
+                      placeholder="Descrivi la tua serie fotografica..."
+                      required
+                    />
+                  </FormGroup>
 
-            <FormGroup>
-              <CheckboxLabel>
-                <Checkbox
-                  type="checkbox"
-                  name="published"
-                  checked={formData.published}
-                  onChange={handleInputChange}
-                />
-                Pubblica serie (visibile pubblicamente)
-              </CheckboxLabel>
-            </FormGroup>
-
-            <SectionTitle>Seleziona Foto</SectionTitle>
-            <PhotoSelector>
-              {photos.map(photo => (
-                <PhotoOption
-                  key={photo.id}
-                  selected={formData.photos.includes(photo.id)}
-                  onClick={() => handlePhotoToggle(photo.id)}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  <img 
-                    src={`${IMAGES_BASE_URL}${photo.thumbnail || photo.image}`} 
-                    alt={photo.title}
-                  />
-                  {formData.photos.includes(photo.id) && (
-                    <SelectedBadge>✓</SelectedBadge>
-                  )}
-                </PhotoOption>
-              ))}
-            </PhotoSelector>
-
-            {formData.photos.length > 0 && (
-              <>
-                <SectionTitle>Immagine di Copertina</SectionTitle>
-                <Label>Seleziona quale foto usare come copertina della serie</Label>
-                <PhotoSelector>
-                  {photos.filter(p => formData.photos.includes(p.id)).map(photo => (
-                    <PhotoOption
-                      key={photo.id}
-                      selected={formData.coverImage === photo.id}
-                      onClick={() => setFormData(prev => ({ ...prev, coverImage: photo.id }))}
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                    >
-                      <img 
-                        src={`${IMAGES_BASE_URL}${photo.thumbnail || photo.image}`} 
-                        alt={photo.title}
+                  <FormGroup style={{ marginBottom: 0, marginLeft: 2 }}>
+                    <CheckboxLabel>
+                      <Checkbox
+                        type="checkbox"
+                        name="published"
+                        checked={formData.published}
+                        onChange={handleInputChange}
                       />
-                      {formData.coverImage === photo.id && (
-                        <SelectedBadge>★</SelectedBadge>
-                      )}
-                    </PhotoOption>
-                  ))}
-                </PhotoSelector>
-              </>
-            )}
+                      Pubblica serie
+                    </CheckboxLabel>
+                  </FormGroup>
+                </Panel>
+              </Column>
 
-            <SectionTitle>Layout & Contenuto</SectionTitle>
-            <p style={{ color: 'rgba(255,255,255,0.65)', marginTop: 'var(--spacing-sm)', marginBottom: 0 }}>
-              Il contenuto (foto/paragrafi) lo componi principalmente dalla pagina della serie usando <b>Layout</b>.
-              Qui sotto puoi comunque modificare i blocchi, ma è una modalità avanzata.
-            </p>
+              <Column>
+                <Panel>
+                  <PanelHeader>
+                    <PanelTitle>Seleziona foto</PanelTitle>
+                    <SelectorMeta>
+                      {filteredPhotos.length} di {photos.length}
+                    </SelectorMeta>
+                  </PanelHeader>
+                  <PanelHint>Filtra per titolo, descrizione, luogo o tag.</PanelHint>
+                  <SearchRow>
+                    <SearchIcon>
+                      <Search size={16} />
+                    </SearchIcon>
+                    <SearchInput
+                      type="text"
+                      value={photoQuery}
+                      onChange={(e) => setPhotoQuery(e.target.value)}
+                      placeholder="Cerca foto..."
+                    />
+                  </SearchRow>
+                  {filteredPhotos.length > 0 ? (
+                    <PhotoSelector>
+                      {filteredPhotos.map(photo => (
+                        <PhotoOption
+                          key={photo.id}
+                          selected={formData.photos.includes(photo.id)}
+                          onClick={() => handlePhotoToggle(photo.id)}
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                        >
+                          <img 
+                            src={`${IMAGES_BASE_URL}${photo.thumbnail || photo.image}`} 
+                            alt={photo.title}
+                          />
+                          {formData.photos.includes(photo.id) && (
+                            <SelectedBadge>✓</SelectedBadge>
+                          )}
+                        </PhotoOption>
+                      ))}
+                    </PhotoSelector>
+                  ) : (
+                    <EmptyHint>Nessuna foto corrisponde alla ricerca.</EmptyHint>
+                  )}
+                </Panel>
 
-            <AdvancedToggleButton
-              type="button"
-              onClick={() => setShowAdvancedContent(v => !v)}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              style={{ marginTop: 'var(--spacing-lg)', marginBottom: 'var(--spacing-lg)' }}
-            >
-              <span style={{ fontSize: '18px', lineHeight: 1 }}>
-                {showAdvancedContent ? '−' : '+'}
-              </span>
-              {showAdvancedContent ? 'Nascondi contenuto avanzato' : 'Contenuto avanzato'}
-            </AdvancedToggleButton>
-
-            {showAdvancedContent && (
-              <>
-                <ContentBlocks>
-                  <AnimatePresence>
-                    {formData.content.map((block, index) => (
-                      <ContentBlock
-                        key={index}
-                        initial={{ opacity: 0, y: -20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -20 }}
-                      >
-                        <BlockHeader>
-                          <BlockType>
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                              {block.type === 'text' ? <FileText size={16} /> : block.type === 'photo' ? <ImageIcon size={16} /> : <Images size={16} />}
-                              {block.type === 'text' ? 'Paragrafo' : block.type === 'photo' ? 'Foto' : 'Gruppo Foto'}
-                            </span>
-                          </BlockType>
-                          <DeleteBlockButton
-                            type="button"
-                            onClick={() => deleteContentBlock(index)}
+                {formData.photos.length > 0 && (
+                  <Panel>
+                    <PanelHeader>
+                      <PanelTitle>Copertina</PanelTitle>
+                      <SelectorMeta>
+                        {filteredSelectedPhotos.length} di {formData.photos.length}
+                      </SelectorMeta>
+                    </PanelHeader>
+                    <PanelHint>Seleziona quale foto usare come copertina della serie.</PanelHint>
+                    {filteredSelectedPhotos.length > 0 ? (
+                      <PhotoSelector>
+                        {filteredSelectedPhotos.map(photo => (
+                          <PhotoOption
+                            key={photo.id}
+                            selected={formData.coverImage === photo.id}
+                            onClick={() => setFormData(prev => ({ ...prev, coverImage: photo.id }))}
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                           >
-                            Elimina
-                          </DeleteBlockButton>
-                        </BlockHeader>
+                            <img 
+                              src={`${IMAGES_BASE_URL}${photo.thumbnail || photo.image}`} 
+                              alt={photo.title}
+                            />
+                            {formData.coverImage === photo.id && (
+                              <SelectedBadge>★</SelectedBadge>
+                            )}
+                          </PhotoOption>
+                        ))}
+                      </PhotoSelector>
+                    ) : (
+                      <EmptyHint>Seleziona almeno una foto o modifica il filtro per vedere le copertine.</EmptyHint>
+                    )}
+                  </Panel>
+                )}
 
-                        {block.type === 'text' ? (
-                          <TextArea
-                            value={block.content}
-                            onChange={(e) => updateContentBlock(index, e.target.value)}
-                            placeholder="Scrivi il tuo paragrafo..."
-                          />
-                        ) : block.type === 'photo' ? (
-                          <>
-                            <Label>Seleziona una singola foto (poi la posizioni e ridimensioni dalla pagina della serie)</Label>
-                            <PhotoSelector>
-                              {photos.filter(p => formData.photos.includes(p.id)).map(photo => (
-                                <PhotoOption
-                                  key={photo.id}
-                                  selected={block.content === photo.id}
-                                  onClick={() => updateContentBlock(index, photo.id)}
-                                  whileHover={{ scale: 1.05 }}
-                                  whileTap={{ scale: 0.95 }}
-                                >
-                                  <img 
-                                    src={`${IMAGES_BASE_URL}${photo.thumbnail || photo.image}`} 
-                                    alt={photo.title}
-                                  />
-                                  {block.content === photo.id && (
-                                    <SelectedBadge>✓</SelectedBadge>
-                                  )}
-                                </PhotoOption>
-                              ))}
-                            </PhotoSelector>
-                          </>
-                        ) : (
-                          <>
-                            <Label>Seleziona un gruppo di foto</Label>
-                            <PhotoSelector>
-                              {photos.filter(p => formData.photos.includes(p.id)).map(photo => (
-                                <PhotoOption
-                                  key={photo.id}
-                                  selected={block.content.includes(photo.id)}
-                                  onClick={() => {
-                                    const newContent = block.content.includes(photo.id)
-                                      ? block.content.filter(id => id !== photo.id)
-                                      : [...block.content, photo.id];
-                                    updateContentBlock(index, newContent);
+                <Panel>
+                  <PanelHeader>
+                    <PanelTitle>Layout & contenuto</PanelTitle>
+                    <AdvancedToggleButton
+                      type="button"
+                      onClick={() => setShowAdvancedContent(v => !v)}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      <span style={{ fontSize: '18px', lineHeight: 1 }}>
+                        {showAdvancedContent ? '−' : '+'}
+                      </span>
+                      {showAdvancedContent ? 'Nascondi' : 'Contenuto avanzato'}
+                    </AdvancedToggleButton>
+                  </PanelHeader>
+                  <PanelHint>
+                    Il contenuto (foto/paragrafi) lo componi dalla pagina della serie usando <b>Layout</b>.
+                    Qui puoi rifinire i blocchi in modo compatto.
+                  </PanelHint>
+
+                  {showAdvancedContent && (
+                    <>
+                      <ContentBlocks>
+                        <AnimatePresence>
+                          {formData.content.map((block, index) => {
+                            const isExpanded = expandedBlockIndex === index;
+                            return (
+                              <ContentBlock
+                                key={index}
+                                initial={{ opacity: 0, y: -20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -20 }}
+                              >
+                                <BlockHeader
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={() => setExpandedBlockIndex(isExpanded ? null : index)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault();
+                                      setExpandedBlockIndex(isExpanded ? null : index);
+                                    }
                                   }}
-                                  whileHover={{ scale: 1.05 }}
-                                  whileTap={{ scale: 0.95 }}
                                 >
-                                  <img 
-                                    src={`${IMAGES_BASE_URL}${photo.thumbnail || photo.image}`} 
-                                    alt={photo.title}
-                                  />
-                                  {block.content.includes(photo.id) && (
-                                    <SelectedBadge>✓</SelectedBadge>
-                                  )}
-                                </PhotoOption>
-                              ))}
-                            </PhotoSelector>
-                          </>
-                        )}
-                      </ContentBlock>
-                    ))}
-                  </AnimatePresence>
-                </ContentBlocks>
+                                  <BlockType>
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                      {block.type === 'text' ? <FileText size={16} /> : block.type === 'photo' ? <ImageIcon size={16} /> : <Images size={16} />}
+                                      {block.type === 'text' ? 'Paragrafo' : block.type === 'photo' ? 'Foto' : 'Gruppo Foto'}
+                                    </span>
+                                  </BlockType>
+                                  <BlockSummary>{getBlockSummary(block)}</BlockSummary>
+                                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                    <BlockToggle>{isExpanded ? '−' : '+'}</BlockToggle>
+                                    <DeleteBlockButton
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        deleteContentBlock(index);
+                                      }}
+                                      whileHover={{ scale: 1.05 }}
+                                      whileTap={{ scale: 0.95 }}
+                                    >
+                                      Elimina
+                                    </DeleteBlockButton>
+                                  </div>
+                                </BlockHeader>
 
-                <AddBlockButtons>
-                  <AddBlockButton
-                    type="button"
-                    onClick={() => addContentBlock('text')}
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                  >
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                      <FileText size={16} /> Aggiungi Paragrafo
-                    </span>
-                  </AddBlockButton>
-                  <AddBlockButton
-                    type="button"
-                    onClick={() => addContentBlock('photo')}
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                  >
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                      <ImageIcon size={16} /> Aggiungi Foto
-                    </span>
-                  </AddBlockButton>
-                  <AddBlockButton
-                    type="button"
-                    onClick={() => addContentBlock('photos')}
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                  >
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                      <Images size={16} /> Aggiungi Gruppo Foto
-                    </span>
-                  </AddBlockButton>
-                </AddBlockButtons>
-              </>
-            )}
+                                {isExpanded && (
+                                  <BlockBody>
+                                    {block.type === 'text' ? (
+                                      <TextArea
+                                        value={block.content}
+                                        onChange={(e) => updateContentBlock(index, e.target.value)}
+                                        placeholder="Scrivi il tuo paragrafo..."
+                                      />
+                                  ) : block.type === 'photo' ? (
+                                    <>
+                                      <Label>Seleziona una singola foto (poi la posizioni e ridimensioni dalla pagina della serie)</Label>
+                                      {filteredSelectedPhotos.length > 0 ? (
+                                        <PhotoSelector>
+                                          {filteredSelectedPhotos.map(photo => (
+                                            <PhotoOption
+                                              key={photo.id}
+                                              selected={block.content === photo.id}
+                                              onClick={() => updateContentBlock(index, photo.id)}
+                                              whileHover={{ scale: 1.05 }}
+                                              whileTap={{ scale: 0.95 }}
+                                            >
+                                              <img 
+                                                src={`${IMAGES_BASE_URL}${photo.thumbnail || photo.image}`} 
+                                                alt={photo.title}
+                                              />
+                                              {block.content === photo.id && (
+                                                <SelectedBadge>✓</SelectedBadge>
+                                              )}
+                                            </PhotoOption>
+                                          ))}
+                                        </PhotoSelector>
+                                      ) : (
+                                        <EmptyHint>Seleziona almeno una foto o modifica il filtro.</EmptyHint>
+                                      )}
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Label>Seleziona un gruppo di foto</Label>
+                                      {filteredSelectedPhotos.length > 0 ? (
+                                        <PhotoSelector>
+                                          {filteredSelectedPhotos.map(photo => (
+                                            <PhotoOption
+                                              key={photo.id}
+                                              selected={block.content.includes(photo.id)}
+                                              onClick={() => {
+                                                const newContent = block.content.includes(photo.id)
+                                                  ? block.content.filter(id => id !== photo.id)
+                                                  : [...block.content, photo.id];
+                                                updateContentBlock(index, newContent);
+                                              }}
+                                              whileHover={{ scale: 1.05 }}
+                                              whileTap={{ scale: 0.95 }}
+                                            >
+                                              <img 
+                                                src={`${IMAGES_BASE_URL}${photo.thumbnail || photo.image}`} 
+                                                alt={photo.title}
+                                              />
+                                              {block.content.includes(photo.id) && (
+                                                <SelectedBadge>✓</SelectedBadge>
+                                              )}
+                                            </PhotoOption>
+                                          ))}
+                                        </PhotoSelector>
+                                      ) : (
+                                        <EmptyHint>Seleziona almeno una foto o modifica il filtro.</EmptyHint>
+                                      )}
+                                    </>
+                                  )}
+                                  </BlockBody>
+                                )}
+                              </ContentBlock>
+                            );
+                          })}
+                        </AnimatePresence>
+                      </ContentBlocks>
+
+                      <AddBlockButtons>
+                        <AddBlockButton
+                          type="button"
+                          onClick={() => addContentBlock('text')}
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                        >
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                            <FileText size={16} /> Paragrafo
+                          </span>
+                        </AddBlockButton>
+                        <AddBlockButton
+                          type="button"
+                          onClick={() => addContentBlock('photo')}
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                        >
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                            <ImageIcon size={16} /> Foto
+                          </span>
+                        </AddBlockButton>
+                        <AddBlockButton
+                          type="button"
+                          onClick={() => addContentBlock('photos')}
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                        >
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                            <Images size={16} /> Gruppo Foto
+                          </span>
+                        </AddBlockButton>
+                      </AddBlockButtons>
+                    </>
+                  )}
+                </Panel>
+              </Column>
+            </EditorGrid>
           </EditorBody>
 
           <EditorFooter>

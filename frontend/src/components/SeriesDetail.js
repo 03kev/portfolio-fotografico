@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlignCenter, AlignJustify, AlignLeft, AlignRight, ChevronLeft, FileText, Image as ImageIcon, Images, LayoutGrid, Maximize2, PencilLine, RotateCcw, Save, Trash2, Type, X } from 'lucide-react';
+import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, ChevronLeft, Code, FileText, Image as ImageIcon, Images, Italic, LayoutGrid, Maximize2, PencilLine, RotateCcw, Save, Trash2, Type, Underline, X } from 'lucide-react';
 import GridLayout from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
@@ -523,6 +523,15 @@ const InspectorTextSizeButton = styled(InspectorIconButton)`
   font-size: ${p => p.$preview || 'var(--font-size-sm)'};
 `;
 
+const InspectorFontButton = styled(InspectorIconButton)`
+  width: auto;
+  min-width: 88px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: ${p => p.$font || 'inherit'};
+`;
+
 const BlockBody = styled.div`
   width: 100%;
   height: 100%;
@@ -616,13 +625,20 @@ const InlineTextEditor = styled.textarea`
   background: transparent;
   color: rgba(255, 255, 255, 0.68);
   font-size: ${props => props.$size || 'var(--font-size-sm)'};
+  font-weight: ${props => (props.$bold ? 'var(--font-weight-semibold)' : 'var(--font-weight-normal)')};
+  font-style: ${props => (props.$italic ? 'italic' : 'normal')};
+  text-decoration: ${props => (props.$underline ? 'underline' : 'none')};
   line-height: 1.75;
   letter-spacing: 0.02em;
   text-transform: none;
   text-align: ${props => props.$align || 'left'};
   text-align-last: ${props => props.$alignLast || 'auto'};
   padding: var(--spacing-sm);
-  font-family: inherit;
+  font-family: ${props => (
+    props.$mono
+      ? "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace"
+      : (props.$font || 'inherit')
+  )};
   box-sizing: border-box;
   overflow: auto;
 
@@ -636,6 +652,9 @@ const SeriesText = styled.div`
   height: 100%;
   color: rgba(255, 255, 255, 0.68);
   font-size: ${props => props.$size || 'var(--font-size-sm)'};
+  font-weight: ${props => (props.$bold ? 'var(--font-weight-semibold)' : 'var(--font-weight-normal)')};
+  font-style: ${props => (props.$italic ? 'italic' : 'normal')};
+  text-decoration: ${props => (props.$underline ? 'underline' : 'none')};
   line-height: 1.75;
   letter-spacing: 0.02em;
   text-transform: none;
@@ -644,6 +663,11 @@ const SeriesText = styled.div`
   white-space: pre-wrap;
   box-sizing: border-box;
   overflow: hidden;
+  font-family: ${props => (
+    props.$mono
+      ? "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace"
+      : (props.$font || 'inherit')
+  )};
 
   background: transparent;
   border-radius: 0;
@@ -691,7 +715,7 @@ const PhotoClickArea = styled.button`
   padding: 0;
   margin: 0;
   background: transparent;
-  cursor: pointer;
+  cursor: default;
 `;
 
 const CanvasCaption = styled.figcaption`
@@ -729,10 +753,6 @@ const ThumbButton = styled.button`
   width: 100%;
   height: 100%;
   display: block;
-
-  &:hover {
-    filter: brightness(1.05);
-  }
 `;
 
 const ThumbImage = styled.img`
@@ -742,6 +762,7 @@ const ThumbImage = styled.img`
   display: block;
   background: transparent;
   border-radius: 0;
+  transition: filter 0.18s ease, transform 0.18s ease;
 `;
 
 const ClassicFigure = styled.figure`
@@ -922,18 +943,37 @@ function SeriesDetail() {
     lg: 'var(--font-size-lg)',
     xl: 'var(--font-size-xl)',
   };
+  const TEXT_FONT_MAP = {
+    inter: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    manrope: "'Manrope', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    playfair: "'Playfair Display', 'Times New Roman', serif",
+    source: "'Source Serif 4', 'Times New Roman', serif",
+  };
   const TEXT_SIZE_OPTIONS = [
     { id: 'sm', label: 'A', size: TEXT_SIZE_MAP.sm, title: 'Piccolo' },
     { id: 'base', label: 'A', size: TEXT_SIZE_MAP.base, title: 'Normale' },
     { id: 'lg', label: 'A', size: TEXT_SIZE_MAP.lg, title: 'Grande' },
     { id: 'xl', label: 'A', size: TEXT_SIZE_MAP.xl, title: 'Extra' },
   ];
+  const TEXT_FONT_OPTIONS = [
+    { id: 'inter', label: 'Inter', family: TEXT_FONT_MAP.inter },
+    { id: 'manrope', label: 'Manrope', family: TEXT_FONT_MAP.manrope },
+    { id: 'playfair', label: 'Playfair', family: TEXT_FONT_MAP.playfair },
+    { id: 'source', label: 'Source Serif', family: TEXT_FONT_MAP.source },
+  ];
   const TEXT_ALIGN_OPTIONS = [
     { id: 'left', icon: AlignLeft, label: 'Allinea a sinistra' },
     { id: 'center', icon: AlignCenter, label: 'Allinea al centro' },
     { id: 'right', icon: AlignRight, label: 'Allinea a destra' },
     { id: 'justify', icon: AlignJustify, label: 'Giustifica' },
+    { id: 'justify-center', icon: AlignJustify, label: 'Giustifica al centro', badge: 'C' },
     { id: 'justify-right', icon: AlignJustify, label: 'Giustifica a destra', badge: 'R' },
+  ];
+  const TEXT_STYLE_OPTIONS = [
+    { id: 'textBold', icon: Bold, label: 'Grassetto' },
+    { id: 'textItalic', icon: Italic, label: 'Corsivo' },
+    { id: 'textUnderline', icon: Underline, label: 'Sottolineato' },
+    { id: 'textMono', icon: Code, label: 'Monospace' },
   ];
   const GROUP_GRID_VERSION = 2;
   const LEGACY_GROUP_COLS = 6;
@@ -1140,6 +1180,11 @@ function SeriesDetail() {
         }
         nextBlock.textAlign = nextBlock.textAlign || 'left';
         nextBlock.textSize = nextBlock.textSize || 'base';
+        nextBlock.textBold = Boolean(nextBlock.textBold);
+        nextBlock.textItalic = Boolean(nextBlock.textItalic);
+        nextBlock.textUnderline = Boolean(nextBlock.textUnderline);
+        nextBlock.textMono = Boolean(nextBlock.textMono);
+        nextBlock.textFont = nextBlock.textFont || 'inter';
       }
       nextContent.push(nextBlock);
     });
@@ -1419,6 +1464,48 @@ function SeriesDetail() {
     setLightboxPhoto(photo);
   };
 
+  const getContainedImageRect = (img) => {
+    if (!img) return null;
+    const rect = img.getBoundingClientRect();
+    const { naturalWidth, naturalHeight } = img;
+    if (!naturalWidth || !naturalHeight || rect.width === 0 || rect.height === 0) {
+      return rect;
+    }
+    const scale = Math.min(rect.width / naturalWidth, rect.height / naturalHeight);
+    const displayW = naturalWidth * scale;
+    const displayH = naturalHeight * scale;
+    const offsetX = (rect.width - displayW) / 2;
+    const offsetY = (rect.height - displayH) / 2;
+    return {
+      left: rect.left + offsetX,
+      right: rect.left + offsetX + displayW,
+      top: rect.top + offsetY,
+      bottom: rect.top + offsetY + displayH,
+    };
+  };
+
+  const isPointerOverImage = (event, img) => {
+    const rect = getContainedImageRect(img);
+    if (!rect) return false;
+    const { clientX, clientY } = event;
+    return (
+      clientX >= rect.left &&
+      clientX <= rect.right &&
+      clientY >= rect.top &&
+      clientY <= rect.bottom
+    );
+  };
+
+  const handlePhotoClickGuarded = (event, photo, img) => {
+    if (event?.clientX === 0 && event?.clientY === 0) {
+      handlePhotoClick(photo);
+      return;
+    }
+    if (isPointerOverImage(event, img)) {
+      handlePhotoClick(photo);
+    }
+  };
+
   const handleSaveLayout = async () => {
     try {
       const cleanContent = prepareContent(draftContent, true);
@@ -1606,6 +1693,11 @@ function SeriesDetail() {
       if (type === 'text') {
         block.textAlign = 'left';
         block.textSize = 'base';
+        block.textBold = false;
+        block.textItalic = false;
+        block.textUnderline = false;
+        block.textMono = false;
+        block.textFont = 'inter';
       }
       if (type === 'photo') {
         block.showTitle = true;
@@ -1923,6 +2015,47 @@ function SeriesDetail() {
                       </InspectorSection>
 
                       <InspectorSection>
+                        <InspectorLabel>Font</InspectorLabel>
+                        <InspectorRow>
+                          {TEXT_FONT_OPTIONS.map((option) => (
+                            <InspectorFontButton
+                              key={option.id}
+                              type="button"
+                              $active={(selectedBlock.textFont || 'inter') === option.id}
+                              $font={option.family}
+                              onClick={() => updateTextBlockStyle(selectedIndex, { textFont: option.id, textMono: false })}
+                              title={option.label}
+                            >
+                              {option.label}
+                            </InspectorFontButton>
+                          ))}
+                        </InspectorRow>
+                      </InspectorSection>
+
+                      <InspectorSection>
+                        <InspectorLabel>Stile</InspectorLabel>
+                        <InspectorRow>
+                          {TEXT_STYLE_OPTIONS.map((option) => {
+                            const Icon = option.icon;
+                            const isActive = Boolean(selectedBlock[option.id]);
+                            return (
+                              <InspectorIconButton
+                                key={option.id}
+                                type="button"
+                                $active={isActive}
+                                onClick={() => updateTextBlockStyle(selectedIndex, { [option.id]: !isActive })}
+                                title={option.label}
+                              >
+                                <InspectorIconWrap>
+                                  <Icon size={18} />
+                                </InspectorIconWrap>
+                              </InspectorIconButton>
+                            );
+                          })}
+                        </InspectorRow>
+                      </InspectorSection>
+
+                      <InspectorSection>
                         <InspectorLabel>Allineamento</InspectorLabel>
                         <InspectorRow>
                           {TEXT_ALIGN_OPTIONS.map((option) => {
@@ -2041,9 +2174,20 @@ function SeriesDetail() {
                       const renderBlock = () => {
                         if (block.type === 'text') {
                           const textAlign = block.textAlign || 'left';
-                          const textAlignCss = textAlign === 'justify-right' ? 'justify' : textAlign;
-                          const textAlignLast = textAlign === 'justify-right' ? 'right' : 'auto';
+                          const isJustify = ['justify', 'justify-right', 'justify-center'].includes(textAlign);
+                          const textAlignCss = isJustify ? 'justify' : textAlign;
+                          const textAlignLast =
+                            textAlign === 'justify-right'
+                              ? 'right'
+                              : textAlign === 'justify-center'
+                                ? 'center'
+                                : 'auto';
                           const textSize = TEXT_SIZE_MAP[block.textSize] || TEXT_SIZE_MAP.base;
+                          const textBold = Boolean(block.textBold);
+                          const textItalic = Boolean(block.textItalic);
+                          const textUnderline = Boolean(block.textUnderline);
+                          const textMono = Boolean(block.textMono);
+                          const textFont = TEXT_FONT_MAP[block.textFont] || TEXT_FONT_MAP.inter;
                           return layoutMode && isSelected ? (
                             <SeriesText style={{ padding: 0 }}>
                               <InlineTextEditor
@@ -2054,6 +2198,11 @@ function SeriesDetail() {
                                 $align={textAlignCss}
                                 $alignLast={textAlignLast}
                                 $size={textSize}
+                                $bold={textBold}
+                                $italic={textItalic}
+                                $underline={textUnderline}
+                                $mono={textMono}
+                                $font={textFont}
                               />
                             </SeriesText>
                           ) : (
@@ -2061,6 +2210,11 @@ function SeriesDetail() {
                               $align={textAlignCss}
                               $alignLast={textAlignLast}
                               $size={textSize}
+                              $bold={textBold}
+                              $italic={textItalic}
+                              $underline={textUnderline}
+                              $mono={textMono}
+                              $font={textFont}
                             >
                               {block.content}
                             </SeriesText>
@@ -2082,7 +2236,19 @@ function SeriesDetail() {
                                 {canOpenLightbox && (
                                   <PhotoClickArea
                                     type="button"
-                                    onClick={() => handlePhotoClick(photo)}
+                                    onClick={(event) => {
+                                      const img = event.currentTarget?.parentElement?.querySelector('img');
+                                      handlePhotoClickGuarded(event, photo, img);
+                                    }}
+                                    onMouseMove={(event) => {
+                                      const img = event.currentTarget?.parentElement?.querySelector('img');
+                                      event.currentTarget.style.cursor = isPointerOverImage(event, img)
+                                        ? 'pointer'
+                                        : 'default';
+                                    }}
+                                    onMouseLeave={(event) => {
+                                      event.currentTarget.style.cursor = 'default';
+                                    }}
                                     aria-label={photo.title ? `Apri ${photo.title}` : 'Apri foto'}
                                     title={photo.title || 'Apri foto'}
                                   />
@@ -2136,7 +2302,29 @@ function SeriesDetail() {
                                       ) : (
                                         <ThumbButton
                                           type="button"
-                                          onClick={() => handlePhotoClick(photo)}
+                                          onClick={(event) => {
+                                            const img = event.currentTarget.querySelector('img');
+                                            handlePhotoClickGuarded(event, photo, img);
+                                          }}
+                                          onMouseMove={(event) => {
+                                            const img = event.currentTarget.querySelector('img');
+                                            const isOver = isPointerOverImage(event, img);
+                                            event.currentTarget.style.cursor = isOver ? 'pointer' : 'default';
+                                            if (img) {
+                                              img.style.filter = isOver
+                                                ? 'brightness(1.12) saturate(1.08) contrast(1.05)'
+                                                : 'none';
+                                              img.style.transform = isOver ? 'scale(1.01)' : 'scale(1)';
+                                            }
+                                          }}
+                                          onMouseLeave={(event) => {
+                                            event.currentTarget.style.cursor = 'default';
+                                            const img = event.currentTarget.querySelector('img');
+                                            if (img) {
+                                              img.style.filter = 'none';
+                                              img.style.transform = 'scale(1)';
+                                            }
+                                          }}
                                           title={photo.title || ''}
                                         >
                                           <ThumbImage

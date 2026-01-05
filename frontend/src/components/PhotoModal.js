@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import { Download, Map, MapPin } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { IMAGES_BASE_URL } from '../utils/constants';
 
@@ -154,6 +155,9 @@ const PhotoLocation = styled(motion.p)`
   margin-bottom: var(--spacing-lg);
   cursor: pointer;
   transition: all var(--transition-normal);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 
   &:hover {
     color: var(--color-white);
@@ -244,6 +248,10 @@ const ActionButtons = styled(motion.div)`
 
 const ActionButton = styled(motion.button)`
   flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   padding: var(--spacing-md) var(--spacing-lg);
   background: rgba(255, 255, 255, 0.1);
   color: var(--color-white);
@@ -418,7 +426,8 @@ const PhotoModal = () => {
             transition={{ duration: 0.4, delay: 0.2 }}
             onClick={handleLocationClick}
             >
-            📍 {selectedPhoto.location}
+            <MapPin size={16} />
+            {selectedPhoto.location}
             </PhotoLocation>
             
             <PhotoDescription
@@ -510,7 +519,8 @@ const PhotoModal = () => {
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             >
-            📍 Vai alla Mappa
+            <Map size={16} />
+            Vai alla Mappa
             </ActionButton>
             <ActionButton
             className="primary"
@@ -524,7 +534,8 @@ const PhotoModal = () => {
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             >
-            💾 Download
+            <Download size={16} />
+            Download
             </ActionButton>
             </ActionButtons>
             </InfoPanel>

@@ -5,31 +5,14 @@ import { Link } from 'react-router-dom';
 import { ArrowDownRight } from 'lucide-react';
 
 const HeroSection = styled.section`
+  margin-top: -80px;
   min-height: 100vh;
   display: flex;
   align-items: center;
   position: relative;
   overflow: hidden;
   padding: 80px 0 80px;
-  background: var(--dark-gradient);
-
-  &::before {
-    content: '';
-    position: absolute;
-    inset: -1px;
-    background:
-      radial-gradient(900px 520px at 20% 12%, rgba(214, 179, 106, 0.16) 0%, rgba(214, 179, 106, 0) 60%),
-      radial-gradient(900px 520px at 80% 18%, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0) 62%);
-    pointer-events: none;
-  }
-
-  &::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: radial-gradient(900px 520px at 50% 110%, rgba(0, 0, 0, 0.70) 0%, rgba(0, 0, 0, 0) 60%);
-    pointer-events: none;
-  }
+  background: transparent;
 `;
 
 const Container = styled.div`

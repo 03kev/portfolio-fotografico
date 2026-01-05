@@ -59,13 +59,18 @@
         "layout": {
           "x": 1,
           "y": 0,
-          "w": 14,
-          "h": 4,
+          "w": 15,
+          "h": 6,
           "unit": "grid",
           "gridVersion": 2
         },
-        "textAlign": "justify",
-        "textSize": "xl"
+        "textAlign": "justify-center",
+        "textSize": "xl",
+        "textBold": false,
+        "textItalic": false,
+        "textUnderline": false,
+        "textMono": true,
+        "textFont": "source"
       },
       {
         "id": "block-a59d1fd18df7c-mjyybq7u",
@@ -73,15 +78,20 @@
         "order": 3,
         "content": "Poi, il rumore del mondo si fa eco. Lo sguardo sale, la città si stacca dalla terra e diventa una costellazione di luci che trema nel buio.",
         "layout": {
-          "x": 3,
+          "x": 5,
           "y": 42,
-          "w": 18,
-          "h": 4,
+          "w": 16,
+          "h": 5,
           "unit": "grid",
           "gridVersion": 2
         },
         "textAlign": "left",
-        "textSize": "lg"
+        "textSize": "lg",
+        "textBold": false,
+        "textItalic": true,
+        "textUnderline": false,
+        "textMono": true,
+        "textFont": "inter"
       },
       {
         "id": "block-588518f9afbb-mjyyeb1s",
@@ -121,15 +131,20 @@
         "order": 6,
         "content": "Finché la materia si arrende. I confini svaniscono nella nebbia, il peso del cemento si fa aria. È qui che il reale scivola nel sonno.",
         "layout": {
-          "x": 12,
+          "x": 9,
           "y": 87,
-          "w": 12,
+          "w": 15,
           "h": 5,
           "unit": "grid",
           "gridVersion": 2
         },
         "textAlign": "justify-right",
-        "textSize": "lg"
+        "textSize": "lg",
+        "textBold": false,
+        "textItalic": true,
+        "textUnderline": false,
+        "textMono": true,
+        "textFont": "inter"
       },
       {
         "id": "block-748b17a5330b48-mjyyg5k4",
@@ -137,7 +152,7 @@
         "order": 7,
         "content": 1767357918231,
         "layout": {
-          "x": 2,
+          "x": 1,
           "y": 95,
           "w": 17,
           "h": 36,
@@ -169,19 +184,110 @@
         "order": 9,
         "content": "Resta solo un’ombra, sospesa sopra le nuvole. Il ricordo sbiadito di un viaggio che, forse, è stato solo un sogno.",
         "layout": {
-          "x": 2,
+          "x": 1,
           "y": 145,
-          "w": 9,
+          "w": 10,
           "h": 5,
           "unit": "grid",
           "gridVersion": 2
         },
         "textAlign": "justify",
-        "textSize": "base"
+        "textSize": "base",
+        "textBold": false,
+        "textItalic": true,
+        "textUnderline": false,
+        "textMono": true,
+        "textFont": "inter"
+      },
+      {
+        "id": "block-79019f5544fe08-mk1tfo8x",
+        "type": "photos",
+        "order": 10,
+        "content": [
+          {
+            "id": 1767482804791,
+            "layout": {
+              "x": 13,
+              "y": 0,
+              "w": 7,
+              "h": 15,
+              "gridVersion": 2
+            }
+          },
+          {
+            "id": 1767482686888,
+            "layout": {
+              "x": 4,
+              "y": 0,
+              "w": 7,
+              "h": 15,
+              "gridVersion": 2
+            }
+          },
+          {
+            "id": 1767482368621,
+            "layout": {
+              "x": 1,
+              "y": 17,
+              "w": 7,
+              "h": 12,
+              "gridVersion": 2
+            }
+          },
+          {
+            "id": 1767482450651,
+            "layout": {
+              "x": 8,
+              "y": 18,
+              "w": 8,
+              "h": 10,
+              "gridVersion": 2
+            }
+          },
+          {
+            "id": 1767481563548,
+            "layout": {
+              "x": 16,
+              "y": 17,
+              "w": 7,
+              "h": 12,
+              "gridVersion": 2
+            }
+          }
+        ],
+        "layout": {
+          "x": 0,
+          "y": 182,
+          "w": 24,
+          "h": 35,
+          "unit": "grid",
+          "gridVersion": 2
+        }
+      },
+      {
+        "id": "block-a07940260ad5a-mk1tj3z0",
+        "type": "text",
+        "order": 11,
+        "content": "FOTO AGGIUNTIVE",
+        "layout": {
+          "x": 9,
+          "y": 178,
+          "w": 7,
+          "h": 2,
+          "unit": "grid",
+          "gridVersion": 2
+        },
+        "textAlign": "center",
+        "textSize": "lg",
+        "textBold": true,
+        "textItalic": false,
+        "textUnderline": false,
+        "textMono": false,
+        "textFont": "inter"
       }
     ],
     "published": true,
     "createdAt": "2026-01-02T00:34:11.494Z",
-    "updatedAt": "2026-01-05T18:13:24.908Z"
+    "updatedAt": "2026-01-06T23:05:52.777Z"
   }
 ]
