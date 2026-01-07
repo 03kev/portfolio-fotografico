@@ -1,5 +1,23 @@
 [
   {
+    "id": 1767790746130,
+    "title": "Tramonto",
+    "location": "Zakynthos, Greece",
+    "lat": 37.861535,
+    "lng": 20.627023,
+    "image": "/uploads/photo_1767790746130.webp",
+    "thumbnail": "/uploads/thumbnails/photo_1767790746130_thumb.webp",
+    "url": "/uploads/thumbnails/photo_1767790746130_thumb.webp",
+    "description": "",
+    "date": "2023-08-23",
+    "camera": "Nikon D750",
+    "lens": "TAMRON SP 15-30mm F2.8 Di VC USD A012N",
+    "settings": "{\"aperture\":\"f/5.6\",\"shutter\":\"1/640s\",\"iso\":\"100\",\"focal\":\"30mm\"}",
+    "tags": [
+      "Zakynthos"
+    ]
+  },
+  {
     "id": 1767482804791,
     "title": "Bosco che si apre",
     "location": "Warsaw, Poland",

@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Camera, Plus } from 'lucide-react';
+import { Camera, FileText, Plus } from 'lucide-react';
 
 import { useSeries } from '../contexts/SeriesContext';
 import { usePhotos } from '../contexts/PhotoContext';
@@ -66,11 +66,37 @@ const CreateButton = styled(motion.button)`
   }
 `;
 
+const DraftButton = styled(CreateButton)`
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--color-text);
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow: var(--shadow-small);
+  }
+`;
+
+const DraftBadge = styled.span`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+`;
+
 const StickyCreate = styled.div`
   position: sticky;
   top: calc(78px + 12px);
   z-index: var(--z-sticky);
   display: flex;
+  gap: 10px;
   justify-content: flex-end;
   align-self: flex-start;
   margin-top: 4px;
@@ -189,13 +215,34 @@ const Empty = styled.div`
   color: var(--color-muted);
 `;
 
+const DraftHeader = styled.div`
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+`;
+
+const DraftTitle = styled.h3`
+  margin: 0;
+  font-size: 1.25rem;
+  color: var(--color-text);
+`;
+
+const DraftHint = styled.span`
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+`;
+
 export default function PhotoSeries({ showAdmin = false, title = 'Serie', subtitle = "Progetti coerenti: un filo narrativo, un luogo, un'idea." }) {
   const navigate = useNavigate();
   const { series, loading } = useSeries();
   const { photos } = usePhotos();
   const [showEditor, setShowEditor] = useState(false);
+  const [showDrafts, setShowDrafts] = useState(false);
 
   const publishedSeries = useMemo(() => series.filter(s => s.published), [series]);
+  const draftSeries = useMemo(() => series.filter(s => !s.published), [series]);
 
   const getSeriesPhotos = (seriesItem) => {
     const ids = seriesItem.photos || [];
@@ -240,6 +287,16 @@ export default function PhotoSeries({ showAdmin = false, title = 'Serie', subtit
           </Heading>
           {showAdmin && (
             <StickyCreate>
+              <DraftButton
+                type="button"
+                onClick={() => setShowDrafts(prev => !prev)}
+                whileTap={{ scale: 0.98 }}
+                title={showDrafts ? 'Nascondi bozze' : 'Mostra bozze'}
+              >
+                <FileText size={16} />
+                Bozze
+                <DraftBadge>{draftSeries.length}</DraftBadge>
+              </DraftButton>
               <CreateButton
                 onClick={() => setShowEditor(true)}
                 whileTap={{ scale: 0.98 }}
@@ -303,6 +360,67 @@ export default function PhotoSeries({ showAdmin = false, title = 'Serie', subtit
                 </p>
               ) : null}
             </Empty>
+          )}
+
+          {showAdmin && showDrafts && (
+            <>
+              <DraftHeader>
+                <DraftTitle>Bozze</DraftTitle>
+                <DraftHint>{draftSeries.length} totali</DraftHint>
+              </DraftHeader>
+              {draftSeries.length > 0 ? (
+                <Grid key={`drafts-${draftSeries.map(s => s.id).join('-')}`}>
+                  {draftSeries.map((s, idx) => {
+                    const cover = getCoverPhoto(s);
+                    const seriesPhotos = getSeriesPhotos(s);
+                    const count = seriesPhotos.length;
+                    const locs = getTopLocations(s);
+
+                    return (
+                      <Card
+                        key={s.id}
+                        onClick={() => handleSeriesClick(s)}
+                        initial={{ opacity: 0, y: 10 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true, margin: '-120px' }}
+                        transition={{ duration: 0.35, ease: 'easeOut', delay: Math.min(0.24, idx * 0.04) }}
+                        whileTap={{ scale: 0.99 }}
+                      >
+                        <Cover>
+                          {cover && (
+                            <CoverImage
+                              src={`${IMAGES_BASE_URL}${cover.url}?t=${cover.id}`}
+                              alt={s.title}
+                              loading="lazy"
+                            />
+                          )}
+                          <Count><Camera size={14} /> {count}</Count>
+                        </Cover>
+
+                        <Info>
+                          <CardTitle>{s.title}</CardTitle>
+                          <CardDesc>{s.description || 'Serie fotografica'}</CardDesc>
+                          {locs.length > 0 && (
+                            <Tags>
+                              {locs.map((l) => <Tag key={l}>{l}</Tag>)}
+                            </Tags>
+                          )}
+                        </Info>
+                      </Card>
+                    );
+                  })}
+                </Grid>
+              ) : (
+                <Empty>
+                  <p style={{ margin: 0, fontSize: '1.05rem', color: 'var(--color-text)' }}>
+                    Nessuna bozza disponibile
+                  </p>
+                  <p style={{ margin: '10px 0 0', color: 'var(--color-muted)' }}>
+                    Crea una nuova serie e lasciala non pubblicata per trovarla qui.
+                  </p>
+                </Empty>
+              )}
+            </>
           )}
         </Container>
       </SectionRoot>

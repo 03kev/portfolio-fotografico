@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useLayoutEffect, useState, useCallback, useMe
 import * as THREE from 'three';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
+import { Globe2, MapPin, Minus, Pause, Play, Plus } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { 
     createWorldMapNavigation, 
@@ -1692,16 +1693,16 @@ return (
         </CompassSVG>
     </CompassButton>
     <ControlButton onClick={resetView} title="Reset Vista">
-    🌍
+    <Globe2 size={16} />
     </ControlButton>
     <ControlButton onClick={toggleAutoRotate} title="Auto Rotazione">
-    {autoRotate ? '⏸️' : '▶️'}
+    {autoRotate ? <Pause size={16} /> : <Play size={16} />}
     </ControlButton>
     <ControlButton onClick={zoomIn} title="Zoom In">
-    ➕
+    <Plus size={16} />
     </ControlButton>
     <ControlButton onClick={zoomOut} title="Zoom Out">
-    ➖
+    <Minus size={16} />
     </ControlButton>
     </Controls>
     
@@ -1723,7 +1724,10 @@ return (
             : hoveredMarker.title
         }
         </h4>
-        <p>📍 {hoveredMarker.location}</p>
+        <p style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <MapPin size={14} />
+        <span>{hoveredMarker.location}</span>
+        </p>
         <p style={{ fontSize: '0.75rem', opacity: 0.6 }}>
         {hoveredMarker.isCluster 
             ? `Clicca per vedere tutte le ${hoveredMarker.photoCount} foto`
