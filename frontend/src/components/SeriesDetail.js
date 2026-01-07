@@ -732,6 +732,11 @@ const GroupGrid = styled.div`
   height: 100%;
   overflow: hidden;
   background: ${props => (props.$editing ? 'rgba(255,255,255,0.03)' : 'transparent')};
+  display: ${props => (props.$editing ? 'block' : 'grid')};
+  grid-template-columns: repeat(var(--group-cols, 1), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--group-rows, 1), var(--group-row-height, 16px));
+  gap: var(--group-gap, 8px);
+  align-content: start;
 `;
 
 const GroupItem = styled.div`
@@ -2268,76 +2273,108 @@ function SeriesDetail() {
                           const groupWidth = getBlockPixelWidth(block.layout);
                           const groupHeight = getBlockPixelHeight(block.layout);
 
-                          return (
-                            <GroupGrid $editing={layoutMode}>
-                              <GridLayout
-                                layout={buildGroupLayout(groupItems, groupCols, groupRows)}
-                                cols={groupCols}
-                                rowHeight={ROW_HEIGHT}
-                                width={groupWidth}
-                                margin={[GRID_GUTTER, GRID_GUTTER]}
-                                containerPadding={[0, 0]}
-                                autoSize={false}
-                                maxRows={groupRows}
-                                style={{ height: groupHeight }}
-                                isResizable={layoutMode}
-                                isDraggable={layoutMode}
-                                preventCollision={layoutMode}
-                                compactType={null}
-                                isBounded
-                                resizeHandles={layoutMode ? ['se', 'sw', 'ne', 'nw'] : []}
-                                onLayoutChange={layoutMode ? handleGroupLayoutChange(index, groupCols, groupRows) : undefined}
-                              >
-                                {groupItems.map((item) => {
-                                  const photo = photos.find(p => p.id === item.id);
-                                  if (!photo) return null;
-                                  return (
-                                    <GroupItem key={item.id} $editing={layoutMode}>
-                                      {layoutMode ? (
+                          if (layoutMode) {
+                            return (
+                              <GroupGrid $editing={layoutMode}>
+                                <GridLayout
+                                  layout={buildGroupLayout(groupItems, groupCols, groupRows)}
+                                  cols={groupCols}
+                                  rowHeight={ROW_HEIGHT}
+                                  width={groupWidth}
+                                  margin={[GRID_GUTTER, GRID_GUTTER]}
+                                  containerPadding={[0, 0]}
+                                  autoSize={false}
+                                  maxRows={groupRows}
+                                  style={{ height: groupHeight }}
+                                  isResizable={layoutMode}
+                                  isDraggable={layoutMode}
+                                  preventCollision={layoutMode}
+                                  compactType={null}
+                                  isBounded
+                                  resizeHandles={layoutMode ? ['se', 'sw', 'ne', 'nw'] : []}
+                                  onLayoutChange={layoutMode ? handleGroupLayoutChange(index, groupCols, groupRows) : undefined}
+                                >
+                                  {groupItems.map((item) => {
+                                    const photo = photos.find(p => p.id === item.id);
+                                    if (!photo) return null;
+                                    return (
+                                      <GroupItem key={item.id} $editing={layoutMode}>
                                         <ThumbImage
                                           src={`${IMAGES_BASE_URL}${photo.image}`}
                                           alt={photo.title}
                                           loading="lazy"
                                         />
-                                      ) : (
-                                        <ThumbButton
-                                          type="button"
-                                          onClick={(event) => {
-                                            const img = event.currentTarget.querySelector('img');
-                                            handlePhotoClickGuarded(event, photo, img);
-                                          }}
-                                          onMouseMove={(event) => {
-                                            const img = event.currentTarget.querySelector('img');
-                                            const isOver = isPointerOverImage(event, img);
-                                            event.currentTarget.style.cursor = isOver ? 'pointer' : 'default';
-                                            if (img) {
-                                              img.style.filter = isOver
-                                                ? 'brightness(1.12) saturate(1.08) contrast(1.05)'
-                                                : 'none';
-                                              img.style.transform = isOver ? 'scale(1.01)' : 'scale(1)';
-                                            }
-                                          }}
-                                          onMouseLeave={(event) => {
-                                            event.currentTarget.style.cursor = 'default';
-                                            const img = event.currentTarget.querySelector('img');
-                                            if (img) {
-                                              img.style.filter = 'none';
-                                              img.style.transform = 'scale(1)';
-                                            }
-                                          }}
-                                          title={photo.title || ''}
-                                        >
-                                          <ThumbImage
-                                            src={`${IMAGES_BASE_URL}${photo.image}`}
-                                            alt={photo.title}
-                                            loading="lazy"
-                                          />
-                                        </ThumbButton>
-                                      )}
-                                    </GroupItem>
-                                  );
-                                })}
-                              </GridLayout>
+                                      </GroupItem>
+                                    );
+                                  })}
+                                </GridLayout>
+                              </GroupGrid>
+                            );
+                          }
+
+                          return (
+                            <GroupGrid
+                              $editing={false}
+                              style={{
+                                '--group-cols': groupCols,
+                                '--group-rows': groupRows,
+                                '--group-row-height': `${ROW_HEIGHT}px`,
+                                '--group-gap': `${GRID_GUTTER}px`,
+                              }}
+                            >
+                              {groupItems.map((item) => {
+                                const photo = photos.find(p => p.id === item.id);
+                                if (!photo) return null;
+                                const layout = item.layout || {};
+                                const colStart = Math.max(0, layout.x || 0);
+                                const rowStart = Math.max(0, layout.y || 0);
+                                const colSpan = Math.max(1, layout.w || GROUP_DEFAULT_W);
+                                const rowSpan = Math.max(1, layout.h || GROUP_DEFAULT_H);
+                                return (
+                                  <GroupItem
+                                    key={item.id}
+                                    $editing={false}
+                                    style={{
+                                      gridColumn: `${colStart + 1} / span ${colSpan}`,
+                                      gridRow: `${rowStart + 1} / span ${rowSpan}`,
+                                    }}
+                                  >
+                                    <ThumbButton
+                                      type="button"
+                                      onClick={(event) => {
+                                        const img = event.currentTarget.querySelector('img');
+                                        handlePhotoClickGuarded(event, photo, img);
+                                      }}
+                                      onMouseMove={(event) => {
+                                        const img = event.currentTarget.querySelector('img');
+                                        const isOver = isPointerOverImage(event, img);
+                                        event.currentTarget.style.cursor = isOver ? 'pointer' : 'default';
+                                        if (img) {
+                                          img.style.filter = isOver
+                                            ? 'brightness(1.12) saturate(1.08) contrast(1.05)'
+                                            : 'none';
+                                          img.style.transform = isOver ? 'scale(1.01)' : 'scale(1)';
+                                        }
+                                      }}
+                                      onMouseLeave={(event) => {
+                                        event.currentTarget.style.cursor = 'default';
+                                        const img = event.currentTarget.querySelector('img');
+                                        if (img) {
+                                          img.style.filter = 'none';
+                                          img.style.transform = 'scale(1)';
+                                        }
+                                      }}
+                                      title={photo.title || ''}
+                                    >
+                                      <ThumbImage
+                                        src={`${IMAGES_BASE_URL}${photo.image}`}
+                                        alt={photo.title}
+                                        loading="lazy"
+                                      />
+                                    </ThumbButton>
+                                  </GroupItem>
+                                );
+                              })}
                             </GroupGrid>
                           );
                         }
