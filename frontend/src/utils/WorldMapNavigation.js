@@ -35,6 +35,7 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
         enableZoom: true,
         enableDamping: true,
         dampingFactor: 0.05,
+        dragResponsiveness: 0.35, // 0..1 (1 = immediate, lower = more "lag" while dragging)
         autoRotate: false,
         autoRotateSpeed: AUTO_ROTATE_SPEED,
         minDistance: MIN_CAMERA_DISTANCE,
@@ -117,9 +118,19 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                     }
                 }
                 
-                // Apply damping to globe rotation
+                // Apply damping to globe rotation (tunable drag responsiveness)
                 if (this.enableDamping) {
-                    this.globeQuaternion.slerp(this.targetGlobeQuaternion, this.dampingFactor);
+                    if (this.currentState === this.state.ROTATE) {
+                        const clamped = Math.max(0, Math.min(1, this.dragResponsiveness));
+                        const dragFactor = Math.max(0.05, Math.pow(clamped, 2.5));
+                        if (dragFactor >= 1) {
+                            this.globeQuaternion.copy(this.targetGlobeQuaternion);
+                        } else {
+                            this.globeQuaternion.slerp(this.targetGlobeQuaternion, dragFactor);
+                        }
+                    } else {
+                        this.globeQuaternion.slerp(this.targetGlobeQuaternion, this.dampingFactor);
+                    }
                 } else {
                     this.globeQuaternion.copy(this.targetGlobeQuaternion);
                 }
@@ -280,22 +291,22 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                     const deltaTime = (currentTime - this.lastRotationTime) / 1000; // Convert to seconds
                     
                     if (deltaTime > 0 && deltaTime < 0.1) { // Ignore if too much time has passed
-                    const mouseDeltaX = currentX - this.lastMousePos.x;
-                    const mouseDeltaY = currentY - this.lastMousePos.y;
-                    
-                    // Calculate instantaneous velocity
-                    const instantVelX = (mouseDeltaX / deltaTime) * 0.003; // Scale factor for rotation
-                    const instantVelY = (mouseDeltaY / deltaTime) * 0.003;
+                        const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+                        const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+                        const angular = rotationAxis.clone().multiplyScalar(rotationAngle);
+                        const velocityScale = 0.0024;
+                        const instantVelX = -(angular.dot(cameraUp) / deltaTime) * velocityScale;
+                        const instantVelY = -(angular.dot(cameraRight) / deltaTime) * velocityScale;
                         
                         // Smooth velocity update with higher weight on recent movement
                         const smoothingFactor = 0.3;
                         this.rotationVelocity.x = this.rotationVelocity.x * smoothingFactor + instantVelX * (1 - smoothingFactor);
-                            this.rotationVelocity.y = this.rotationVelocity.y * smoothingFactor + instantVelY * (1 - smoothingFactor);
-                            }
-                        
-                        this.lastMousePos.set(currentX, currentY);
-                            this.lastRotationTime = currentTime;
-                            }
+                        this.rotationVelocity.y = this.rotationVelocity.y * smoothingFactor + instantVelY * (1 - smoothingFactor);
+                    }
+                    
+                    this.lastMousePos.set(currentX, currentY);
+                    this.lastRotationTime = currentTime;
+                    }
                         } else {
                             // If no intersection, try sphere projection for edge cases
                             this._handleSphereProjection(currentX, currentY);
@@ -548,11 +559,12 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                             const deltaTime = (currentTime - this.lastRotationTime) / 1000;
                             
                             if (deltaTime > 0 && deltaTime < 0.1) {
-                                const mouseDeltaX = currentX - this.lastMousePos.x;
-                                const mouseDeltaY = currentY - this.lastMousePos.y;
-                                
-                                const instantVelX = (mouseDeltaX / deltaTime) * 0.003;
-                                const instantVelY = (mouseDeltaY / deltaTime) * 0.003;
+                                const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+                                const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+                                const angular = rotationAxis.clone().multiplyScalar(rotationAngle);
+                                const velocityScale = 0.0024;
+                                const instantVelX = -(angular.dot(cameraUp) / deltaTime) * velocityScale;
+                                const instantVelY = (angular.dot(cameraRight) / deltaTime) * velocityScale;
                                 
                                 const smoothingFactor = 0.3;
                                 this.rotationVelocity.x = this.rotationVelocity.x * smoothingFactor + instantVelX * (1 - smoothingFactor);
@@ -569,7 +581,8 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                 this.dragStart.set(0, 0, 0);
                 this.initialMousePos = null;
                 
-                // Enable inertia with current velocity
+                // Enable inertia with softened velocity to avoid edge snap
+                this.rotationVelocity.multiplyScalar(0.35);
                 this.inertiaEnabled = true;
                 
                 // Trigger mouse up to release drag
