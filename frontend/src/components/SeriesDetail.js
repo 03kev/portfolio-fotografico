@@ -1511,6 +1511,54 @@ function SeriesDetail() {
     }
   };
 
+  const renderGroupThumb = (photo, interactive) => {
+    if (!interactive) {
+      return (
+        <ThumbImage
+          src={`${IMAGES_BASE_URL}${photo.image}`}
+          alt={photo.title}
+          loading="lazy"
+        />
+      );
+    }
+
+    return (
+      <ThumbButton
+        type="button"
+        onClick={(event) => {
+          const img = event.currentTarget.querySelector('img');
+          handlePhotoClickGuarded(event, photo, img);
+        }}
+        onMouseMove={(event) => {
+          const img = event.currentTarget.querySelector('img');
+          const isOver = isPointerOverImage(event, img);
+          event.currentTarget.style.cursor = isOver ? 'pointer' : 'default';
+          if (img) {
+            img.style.filter = isOver
+              ? 'brightness(1.12) saturate(1.08) contrast(1.05)'
+              : 'none';
+            img.style.transform = isOver ? 'scale(1.01)' : 'scale(1)';
+          }
+        }}
+        onMouseLeave={(event) => {
+          event.currentTarget.style.cursor = 'default';
+          const img = event.currentTarget.querySelector('img');
+          if (img) {
+            img.style.filter = 'none';
+            img.style.transform = 'scale(1)';
+          }
+        }}
+        title={photo.title || ''}
+      >
+        <ThumbImage
+          src={`${IMAGES_BASE_URL}${photo.image}`}
+          alt={photo.title}
+          loading="lazy"
+        />
+      </ThumbButton>
+    );
+  };
+
   const handleSaveLayout = async () => {
     try {
       const cleanContent = prepareContent(draftContent, true);
@@ -2295,19 +2343,15 @@ function SeriesDetail() {
                                   onLayoutChange={layoutMode ? handleGroupLayoutChange(index, groupCols, groupRows) : undefined}
                                 >
                                   {groupItems.map((item) => {
-                                    const photo = photos.find(p => p.id === item.id);
-                                    if (!photo) return null;
-                                    return (
-                                      <GroupItem key={item.id} $editing={layoutMode}>
-                                        <ThumbImage
-                                          src={`${IMAGES_BASE_URL}${photo.image}`}
-                                          alt={photo.title}
-                                          loading="lazy"
-                                        />
-                                      </GroupItem>
-                                    );
-                                  })}
-                                </GridLayout>
+                                  const photo = photos.find(p => p.id === item.id);
+                                  if (!photo) return null;
+                                  return (
+                                    <GroupItem key={item.id} $editing={layoutMode}>
+                                      {renderGroupThumb(photo, false)}
+                                    </GroupItem>
+                                  );
+                                })}
+                              </GridLayout>
                               </GroupGrid>
                             );
                           }
@@ -2339,39 +2383,7 @@ function SeriesDetail() {
                                       gridRow: `${rowStart + 1} / span ${rowSpan}`,
                                     }}
                                   >
-                                    <ThumbButton
-                                      type="button"
-                                      onClick={(event) => {
-                                        const img = event.currentTarget.querySelector('img');
-                                        handlePhotoClickGuarded(event, photo, img);
-                                      }}
-                                      onMouseMove={(event) => {
-                                        const img = event.currentTarget.querySelector('img');
-                                        const isOver = isPointerOverImage(event, img);
-                                        event.currentTarget.style.cursor = isOver ? 'pointer' : 'default';
-                                        if (img) {
-                                          img.style.filter = isOver
-                                            ? 'brightness(1.12) saturate(1.08) contrast(1.05)'
-                                            : 'none';
-                                          img.style.transform = isOver ? 'scale(1.01)' : 'scale(1)';
-                                        }
-                                      }}
-                                      onMouseLeave={(event) => {
-                                        event.currentTarget.style.cursor = 'default';
-                                        const img = event.currentTarget.querySelector('img');
-                                        if (img) {
-                                          img.style.filter = 'none';
-                                          img.style.transform = 'scale(1)';
-                                        }
-                                      }}
-                                      title={photo.title || ''}
-                                    >
-                                      <ThumbImage
-                                        src={`${IMAGES_BASE_URL}${photo.image}`}
-                                        alt={photo.title}
-                                        loading="lazy"
-                                      />
-                                    </ThumbButton>
+                                    {renderGroupThumb(photo, true)}
                                   </GroupItem>
                                 );
                               })}
