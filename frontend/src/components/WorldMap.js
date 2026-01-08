@@ -1615,20 +1615,26 @@ return (
     >
     <CompassButton 
         onClick={() => {
-            // Click sinistro: raddrizza sempre la terra
+            // Click sinistro: raddrizza la terra
+            if (northLocked && controlsRef.current?.applyNorthLock) {
+                controlsRef.current.applyNorthLock();
+                return;
+            }
             straightenGlobe();
         }}
         onContextMenu={(e) => {
             e.preventDefault(); // Previene il menu contestuale del browser
+            e.stopPropagation();
             // Click destro: toggle del blocco nord
             const newLocked = !northLocked;
             setNorthLocked(newLocked);
             if (controlsRef.current) {
                 controlsRef.current.northLocked = newLocked;
-            }
-            // Se stiamo attivando il blocco, raddrizza la vista
-            if (newLocked) {
-                straightenGlobe();
+                controlsRef.current.inertiaEnabled = false;
+                controlsRef.current.rotationVelocity.set(0, 0);
+                if (newLocked && controlsRef.current.applyNorthLock) {
+                    controlsRef.current.applyNorthLock();
+                }
             }
         }}
         className={northLocked ? 'locked' : ''}
