@@ -36,7 +36,7 @@ const START_LON_OFFSET_DEG = -105; // rome longitude offset
 const MapSection = styled(motion.section)`
   padding: var(--spacing-2xl) 0 var(--spacing-4xl);
   background: transparent;
-  min-height: 100vh;
+  min-height: 97vh;
   display: flex;
   align-items: center;
 `;
@@ -65,7 +65,7 @@ const SectionTitle = styled(motion.h2)`
 
 const GlobeWrapper = styled(motion.div)`
   position: relative;
-  height: 600px;
+  height: 650px;
   border-radius: var(--border-radius-2xl);
   overflow: hidden;
   box-shadow: var(--shadow-2xl);

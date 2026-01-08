@@ -970,7 +970,7 @@ function SeriesDetail() {
     { id: 'left', icon: AlignLeft, label: 'Allinea a sinistra' },
     { id: 'center', icon: AlignCenter, label: 'Allinea al centro' },
     { id: 'right', icon: AlignRight, label: 'Allinea a destra' },
-    { id: 'justify', icon: AlignJustify, label: 'Giustifica' },
+    { id: 'justify', icon: AlignJustify, label: 'Giustifica a sinistra', badge: 'L' },
     { id: 'justify-center', icon: AlignJustify, label: 'Giustifica al centro', badge: 'C' },
     { id: 'justify-right', icon: AlignJustify, label: 'Giustifica a destra', badge: 'R' },
   ];

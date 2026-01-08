@@ -127,15 +127,18 @@ const Hero = () => {
     <HeroSection>
       <Container>
         <motion.div variants={container} initial="hidden" animate="show">
-          <Eyebrow variants={item}>Fotografia • Viaggi • Serie</Eyebrow>
+          <Eyebrow variants={item}>Viaggi • Quotidiano • Appunti</Eyebrow>
 
           <Title variants={item}>
             Portfolio <span>fotografico</span>
           </Title>
 
           <Subtitle variants={item}>
-            Una selezione curata di scatti, organizzati per luoghi e serie.
-            Esplora per progetto o tramite la mappa.
+            Fotografia come modo di abitare i luoghi
+            e di fermare ciò che altrimenti passerebbe inosservato.
+            
+            Serie, viaggi e frammenti di quotidiano
+            raccolti senza una meta precisa.
           </Subtitle>
 
           <CTAGroup variants={item}>
