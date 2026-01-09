@@ -72,6 +72,7 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
         dragStart: new THREE.Vector3(),
         dragCurrent: new THREE.Vector3(),
         initialMousePos: null, // Store initial mouse position for precise tracking
+        justStartedDrag: false,
 
         target: new THREE.Vector3(0, 0, 0),
         boundaryMesh: null, // Reference to boundary mesh if exists
@@ -212,6 +213,13 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                         // We clicked on the globe - enable drag rotation
                         this.currentState = this.state.ROTATE;
                         this.mouseStart.set(event.clientX, event.clientY);
+                        this.justStartedDrag = true;
+
+                        // Keep target in sync with the actual globe before the first drag move.
+                        if (globeRef.current) {
+                            this.globeQuaternion.copy(globeRef.current.quaternion);
+                        }
+                        this.targetGlobeQuaternion.copy(this.globeQuaternion);
                         
                         // Store the normalized intersection point
                         this.dragStart.copy(intersects[0].point).normalize();
@@ -259,6 +267,23 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                         const rect = domElement.getBoundingClientRect();
                         const currentX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
                         const currentY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+                        if (this.justStartedDrag) {
+                            this.mouseStart.copy(this.mouseEnd);
+                            if (this.initialMousePos) {
+                                this.initialMousePos.set(currentX, currentY);
+                            } else {
+                                this.initialMousePos = new THREE.Vector2(currentX, currentY);
+                            }
+                            this.raycaster.setFromCamera(new THREE.Vector2(currentX, currentY), camera);
+                            const startHits = this.raycaster.intersectObject(globeRef.current);
+                            if (startHits.length > 0) {
+                                this.dragStart.copy(startHits[0].point).normalize();
+                            }
+                            this.lastRotationTime = Date.now();
+                            this.justStartedDrag = false;
+                            return;
+                        }
 
                         if (this.northLocked) {
                             const deltaX = this.mouseEnd.x - this.mouseStart.x;
@@ -319,6 +344,14 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                         if (intersects.length > 0) {
                             // Use actual intersection point for more accurate tracking
                             const currentPoint = intersects[0].point.clone().normalize();
+
+                            if (this.justStartedDrag) {
+                                this.dragStart.copy(currentPoint);
+                                this.initialMousePos.set(currentX, currentY);
+                                this.lastRotationTime = Date.now();
+                                this.justStartedDrag = false;
+                                return;
+                            }
                             
                             // Calculate the rotation needed to move dragStart to currentPoint
                             const rotationAxis = new THREE.Vector3().crossVectors(this.dragStart, currentPoint);
@@ -396,6 +429,7 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
             }
             
             this.currentState = this.state.NONE;
+            this.justStartedDrag = false;
             
             isDraggingRef.current = false;
             
@@ -492,6 +526,13 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                     // We touched the globe - enable drag rotation
                     this.currentState = this.state.ROTATE;
                     this.mouseStart.set(event.touches[0].pageX, event.touches[0].pageY);
+                    this.justStartedDrag = true;
+
+                    // Keep target in sync with the actual globe before the first drag move.
+                    if (globeRef.current) {
+                        this.globeQuaternion.copy(globeRef.current.quaternion);
+                    }
+                    this.targetGlobeQuaternion.copy(this.globeQuaternion);
                     
                     // Store the normalized intersection point
                     this.dragStart.copy(intersects[0].point).normalize();
@@ -561,6 +602,23 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                     const rect = domElement.getBoundingClientRect();
                     const currentX = ((event.touches[0].clientX - rect.left) / rect.width) * 2 - 1;
                     const currentY = -((event.touches[0].clientY - rect.top) / rect.height) * 2 + 1;
+
+                    if (this.justStartedDrag) {
+                        this.mouseStart.copy(this.mouseEnd);
+                        if (this.initialMousePos) {
+                            this.initialMousePos.set(currentX, currentY);
+                        } else {
+                            this.initialMousePos = new THREE.Vector2(currentX, currentY);
+                        }
+                        this.raycaster.setFromCamera(new THREE.Vector2(currentX, currentY), camera);
+                        const startHits = this.raycaster.intersectObject(globeRef.current);
+                        if (startHits.length > 0) {
+                            this.dragStart.copy(startHits[0].point).normalize();
+                        }
+                        this.lastRotationTime = Date.now();
+                        this.justStartedDrag = false;
+                        return;
+                    }
                     
                     if (this.initialMousePos) {
                         // Calculate touch movement
@@ -582,6 +640,14 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                         if (intersects.length > 0) {
                             // Use actual intersection point for more accurate tracking
                             const currentPoint = intersects[0].point.clone().normalize();
+
+                            if (this.justStartedDrag) {
+                                this.dragStart.copy(currentPoint);
+                                this.initialMousePos.set(currentX, currentY);
+                                this.lastRotationTime = Date.now();
+                                this.justStartedDrag = false;
+                                return;
+                            }
                             
                             const rotationAxis = new THREE.Vector3().crossVectors(this.dragStart, currentPoint);
                             const rotationAngle = this.dragStart.angleTo(currentPoint);
@@ -613,6 +679,7 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
          */
         onTouchEnd: function() {
             this.currentState = this.state.NONE;
+            this.justStartedDrag = false;
         },
 
         /**
@@ -736,22 +803,46 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
          * Helper method - sincronizza yaw/pitch dal quaternione corrente
          */
         _syncNorthLockFromQuaternion: function(quaternion) {
-            const euler = new THREE.Euler().setFromQuaternion(quaternion, 'YXZ');
+            const safeQuat = quaternion.clone().normalize();
+            if (safeQuat.w < 0) {
+                safeQuat.multiplyScalar(-1);
+            }
+            const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+            const cameraForward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+            const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+            const worldForward = new THREE.Vector3(0, 0, -1);
             const maxPitch = Math.PI / 2 - 0.02;
-            this.northLockYaw = euler.y;
-            this.northLockPitch = Math.max(-maxPitch, Math.min(maxPitch, euler.x));
+            
+            const north = new THREE.Vector3(0, 1, 0).applyQuaternion(safeQuat);
+            const pitch = Math.atan2(north.dot(cameraForward), north.dot(cameraUp));
+            const clampedPitch = Math.max(-maxPitch, Math.min(maxPitch, pitch));
+            this.northLockPitch = clampedPitch;
+            
+            const pitchQuat = new THREE.Quaternion().setFromAxisAngle(cameraRight, clampedPitch);
+            const tiltedNorth = new THREE.Vector3(0, 1, 0).applyQuaternion(pitchQuat);
+            
+            const spinQuat = safeQuat.clone().multiply(pitchQuat.clone().invert()).normalize();
+            const spinAxis = new THREE.Vector3(spinQuat.x, spinQuat.y, spinQuat.z);
+            const sinHalf = spinAxis.dot(tiltedNorth);
+            const yaw = 2 * Math.atan2(sinHalf, spinQuat.w);
+            if (Number.isFinite(yaw)) {
+                this.northLockYaw = -yaw;
+            }
         },
 
         /**
          * Helper method - aggiorna quaternion in modalità north lock (yaw attorno al polo)
          */
-        _updateNorthLockedQuaternion: function(targetQuaternion) {
+        _buildNorthLockedQuaternion: function(pitch, yaw) {
             const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-            const pitchQuat = new THREE.Quaternion().setFromAxisAngle(cameraRight, this.northLockPitch);
+            const pitchQuat = new THREE.Quaternion().setFromAxisAngle(cameraRight, pitch);
             const tiltedNorth = new THREE.Vector3(0, 1, 0).applyQuaternion(pitchQuat);
-            const spinQuat = new THREE.Quaternion().setFromAxisAngle(tiltedNorth, -this.northLockYaw);
-            const lockedQuat = spinQuat.multiply(pitchQuat);
-            
+            const spinQuat = new THREE.Quaternion().setFromAxisAngle(tiltedNorth, -yaw);
+            return spinQuat.multiply(pitchQuat);
+        },
+
+        _updateNorthLockedQuaternion: function(targetQuaternion) {
+            const lockedQuat = this._buildNorthLockedQuaternion(this.northLockPitch, this.northLockYaw);
             const target = targetQuaternion || this.targetGlobeQuaternion;
             target.copy(lockedQuat);
             return lockedQuat;
@@ -774,6 +865,16 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
             this._syncNorthLockFromQuaternion(this.targetGlobeQuaternion);
             this._updateNorthLockedQuaternion(this.targetGlobeQuaternion);
             this.globeQuaternion.copy(this.targetGlobeQuaternion);
+            this.rotationVelocity.set(0, 0);
+            this.inertiaEnabled = false;
+        },
+
+        /**
+         * Public method - entra in modalità north lock senza cambiare orientamento
+         */
+        enterNorthLock: function() {
+            this._syncNorthLockFromQuaternion(this.globeQuaternion);
+            this.targetGlobeQuaternion.copy(this.globeQuaternion);
             this.rotationVelocity.set(0, 0);
             this.inertiaEnabled = false;
         },

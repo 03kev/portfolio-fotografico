@@ -1632,8 +1632,8 @@ return (
                 controlsRef.current.northLocked = newLocked;
                 controlsRef.current.inertiaEnabled = false;
                 controlsRef.current.rotationVelocity.set(0, 0);
-                if (newLocked && controlsRef.current.applyNorthLock) {
-                    controlsRef.current.applyNorthLock();
+                if (newLocked && controlsRef.current.enterNorthLock) {
+                    controlsRef.current.enterNorthLock();
                 }
             }
         }}
