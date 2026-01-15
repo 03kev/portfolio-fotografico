@@ -1,5 +1,23 @@
 [
   {
+    "id": 1767998267681,
+    "title": "Cielo Stellato",
+    "location": "Vezzano sul Crostolo, Italia",
+    "lat": 44.609649,
+    "lng": 10.541472,
+    "image": "/uploads/photo_1767998267681.webp",
+    "thumbnail": "/uploads/thumbnails/photo_1767998267681_thumb.webp",
+    "url": "/uploads/thumbnails/photo_1767998267681_thumb.webp",
+    "description": "",
+    "date": "2023-06-16",
+    "camera": "Nikon D750",
+    "lens": "Tamron SP 15-30mm F2.8 Di VC USD",
+    "settings": "{\"aperture\":\"f/2.8\",\"shutter\":\"8s\",\"iso\":\"3200\",\"focal\":\"15mm\"}",
+    "tags": [
+      "Italia"
+    ]
+  },
+  {
     "id": 1767790746130,
     "title": "Tramonto",
     "location": "Zakynthos, Greece",
@@ -11,7 +29,7 @@
     "description": "",
     "date": "2023-08-23",
     "camera": "Nikon D750",
-    "lens": "TAMRON SP 15-30mm F2.8 Di VC USD A012N",
+    "lens": "Tamron SP 15-30mm F2.8 Di VC USD",
     "settings": "{\"aperture\":\"f/5.6\",\"shutter\":\"1/640s\",\"iso\":\"100\",\"focal\":\"30mm\"}",
     "tags": [
       "Zakynthos"

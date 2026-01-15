@@ -630,6 +630,7 @@ useEffect(() => {
     renderer.setClearColor(0x060608, 1);
     renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    renderer.domElement.setAttribute('data-testid', 'worldmap-canvas');
     
     renderer.shadowMap.enabled = false;
     mountRef.current.appendChild(renderer.domElement);
@@ -648,6 +649,17 @@ useEffect(() => {
     controls.autoRotate = autoRotate;
     controls.northLocked = northLocked; // Passa lo stato iniziale
     controlsRef.current = controls;
+
+    if (process.env.NODE_ENV !== 'production') {
+        window.__worldmapDebug = {
+            getQuaternion: () => globeRef.current ? globeRef.current.quaternion.toArray() : null,
+            setAutoRotate: (value) => {
+                if (controlsRef.current) {
+                    controlsRef.current.autoRotate = value;
+                }
+            }
+        };
+    }
     
     // crea geometria della Terra ottimizzata
     const earthGeometry = new THREE.SphereGeometry(GLOBE_RADIUS, 64, 64);
@@ -1126,6 +1138,10 @@ useEffect(() => {
         if (controlsRef.current) {
             controlsRef.current.dispose();
         }
+
+        if (window.__worldmapDebug) {
+            delete window.__worldmapDebug;
+        }
         
         const currentMount = mountRef.current;
         if (currentMount && currentCanvas) {
@@ -1597,7 +1613,7 @@ return (
     >
     <Container>
     <SectionTitle variants={itemVariants}>
-    Il Mondo in Foto
+    Il Mondo in foto
     </SectionTitle>
     
     <GlobeWrapper variants={itemVariants}>
@@ -1614,6 +1630,7 @@ return (
     transition={{ duration: 0.6, delay: 1 }}
     >
     <CompassButton 
+        data-testid="worldmap-compass"
         onClick={() => {
             // Click sinistro: raddrizza la terra
             if (northLocked && controlsRef.current?.applyNorthLock) {

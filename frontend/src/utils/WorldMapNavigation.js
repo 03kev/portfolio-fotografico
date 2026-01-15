@@ -43,6 +43,7 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
         northLocked: false, // Modalità blocco nord
         northLockYaw: 0,
         northLockPitch: 0,
+        northLockJustEnabled: false,
 
         // Spherical for zoom only
         spherical: new THREE.Spherical(),
@@ -73,6 +74,7 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
         dragCurrent: new THREE.Vector3(),
         initialMousePos: null, // Store initial mouse position for precise tracking
         justStartedDrag: false,
+        dragStartTime: 0,
 
         target: new THREE.Vector3(0, 0, 0),
         boundaryMesh: null, // Reference to boundary mesh if exists
@@ -204,12 +206,17 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                     const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
                     const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
                     
+                    if (globeRef.current) {
+                        globeRef.current.updateMatrixWorld(true);
+                    }
+                    camera.updateMatrixWorld(true);
                     this.raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
+                    const intersects = this.raycaster.intersectObject(globeRef.current, true);
+                    const hitPoint = intersects.length > 0
+                        ? intersects[0].point.clone().normalize()
+                        : this._getSpherePointFromNDC(x, y);
                     
-                    // Check if we clicked on the actual globe
-                    const intersects = this.raycaster.intersectObject(globeRef.current);
-                    
-                    if (intersects.length > 0) {
+                    if (hitPoint) {
                         // We clicked on the globe - enable drag rotation
                         this.currentState = this.state.ROTATE;
                         this.mouseStart.set(event.clientX, event.clientY);
@@ -222,9 +229,16 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                         this.targetGlobeQuaternion.copy(this.globeQuaternion);
                         
                         // Store the normalized intersection point
-                        this.dragStart.copy(intersects[0].point).normalize();
+                        this.dragStart.copy(hitPoint);
                         // Store the initial mouse position for this drag session
                         this.initialMousePos = new THREE.Vector2(x, y);
+                        this.dragStartTime = Date.now();
+
+                        if (this.northLocked && this.northLockJustEnabled) {
+                            this._syncNorthLockFromQuaternion(this.globeQuaternion);
+                            this.targetGlobeQuaternion.copy(this.globeQuaternion);
+                            this.northLockJustEnabled = false;
+                        }
 
                         
                         // Initialize velocity tracking
@@ -275,12 +289,20 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                             } else {
                                 this.initialMousePos = new THREE.Vector2(currentX, currentY);
                             }
+                            if (globeRef.current) {
+                                globeRef.current.updateMatrixWorld(true);
+                            }
+                            camera.updateMatrixWorld(true);
                             this.raycaster.setFromCamera(new THREE.Vector2(currentX, currentY), camera);
-                            const startHits = this.raycaster.intersectObject(globeRef.current);
-                            if (startHits.length > 0) {
-                                this.dragStart.copy(startHits[0].point).normalize();
+                            const startHits = this.raycaster.intersectObject(globeRef.current, true);
+                            const startPoint = startHits.length > 0
+                                ? startHits[0].point.clone().normalize()
+                                : this._getSpherePointFromNDC(currentX, currentY);
+                            if (startPoint) {
+                                this.dragStart.copy(startPoint);
                             }
                             this.lastRotationTime = Date.now();
+                            this.dragStartTime = this.lastRotationTime;
                             this.justStartedDrag = false;
                             return;
                         }
@@ -335,18 +357,18 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                             return;
                         }
                         
-                        // Project current mouse position onto the sphere using proper sphere projection
                         this.raycaster.setFromCamera(new THREE.Vector2(currentX, currentY), camera);
+                        const hits = this.raycaster.intersectObject(globeRef.current, true);
+                        const currentPoint = hits.length > 0
+                            ? hits[0].point.clone().normalize()
+                            : this._getSpherePointFromNDC(currentX, currentY);
                         
-                        // Calculate intersection with the visible sphere
-                        const intersects = this.raycaster.intersectObject(globeRef.current);
-                        
-                        if (intersects.length > 0) {
+                        if (currentPoint) {
                             // Use actual intersection point for more accurate tracking
-                            const currentPoint = intersects[0].point.clone().normalize();
+                            const currentPointNormalized = currentPoint.clone().normalize();
 
                             if (this.justStartedDrag) {
-                                this.dragStart.copy(currentPoint);
+                                this.dragStart.copy(currentPointNormalized);
                                 this.initialMousePos.set(currentX, currentY);
                                 this.lastRotationTime = Date.now();
                                 this.justStartedDrag = false;
@@ -354,8 +376,17 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                             }
                             
                             // Calculate the rotation needed to move dragStart to currentPoint
-                            const rotationAxis = new THREE.Vector3().crossVectors(this.dragStart, currentPoint);
-                            const rotationAngle = this.dragStart.angleTo(currentPoint);
+                            const rotationAxis = new THREE.Vector3().crossVectors(this.dragStart, currentPointNormalized);
+                            const rotationAngle = this.dragStart.angleTo(currentPointNormalized);
+                            const now = Date.now();
+                            const isEarlyDrag = now - this.dragStartTime < 120;
+                            if (isEarlyDrag && rotationAngle > Math.PI * 0.6) {
+                                this.dragStart.copy(currentPointNormalized);
+                                this.initialMousePos.set(currentX, currentY);
+                                this.lastRotationTime = now;
+                                this.dragStartTime = now;
+                                return;
+                            }
                             
                             // Only rotate if there's a meaningful angle and axis
                             if (rotationAxis.length() > 0.0001 && rotationAngle > 0.0001) {
@@ -370,7 +401,7 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                                 this.targetGlobeQuaternion.premultiply(deltaQuat);
                                 
                                 // Update dragStart to the new position after rotation for continuous tracking
-                                this.dragStart.copy(currentPoint);
+                                this.dragStart.copy(currentPointNormalized);
                                 
                                 // Calculate velocity for inertia based on mouse movement
                                 const currentTime = Date.now();
@@ -517,12 +548,17 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                 const x = ((event.touches[0].clientX - rect.left) / rect.width) * 2 - 1;
                 const y = -((event.touches[0].clientY - rect.top) / rect.height) * 2 + 1;
                 
+                if (globeRef.current) {
+                    globeRef.current.updateMatrixWorld(true);
+                }
+                camera.updateMatrixWorld(true);
                 this.raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
+                const intersects = this.raycaster.intersectObject(globeRef.current, true);
+                const hitPoint = intersects.length > 0
+                    ? intersects[0].point.clone().normalize()
+                    : this._getSpherePointFromNDC(x, y);
                 
-                // Check if we touched the actual globe
-                const intersects = this.raycaster.intersectObject(globeRef.current);
-                
-                if (intersects.length > 0) {
+                if (hitPoint) {
                     // We touched the globe - enable drag rotation
                     this.currentState = this.state.ROTATE;
                     this.mouseStart.set(event.touches[0].pageX, event.touches[0].pageY);
@@ -535,8 +571,9 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                     this.targetGlobeQuaternion.copy(this.globeQuaternion);
                     
                     // Store the normalized intersection point
-                    this.dragStart.copy(intersects[0].point).normalize();
+                    this.dragStart.copy(hitPoint);
                     this.initialMousePos = new THREE.Vector2(x, y);
+                    this.dragStartTime = Date.now();
 
 
                     this.rotationVelocity.set(0, 0);
@@ -562,9 +599,38 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                 this.mouseEnd.set(event.touches[0].pageX, event.touches[0].pageY);
                 
                 if (this.dragStart.lengthSq() > 0) {
+                    // Precise Google Earth style touch dragging
+                    const rect = domElement.getBoundingClientRect();
+                    const currentX = ((event.touches[0].clientX - rect.left) / rect.width) * 2 - 1;
+                    const currentY = -((event.touches[0].clientY - rect.top) / rect.height) * 2 + 1;
+
+                    if (this.justStartedDrag) {
+                        this.mouseStart.copy(this.mouseEnd);
+                        if (this.initialMousePos) {
+                            this.initialMousePos.set(currentX, currentY);
+                        } else {
+                            this.initialMousePos = new THREE.Vector2(currentX, currentY);
+                        }
+                        if (globeRef.current) {
+                            globeRef.current.updateMatrixWorld(true);
+                        }
+                        camera.updateMatrixWorld(true);
+                        this.raycaster.setFromCamera(new THREE.Vector2(currentX, currentY), camera);
+                        const startHits = this.raycaster.intersectObject(globeRef.current, true);
+                        const startPoint = startHits.length > 0
+                            ? startHits[0].point.clone().normalize()
+                            : this._getSpherePointFromNDC(currentX, currentY);
+                        if (startPoint) {
+                            this.dragStart.copy(startPoint);
+                        }
+                        this.lastRotationTime = Date.now();
+                        this.dragStartTime = this.lastRotationTime;
+                        this.justStartedDrag = false;
+                        return;
+                    }
+
                     if (this.northLocked) {
                         this.mouseDelta.subVectors(this.mouseEnd, this.mouseStart);
-                        const rect = domElement.getBoundingClientRect();
                         const deltaX = this.mouseDelta.x;
                         const deltaY = this.mouseDelta.y;
                         const movementThresholdPx = 1;
@@ -597,28 +663,6 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                         this.mouseStart.copy(this.mouseEnd);
                         return;
                     }
-
-                    // Precise Google Earth style touch dragging
-                    const rect = domElement.getBoundingClientRect();
-                    const currentX = ((event.touches[0].clientX - rect.left) / rect.width) * 2 - 1;
-                    const currentY = -((event.touches[0].clientY - rect.top) / rect.height) * 2 + 1;
-
-                    if (this.justStartedDrag) {
-                        this.mouseStart.copy(this.mouseEnd);
-                        if (this.initialMousePos) {
-                            this.initialMousePos.set(currentX, currentY);
-                        } else {
-                            this.initialMousePos = new THREE.Vector2(currentX, currentY);
-                        }
-                        this.raycaster.setFromCamera(new THREE.Vector2(currentX, currentY), camera);
-                        const startHits = this.raycaster.intersectObject(globeRef.current);
-                        if (startHits.length > 0) {
-                            this.dragStart.copy(startHits[0].point).normalize();
-                        }
-                        this.lastRotationTime = Date.now();
-                        this.justStartedDrag = false;
-                        return;
-                    }
                     
                     if (this.initialMousePos) {
                         // Calculate touch movement
@@ -631,33 +675,42 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                             return;
                         }
                         
-                        // Project current touch position onto the sphere using proper sphere projection
                         this.raycaster.setFromCamera(new THREE.Vector2(currentX, currentY), camera);
+                        const hits = this.raycaster.intersectObject(globeRef.current, true);
+                        const currentPoint = hits.length > 0
+                            ? hits[0].point.clone().normalize()
+                            : this._getSpherePointFromNDC(currentX, currentY);
                         
-                        // Calculate intersection with the visible sphere
-                        const intersects = this.raycaster.intersectObject(globeRef.current);
-                        
-                        if (intersects.length > 0) {
+                        if (currentPoint) {
                             // Use actual intersection point for more accurate tracking
-                            const currentPoint = intersects[0].point.clone().normalize();
+                            const currentPointNormalized = currentPoint.clone().normalize();
 
                             if (this.justStartedDrag) {
-                                this.dragStart.copy(currentPoint);
+                                this.dragStart.copy(currentPointNormalized);
                                 this.initialMousePos.set(currentX, currentY);
                                 this.lastRotationTime = Date.now();
                                 this.justStartedDrag = false;
                                 return;
                             }
                             
-                            const rotationAxis = new THREE.Vector3().crossVectors(this.dragStart, currentPoint);
-                            const rotationAngle = this.dragStart.angleTo(currentPoint);
+                            const rotationAxis = new THREE.Vector3().crossVectors(this.dragStart, currentPointNormalized);
+                            const rotationAngle = this.dragStart.angleTo(currentPointNormalized);
+                            const now = Date.now();
+                            const isEarlyDrag = now - this.dragStartTime < 140;
+                            if (isEarlyDrag && rotationAngle > Math.PI * 0.6) {
+                                this.dragStart.copy(currentPointNormalized);
+                                this.initialMousePos.set(currentX, currentY);
+                                this.lastRotationTime = now;
+                                this.dragStartTime = now;
+                                return;
+                            }
                             
                             if (rotationAxis.length() > 0.0001 && rotationAngle > 0.0001) {
                                 rotationAxis.normalize();
                                 const deltaQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, rotationAngle);
                                 this.targetGlobeQuaternion.premultiply(deltaQuat);
                                 
-                                this.dragStart.copy(currentPoint);
+                                this.dragStart.copy(currentPointNormalized);
                             }
                         } else {
                             // If no intersection, try sphere projection for edge cases
@@ -680,6 +733,31 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
         onTouchEnd: function() {
             this.currentState = this.state.NONE;
             this.justStartedDrag = false;
+        },
+
+        /**
+         * Helper method - gestisce la proiezione sulla sfera quando il mouse esce dal bordo
+         */
+        _getSpherePointFromNDC: function(x, y) {
+            this.raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
+            const ray = this.raycaster.ray;
+            const sphereRadius = GLOBE_RADIUS;
+            const toSphere = ray.origin.clone().negate();
+            const normalizedDir = ray.direction.clone().normalize();
+            const dot = toSphere.dot(normalizedDir);
+            const discriminant = dot * dot - (toSphere.lengthSq() - sphereRadius * sphereRadius);
+            if (discriminant < 0) {
+                return null;
+            }
+            const sqrtDisc = Math.sqrt(discriminant);
+            let t = dot - sqrtDisc;
+            if (t <= 0) {
+                t = dot + sqrtDisc;
+            }
+            if (t <= 0) {
+                return null;
+            }
+            return ray.origin.clone().add(normalizedDir.multiplyScalar(t)).normalize();
         },
 
         /**
@@ -805,29 +883,48 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
         _syncNorthLockFromQuaternion: function(quaternion) {
             const safeQuat = quaternion.clone().normalize();
             if (safeQuat.w < 0) {
-                safeQuat.multiplyScalar(-1);
+                safeQuat.set(-safeQuat.x, -safeQuat.y, -safeQuat.z, -safeQuat.w);
             }
             const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
             const cameraForward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
             const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
-            const worldForward = new THREE.Vector3(0, 0, -1);
             const maxPitch = Math.PI / 2 - 0.02;
-            
+
             const north = new THREE.Vector3(0, 1, 0).applyQuaternion(safeQuat);
             const pitch = Math.atan2(north.dot(cameraForward), north.dot(cameraUp));
             const clampedPitch = Math.max(-maxPitch, Math.min(maxPitch, pitch));
             this.northLockPitch = clampedPitch;
-            
+
             const pitchQuat = new THREE.Quaternion().setFromAxisAngle(cameraRight, clampedPitch);
-            const tiltedNorth = new THREE.Vector3(0, 1, 0).applyQuaternion(pitchQuat);
-            
-            const spinQuat = safeQuat.clone().multiply(pitchQuat.clone().invert()).normalize();
-            const spinAxis = new THREE.Vector3(spinQuat.x, spinQuat.y, spinQuat.z);
-            const sinHalf = spinAxis.dot(tiltedNorth);
-            const yaw = 2 * Math.atan2(sinHalf, spinQuat.w);
-            if (Number.isFinite(yaw)) {
-                this.northLockYaw = -yaw;
+            const tiltedNorth = new THREE.Vector3(0, 1, 0).applyQuaternion(pitchQuat).normalize();
+
+            const refX = new THREE.Vector3(1, 0, 0);
+            const refZ = new THREE.Vector3(0, 0, 1);
+            const ref = Math.abs(tiltedNorth.dot(refX)) < Math.abs(tiltedNorth.dot(refZ))
+                ? refX
+                : refZ;
+            const primeWorld = ref.clone().applyQuaternion(safeQuat);
+            const primeAfterPitch = ref.clone().applyQuaternion(pitchQuat);
+
+            const projWorld = primeWorld.clone().sub(tiltedNorth.clone().multiplyScalar(primeWorld.dot(tiltedNorth)));
+            const projPitch = primeAfterPitch.clone().sub(tiltedNorth.clone().multiplyScalar(primeAfterPitch.dot(tiltedNorth)));
+            if (projWorld.lengthSq() < 1e-6 || projPitch.lengthSq() < 1e-6) {
+                return;
             }
+
+            projWorld.normalize();
+            projPitch.normalize();
+
+            const cross = new THREE.Vector3().crossVectors(projPitch, projWorld);
+            const sin = cross.dot(tiltedNorth);
+            const cos = projPitch.dot(projWorld);
+            const angle = Math.atan2(sin, cos);
+            const baseYaw = -angle;
+            const lockedA = this._buildNorthLockedQuaternion(clampedPitch, baseYaw);
+            const lockedB = this._buildNorthLockedQuaternion(clampedPitch, baseYaw + Math.PI);
+            const dotA = Math.abs(lockedA.dot(safeQuat));
+            const dotB = Math.abs(lockedB.dot(safeQuat));
+            this.northLockYaw = dotB > dotA ? baseYaw + Math.PI : baseYaw;
         },
 
         /**
@@ -873,8 +970,13 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
          * Public method - entra in modalità north lock senza cambiare orientamento
          */
         enterNorthLock: function() {
-            this._syncNorthLockFromQuaternion(this.globeQuaternion);
-            this.targetGlobeQuaternion.copy(this.globeQuaternion);
+            const sourceQuat = globeRef.current
+                ? globeRef.current.quaternion.clone()
+                : this.globeQuaternion.clone();
+            this.globeQuaternion.copy(sourceQuat);
+            this.targetGlobeQuaternion.copy(sourceQuat);
+            this._syncNorthLockFromQuaternion(sourceQuat);
+            this.northLockJustEnabled = true;
             this.rotationVelocity.set(0, 0);
             this.inertiaEnabled = false;
         },
