@@ -35,8 +35,12 @@ test('worldmap drag does not jump after enabling north lock', async ({ page }) =
     await page.waitForTimeout(80);
 
     const compass = page.locator('[data-testid="worldmap-compass"]');
+    const qPreLock = await page.evaluate(() => window.__worldmapDebug.getQuaternion());
     await compass.click({ button: 'right' });
     await page.waitForTimeout(80);
+    const qPostLock = await page.evaluate(() => window.__worldmapDebug.getQuaternion());
+    const lockAngle = quaternionAngle(qPreLock, qPostLock);
+    expect(lockAngle).toBeLessThan(0.04);
 
     const qLockStart = await page.evaluate(() => window.__worldmapDebug.getQuaternion());
     expect(qLockStart).toBeTruthy();

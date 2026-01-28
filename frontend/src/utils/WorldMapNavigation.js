@@ -28,6 +28,48 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
         setCanvasCursor, 
         isDraggingRef 
     } = callbacks;
+    const TWO_PI = Math.PI * 2;
+    const NORTH_LOCK_MAX_PITCH = Math.PI / 2 - 0.02;
+    const WORLD_UP = new THREE.Vector3(0, 1, 0);
+    const WORLD_RIGHT = new THREE.Vector3(1, 0, 0);
+    const WORLD_FORWARD = new THREE.Vector3(0, 0, 1);
+    const temp = {
+        yawQuat: new THREE.Quaternion(),
+        pitchQuat: new THREE.Quaternion(),
+        lockedQuat: new THREE.Quaternion(),
+        forward: new THREE.Vector3(),
+        north: new THREE.Vector3()
+    };
+
+    const normalizeAngle = (angle) => {
+        let normalized = angle % TWO_PI;
+        if (normalized > Math.PI) normalized -= TWO_PI;
+        if (normalized < -Math.PI) normalized += TWO_PI;
+        return normalized;
+    };
+
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+    const buildNorthLockedQuaternion = (pitch, yaw, outQuat) => {
+        const out = outQuat || new THREE.Quaternion();
+        temp.pitchQuat.setFromAxisAngle(WORLD_RIGHT, pitch);
+        temp.yawQuat.setFromAxisAngle(WORLD_UP, yaw);
+        out.copy(temp.pitchQuat).multiply(temp.yawQuat);
+        return out;
+    };
+
+    const computeNorthLockAngles = (sourceQuat) => {
+        temp.forward.copy(WORLD_FORWARD).applyQuaternion(sourceQuat);
+        temp.north.copy(WORLD_UP).applyQuaternion(sourceQuat);
+
+        const yaw = normalizeAngle(Math.atan2(temp.forward.x, temp.forward.z));
+        const pitch = Math.atan2(temp.north.z, temp.north.y);
+
+        return {
+            yaw,
+            pitch: clamp(pitch, -NORTH_LOCK_MAX_PITCH, NORTH_LOCK_MAX_PITCH)
+        };
+    };
 
     const controls = {
         // Configuration
@@ -44,6 +86,11 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
         northLockYaw: 0,
         northLockPitch: 0,
         northLockJustEnabled: false,
+        northLockTransitioning: false,
+        northLockTransitionStart: 0,
+        northLockTransitionDuration: 220,
+        northLockTransitionFrom: new THREE.Quaternion(),
+        northLockTransitionTo: new THREE.Quaternion(),
 
         // Spherical for zoom only
         spherical: new THREE.Spherical(),
@@ -93,38 +140,54 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
             
             // Apply rotation to globe and synchronize markers/borders
             if (globeRef.current) {
+                if (this.northLocked && this.northLockTransitioning && this.currentState === this.state.NONE) {
+                    const now = Date.now();
+                    const rawT = (now - this.northLockTransitionStart) / this.northLockTransitionDuration;
+                    const t = Math.max(0, Math.min(1, rawT));
+                    const eased = t * (2 - t);
+                    this.globeQuaternion.copy(this.northLockTransitionFrom).slerp(this.northLockTransitionTo, eased);
+                    this.targetGlobeQuaternion.copy(this.globeQuaternion);
+                    if (t >= 1) {
+                        this.northLockTransitioning = false;
+                    }
+                }
+
                 // Apply inertia if enabled
                 if (this.inertiaEnabled && this.currentState === this.state.NONE) {
-                    const inertiaDecay = 0.92; // How quickly inertia slows down (lower = faster decay)
-                    const minVelocity = 0.00005; // Minimum velocity before stopping
-                    
-                    if (Math.abs(this.rotationVelocity.x) > minVelocity || Math.abs(this.rotationVelocity.y) > minVelocity) {
-                        // Apply inertia rotation
-                        if (this.northLocked) {
-                            const maxPitch = Math.PI / 2 - 0.02;
-                            this.northLockYaw += this.rotationVelocity.x;
-                            this.northLockPitch = Math.max(
-                                -maxPitch,
-                                Math.min(maxPitch, this.northLockPitch + this.rotationVelocity.y)
-                            );
-                            this._updateNorthLockedQuaternion(this.targetGlobeQuaternion);
-                        } else {
-                            const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-                            const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
-                            
-                            const horizontalQuat = new THREE.Quaternion().setFromAxisAngle(cameraUp, -this.rotationVelocity.x);
-                            const verticalQuat = new THREE.Quaternion().setFromAxisAngle(cameraRight, -this.rotationVelocity.y);
-                            
-                            this.targetGlobeQuaternion.premultiply(horizontalQuat);
-                            this.targetGlobeQuaternion.premultiply(verticalQuat);
-                        }
-                        
-                        // Decay velocity
-                        this.rotationVelocity.multiplyScalar(inertiaDecay);
+                    if (this.northLocked && (this.northLockJustEnabled || this.northLockTransitioning)) {
+                        // Avoid applying north-locked inertia until first user drag.
                     } else {
-                        // Stop inertia when velocity is too small
-                        this.inertiaEnabled = false;
-                        this.rotationVelocity.set(0, 0);
+                        const inertiaDecay = 0.92; // How quickly inertia slows down (lower = faster decay)
+                        const minVelocity = 0.00005; // Minimum velocity before stopping
+
+                        if (Math.abs(this.rotationVelocity.x) > minVelocity || Math.abs(this.rotationVelocity.y) > minVelocity) {
+                            if (this.northLocked) {
+                                this.northLockYaw = normalizeAngle(this.northLockYaw + this.rotationVelocity.x);
+                                this.northLockPitch = clamp(
+                                    this.northLockPitch + this.rotationVelocity.y,
+                                    -NORTH_LOCK_MAX_PITCH,
+                                    NORTH_LOCK_MAX_PITCH
+                                );
+                                this._updateNorthLockedQuaternion(this.targetGlobeQuaternion);
+                            } else {
+                                // Apply inertia rotation
+                                const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+                                const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+
+                                const horizontalQuat = new THREE.Quaternion().setFromAxisAngle(cameraUp, -this.rotationVelocity.x);
+                                const verticalQuat = new THREE.Quaternion().setFromAxisAngle(cameraRight, -this.rotationVelocity.y);
+
+                                this.targetGlobeQuaternion.premultiply(horizontalQuat);
+                                this.targetGlobeQuaternion.premultiply(verticalQuat);
+                            }
+
+                            // Decay velocity
+                            this.rotationVelocity.multiplyScalar(inertiaDecay);
+                        } else {
+                            // Stop inertia when velocity is too small
+                            this.inertiaEnabled = false;
+                            this.rotationVelocity.set(0, 0);
+                        }
                     }
                 }
                 
@@ -152,8 +215,12 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                 
                 // Auto-rotate if enabled
                 if (this.autoRotate && this.currentState === this.state.NONE) {
-                    if (this.northLocked) {
-                        this.northLockYaw += -this.autoRotateSpeed * 2 * Math.PI / 60 / 60;
+                    if (this.northLocked && (this.northLockJustEnabled || this.northLockTransitioning)) {
+                        // Skip auto-rotate until the user drags in north-lock mode.
+                    } else if (this.northLocked) {
+                        this.northLockYaw = normalizeAngle(
+                            this.northLockYaw + (-this.autoRotateSpeed * 2 * Math.PI / 60 / 60)
+                        );
                         this._updateNorthLockedQuaternion(this.targetGlobeQuaternion);
                     } else {
                         const autoRotateQuat = new THREE.Quaternion().setFromAxisAngle(
@@ -221,6 +288,13 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                         this.currentState = this.state.ROTATE;
                         this.mouseStart.set(event.clientX, event.clientY);
                         this.justStartedDrag = true;
+                        if (this.northLockTransitioning) {
+                            this.northLockTransitioning = false;
+                            if (this.northLocked) {
+                                this._syncNorthLockFromQuaternion(this.globeQuaternion);
+                                this.targetGlobeQuaternion.copy(this.globeQuaternion);
+                            }
+                        }
 
                         // Keep target in sync with the actual globe before the first drag move.
                         if (globeRef.current) {
@@ -233,12 +307,6 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                         // Store the initial mouse position for this drag session
                         this.initialMousePos = new THREE.Vector2(x, y);
                         this.dragStartTime = Date.now();
-
-                        if (this.northLocked && this.northLockJustEnabled) {
-                            this._syncNorthLockFromQuaternion(this.globeQuaternion);
-                            this.targetGlobeQuaternion.copy(this.globeQuaternion);
-                            this.northLockJustEnabled = false;
-                        }
 
                         
                         // Initialize velocity tracking
@@ -306,44 +374,53 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                             this.justStartedDrag = false;
                             return;
                         }
-
-                        if (this.northLocked) {
-                            const deltaX = this.mouseEnd.x - this.mouseStart.x;
-                            const deltaY = this.mouseEnd.y - this.mouseStart.y;
-                            const movementThresholdPx = 1;
-                            
-                            if (Math.abs(deltaX) < movementThresholdPx && Math.abs(deltaY) < movementThresholdPx) {
-                                return;
-                            }
-                            
-                            const rotateSpeed = (Math.PI * 0.6) / Math.min(rect.width, rect.height);
-                            const yawDelta = -deltaX * rotateSpeed;
-                            const pitchDelta = deltaY * rotateSpeed;
-                            const maxPitch = Math.PI / 2 - 0.02;
-                            
-                            this.northLockYaw += yawDelta;
-                            this.northLockPitch = Math.max(
-                                -maxPitch,
-                                Math.min(maxPitch, this.northLockPitch + pitchDelta)
-                            );
-                            this._updateNorthLockedQuaternion(this.targetGlobeQuaternion);
-                            
-                            const currentTime = Date.now();
-                            const deltaTime = (currentTime - this.lastRotationTime) / 1000;
-                            
-                            if (deltaTime > 0 && deltaTime < 0.1) {
-                                const smoothingFactor = 0.3;
-                                this.rotationVelocity.x = this.rotationVelocity.x * smoothingFactor + yawDelta * (1 - smoothingFactor);
-                                this.rotationVelocity.y = this.rotationVelocity.y * smoothingFactor + pitchDelta * (1 - smoothingFactor);
-                            }
-                            
-                            this.lastRotationTime = currentTime;
+                        if (this.northLocked && this.northLockJustEnabled) {
                             this.mouseStart.copy(this.mouseEnd);
-                            
+                            if (this.initialMousePos) {
+                                this.initialMousePos.set(currentX, currentY);
+                            }
+                            this.lastRotationTime = Date.now();
+                            this.dragStartTime = this.lastRotationTime;
+                            this.northLockJustEnabled = false;
                             disableAutoRotate();
                             scheduleAutoRotateResume();
                             return;
                         }
+
+                    if (this.northLocked) {
+                        const deltaX = this.mouseEnd.x - this.mouseStart.x;
+                        const deltaY = this.mouseEnd.y - this.mouseStart.y;
+                        const movementThresholdPx = 1;
+
+                        if (Math.abs(deltaX) < movementThresholdPx && Math.abs(deltaY) < movementThresholdPx) {
+                            return;
+                        }
+
+                        const rotateSpeed = (Math.PI * 0.6) / Math.min(rect.width, rect.height);
+                        const yawDelta = deltaX * rotateSpeed;
+                        const pitchDelta = deltaY * rotateSpeed;
+
+                        this.northLockYaw = normalizeAngle(this.northLockYaw + yawDelta);
+                        this.northLockPitch = clamp(
+                            this.northLockPitch + pitchDelta,
+                            -NORTH_LOCK_MAX_PITCH,
+                            NORTH_LOCK_MAX_PITCH
+                        );
+                        this._updateNorthLockedQuaternion(this.targetGlobeQuaternion);
+
+                        const currentTime = Date.now();
+                        const deltaTime = (currentTime - this.lastRotationTime) / 1000;
+
+                        if (deltaTime > 0 && deltaTime < 0.1) {
+                            const smoothingFactor = 0.3;
+                            this.rotationVelocity.x = this.rotationVelocity.x * smoothingFactor + yawDelta * (1 - smoothingFactor);
+                            this.rotationVelocity.y = this.rotationVelocity.y * smoothingFactor + pitchDelta * (1 - smoothingFactor);
+                        }
+
+                        this.lastRotationTime = currentTime;
+                        this.mouseStart.copy(this.mouseEnd);
+                        return;
+                    }
 
                     // Only proceed if we have a valid initial mouse position
                     if (this.initialMousePos) {
@@ -509,24 +586,26 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                 const rotateSpeed = 0.002;
                 const deltaX = event.deltaX || 0;
                 const deltaY = event.deltaY || 0;
-                
+
                 if (this.northLocked) {
-                    const maxPitch = Math.PI / 2 - 0.02;
-                    this.northLockYaw += deltaX * rotateSpeed;
-                    this.northLockPitch = Math.max(
-                        -maxPitch,
-                        Math.min(maxPitch, this.northLockPitch + deltaY * rotateSpeed)
+                    const yawDelta = deltaX * rotateSpeed;
+                    const pitchDelta = -deltaY * rotateSpeed;
+                    this.northLockYaw = normalizeAngle(this.northLockYaw + yawDelta);
+                    this.northLockPitch = clamp(
+                        this.northLockPitch + pitchDelta,
+                        -NORTH_LOCK_MAX_PITCH,
+                        NORTH_LOCK_MAX_PITCH
                     );
                     this._updateNorthLockedQuaternion(this.targetGlobeQuaternion);
                 } else {
                     // Get camera's local axes with quaternion transformation
                     const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
                     const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
-                    
-                    // Create rotations around camera's local axes  
+
+                    // Create rotations around camera's local axes
                     const horizontalQuat = new THREE.Quaternion().setFromAxisAngle(cameraUp, -deltaX * rotateSpeed);
                     const verticalQuat = new THREE.Quaternion().setFromAxisAngle(cameraRight, -deltaY * rotateSpeed);
-                    
+
                     // Apply to target quaternion
                     this.targetGlobeQuaternion.premultiply(horizontalQuat);
                     this.targetGlobeQuaternion.premultiply(verticalQuat);
@@ -563,6 +642,13 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                     this.currentState = this.state.ROTATE;
                     this.mouseStart.set(event.touches[0].pageX, event.touches[0].pageY);
                     this.justStartedDrag = true;
+                    if (this.northLockTransitioning) {
+                        this.northLockTransitioning = false;
+                        if (this.northLocked) {
+                            this._syncNorthLockFromQuaternion(this.globeQuaternion);
+                            this.targetGlobeQuaternion.copy(this.globeQuaternion);
+                        }
+                    }
 
                     // Keep target in sync with the actual globe before the first drag move.
                     if (globeRef.current) {
@@ -574,7 +660,6 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                     this.dragStart.copy(hitPoint);
                     this.initialMousePos = new THREE.Vector2(x, y);
                     this.dragStartTime = Date.now();
-
 
                     this.rotationVelocity.set(0, 0);
                     this.lastRotationTime = Date.now();
@@ -628,6 +713,16 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                         this.justStartedDrag = false;
                         return;
                     }
+                    if (this.northLocked && this.northLockJustEnabled) {
+                        this.mouseStart.copy(this.mouseEnd);
+                        if (this.initialMousePos) {
+                            this.initialMousePos.set(currentX, currentY);
+                        }
+                        this.lastRotationTime = Date.now();
+                        this.dragStartTime = this.lastRotationTime;
+                        this.northLockJustEnabled = false;
+                        return;
+                    }
 
                     if (this.northLocked) {
                         this.mouseDelta.subVectors(this.mouseEnd, this.mouseStart);
@@ -639,14 +734,14 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                         }
 
                         const rotateSpeed = (Math.PI * 0.6) / Math.min(rect.width, rect.height);
-                        const yawDelta = -deltaX * rotateSpeed;
+                        const yawDelta = deltaX * rotateSpeed;
                         const pitchDelta = -deltaY * rotateSpeed;
-                        const maxPitch = Math.PI / 2 - 0.02;
                         
-                        this.northLockYaw += yawDelta;
-                        this.northLockPitch = Math.max(
-                            -maxPitch,
-                            Math.min(maxPitch, this.northLockPitch + pitchDelta)
+                        this.northLockYaw = normalizeAngle(this.northLockYaw + yawDelta);
+                        this.northLockPitch = clamp(
+                            this.northLockPitch + pitchDelta,
+                            -NORTH_LOCK_MAX_PITCH,
+                            NORTH_LOCK_MAX_PITCH
                         );
                         this._updateNorthLockedQuaternion(this.targetGlobeQuaternion);
                         
@@ -849,26 +944,26 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
             
             if (this.northLocked) {
                 const rect = domElement.getBoundingClientRect();
-                const rotateSpeed = (Math.PI * 0.6) / Math.min(rect.width, rect.height);
-                const yawDelta = -this.mouseDelta.x * rotateSpeed;
-                const pitchDelta = -this.mouseDelta.y * rotateSpeed;
-                const maxPitch = Math.PI / 2 - 0.02;
-                
-                this.northLockYaw += yawDelta;
-                this.northLockPitch = Math.max(
-                    -maxPitch,
-                    Math.min(maxPitch, this.northLockPitch + pitchDelta)
+                const lockedSpeed = (Math.PI * 0.6) / Math.min(rect.width, rect.height);
+                const yawDelta = this.mouseDelta.x * lockedSpeed;
+                const pitchDelta = -this.mouseDelta.y * lockedSpeed;
+
+                this.northLockYaw = normalizeAngle(this.northLockYaw + yawDelta);
+                this.northLockPitch = clamp(
+                    this.northLockPitch + pitchDelta,
+                    -NORTH_LOCK_MAX_PITCH,
+                    NORTH_LOCK_MAX_PITCH
                 );
                 this._updateNorthLockedQuaternion(this.targetGlobeQuaternion);
             } else {
                 // Get camera's local axes with consistent quaternion transformation
                 const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
                 const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
-                
+
                 // Create rotations around camera's local axes
                 const horizontalQuat = new THREE.Quaternion().setFromAxisAngle(cameraUp, -this.mouseDelta.x * rotateSpeed);
                 const verticalQuat = new THREE.Quaternion().setFromAxisAngle(cameraRight, -this.mouseDelta.y * rotateSpeed);
-                
+
                 // Apply to target quaternion
                 this.targetGlobeQuaternion.premultiply(horizontalQuat);
                 this.targetGlobeQuaternion.premultiply(verticalQuat);
@@ -881,87 +976,35 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
          * Helper method - sincronizza yaw/pitch dal quaternione corrente
          */
         _syncNorthLockFromQuaternion: function(quaternion) {
-            const safeQuat = quaternion.clone().normalize();
-            if (safeQuat.w < 0) {
-                safeQuat.set(-safeQuat.x, -safeQuat.y, -safeQuat.z, -safeQuat.w);
-            }
-            const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-            const cameraForward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-            const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
-            const maxPitch = Math.PI / 2 - 0.02;
-
-            const north = new THREE.Vector3(0, 1, 0).applyQuaternion(safeQuat);
-            const pitch = Math.atan2(north.dot(cameraForward), north.dot(cameraUp));
-            const clampedPitch = Math.max(-maxPitch, Math.min(maxPitch, pitch));
-            this.northLockPitch = clampedPitch;
-
-            const pitchQuat = new THREE.Quaternion().setFromAxisAngle(cameraRight, clampedPitch);
-            const tiltedNorth = new THREE.Vector3(0, 1, 0).applyQuaternion(pitchQuat).normalize();
-
-            const refX = new THREE.Vector3(1, 0, 0);
-            const refZ = new THREE.Vector3(0, 0, 1);
-            const ref = Math.abs(tiltedNorth.dot(refX)) < Math.abs(tiltedNorth.dot(refZ))
-                ? refX
-                : refZ;
-            const primeWorld = ref.clone().applyQuaternion(safeQuat);
-            const primeAfterPitch = ref.clone().applyQuaternion(pitchQuat);
-
-            const projWorld = primeWorld.clone().sub(tiltedNorth.clone().multiplyScalar(primeWorld.dot(tiltedNorth)));
-            const projPitch = primeAfterPitch.clone().sub(tiltedNorth.clone().multiplyScalar(primeAfterPitch.dot(tiltedNorth)));
-            if (projWorld.lengthSq() < 1e-6 || projPitch.lengthSq() < 1e-6) {
-                return;
-            }
-
-            projWorld.normalize();
-            projPitch.normalize();
-
-            const cross = new THREE.Vector3().crossVectors(projPitch, projWorld);
-            const sin = cross.dot(tiltedNorth);
-            const cos = projPitch.dot(projWorld);
-            const angle = Math.atan2(sin, cos);
-            const baseYaw = -angle;
-            const lockedA = this._buildNorthLockedQuaternion(clampedPitch, baseYaw);
-            const lockedB = this._buildNorthLockedQuaternion(clampedPitch, baseYaw + Math.PI);
-            const dotA = Math.abs(lockedA.dot(safeQuat));
-            const dotB = Math.abs(lockedB.dot(safeQuat));
-            this.northLockYaw = dotB > dotA ? baseYaw + Math.PI : baseYaw;
+            const { pitch, yaw } = computeNorthLockAngles(quaternion);
+            this.northLockPitch = pitch;
+            this.northLockYaw = yaw;
+            return buildNorthLockedQuaternion(this.northLockPitch, this.northLockYaw, temp.lockedQuat);
         },
 
         /**
          * Helper method - aggiorna quaternion in modalità north lock (yaw attorno al polo)
          */
-        _buildNorthLockedQuaternion: function(pitch, yaw) {
-            const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-            const pitchQuat = new THREE.Quaternion().setFromAxisAngle(cameraRight, pitch);
-            const tiltedNorth = new THREE.Vector3(0, 1, 0).applyQuaternion(pitchQuat);
-            const spinQuat = new THREE.Quaternion().setFromAxisAngle(tiltedNorth, -yaw);
-            return spinQuat.multiply(pitchQuat);
+        _buildNorthLockedQuaternion: function(pitch, yaw, outQuat) {
+            return buildNorthLockedQuaternion(pitch, yaw, outQuat);
         },
 
         _updateNorthLockedQuaternion: function(targetQuaternion) {
-            const lockedQuat = this._buildNorthLockedQuaternion(this.northLockPitch, this.northLockYaw);
             const target = targetQuaternion || this.targetGlobeQuaternion;
-            target.copy(lockedQuat);
-            return lockedQuat;
-        },
-
-        /**
-         * Helper method - blocca il polo nord in alto e mantiene il meridiano centrale
-         */
-        _applyNorthLockQuaternion: function(quaternion) {
-            const before = quaternion.clone();
-            this._syncNorthLockFromQuaternion(quaternion);
-            const lockedQuat = this._updateNorthLockedQuaternion(quaternion);
-            return lockedQuat ? before.invert().multiply(lockedQuat) : null;
+            buildNorthLockedQuaternion(this.northLockPitch, this.northLockYaw, target);
+            return target;
         },
 
         /**
          * Public method - applica il blocco del nord alla rotazione corrente
          */
         applyNorthLock: function() {
-            this._syncNorthLockFromQuaternion(this.targetGlobeQuaternion);
-            this._updateNorthLockedQuaternion(this.targetGlobeQuaternion);
-            this.globeQuaternion.copy(this.targetGlobeQuaternion);
+            const sourceQuat = this.globeQuaternion;
+            const lockedQuat = this._syncNorthLockFromQuaternion(sourceQuat);
+            this.northLockTransitioning = true;
+            this.northLockTransitionStart = Date.now();
+            this.northLockTransitionFrom.copy(sourceQuat);
+            this.northLockTransitionTo.copy(lockedQuat);
             this.rotationVelocity.set(0, 0);
             this.inertiaEnabled = false;
         },
@@ -971,11 +1014,13 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
          */
         enterNorthLock: function() {
             const sourceQuat = globeRef.current
-                ? globeRef.current.quaternion.clone()
-                : this.globeQuaternion.clone();
-            this.globeQuaternion.copy(sourceQuat);
-            this.targetGlobeQuaternion.copy(sourceQuat);
-            this._syncNorthLockFromQuaternion(sourceQuat);
+                ? globeRef.current.quaternion
+                : this.globeQuaternion;
+            const lockedQuat = this._syncNorthLockFromQuaternion(sourceQuat);
+            this.northLockTransitioning = true;
+            this.northLockTransitionStart = Date.now();
+            this.northLockTransitionFrom.copy(sourceQuat);
+            this.northLockTransitionTo.copy(lockedQuat);
             this.northLockJustEnabled = true;
             this.rotationVelocity.set(0, 0);
             this.inertiaEnabled = false;
