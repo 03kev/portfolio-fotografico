@@ -30,12 +30,14 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
     } = callbacks;
     const TWO_PI = Math.PI * 2;
     const NORTH_LOCK_MAX_PITCH = Math.PI / 2 - 0.02;
+    const NORTH_LOCK_MIN_RADIUS = 0.12;
     const WORLD_UP = new THREE.Vector3(0, 1, 0);
     const WORLD_RIGHT = new THREE.Vector3(1, 0, 0);
     const WORLD_FORWARD = new THREE.Vector3(0, 0, 1);
     const temp = {
         yawQuat: new THREE.Quaternion(),
         pitchQuat: new THREE.Quaternion(),
+        candidateQuat: new THREE.Quaternion(),
         lockedQuat: new THREE.Quaternion(),
         forward: new THREE.Vector3(),
         north: new THREE.Vector3()
@@ -59,15 +61,93 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
     };
 
     const computeNorthLockAngles = (sourceQuat) => {
-        temp.forward.copy(WORLD_FORWARD).applyQuaternion(sourceQuat);
-        temp.north.copy(WORLD_UP).applyQuaternion(sourceQuat);
+        temp.lockedQuat.copy(sourceQuat).normalize();
+        temp.forward.copy(WORLD_FORWARD).applyQuaternion(temp.lockedQuat);
+        temp.north.copy(WORLD_UP).applyQuaternion(temp.lockedQuat);
 
         const yaw = normalizeAngle(Math.atan2(temp.forward.x, temp.forward.z));
-        const pitch = Math.atan2(temp.north.z, temp.north.y);
-
+        const pitch = clamp(
+            Math.atan2(temp.north.z, temp.north.y),
+            -NORTH_LOCK_MAX_PITCH,
+            NORTH_LOCK_MAX_PITCH
+        );
         return {
             yaw,
-            pitch: clamp(pitch, -NORTH_LOCK_MAX_PITCH, NORTH_LOCK_MAX_PITCH)
+            pitch
+        };
+    };
+
+    const solveNorthLockAnglesFromLocalPoint = (localPoint, worldPoint, previousYaw) => {
+        let vx = localPoint.x;
+        let vy = localPoint.y;
+        let vz = localPoint.z;
+        const wx = worldPoint.x;
+        const wy = worldPoint.y;
+        const wz = worldPoint.z;
+
+        let radius = Math.sqrt(vx * vx + vz * vz);
+        if (radius < 1e-5) {
+            return {
+                yaw: previousYaw,
+                pitch: clamp(Math.atan2(wz, wy), -NORTH_LOCK_MAX_PITCH, NORTH_LOCK_MAX_PITCH)
+            };
+        }
+
+        if (radius < NORTH_LOCK_MIN_RADIUS) {
+            const scale = NORTH_LOCK_MIN_RADIUS / radius;
+            vx *= scale;
+            vz *= scale;
+            const length = Math.sqrt(vx * vx + vy * vy + vz * vz);
+            vx /= length;
+            vy /= length;
+            vz /= length;
+            radius = Math.sqrt(vx * vx + vz * vz);
+        }
+
+        const baseLon = Math.atan2(vx, vz);
+        const sine = Math.max(-1, Math.min(1, wx / radius));
+        const a1 = Math.asin(sine);
+        const a2 = Math.PI - a1;
+        const yaw1 = normalizeAngle(a1 - baseLon);
+        const yaw2 = normalizeAngle(a2 - baseLon);
+
+        const candidateForYaw = (yaw) => {
+            const sinYaw = Math.sin(yaw);
+            const cosYaw = Math.cos(yaw);
+            const vxYaw = vx * cosYaw + vz * sinYaw;
+            const vzYaw = -vx * sinYaw + vz * cosYaw;
+            const pitch = clamp(
+                normalizeAngle(Math.atan2(wz, wy) - Math.atan2(vzYaw, vy)),
+                -NORTH_LOCK_MAX_PITCH,
+                NORTH_LOCK_MAX_PITCH
+            );
+
+            const sinPitch = Math.sin(pitch);
+            const cosPitch = Math.cos(pitch);
+            const rx = vxYaw;
+            const ry = vy * cosPitch - vzYaw * sinPitch;
+            const rz = vy * sinPitch + vzYaw * cosPitch;
+            const dot = rx * wx + ry * wy + rz * wz;
+
+            return {
+                yaw: normalizeAngle(yaw),
+                pitch,
+                error: 1 - dot
+            };
+        };
+
+        const c1 = candidateForYaw(yaw1);
+        const c2 = candidateForYaw(yaw2);
+        let chosen = c1.error <= c2.error ? c1 : c2;
+        if (Math.abs(c1.error - c2.error) < 1e-3) {
+            const d1 = Math.abs(normalizeAngle(c1.yaw - previousYaw));
+            const d2 = Math.abs(normalizeAngle(c2.yaw - previousYaw));
+            chosen = d1 <= d2 ? c1 : c2;
+        }
+
+        return {
+            yaw: chosen.yaw,
+            pitch: chosen.pitch
         };
     };
 
@@ -119,6 +199,7 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
         raycaster: new THREE.Raycaster(),
         dragStart: new THREE.Vector3(),
         dragCurrent: new THREE.Vector3(),
+        dragStartLocal: new THREE.Vector3(),
         initialMousePos: null, // Store initial mouse position for precise tracking
         justStartedDrag: false,
         dragStartTime: 0,
@@ -304,6 +385,10 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                         
                         // Store the normalized intersection point
                         this.dragStart.copy(hitPoint);
+                        if (this.northLocked) {
+                            temp.candidateQuat.copy(this.targetGlobeQuaternion).invert();
+                            this.dragStartLocal.copy(this.dragStart).applyQuaternion(temp.candidateQuat).normalize();
+                        }
                         // Store the initial mouse position for this drag session
                         this.initialMousePos = new THREE.Vector2(x, y);
                         this.dragStartTime = Date.now();
@@ -328,6 +413,7 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                         // Clicked outside the globe - do nothing
                         this.currentState = this.state.NONE;
                         this.dragStart.set(0, 0, 0);
+                        this.dragStartLocal.set(0, 0, 0);
                         this.initialMousePos = null;
                     }
                     break;
@@ -368,6 +454,10 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                                 : this._getSpherePointFromNDC(currentX, currentY);
                             if (startPoint) {
                                 this.dragStart.copy(startPoint);
+                                if (this.northLocked) {
+                                    temp.candidateQuat.copy(this.targetGlobeQuaternion).invert();
+                                    this.dragStartLocal.copy(this.dragStart).applyQuaternion(temp.candidateQuat).normalize();
+                                }
                             }
                             this.lastRotationTime = Date.now();
                             this.dragStartTime = this.lastRotationTime;
@@ -386,41 +476,6 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                             scheduleAutoRotateResume();
                             return;
                         }
-
-                    if (this.northLocked) {
-                        const deltaX = this.mouseEnd.x - this.mouseStart.x;
-                        const deltaY = this.mouseEnd.y - this.mouseStart.y;
-                        const movementThresholdPx = 1;
-
-                        if (Math.abs(deltaX) < movementThresholdPx && Math.abs(deltaY) < movementThresholdPx) {
-                            return;
-                        }
-
-                        const rotateSpeed = (Math.PI * 0.6) / Math.min(rect.width, rect.height);
-                        const yawDelta = deltaX * rotateSpeed;
-                        const pitchDelta = deltaY * rotateSpeed;
-
-                        this.northLockYaw = normalizeAngle(this.northLockYaw + yawDelta);
-                        this.northLockPitch = clamp(
-                            this.northLockPitch + pitchDelta,
-                            -NORTH_LOCK_MAX_PITCH,
-                            NORTH_LOCK_MAX_PITCH
-                        );
-                        this._updateNorthLockedQuaternion(this.targetGlobeQuaternion);
-
-                        const currentTime = Date.now();
-                        const deltaTime = (currentTime - this.lastRotationTime) / 1000;
-
-                        if (deltaTime > 0 && deltaTime < 0.1) {
-                            const smoothingFactor = 0.3;
-                            this.rotationVelocity.x = this.rotationVelocity.x * smoothingFactor + yawDelta * (1 - smoothingFactor);
-                            this.rotationVelocity.y = this.rotationVelocity.y * smoothingFactor + pitchDelta * (1 - smoothingFactor);
-                        }
-
-                        this.lastRotationTime = currentTime;
-                        this.mouseStart.copy(this.mouseEnd);
-                        return;
-                    }
 
                     // Only proceed if we have a valid initial mouse position
                     if (this.initialMousePos) {
@@ -446,6 +501,10 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
 
                             if (this.justStartedDrag) {
                                 this.dragStart.copy(currentPointNormalized);
+                                if (this.northLocked) {
+                                    temp.candidateQuat.copy(this.targetGlobeQuaternion).invert();
+                                    this.dragStartLocal.copy(this.dragStart).applyQuaternion(temp.candidateQuat).normalize();
+                                }
                                 this.initialMousePos.set(currentX, currentY);
                                 this.lastRotationTime = Date.now();
                                 this.justStartedDrag = false;
@@ -459,50 +518,80 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                             const isEarlyDrag = now - this.dragStartTime < 120;
                             if (isEarlyDrag && rotationAngle > Math.PI * 0.6) {
                                 this.dragStart.copy(currentPointNormalized);
+                                if (this.northLocked) {
+                                    temp.candidateQuat.copy(this.targetGlobeQuaternion).invert();
+                                    this.dragStartLocal.copy(this.dragStart).applyQuaternion(temp.candidateQuat).normalize();
+                                }
                                 this.initialMousePos.set(currentX, currentY);
                                 this.lastRotationTime = now;
                                 this.dragStartTime = now;
                                 return;
                             }
                             
-                            // Only rotate if there's a meaningful angle and axis
-                            if (rotationAxis.length() > 0.0001 && rotationAngle > 0.0001) {
-                                rotationAxis.normalize();
+                            const hasRotation = rotationAxis.length() > 0.0001 && rotationAngle > 0.0001;
+                            if (this.northLocked || hasRotation) {
+                                const currentTime = Date.now();
+
+                                if (this.northLocked) {
+                                    if (this.dragStartLocal.lengthSq() === 0) {
+                                        temp.candidateQuat.copy(this.targetGlobeQuaternion).invert();
+                                        this.dragStartLocal.copy(this.dragStart).applyQuaternion(temp.candidateQuat).normalize();
+                                    }
+                                    const prevYaw = this.northLockYaw;
+                                    const prevPitch = this.northLockPitch;
+                                    const { yaw, pitch } = solveNorthLockAnglesFromLocalPoint(
+                                        this.dragStartLocal,
+                                        currentPointNormalized,
+                                        prevYaw
+                                    );
+                                    const yawDelta = normalizeAngle(yaw - prevYaw);
+                                    const pitchDelta = pitch - prevPitch;
+                                    this.northLockYaw = yaw;
+                                    this.northLockPitch = pitch;
+                                    this._updateNorthLockedQuaternion(this.targetGlobeQuaternion);
+
+                                    // Calculate velocity for inertia based on mouse movement
+                                    const deltaTime = (currentTime - this.lastRotationTime) / 1000; // Convert to seconds
+                                    
+                                    if (deltaTime > 0 && deltaTime < 0.1) { // Ignore if too much time has passed
+                                        const smoothingFactor = 0.3;
+                                        this.rotationVelocity.x = this.rotationVelocity.x * smoothingFactor + yawDelta * (1 - smoothingFactor);
+                                        this.rotationVelocity.y = this.rotationVelocity.y * smoothingFactor + pitchDelta * (1 - smoothingFactor);
+                                    }
+                                } else if (hasRotation) {
+                                    rotationAxis.normalize();
+                                    const prevTarget = this.targetGlobeQuaternion.clone();
+                                    const deltaQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, rotationAngle);
+
+                                    // Apply rotation to target quaternion
+                                    this.targetGlobeQuaternion.copy(prevTarget).premultiply(deltaQuat);
                                 
-                                const prevTarget = this.targetGlobeQuaternion.clone();
-                                
-                                // Create rotation quaternion
-                                const deltaQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, rotationAngle);
-                                
-                                // Apply rotation to target quaternion
-                                this.targetGlobeQuaternion.premultiply(deltaQuat);
+                                    // Calculate velocity for inertia based on mouse movement
+                                    const deltaTime = (currentTime - this.lastRotationTime) / 1000; // Convert to seconds
+                                    
+                                    if (deltaTime > 0 && deltaTime < 0.1) { // Ignore if too much time has passed
+                                        const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+                                        const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+                                        const appliedQuat = prevTarget.clone().invert().multiply(this.targetGlobeQuaternion).normalize();
+                                        const angle = 2 * Math.acos(Math.max(-1, Math.min(1, appliedQuat.w)));
+                                        const s = Math.sqrt(1 - appliedQuat.w * appliedQuat.w);
+                                        const axis = s < 1e-6
+                                            ? new THREE.Vector3(1, 0, 0)
+                                            : new THREE.Vector3(appliedQuat.x / s, appliedQuat.y / s, appliedQuat.z / s);
+                                        const angular = axis.multiplyScalar(angle);
+                                        const velocityScale = 0.0024;
+                                        const instantVelX = -(angular.dot(cameraUp) / deltaTime) * velocityScale;
+                                        const instantVelY = -(angular.dot(cameraRight) / deltaTime) * velocityScale;
+                                        
+                                        // Smooth velocity update with higher weight on recent movement
+                                        const smoothingFactor = 0.3;
+                                        this.rotationVelocity.x = this.rotationVelocity.x * smoothingFactor + instantVelX * (1 - smoothingFactor);
+                                        this.rotationVelocity.y = this.rotationVelocity.y * smoothingFactor + instantVelY * (1 - smoothingFactor);
+                                    }
+                                }
                                 
                                 // Update dragStart to the new position after rotation for continuous tracking
                                 this.dragStart.copy(currentPointNormalized);
-                                
-                                // Calculate velocity for inertia based on mouse movement
-                                const currentTime = Date.now();
-                                const deltaTime = (currentTime - this.lastRotationTime) / 1000; // Convert to seconds
-                                
-                                if (deltaTime > 0 && deltaTime < 0.1) { // Ignore if too much time has passed
-                                    const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-                                    const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
-                                    const appliedQuat = prevTarget.clone().invert().multiply(this.targetGlobeQuaternion).normalize();
-                                    const angle = 2 * Math.acos(Math.max(-1, Math.min(1, appliedQuat.w)));
-                                    const s = Math.sqrt(1 - appliedQuat.w * appliedQuat.w);
-                                    const axis = s < 1e-6
-                                        ? new THREE.Vector3(1, 0, 0)
-                                        : new THREE.Vector3(appliedQuat.x / s, appliedQuat.y / s, appliedQuat.z / s);
-                                    const angular = axis.multiplyScalar(angle);
-                                    const velocityScale = 0.0024;
-                                    const instantVelX = -(angular.dot(cameraUp) / deltaTime) * velocityScale;
-                                    const instantVelY = -(angular.dot(cameraRight) / deltaTime) * velocityScale;
-                                    
-                                    // Smooth velocity update with higher weight on recent movement
-                                    const smoothingFactor = 0.3;
-                                    this.rotationVelocity.x = this.rotationVelocity.x * smoothingFactor + instantVelX * (1 - smoothingFactor);
-                                    this.rotationVelocity.y = this.rotationVelocity.y * smoothingFactor + instantVelY * (1 - smoothingFactor);
-                                }
                                 
                                 this.lastMousePos.set(currentX, currentY);
                                 this.lastRotationTime = currentTime;
@@ -538,6 +627,7 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
             
             this.currentState = this.state.NONE;
             this.justStartedDrag = false;
+            this.dragStartLocal.set(0, 0, 0);
             
             isDraggingRef.current = false;
             
@@ -658,6 +748,10 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                     
                     // Store the normalized intersection point
                     this.dragStart.copy(hitPoint);
+                    if (this.northLocked) {
+                        temp.candidateQuat.copy(this.targetGlobeQuaternion).invert();
+                        this.dragStartLocal.copy(this.dragStart).applyQuaternion(temp.candidateQuat).normalize();
+                    }
                     this.initialMousePos = new THREE.Vector2(x, y);
                     this.dragStartTime = Date.now();
 
@@ -668,6 +762,7 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                     // Touched outside the globe - do nothing
                     this.currentState = this.state.NONE;
                     this.dragStart.set(0, 0, 0);
+                    this.dragStartLocal.set(0, 0, 0);
                     this.initialMousePos = null;
                 }
             }
@@ -707,6 +802,10 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                             : this._getSpherePointFromNDC(currentX, currentY);
                         if (startPoint) {
                             this.dragStart.copy(startPoint);
+                            if (this.northLocked) {
+                                temp.candidateQuat.copy(this.targetGlobeQuaternion).invert();
+                                this.dragStartLocal.copy(this.dragStart).applyQuaternion(temp.candidateQuat).normalize();
+                            }
                         }
                         this.lastRotationTime = Date.now();
                         this.dragStartTime = this.lastRotationTime;
@@ -724,41 +823,6 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                         return;
                     }
 
-                    if (this.northLocked) {
-                        this.mouseDelta.subVectors(this.mouseEnd, this.mouseStart);
-                        const deltaX = this.mouseDelta.x;
-                        const deltaY = this.mouseDelta.y;
-                        const movementThresholdPx = 1;
-                        if (Math.abs(deltaX) < movementThresholdPx && Math.abs(deltaY) < movementThresholdPx) {
-                            return;
-                        }
-
-                        const rotateSpeed = (Math.PI * 0.6) / Math.min(rect.width, rect.height);
-                        const yawDelta = deltaX * rotateSpeed;
-                        const pitchDelta = -deltaY * rotateSpeed;
-                        
-                        this.northLockYaw = normalizeAngle(this.northLockYaw + yawDelta);
-                        this.northLockPitch = clamp(
-                            this.northLockPitch + pitchDelta,
-                            -NORTH_LOCK_MAX_PITCH,
-                            NORTH_LOCK_MAX_PITCH
-                        );
-                        this._updateNorthLockedQuaternion(this.targetGlobeQuaternion);
-                        
-                        const currentTime = Date.now();
-                        const deltaTime = (currentTime - this.lastRotationTime) / 1000;
-                        
-                        if (deltaTime > 0 && deltaTime < 0.1) {
-                            const smoothingFactor = 0.3;
-                            this.rotationVelocity.x = this.rotationVelocity.x * smoothingFactor + yawDelta * (1 - smoothingFactor);
-                            this.rotationVelocity.y = this.rotationVelocity.y * smoothingFactor + pitchDelta * (1 - smoothingFactor);
-                        }
-                        
-                        this.lastRotationTime = currentTime;
-                        this.mouseStart.copy(this.mouseEnd);
-                        return;
-                    }
-                    
                     if (this.initialMousePos) {
                         // Calculate touch movement
                         const deltaX = currentX - this.initialMousePos.x;
@@ -782,6 +846,10 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
 
                             if (this.justStartedDrag) {
                                 this.dragStart.copy(currentPointNormalized);
+                                if (this.northLocked) {
+                                    temp.candidateQuat.copy(this.targetGlobeQuaternion).invert();
+                                    this.dragStartLocal.copy(this.dragStart).applyQuaternion(temp.candidateQuat).normalize();
+                                }
                                 this.initialMousePos.set(currentX, currentY);
                                 this.lastRotationTime = Date.now();
                                 this.justStartedDrag = false;
@@ -794,16 +862,37 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                             const isEarlyDrag = now - this.dragStartTime < 140;
                             if (isEarlyDrag && rotationAngle > Math.PI * 0.6) {
                                 this.dragStart.copy(currentPointNormalized);
+                                if (this.northLocked) {
+                                    temp.candidateQuat.copy(this.targetGlobeQuaternion).invert();
+                                    this.dragStartLocal.copy(this.dragStart).applyQuaternion(temp.candidateQuat).normalize();
+                                }
                                 this.initialMousePos.set(currentX, currentY);
                                 this.lastRotationTime = now;
                                 this.dragStartTime = now;
                                 return;
                             }
                             
-                            if (rotationAxis.length() > 0.0001 && rotationAngle > 0.0001) {
-                                rotationAxis.normalize();
-                                const deltaQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, rotationAngle);
-                                this.targetGlobeQuaternion.premultiply(deltaQuat);
+                            const hasRotation = rotationAxis.length() > 0.0001 && rotationAngle > 0.0001;
+                            if (this.northLocked || hasRotation) {
+                                if (this.northLocked) {
+                                    if (this.dragStartLocal.lengthSq() === 0) {
+                                        temp.candidateQuat.copy(this.targetGlobeQuaternion).invert();
+                                        this.dragStartLocal.copy(this.dragStart).applyQuaternion(temp.candidateQuat).normalize();
+                                    }
+                                    const { yaw, pitch } = solveNorthLockAnglesFromLocalPoint(
+                                        this.dragStartLocal,
+                                        currentPointNormalized,
+                                        this.northLockYaw
+                                    );
+                                    this.northLockYaw = yaw;
+                                    this.northLockPitch = pitch;
+                                    this._updateNorthLockedQuaternion(this.targetGlobeQuaternion);
+                                } else if (hasRotation) {
+                                    rotationAxis.normalize();
+                                    const deltaQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, rotationAngle);
+                                    const prevTarget = this.targetGlobeQuaternion.clone();
+                                    this.targetGlobeQuaternion.copy(prevTarget).premultiply(deltaQuat);
+                                }
                                 
                                 this.dragStart.copy(currentPointNormalized);
                             }
@@ -828,6 +917,7 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
         onTouchEnd: function() {
             this.currentState = this.state.NONE;
             this.justStartedDrag = false;
+            this.dragStartLocal.set(0, 0, 0);
         },
 
         /**
@@ -885,42 +975,77 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                         rotationAxis.normalize();
                         const prevTarget = this.targetGlobeQuaternion.clone();
                         const deltaQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, rotationAngle);
-                        this.targetGlobeQuaternion.premultiply(deltaQuat);
+                        if (this.northLocked) {
+                            if (this.dragStartLocal.lengthSq() === 0) {
+                                temp.candidateQuat.copy(this.targetGlobeQuaternion).invert();
+                                this.dragStartLocal.copy(this.dragStart).applyQuaternion(temp.candidateQuat).normalize();
+                            }
+                            const prevYaw = this.northLockYaw;
+                            const prevPitch = this.northLockPitch;
+                            const { yaw, pitch } = solveNorthLockAnglesFromLocalPoint(
+                                this.dragStartLocal,
+                                currentPoint,
+                                prevYaw
+                            );
+                            const yawDelta = normalizeAngle(yaw - prevYaw);
+                            const pitchDelta = pitch - prevPitch;
+                            this.northLockYaw = yaw;
+                            this.northLockPitch = pitch;
+                            this._updateNorthLockedQuaternion(this.targetGlobeQuaternion);
+
+                            // Update velocity for inertia (mouse only)
+                            if (this.lastMousePos && this.lastRotationTime) {
+                                const currentTime = Date.now();
+                                const deltaTime = (currentTime - this.lastRotationTime) / 1000;
+                                
+                                if (deltaTime > 0 && deltaTime < 0.1) {
+                                    const smoothingFactor = 0.3;
+                                    this.rotationVelocity.x = this.rotationVelocity.x * smoothingFactor + yawDelta * (1 - smoothingFactor);
+                                    this.rotationVelocity.y = this.rotationVelocity.y * smoothingFactor + pitchDelta * (1 - smoothingFactor);
+                                }
+                                
+                                this.lastMousePos.set(currentX, currentY);
+                                this.lastRotationTime = currentTime;
+                            }
+                        } else {
+                            this.targetGlobeQuaternion.copy(prevTarget).premultiply(deltaQuat);
+                            
+                            // Update velocity for inertia (only for mouse, not touch)
+                            if (this.lastMousePos && this.lastRotationTime) {
+                                const currentTime = Date.now();
+                                const deltaTime = (currentTime - this.lastRotationTime) / 1000;
+                                
+                                if (deltaTime > 0 && deltaTime < 0.1) {
+                                    const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+                                    const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+                                    const appliedQuat = prevTarget.clone().invert().multiply(this.targetGlobeQuaternion).normalize();
+                                    const angle = 2 * Math.acos(Math.max(-1, Math.min(1, appliedQuat.w)));
+                                    const s = Math.sqrt(1 - appliedQuat.w * appliedQuat.w);
+                                    const axis = s < 1e-6
+                                        ? new THREE.Vector3(1, 0, 0)
+                                        : new THREE.Vector3(appliedQuat.x / s, appliedQuat.y / s, appliedQuat.z / s);
+                                    const angular = axis.multiplyScalar(angle);
+                                    const velocityScale = 0.0024;
+                                    const instantVelX = -(angular.dot(cameraUp) / deltaTime) * velocityScale;
+                                    const instantVelY = (angular.dot(cameraRight) / deltaTime) * velocityScale;
+                                    
+                                    const smoothingFactor = 0.3;
+                                    this.rotationVelocity.x = this.rotationVelocity.x * smoothingFactor + instantVelX * (1 - smoothingFactor);
+                                    this.rotationVelocity.y = this.rotationVelocity.y * smoothingFactor + instantVelY * (1 - smoothingFactor);
+                                }
+                                
+                                this.lastMousePos.set(currentX, currentY);
+                                this.lastRotationTime = currentTime;
+                            }
+                        }
                         
                         this.dragStart.copy(currentPoint);
-                        
-                        // Update velocity for inertia (only for mouse, not touch)
-                        if (this.lastMousePos && this.lastRotationTime) {
-                            const currentTime = Date.now();
-                            const deltaTime = (currentTime - this.lastRotationTime) / 1000;
-                            
-                            if (deltaTime > 0 && deltaTime < 0.1) {
-                                const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-                                const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
-                                const appliedQuat = prevTarget.clone().invert().multiply(this.targetGlobeQuaternion).normalize();
-                                const angle = 2 * Math.acos(Math.max(-1, Math.min(1, appliedQuat.w)));
-                                const s = Math.sqrt(1 - appliedQuat.w * appliedQuat.w);
-                                const axis = s < 1e-6
-                                    ? new THREE.Vector3(1, 0, 0)
-                                    : new THREE.Vector3(appliedQuat.x / s, appliedQuat.y / s, appliedQuat.z / s);
-                                const angular = axis.multiplyScalar(angle);
-                                const velocityScale = 0.0024;
-                                const instantVelX = -(angular.dot(cameraUp) / deltaTime) * velocityScale;
-                                const instantVelY = (angular.dot(cameraRight) / deltaTime) * velocityScale;
-                                
-                                const smoothingFactor = 0.3;
-                                this.rotationVelocity.x = this.rotationVelocity.x * smoothingFactor + instantVelX * (1 - smoothingFactor);
-                                this.rotationVelocity.y = this.rotationVelocity.y * smoothingFactor + instantVelY * (1 - smoothingFactor);
-                            }
-                            
-                            this.lastMousePos.set(currentX, currentY);
-                            this.lastRotationTime = currentTime;
-                        }
                     }
                 }
             } else {
                 // Mouse is too far outside - release drag with inertia
                 this.dragStart.set(0, 0, 0);
+                this.dragStartLocal.set(0, 0, 0);
                 this.initialMousePos = null;
                 
                 // Enable inertia with softened velocity to avoid edge snap
