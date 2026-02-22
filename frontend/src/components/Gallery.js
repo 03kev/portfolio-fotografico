@@ -442,7 +442,7 @@ const Gallery = () => {
         ) : (
           <GalleryGrid key="gallery-grid">
             <AnimatePresence mode="popLayout" initial={false}>
-              {filteredPhotos.map(photo => (
+              {filteredPhotos.map((photo, index) => (
                 <motion.div
                   key={photo.id}
                   layout
@@ -472,9 +472,11 @@ const Gallery = () => {
                       </>
                     )}
                     <PhotoImage
-                      src={`${IMAGES_BASE_URL}${photo.image || photo.thumbnail}`}
+                      src={`${IMAGES_BASE_URL}${photo.thumbnail || photo.image}`}
                       alt={photo.title}
-                      loading="eager"
+                      loading={index < 3 ? 'eager' : 'lazy'}
+                      fetchPriority={index < 3 ? 'high' : 'auto'}
+                      decoding="async"
                       onError={(e) => {
                         e.target.src = 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop';
                       }}
