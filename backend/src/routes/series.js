@@ -1,15 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const fs = require('fs').promises;
-const path = require('path');
 const Series = require('../models/Series');
-
-const SERIES_FILE = path.join(__dirname, '../../data/series.json');
+const { ensureDataFile } = require('../config/storage');
 
 // Helper per leggere le serie
 async function readSeries() {
   try {
-    const data = await fs.readFile(SERIES_FILE, 'utf-8');
+    const seriesFile = await ensureDataFile('series.json');
+    const data = await fs.readFile(seriesFile, 'utf-8');
     return JSON.parse(data);
   } catch (error) {
     if (error.code === 'ENOENT') {
@@ -21,7 +20,8 @@ async function readSeries() {
 
 // Helper per scrivere le serie
 async function writeSeries(series) {
-  await fs.writeFile(SERIES_FILE, JSON.stringify(series, null, 2));
+  const seriesFile = await ensureDataFile('series.json');
+  await fs.writeFile(seriesFile, JSON.stringify(series, null, 2));
 }
 
 // GET tutte le serie

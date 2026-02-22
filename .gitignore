@@ -54,3 +54,4 @@ temp/
 frontend/public/textures/*10k*
 frontend/public/textures/*16k*
 frontend/public/textures/*32k*
+.vercel

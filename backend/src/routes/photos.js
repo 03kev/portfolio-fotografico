@@ -1,20 +1,23 @@
 const express = require('express');
 const multer = require('multer');
 const sharp = require('sharp');
-const path = require('path');
 const fs = require('fs').promises;
 const Photo = require('../models/Photo');
+const {
+    THUMBNAILS_DIR,
+    UPLOADS_DIR,
+    ensureDataFile,
+    ensureUploadsDirectories,
+    resolvePublicFilePath
+} = require('../config/storage');
 
 const router = express.Router();
-
-// File JSON per persistenza temporanea
-const PHOTOS_DB_PATH = path.join(__dirname, '../../data/photos.json');
-const SERIES_DB_PATH = path.join(__dirname, '../../data/series.json');
 
 // Utility per leggere/scrivere il database JSON
 const readPhotosDB = async () => {
     try {
-        const data = await fs.readFile(PHOTOS_DB_PATH, 'utf8');
+        const photosDbPath = await ensureDataFile('photos.json');
+        const data = await fs.readFile(photosDbPath, 'utf8');
         return JSON.parse(data);
     } catch (error) {
         // Se il file non esiste, restituisci array vuoto
@@ -24,11 +27,8 @@ const readPhotosDB = async () => {
 
 const writePhotosDB = async (photos) => {
     try {
-        // Crea la directory data se non esiste
-        const dataDir = path.join(__dirname, '../../data');
-        await fs.mkdir(dataDir, { recursive: true });
-        
-        await fs.writeFile(PHOTOS_DB_PATH, JSON.stringify(photos, null, 2));
+        const photosDbPath = await ensureDataFile('photos.json');
+        await fs.writeFile(photosDbPath, JSON.stringify(photos, null, 2));
     } catch (error) {
         console.error('Errore nella scrittura del database foto:', error);
         throw error;
@@ -37,7 +37,8 @@ const writePhotosDB = async (photos) => {
 
 const readSeriesDB = async () => {
     try {
-        const data = await fs.readFile(SERIES_DB_PATH, 'utf8');
+        const seriesDbPath = await ensureDataFile('series.json');
+        const data = await fs.readFile(seriesDbPath, 'utf8');
         return JSON.parse(data);
     } catch (error) {
         return [];
@@ -46,10 +47,8 @@ const readSeriesDB = async () => {
 
 const writeSeriesDB = async (series) => {
     try {
-        const dataDir = path.join(__dirname, '../../data');
-        await fs.mkdir(dataDir, { recursive: true });
-        
-        await fs.writeFile(SERIES_DB_PATH, JSON.stringify(series, null, 2));
+        const seriesDbPath = await ensureDataFile('series.json');
+        await fs.writeFile(seriesDbPath, JSON.stringify(series, null, 2));
     } catch (error) {
         console.error('Errore nella scrittura del database serie:', error);
         throw error;
@@ -192,15 +191,10 @@ router.post('/', upload.single('image'), async (req, res) => {
         .toBuffer();
         
         // Salva i file
-        const uploadsDir = path.join(__dirname, '../../uploads');
-        const thumbnailsDir = path.join(uploadsDir, 'thumbnails');
+        await ensureUploadsDirectories();
         
-        // Crea directory se non esistono
-        await fs.mkdir(uploadsDir, { recursive: true });
-        await fs.mkdir(thumbnailsDir, { recursive: true });
-        
-        await fs.writeFile(path.join(uploadsDir, filename), processedImage);
-        await fs.writeFile(path.join(thumbnailsDir, thumbnailFilename), thumbnail);
+        await fs.writeFile(`${UPLOADS_DIR}/${filename}`, processedImage);
+        await fs.writeFile(`${THUMBNAILS_DIR}/${thumbnailFilename}`, thumbnail);
         
         // Crea oggetto foto con valori di default
         const newPhoto = {
@@ -370,11 +364,11 @@ router.delete('/:id', async (req, res) => {
         // Opzionale: elimina i file fisici
         try {
             if (deletedPhoto.image) {
-                const imagePath = path.join(__dirname, '../../', deletedPhoto.image);
+                const imagePath = resolvePublicFilePath(deletedPhoto.image);
                 await fs.unlink(imagePath);
             }
             if (deletedPhoto.thumbnail) {
-                const thumbPath = path.join(__dirname, '../../', deletedPhoto.thumbnail);
+                const thumbPath = resolvePublicFilePath(deletedPhoto.thumbnail);
                 await fs.unlink(thumbPath);
             }
         } catch (fileError) {

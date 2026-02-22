@@ -1,6 +1,9 @@
 // API Configuration
-export const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
-export const IMAGES_BASE_URL = process.env.REACT_APP_IMAGES_URL || 'http://localhost:5000';
+const DEFAULT_API_BASE_URL = process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:5000/api';
+const DEFAULT_IMAGES_BASE_URL = process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5000';
+
+export const API_BASE_URL = process.env.REACT_APP_API_URL || DEFAULT_API_BASE_URL;
+export const IMAGES_BASE_URL = process.env.REACT_APP_IMAGES_URL || DEFAULT_IMAGES_BASE_URL;
 
 // App Configuration
 export const APP_NAME = process.env.REACT_APP_NAME || 'Portfolio Fotografico';
