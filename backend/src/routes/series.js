@@ -1,27 +1,16 @@
 const express = require('express');
 const router = express.Router();
-const fs = require('fs').promises;
 const Series = require('../models/Series');
-const { ensureDataFile } = require('../config/storage');
+const { readMetadataFile, writeMetadataFile } = require('../services/metadataStorage');
 
 // Helper per leggere le serie
 async function readSeries() {
-  try {
-    const seriesFile = await ensureDataFile('series.json');
-    const data = await fs.readFile(seriesFile, 'utf-8');
-    return JSON.parse(data);
-  } catch (error) {
-    if (error.code === 'ENOENT') {
-      return [];
-    }
-    throw error;
-  }
+  return readMetadataFile('series.json', []);
 }
 
 // Helper per scrivere le serie
 async function writeSeries(series) {
-  const seriesFile = await ensureDataFile('series.json');
-  await fs.writeFile(seriesFile, JSON.stringify(series, null, 2));
+  await writeMetadataFile('series.json', series);
 }
 
 // GET tutte le serie

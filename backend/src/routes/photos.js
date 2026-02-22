@@ -6,7 +6,6 @@ const Photo = require('../models/Photo');
 const {
     THUMBNAILS_DIR,
     UPLOADS_DIR,
-    ensureDataFile,
     ensureUploadsDirectories,
     resolvePublicFilePath
 } = require('../config/storage');
@@ -15,25 +14,18 @@ const {
     isR2Enabled,
     putUploadObject
 } = require('../services/r2Storage');
+const { readMetadataFile, writeMetadataFile } = require('../services/metadataStorage');
 
 const router = express.Router();
 
 // Utility per leggere/scrivere il database JSON
 const readPhotosDB = async () => {
-    try {
-        const photosDbPath = await ensureDataFile('photos.json');
-        const data = await fs.readFile(photosDbPath, 'utf8');
-        return JSON.parse(data);
-    } catch (error) {
-        // Se il file non esiste, restituisci array vuoto
-        return [];
-    }
+    return readMetadataFile('photos.json', []);
 };
 
 const writePhotosDB = async (photos) => {
     try {
-        const photosDbPath = await ensureDataFile('photos.json');
-        await fs.writeFile(photosDbPath, JSON.stringify(photos, null, 2));
+        await writeMetadataFile('photos.json', photos);
     } catch (error) {
         console.error('Errore nella scrittura del database foto:', error);
         throw error;
@@ -41,19 +33,12 @@ const writePhotosDB = async (photos) => {
 };
 
 const readSeriesDB = async () => {
-    try {
-        const seriesDbPath = await ensureDataFile('series.json');
-        const data = await fs.readFile(seriesDbPath, 'utf8');
-        return JSON.parse(data);
-    } catch (error) {
-        return [];
-    }
+    return readMetadataFile('series.json', []);
 };
 
 const writeSeriesDB = async (series) => {
     try {
-        const seriesDbPath = await ensureDataFile('series.json');
-        await fs.writeFile(seriesDbPath, JSON.stringify(series, null, 2));
+        await writeMetadataFile('series.json', series);
     } catch (error) {
         console.error('Errore nella scrittura del database serie:', error);
         throw error;
