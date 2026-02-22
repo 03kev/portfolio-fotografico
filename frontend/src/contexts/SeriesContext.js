@@ -3,6 +3,12 @@ import { seriesService } from '../utils/api';
 
 const SeriesContext = createContext();
 
+function unwrapApiData(response, fallbackValue = null) {
+    if (response?.data?.data !== undefined) return response.data.data;
+    if (response?.data !== undefined) return response.data;
+    return fallbackValue;
+}
+
 // Actions
 const ACTIONS = {
     SET_LOADING: 'SET_LOADING',
@@ -109,7 +115,7 @@ export function SeriesProvider({ children }) {
         try {
             dispatch({ type: ACTIONS.SET_LOADING, payload: true });
             const response = await seriesService.getAll(includeUnpublished);
-            dispatch({ type: ACTIONS.SET_SERIES, payload: response.data });
+            dispatch({ type: ACTIONS.SET_SERIES, payload: unwrapApiData(response, []) });
         } catch (error) {
             console.error('Errore nel caricamento delle serie:', error);
             dispatch({ type: ACTIONS.SET_ERROR, payload: error.message || 'Errore nel caricamento delle serie' });
@@ -139,9 +145,10 @@ export function SeriesProvider({ children }) {
         try {
             dispatch({ type: ACTIONS.SET_LOADING, payload: true });
             const response = await seriesService.getBySlug(slug);
-            dispatch({ type: ACTIONS.SET_CURRENT_SERIES, payload: response.data });
+            const seriesItem = unwrapApiData(response, null);
+            dispatch({ type: ACTIONS.SET_CURRENT_SERIES, payload: seriesItem });
             dispatch({ type: ACTIONS.SET_LOADING, payload: false });
-            return response.data;
+            return seriesItem;
         } catch (error) {
             console.error('Errore nel caricamento della serie:', error);
             dispatch({ type: ACTIONS.SET_ERROR, payload: error.message || 'Serie non trovata' });
@@ -157,8 +164,9 @@ export function SeriesProvider({ children }) {
     const createSeries = useCallback(async (seriesData) => {
         try {
             const response = await seriesService.create(seriesData);
-            dispatch({ type: ACTIONS.ADD_SERIES, payload: response.data });
-            return response.data;
+            const createdSeries = unwrapApiData(response, null);
+            dispatch({ type: ACTIONS.ADD_SERIES, payload: createdSeries });
+            return createdSeries;
         } catch (error) {
             console.error('Errore nella creazione della serie:', error);
             throw error;
@@ -168,8 +176,9 @@ export function SeriesProvider({ children }) {
     const updateSeries = useCallback(async (id, seriesData) => {
         try {
             const response = await seriesService.update(id, seriesData);
-            dispatch({ type: ACTIONS.UPDATE_SERIES, payload: response.data });
-            return response.data;
+            const updatedSeries = unwrapApiData(response, null);
+            dispatch({ type: ACTIONS.UPDATE_SERIES, payload: updatedSeries });
+            return updatedSeries;
         } catch (error) {
             console.error('Errore nell\'aggiornamento della serie:', error);
             throw error;
@@ -189,8 +198,9 @@ export function SeriesProvider({ children }) {
     const addPhotoToSeries = useCallback(async (seriesId, photoId) => {
         try {
             const response = await seriesService.addPhoto(seriesId, photoId);
-            dispatch({ type: ACTIONS.UPDATE_SERIES, payload: response.data });
-            return response.data;
+            const updatedSeries = unwrapApiData(response, null);
+            dispatch({ type: ACTIONS.UPDATE_SERIES, payload: updatedSeries });
+            return updatedSeries;
         } catch (error) {
             console.error('Errore nell\'aggiunta della foto:', error);
             throw error;
@@ -200,8 +210,9 @@ export function SeriesProvider({ children }) {
     const removePhotoFromSeries = useCallback(async (seriesId, photoId) => {
         try {
             const response = await seriesService.removePhoto(seriesId, photoId);
-            dispatch({ type: ACTIONS.UPDATE_SERIES, payload: response.data });
-            return response.data;
+            const updatedSeries = unwrapApiData(response, null);
+            dispatch({ type: ACTIONS.UPDATE_SERIES, payload: updatedSeries });
+            return updatedSeries;
         } catch (error) {
             console.error('Errore nella rimozione della foto:', error);
             throw error;

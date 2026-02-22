@@ -2,7 +2,6 @@ const express = require('express');
 const multer = require('multer');
 const sharp = require('sharp');
 const fs = require('fs').promises;
-const Photo = require('../models/Photo');
 const {
     THUMBNAILS_DIR,
     UPLOADS_DIR,
@@ -16,13 +15,10 @@ const {
     putUploadObject
 } = require('../services/r2Storage');
 const { readMetadataFile, writeMetadataFile } = require('../services/metadataStorage');
+const { parsePositiveInt } = require('../utils/env');
+const { parseNumericIdOrThrow } = require('../utils/ids');
 
 const router = express.Router();
-
-function parsePositiveInt(value, fallback) {
-    const parsed = Number.parseInt(String(value || ''), 10);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
 
 function parseAllowedUploadTypes() {
     const defaultValue = 'image/*';
@@ -40,6 +36,19 @@ function isAllowedMimeType(mimetype, allowedTypes) {
         }
         return mimetype === allowedType;
     });
+}
+
+function parseCoordinate(value, fieldName) {
+    if (value === undefined || value === null || value === '') return null;
+
+    const parsed = Number.parseFloat(String(value));
+    if (!Number.isFinite(parsed)) {
+        const error = new Error(`${fieldName} non valido`);
+        error.status = 400;
+        error.code = 'INVALID_COORDINATE';
+        throw error;
+    }
+    return parsed;
 }
 
 // Utility per leggere/scrivere il database JSON
@@ -82,7 +91,10 @@ const upload = multer({
         if (isAllowedMimeType(file.mimetype, allowedUploadTypes)) {
             cb(null, true);
         } else {
-            cb(new Error(`Tipo file non consentito. Tipi ammessi: ${allowedUploadTypes.join(', ')}`), false);
+            const error = new Error(`Tipo file non consentito. Tipi ammessi: ${allowedUploadTypes.join(', ')}`);
+            error.status = 400;
+            error.code = 'INVALID_FILE_TYPE';
+            cb(error, false);
         }
     }
 });
@@ -152,8 +164,9 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
+        const photoId = parseNumericIdOrThrow(id, 'ID foto');
         const photos = await readPhotosDB();
-        const photo = photos.find(p => p.id === parseInt(id));
+        const photo = photos.find((p) => p.id === photoId);
         
         if (!photo) {
             return res.status(404).json({
@@ -186,6 +199,8 @@ router.post('/', upload.single('image'), async (req, res) => {
         }
         
         const { title, location, lat, lng, description, date, camera, lens, settings, tags } = req.body;
+        const parsedLat = parseCoordinate(lat, 'Latitudine');
+        const parsedLng = parseCoordinate(lng, 'Longitudine');
         
         // Genera nome file unico
         const timestamp = Date.now();
@@ -225,8 +240,8 @@ router.post('/', upload.single('image'), async (req, res) => {
             id: timestamp, // Usa timestamp come ID temporaneo
             title: title || 'Foto senza titolo',
             location: location || 'Posizione sconosciuta',
-            lat: lat ? parseFloat(lat) : 0,
-            lng: lng ? parseFloat(lng) : 0,
+            lat: parsedLat ?? 0,
+            lng: parsedLng ?? 0,
             image: imagePath,
             thumbnail: thumbnailPath,
             url: thumbnailPath, // Aggiungi campo url
@@ -269,6 +284,22 @@ router.post('/', upload.single('image'), async (req, res) => {
         
     } catch (error) {
         console.error('Errore nell\'upload:', error);
+
+        if (error.code === 'LIMIT_FILE_SIZE') {
+            return res.status(400).json({
+                success: false,
+                message: `File troppo grande. Massimo ${uploadMaxSize} byte.`,
+                code: 'LIMIT_FILE_SIZE'
+            });
+        }
+
+        if (error.code === 'INVALID_FILE_TYPE' || error.code === 'INVALID_COORDINATE' || error.status === 400) {
+            return res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+
         res.status(500).json({
             success: false,
             message: 'Errore nell\'upload della foto'
@@ -280,10 +311,11 @@ router.post('/', upload.single('image'), async (req, res) => {
 router.put('/:id', async (req, res) => {
     try {
         const { id } = req.params;
+        const photoId = parseNumericIdOrThrow(id, 'ID foto');
         const { title, location, lat, lng, description, date, camera, lens, settings, tags } = req.body;
         
         const photos = await readPhotosDB();
-        const photoIndex = photos.findIndex(p => p.id === parseInt(id));
+        const photoIndex = photos.findIndex((p) => p.id === photoId);
         
         if (photoIndex === -1) {
             return res.status(404).json({
@@ -293,12 +325,15 @@ router.put('/:id', async (req, res) => {
         }
         
         // Aggiorna la foto con i nuovi dati
+        const nextLat = lat !== undefined ? parseCoordinate(lat, 'Latitudine') : photos[photoIndex].lat;
+        const nextLng = lng !== undefined ? parseCoordinate(lng, 'Longitudine') : photos[photoIndex].lng;
+
         const updatedPhoto = {
             ...photos[photoIndex],
             title: title || photos[photoIndex].title,
             location: location || photos[photoIndex].location,
-            lat: lat !== undefined ? parseFloat(lat) : photos[photoIndex].lat,
-            lng: lng !== undefined ? parseFloat(lng) : photos[photoIndex].lng,
+            lat: nextLat ?? photos[photoIndex].lat,
+            lng: nextLng ?? photos[photoIndex].lng,
             description: description !== undefined ? description : photos[photoIndex].description,
             date: date || photos[photoIndex].date,
             camera: camera !== undefined ? camera : photos[photoIndex].camera,
@@ -317,6 +352,12 @@ router.put('/:id', async (req, res) => {
         });
     } catch (error) {
         console.error('Errore nell\'aggiornamento:', error);
+        if (error.status === 400 || error.code === 'INVALID_COORDINATE' || error.code === 'INVALID_ID') {
+            return res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
         res.status(500).json({
             success: false,
             message: 'Errore nell\'aggiornamento della foto'
@@ -328,7 +369,7 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const photoId = parseInt(id);
+        const photoId = parseNumericIdOrThrow(id, 'ID foto');
         const photos = await readPhotosDB();
         const photoIndex = photos.findIndex(p => p.id === photoId);
         
@@ -352,7 +393,7 @@ router.delete('/:id', async (req, res) => {
                 // Rimuovi dall'array principale photos
                 if (serie.photos && Array.isArray(serie.photos)) {
                     const originalLength = serie.photos.length;
-                    serie.photos = serie.photos.filter(pid => pid !== photoId);
+                    serie.photos = serie.photos.filter((pid) => Number(pid) !== photoId);
                     if (serie.photos.length !== originalLength) {
                         seriesModified = true;
                     }
@@ -369,7 +410,7 @@ router.delete('/:id', async (req, res) => {
                     serie.content.forEach(block => {
                         if (block.type === 'photos' && Array.isArray(block.content)) {
                             const originalBlockLength = block.content.length;
-                            block.content = block.content.filter(pid => pid !== photoId);
+                            block.content = block.content.filter((pid) => Number(pid) !== photoId);
                             if (block.content.length !== originalBlockLength) {
                                 seriesModified = true;
                             }
@@ -413,6 +454,12 @@ router.delete('/:id', async (req, res) => {
         });
     } catch (error) {
         console.error('Errore nell\'eliminazione:', error);
+        if (error.status === 400 || error.code === 'INVALID_ID') {
+            return res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
         res.status(500).json({
             success: false,
             message: 'Errore nell\'eliminazione della foto'
