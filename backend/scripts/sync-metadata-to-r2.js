@@ -4,9 +4,9 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const { isR2Enabled } = require('../src/services/r2Storage');
+const { ensureDataFile } = require('../src/config/storage');
 const { writeMetadataFile } = require('../src/services/metadataStorage');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
 const METADATA_FILES = ['photos.json', 'series.json'];
 
 async function main() {
@@ -16,7 +16,7 @@ async function main() {
   }
 
   for (const file of METADATA_FILES) {
-    const fullPath = path.join(DATA_DIR, file);
+    const fullPath = await ensureDataFile(file);
     const content = await fs.readFile(fullPath, 'utf8');
     const parsed = JSON.parse(content);
     await writeMetadataFile(file, parsed);

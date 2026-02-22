@@ -2,16 +2,26 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const path = require('path');
 const { pipeline } = require('stream/promises');
 require('dotenv').config();
 
 const photoRoutes = require('./routes/photos');
 const seriesRoutes = require('./routes/series');
-const { BACKEND_ROOT, UPLOADS_DIR } = require('./config/storage');
-const { getUploadObject, isR2Enabled } = require('./services/r2Storage');
+const { UPLOADS_DIR } = require('./config/storage');
+const {
+  canUseLocalFallback,
+  ensureR2ConfiguredInProduction,
+  getUploadObject,
+  isR2Enabled
+} = require('./services/r2Storage');
 
 const app = express();
+ensureR2ConfiguredInProduction();
+
+function parsePositiveInt(value, fallback) {
+  const parsed = Number.parseInt(String(value || ''), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 // Middleware di sicurezza con configurazione personalizzata
 app.use(
@@ -30,9 +40,12 @@ app.use(
 );
 
 // Rate limiting
+const rateLimitWindowMs = parsePositiveInt(process.env.RATE_LIMIT_WINDOW_MS, 10 * 60 * 1000);
+const rateLimitMaxRequests = parsePositiveInt(process.env.RATE_LIMIT_MAX_REQUESTS, 500);
+
 const limiter = rateLimit({
-  windowMs: 10 * 60 * 1000,
-  max: 500
+  windowMs: rateLimitWindowMs,
+  max: rateLimitMaxRequests
 });
 app.use(limiter);
 
@@ -111,9 +124,7 @@ async function serveUploadsFromR2(req, res, next) {
   }
 }
 
-// Servire file statici (immagini) con header CORP
-app.use(
-  '/uploads',
+const uploadsMiddlewares = [
   (req, res, next) => {
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -121,10 +132,15 @@ app.use(
     res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
     next();
   },
-  serveUploadsFromR2,
-  express.static(UPLOADS_DIR),
-  express.static(path.join(BACKEND_ROOT, 'uploads'))
-);
+  serveUploadsFromR2
+];
+
+if (canUseLocalFallback()) {
+  uploadsMiddlewares.push(express.static(UPLOADS_DIR));
+}
+
+// Servire file statici (immagini) con header CORP
+app.use('/uploads', ...uploadsMiddlewares);
 
 // Routes
 app.use('/api/photos', photoRoutes);

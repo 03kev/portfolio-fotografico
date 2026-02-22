@@ -10,6 +10,7 @@ const {
     resolvePublicFilePath
 } = require('../config/storage');
 const {
+    canUseLocalFallback,
     deleteUploadObject,
     isR2Enabled,
     putUploadObject
@@ -17,6 +18,29 @@ const {
 const { readMetadataFile, writeMetadataFile } = require('../services/metadataStorage');
 
 const router = express.Router();
+
+function parsePositiveInt(value, fallback) {
+    const parsed = Number.parseInt(String(value || ''), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseAllowedUploadTypes() {
+    const defaultValue = 'image/*';
+    return String(process.env.UPLOAD_ALLOWED_TYPES || defaultValue)
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean);
+}
+
+function isAllowedMimeType(mimetype, allowedTypes) {
+    return allowedTypes.some((allowedType) => {
+        if (allowedType.endsWith('/*')) {
+            const prefix = allowedType.slice(0, -1);
+            return mimetype.startsWith(prefix);
+        }
+        return mimetype === allowedType;
+    });
+}
 
 // Utility per leggere/scrivere il database JSON
 const readPhotosDB = async () => {
@@ -47,16 +71,18 @@ const writeSeriesDB = async (series) => {
 
 // Configurazione multer per upload immagini
 const storage = multer.memoryStorage();
+const uploadMaxSize = parsePositiveInt(process.env.UPLOAD_MAX_SIZE, 50 * 1024 * 1024);
+const allowedUploadTypes = parseAllowedUploadTypes();
 const upload = multer({
     storage,
     limits: {
-        fileSize: 50 * 1024 * 1024, // 50MB limit
+        fileSize: uploadMaxSize
     },
     fileFilter: (req, file, cb) => {
-        if (file.mimetype.startsWith('image/')) {
+        if (isAllowedMimeType(file.mimetype, allowedUploadTypes)) {
             cb(null, true);
         } else {
-            cb(new Error('Solo file di immagine sono consentiti'), false);
+            cb(new Error(`Tipo file non consentito. Tipi ammessi: ${allowedUploadTypes.join(', ')}`), false);
         }
     }
 });
@@ -186,10 +212,12 @@ router.post('/', upload.single('image'), async (req, res) => {
         if (isR2Enabled()) {
             await putUploadObject(imagePath, processedImage, { contentType: 'image/webp' });
             await putUploadObject(thumbnailPath, thumbnail, { contentType: 'image/webp' });
-        } else {
+        } else if (canUseLocalFallback()) {
             await ensureUploadsDirectories();
             await fs.writeFile(`${UPLOADS_DIR}/${filename}`, processedImage);
             await fs.writeFile(`${THUMBNAILS_DIR}/${thumbnailFilename}`, thumbnail);
+        } else {
+            throw new Error('Configurazione R2 mancante: upload immagini consentito solo su R2 in produzione.');
         }
         
         // Crea oggetto foto con valori di default
@@ -362,7 +390,7 @@ router.delete('/:id', async (req, res) => {
             if (deletedPhoto.image) {
                 if (isR2Enabled()) {
                     await deleteUploadObject(deletedPhoto.image);
-                } else {
+                } else if (canUseLocalFallback()) {
                     const imagePath = resolvePublicFilePath(deletedPhoto.image);
                     await fs.unlink(imagePath);
                 }
@@ -370,7 +398,7 @@ router.delete('/:id', async (req, res) => {
             if (deletedPhoto.thumbnail) {
                 if (isR2Enabled()) {
                     await deleteUploadObject(deletedPhoto.thumbnail);
-                } else {
+                } else if (canUseLocalFallback()) {
                     const thumbPath = resolvePublicFilePath(deletedPhoto.thumbnail);
                     await fs.unlink(thumbPath);
                 }

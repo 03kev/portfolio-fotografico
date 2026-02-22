@@ -1,7 +1,7 @@
 const fs = require('fs').promises;
 
 const { ensureDataFile } = require('../config/storage');
-const { getUploadObject, isR2Enabled, putUploadObject } = require('./r2Storage');
+const { canUseLocalFallback, getUploadObject, isR2Enabled, putUploadObject } = require('./r2Storage');
 
 const DEFAULT_PREFIX = 'data';
 
@@ -39,6 +39,9 @@ async function writeLocalJson(filename, value) {
 
 async function readMetadataFile(filename, fallbackValue = []) {
   if (!isR2Enabled()) {
+    if (!canUseLocalFallback()) {
+      throw new Error('Configurazione R2 mancante: metadati disponibili solo su R2 in produzione.');
+    }
     return readLocalJson(filename, fallbackValue);
   }
 
@@ -46,9 +49,12 @@ async function readMetadataFile(filename, fallbackValue = []) {
   const object = await getUploadObject(objectPath);
 
   if (!object) {
-    const seedData = await readLocalJson(filename, fallbackValue);
-    await writeMetadataFile(filename, seedData);
-    return seedData;
+    if (canUseLocalFallback()) {
+      const seedData = await readLocalJson(filename, fallbackValue);
+      await writeMetadataFile(filename, seedData);
+      return seedData;
+    }
+    return fallbackValue;
   }
 
   if (!object.stream) {
@@ -64,6 +70,9 @@ async function readMetadataFile(filename, fallbackValue = []) {
 
 async function writeMetadataFile(filename, value) {
   if (!isR2Enabled()) {
+    if (!canUseLocalFallback()) {
+      throw new Error('Configurazione R2 mancante: scrittura metadati consentita solo su R2 in produzione.');
+    }
     await writeLocalJson(filename, value);
     return;
   }

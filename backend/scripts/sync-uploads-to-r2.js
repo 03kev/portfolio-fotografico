@@ -4,8 +4,8 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const { isR2Enabled, putUploadObject } = require('../src/services/r2Storage');
-
-const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
+const { UPLOADS_DIR } = require('../src/config/storage');
+const LEGACY_UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
 
 function getContentTypeByExtension(filename) {
   const extension = path.extname(filename).toLowerCase();
@@ -45,11 +45,18 @@ async function main() {
     process.exit(1);
   }
 
+  let sourceUploadsDir = UPLOADS_DIR;
+  try {
+    await fs.access(sourceUploadsDir);
+  } catch (error) {
+    sourceUploadsDir = LEGACY_UPLOADS_DIR;
+  }
+
   let files = [];
   try {
-    files = await collectFiles(UPLOADS_DIR);
+    files = await collectFiles(sourceUploadsDir);
   } catch (error) {
-    console.error('Cartella uploads non trovata o non accessibile:', UPLOADS_DIR);
+    console.error('Cartella uploads non trovata o non accessibile:', sourceUploadsDir);
     process.exit(1);
   }
 
@@ -63,7 +70,7 @@ async function main() {
   let uploadedCount = 0;
 
   for (const fullPath of files) {
-    const relativePath = path.relative(UPLOADS_DIR, fullPath).replaceAll(path.sep, '/');
+    const relativePath = path.relative(sourceUploadsDir, fullPath).replaceAll(path.sep, '/');
     const uploadPath = `/uploads/${relativePath}`;
     const contentType = getContentTypeByExtension(relativePath);
     const buffer = await fs.readFile(fullPath);

@@ -23,6 +23,23 @@ function isR2Enabled() {
   return hasAllR2EnvVars();
 }
 
+function isProductionEnvironment() {
+  return process.env.NODE_ENV === 'production';
+}
+
+function canUseLocalFallback() {
+  return !isProductionEnvironment();
+}
+
+function ensureR2ConfiguredInProduction() {
+  if (isProductionEnvironment() && !isR2Enabled()) {
+    throw new Error(
+      'Configurazione R2 mancante: in produzione il backend e` R2-only. ' +
+        'Imposta R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY e R2_BUCKET.'
+    );
+  }
+}
+
 function getR2Client() {
   if (!isR2Enabled()) {
     return null;
@@ -182,6 +199,8 @@ async function getUploadObject(uploadPath) {
 }
 
 module.exports = {
+  canUseLocalFallback,
+  ensureR2ConfiguredInProduction,
   getUploadObject,
   isR2Enabled,
   objectKeyToUploadPath,

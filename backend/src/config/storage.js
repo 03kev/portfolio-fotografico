@@ -5,8 +5,9 @@ const BACKEND_ROOT = path.join(__dirname, '..', '..');
 const SEED_DATA_DIR = path.join(BACKEND_ROOT, 'data');
 const isVercel = Boolean(process.env.VERCEL);
 const RUNTIME_ROOT = isVercel ? '/tmp/portfolio-fotografico' : BACKEND_ROOT;
-const DATA_DIR = path.join(RUNTIME_ROOT, 'data');
-const UPLOADS_DIR = path.join(RUNTIME_ROOT, 'uploads');
+const STORAGE_ROOT = path.join(RUNTIME_ROOT, 'storage');
+const DATA_DIR = path.join(STORAGE_ROOT, 'data');
+const UPLOADS_DIR = path.join(STORAGE_ROOT, 'uploads');
 const THUMBNAILS_DIR = path.join(UPLOADS_DIR, 'thumbnails');
 
 async function ensureDir(dirPath) {
@@ -50,12 +51,13 @@ async function ensureUploadsDirectories() {
 
 function resolvePublicFilePath(publicPath) {
   const normalizedPath = String(publicPath || '').replace(/^\/+/, '');
-  return path.join(RUNTIME_ROOT, normalizedPath);
+  return path.join(STORAGE_ROOT, normalizedPath);
 }
 
 module.exports = {
   BACKEND_ROOT,
   DATA_DIR,
+  STORAGE_ROOT,
   THUMBNAILS_DIR,
   UPLOADS_DIR,
   ensureDataFile,
