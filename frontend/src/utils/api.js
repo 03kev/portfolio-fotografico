@@ -7,26 +7,12 @@ const API_BASE_URL =
 
 const api = axios.create({
   baseURL: API_BASE_URL,
+  withCredentials: true,
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
-
-// Interceptor per le richieste
-api.interceptors.request.use(
-  (config) => {
-    // Aggiungi token di autenticazione se presente
-    const token = localStorage.getItem('authToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
 
 // Interceptor per le risposte
 api.interceptors.response.use(
@@ -35,14 +21,7 @@ api.interceptors.response.use(
   },
   (error) => {
     console.error('API Error:', error);
-    
-    // Gestione errori specifici
-    if (error.response?.status === 401) {
-      // Token scaduto, rimuovi e redirect al login
-      localStorage.removeItem('authToken');
-      window.location.href = '/login';
-    }
-    
+
     return Promise.reject(error.response?.data || error.message);
   }
 );
@@ -109,6 +88,12 @@ export const statsService = {
   getDashboard: () => api.get('/stats/dashboard'),
   getPhotoStats: () => api.get('/stats/photos'),
   getLocationStats: () => api.get('/stats/locations'),
+};
+
+export const authService = {
+  getSession: () => api.get('/auth/session'),
+  login: (token) => api.post('/auth/session', { token }),
+  logout: () => api.delete('/auth/session'),
 };
 
 // Utility functions

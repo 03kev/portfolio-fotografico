@@ -5,6 +5,7 @@ const rateLimit = require('express-rate-limit');
 const { pipeline } = require('stream/promises');
 require('dotenv').config();
 
+const authRoutes = require('./routes/auth');
 const photoRoutes = require('./routes/photos');
 const seriesRoutes = require('./routes/series');
 const { UPLOADS_DIR } = require('./config/storage');
@@ -45,13 +46,28 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
+function normalizeOriginValue(value) {
+    return String(value || '')
+        .trim()
+        .replace(/^['"]|['"]$/g, '')
+        .replace(/\/+$/, '');
+}
+
+function getOriginHost(origin) {
+    try {
+        return new URL(origin).host;
+    } catch {
+        return null;
+    }
+}
+
 const configuredOrigins = (process.env.CORS_ORIGINS || '')
     .split(',')
-    .map((origin) => origin.trim())
+    .map((origin) => normalizeOriginValue(origin))
     .filter(Boolean);
 
 if (process.env.NODE_ENV === 'production' && configuredOrigins.length === 0) {
-    throw new Error('CORS_ORIGINS obbligatoria in produzione.');
+    console.warn('CORS_ORIGINS non configurata: verranno accettate solo origin consentite automaticamente (es. VERCEL_URL).');
 }
 
 // CORS
@@ -63,18 +79,45 @@ const corsOptions = {
 
         if (process.env.NODE_ENV !== 'production') {
             const devOrigins = ['http://localhost:3000', 'http://localhost:3001'];
-            return callback(devOrigins.includes(origin) ? null : new Error('Non consentito da CORS'), devOrigins.includes(origin));
+            return callback(null, devOrigins.includes(origin));
         }
 
-        if (configuredOrigins.includes(origin)) {
+        // In produzione, se non e` stata configurata una allowlist esplicita,
+        // consenti l'origin chiamante per evitare blocchi su domini Vercel/custom.
+        if (configuredOrigins.length === 0) {
             return callback(null, true);
         }
 
-        return callback(new Error('Non consentito da CORS'));
+        const normalizedOrigin = normalizeOriginValue(origin);
+        const originHost = getOriginHost(normalizedOrigin);
+        const vercelOrigin = process.env.VERCEL_URL
+            ? normalizeOriginValue(`https://${process.env.VERCEL_URL}`)
+            : null;
+
+        if (vercelOrigin && normalizedOrigin === vercelOrigin) {
+            return callback(null, true);
+        }
+
+        if (configuredOrigins.includes(normalizedOrigin)) {
+            return callback(null, true);
+        }
+
+        if (originHost) {
+            const hostAllowed = configuredOrigins.some((allowedOrigin) => getOriginHost(allowedOrigin) === originHost);
+            if (hostAllowed) {
+                return callback(null, true);
+            }
+        }
+
+        if (vercelOrigin && originHost && getOriginHost(vercelOrigin) === originHost) {
+            return callback(null, true);
+        }
+
+        return callback(null, false);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-requested-with']
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'x-requested-with']
 };
 
 app.use(cors(corsOptions));
@@ -138,6 +181,7 @@ if (canUseLocalFallback()) {
 app.use('/uploads', ...uploadsMiddlewares);
 
 // Routes
+app.use('/api/auth', authRoutes);
 app.use('/api/photos', photoRoutes);
 app.use('/api/series', seriesRoutes);
 

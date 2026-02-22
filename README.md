@@ -84,6 +84,8 @@ Minimo per sviluppo locale senza R2:
 PORT=5001
 NODE_ENV=development
 CORS_ORIGINS=http://localhost:3000,http://localhost:3001
+# opzionale: protegge le API di scrittura
+API_WRITE_TOKEN=<token-lungo-casuale>
 ```
 
 Per usare R2 (obbligatorio in produzione):
@@ -144,12 +146,15 @@ REACT_APP_API_URL=http://localhost:5001/api
 
 1. Imposta env su Vercel (Project Settings -> Environment Variables):
    - `NODE_ENV=production`
+   - `API_WRITE_TOKEN`
+   - `API_SESSION_SECRET` (consigliato)
    - `R2_ACCOUNT_ID`
    - `R2_ACCESS_KEY_ID`
    - `R2_SECRET_ACCESS_KEY`
    - `R2_BUCKET`
    - `R2_PUBLIC_URL` (consigliato)
    - opzionali: `R2_ENDPOINT`, `R2_METADATA_PREFIX`, `CORS_ORIGINS`
+     - se `CORS_ORIGINS` non e` impostata, il backend accetta origin in fallback (consigliato impostarla comunque in produzione)
 
 2. Esegui deploy.
 
@@ -164,6 +169,9 @@ npm run sync:r2:metadata
 ## API essenziali
 
 - `GET /api/health`
+- `GET /api/auth/session`
+- `POST /api/auth/session`
+- `DELETE /api/auth/session`
 - `GET /api/photos`
 - `GET /api/photos/:id`
 - `POST /api/photos`
@@ -174,6 +182,22 @@ npm run sync:r2:metadata
 - `POST /api/series`
 - `PUT /api/series/:id`
 - `DELETE /api/series/:id`
+
+## Autenticazione API (scrittura)
+
+- `GET` restano pubbliche.
+- `POST/PUT/DELETE` richiedono autenticazione admin.
+- Flusso frontend consigliato: sessione cookie `HttpOnly`.
+  - login: `POST /api/auth/session` con body `{ token }`
+  - stato: `GET /api/auth/session`
+  - logout: `DELETE /api/auth/session`
+- Header supportati:
+  - `Authorization: Bearer <API_WRITE_TOKEN>`
+  - `x-api-key: <API_WRITE_TOKEN>`
+- In produzione `API_WRITE_TOKEN` è obbligatoria.
+- Frontend:
+  - abilita admin mode con `?admin=1`
+  - usa il pulsante `API: OFF/ON` in header per aprire/chiudere la sessione admin
 
 ## Troubleshooting rapido
 

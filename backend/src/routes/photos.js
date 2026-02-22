@@ -17,8 +17,10 @@ const {
 const { readMetadataFile, writeMetadataFile } = require('../services/metadataStorage');
 const { parsePositiveInt } = require('../utils/env');
 const { parseNumericIdOrThrow } = require('../utils/ids');
+const { protectWriteMethods } = require('../middleware/auth');
 
 const router = express.Router();
+router.use(protectWriteMethods);
 
 function parseAllowedUploadTypes() {
     const defaultValue = 'image/*';

@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Trash2, Edit3 } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { IMAGES_BASE_URL } from '../utils/constants';
-import useAdminMode from '../hooks/useAdminMode';
 import PhotoUpload from './PhotoUpload';
 
 const DEBOUNCE_DELAY_FILTER = 200;
@@ -310,7 +310,8 @@ const NoResults = styled(motion.div)`
 
 const Gallery = () => {
   const { photos, filteredPhotos, loading, actions, filters } = usePhotos();
-  const isAdmin = useAdminMode();
+  const outletContext = useOutletContext();
+  const isAdmin = Boolean(outletContext?.isAdmin);
 
   const [activeFilter, setActiveFilter] = useState(() => {
     return filters.tags && filters.tags.length > 0 ? filters.tags[0] : 'all';

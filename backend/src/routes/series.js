@@ -3,6 +3,9 @@ const router = express.Router();
 const Series = require('../models/Series');
 const { readMetadataFile, writeMetadataFile } = require('../services/metadataStorage');
 const { parseNumericIdOrThrow } = require('../utils/ids');
+const { protectWriteMethods } = require('../middleware/auth');
+
+router.use(protectWriteMethods);
 
 // Helper per leggere le serie
 async function readSeries() {

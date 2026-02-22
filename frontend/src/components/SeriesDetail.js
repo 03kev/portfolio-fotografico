@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, ChevronLeft, Code, FileText, Image as ImageIcon, Images, Italic, LayoutGrid, Maximize2, PencilLine, RotateCcw, Save, Trash2, Type, Underline, X } from 'lucide-react';
@@ -11,7 +11,6 @@ import { usePhotos } from '../contexts/PhotoContext';
 import SeriesEditor from './SeriesEditor';
 import { useToast } from './Toast';
 import { IMAGES_BASE_URL } from '../utils/constants';
-import useAdminMode from '../hooks/useAdminMode';
 
 const PageContainer = styled.div`
   min-height: 100vh;
@@ -1005,7 +1004,8 @@ function SeriesDetail() {
   const MIN_W_COLS = Math.max(1, Math.round((MIN_W + GRID_GUTTER) / GRID_STEP_X));
   const MIN_H_ROWS = Math.max(1, Math.round((MIN_H + GRID_GUTTER) / GRID_STEP_Y));
 
-  const isAdmin = useAdminMode();
+  const outletContext = useOutletContext();
+  const isAdmin = Boolean(outletContext?.isAdmin);
   const toast = useToast();
 
 
