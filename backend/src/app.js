@@ -3,11 +3,13 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+const { pipeline } = require('stream/promises');
 require('dotenv').config();
 
 const photoRoutes = require('./routes/photos');
 const seriesRoutes = require('./routes/series');
 const { BACKEND_ROOT, UPLOADS_DIR } = require('./config/storage');
+const { getUploadObject, isR2Enabled } = require('./services/r2Storage');
 
 const app = express();
 
@@ -74,6 +76,41 @@ app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+async function serveUploadsFromR2(req, res, next) {
+  if (!isR2Enabled()) {
+    return next();
+  }
+
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    return next();
+  }
+
+  try {
+    const object = await getUploadObject(`/uploads${req.path}`);
+    if (!object) {
+      return next();
+    }
+
+    if (object.contentType) res.setHeader('Content-Type', object.contentType);
+    if (object.cacheControl) res.setHeader('Cache-Control', object.cacheControl);
+    if (object.contentLength != null) res.setHeader('Content-Length', String(object.contentLength));
+    if (object.etag) res.setHeader('ETag', object.etag);
+    if (object.lastModified) res.setHeader('Last-Modified', new Date(object.lastModified).toUTCString());
+
+    if (req.method === 'HEAD') {
+      return res.status(200).end();
+    }
+
+    if (!object.stream) {
+      return res.status(500).json({ message: 'Stream file non disponibile' });
+    }
+
+    await pipeline(object.stream, res);
+  } catch (error) {
+    next(error);
+  }
+}
+
 // Servire file statici (immagini) con header CORP
 app.use(
   '/uploads',
@@ -84,6 +121,7 @@ app.use(
     res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
     next();
   },
+  serveUploadsFromR2,
   express.static(UPLOADS_DIR),
   express.static(path.join(BACKEND_ROOT, 'uploads'))
 );

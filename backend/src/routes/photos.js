@@ -10,6 +10,11 @@ const {
     ensureUploadsDirectories,
     resolvePublicFilePath
 } = require('../config/storage');
+const {
+    deleteUploadObject,
+    isR2Enabled,
+    putUploadObject
+} = require('../services/r2Storage');
 
 const router = express.Router();
 
@@ -175,6 +180,8 @@ router.post('/', upload.single('image'), async (req, res) => {
         const timestamp = Date.now();
         const filename = `photo_${timestamp}.webp`;
         const thumbnailFilename = `photo_${timestamp}_thumb.webp`;
+        const imagePath = `/uploads/${filename}`;
+        const thumbnailPath = `/uploads/thumbnails/${thumbnailFilename}`;
         
         // Processa l'immagine principale CON correzione orientamento
         const processedImage = await sharp(req.file.buffer)
@@ -190,11 +197,15 @@ router.post('/', upload.single('image'), async (req, res) => {
         .webp({ quality: 85 })
         .toBuffer();
         
-        // Salva i file
-        await ensureUploadsDirectories();
-        
-        await fs.writeFile(`${UPLOADS_DIR}/${filename}`, processedImage);
-        await fs.writeFile(`${THUMBNAILS_DIR}/${thumbnailFilename}`, thumbnail);
+        // Salva i file (R2 in produzione, filesystem in locale)
+        if (isR2Enabled()) {
+            await putUploadObject(imagePath, processedImage, { contentType: 'image/webp' });
+            await putUploadObject(thumbnailPath, thumbnail, { contentType: 'image/webp' });
+        } else {
+            await ensureUploadsDirectories();
+            await fs.writeFile(`${UPLOADS_DIR}/${filename}`, processedImage);
+            await fs.writeFile(`${THUMBNAILS_DIR}/${thumbnailFilename}`, thumbnail);
+        }
         
         // Crea oggetto foto con valori di default
         const newPhoto = {
@@ -203,9 +214,9 @@ router.post('/', upload.single('image'), async (req, res) => {
             location: location || 'Posizione sconosciuta',
             lat: lat ? parseFloat(lat) : 0,
             lng: lng ? parseFloat(lng) : 0,
-            image: `/uploads/${filename}`,
-            thumbnail: `/uploads/thumbnails/${thumbnailFilename}`,
-            url: `/uploads/thumbnails/${thumbnailFilename}`, // Aggiungi campo url
+            image: imagePath,
+            thumbnail: thumbnailPath,
+            url: thumbnailPath, // Aggiungi campo url
             description: description || '',
             date: date || new Date().toISOString(),
             camera: camera || '',
@@ -364,12 +375,20 @@ router.delete('/:id', async (req, res) => {
         // Opzionale: elimina i file fisici
         try {
             if (deletedPhoto.image) {
-                const imagePath = resolvePublicFilePath(deletedPhoto.image);
-                await fs.unlink(imagePath);
+                if (isR2Enabled()) {
+                    await deleteUploadObject(deletedPhoto.image);
+                } else {
+                    const imagePath = resolvePublicFilePath(deletedPhoto.image);
+                    await fs.unlink(imagePath);
+                }
             }
             if (deletedPhoto.thumbnail) {
-                const thumbPath = resolvePublicFilePath(deletedPhoto.thumbnail);
-                await fs.unlink(thumbPath);
+                if (isR2Enabled()) {
+                    await deleteUploadObject(deletedPhoto.thumbnail);
+                } else {
+                    const thumbPath = resolvePublicFilePath(deletedPhoto.thumbnail);
+                    await fs.unlink(thumbPath);
+                }
             }
         } catch (fileError) {
             console.warn('Errore nell\'eliminazione file:', fileError);
