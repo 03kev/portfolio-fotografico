@@ -46,7 +46,7 @@ function buildPublicAssetUrl(uploadPath) {
 function presentPhoto(photo) {
     const image = buildPublicAssetUrl(photo.image);
     const thumbnail = buildPublicAssetUrl(photo.thumbnail);
-    const fallbackUrl = photo.url || photo.thumbnail || photo.image || '';
+    const fallbackUrl = photo.image || photo.url || photo.thumbnail || '';
 
     return {
         ...photo,
@@ -195,7 +195,7 @@ router.get('/', async (req, res) => {
                 lng: photo.lng || 0,
                 image: photo.image || '',
                 thumbnail: photo.thumbnail || '',
-                url: photo.thumbnail || photo.image || '',
+                url: photo.image || photo.thumbnail || '',
                 settings,
                 tags
             };
@@ -369,7 +369,7 @@ router.post('/', upload.single('image'), async (req, res) => {
             lng: parsedLng ?? 0,
             image: imagePath,
             thumbnail: thumbnailPath,
-            url: thumbnailPath, // Aggiungi campo url
+            url: imagePath,
             description: sanitized.description,
             date: sanitized.date,
             camera: sanitized.camera,

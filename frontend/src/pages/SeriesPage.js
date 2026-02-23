@@ -16,6 +16,7 @@ export default function SeriesPage() {
       showAdmin={isAdmin}
       title="Serie"
       subtitle="Progetti coerenti: un filo narrativo, un luogo, un'idea."
+      headingLevel="h1"
     />
   );
 }

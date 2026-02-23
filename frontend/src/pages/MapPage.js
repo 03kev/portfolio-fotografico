@@ -8,5 +8,5 @@ export default function MapPage() {
     description: 'Mappa fotografica interattiva di Kevin Muka per esplorare gli scatti in base alla posizione geografica.',
   });
 
-  return <WorldMap />;
+  return <WorldMap headingLevel="h1" />;
 }

@@ -3,6 +3,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { pipeline } = require('stream/promises');
+const { readMetadataFile } = require('./services/metadataStorage');
 
 const authRoutes = require('./routes/auth');
 const photoRoutes = require('./routes/photos');
@@ -199,6 +200,82 @@ app.use('/api/photos', writeLimiter);
 app.use('/api/photos', photoRoutes);
 app.use('/api/series', writeLimiter);
 app.use('/api/series', seriesRoutes);
+
+function escapeXml(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+}
+
+function getSiteBaseUrl() {
+    if (env.corsOrigins.length > 0) {
+        const firstOrigin = String(env.corsOrigins[0]).trim().replace(/\/+$/, '');
+        if (firstOrigin) return firstOrigin;
+    }
+
+    if (env.vercelUrl) {
+        return `https://${env.vercelUrl}`;
+    }
+
+    return 'https://kevinmuka.dev';
+}
+
+function buildPublicAssetUrl(uploadPath) {
+    const value = String(uploadPath || '').trim();
+    if (!value) return value;
+    if (/^https?:\/\//i.test(value)) return value;
+
+    const publicBaseUrl = env.r2PublicUrl;
+    if (!publicBaseUrl) return value;
+    if (!value.startsWith('/uploads/')) return value;
+
+    const objectKey = value.replace(/^\/+/, '').replace(/^uploads\/+/, '');
+    return `${publicBaseUrl}/${objectKey}`;
+}
+
+app.get('/api/sitemap-images.xml', async (req, res) => {
+    try {
+        const photos = await readMetadataFile('photos.json', []);
+        const siteBaseUrl = getSiteBaseUrl();
+        const pageUrl = `${siteBaseUrl}/gallery`;
+
+        const imageEntries = photos
+            .map((photo) => {
+                const fullImage = buildPublicAssetUrl(photo.image || photo.url || photo.thumbnail || '');
+                if (!fullImage) return '';
+
+                const title = escapeXml(photo.title || 'Foto');
+                const caption = escapeXml(photo.description || photo.location || photo.title || '');
+
+                return `
+    <url>
+      <loc>${escapeXml(pageUrl)}</loc>
+      <image:image>
+        <image:loc>${escapeXml(fullImage)}</image:loc>
+        <image:title>${title}</image:title>
+        <image:caption>${caption}</image:caption>
+      </image:image>
+    </url>`;
+            })
+            .filter(Boolean)
+            .join('');
+
+        const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">${imageEntries}
+</urlset>`;
+
+        res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+        res.setHeader('Cache-Control', 'public, max-age=600');
+        res.status(200).send(xml);
+    } catch (error) {
+        console.error('Errore generazione sitemap immagini:', error);
+        res.status(500).send('Errore generazione sitemap immagini');
+    }
+});
 
 // Health check
 app.get('/api/health', (req, res) => {

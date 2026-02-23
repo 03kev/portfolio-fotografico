@@ -34,7 +34,7 @@ export default function NotFoundPage() {
   });
 
   return (
-    <Section title="Pagina non trovata" subtitle="La risorsa richiesta non esiste.">
+    <Section title="Pagina non trovata" subtitle="La risorsa richiesta non esiste." headingLevel="h1">
       <Center>
         <Button to="/">Torna alla home</Button>
       </Center>

@@ -30,6 +30,7 @@ export default function AboutPage() {
     <Section
       title="Chi sono"
       subtitle="Due righe su di me e su come lavoro."
+      headingLevel="h1"
     >
       <Wrap>
         <Card>

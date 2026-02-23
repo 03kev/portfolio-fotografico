@@ -1021,6 +1021,49 @@ function SeriesDetail() {
   const isAdmin = Boolean(outletContext?.isAdmin);
   const toast = useToast();
 
+  const seriesStructuredData = React.useMemo(() => {
+    if (!currentSeries) return null;
+
+    const toAbsolute = (value) => {
+      const src = String(value || '').trim();
+      if (!src) return '';
+      if (/^https?:\/\//i.test(src)) return src;
+
+      const base = (process.env.REACT_APP_SITE_URL || window.location.origin || '').replace(/\/+$/, '');
+      const resolved = `${IMAGES_BASE_URL}${src}`;
+      if (/^https?:\/\//i.test(resolved)) return resolved;
+      return `${base}${resolved.startsWith('/') ? resolved : `/${resolved}`}`;
+    };
+
+    const images = seriesPhotos
+      .slice(0, 120)
+      .map((photo) => {
+        const full = toAbsolute(photo.image || photo.url || photo.thumbnail);
+        if (!full) return null;
+        const thumb = toAbsolute(photo.thumbnail || photo.image || photo.url);
+        return {
+          '@type': 'ImageObject',
+          contentUrl: full,
+          thumbnailUrl: thumb || full,
+          name: photo.title || currentSeries.title || 'Fotografia',
+          description: photo.description || currentSeries.description || 'Scatto fotografico'
+        };
+      })
+      .filter(Boolean);
+
+    const site = (process.env.REACT_APP_SITE_URL || window.location.origin || '').replace(/\/+$/, '');
+    const seriesUrl = `${site}/series/${currentSeries.slug || currentSeries.id}`;
+
+    return {
+      '@context': 'https://schema.org',
+      '@type': 'ImageGallery',
+      name: `${currentSeries.title || 'Serie'} - Kevin Muka`,
+      description: currentSeries.description || 'Serie fotografica',
+      url: seriesUrl,
+      associatedMedia: images
+    };
+  }, [currentSeries, seriesPhotos]);
+
   useSeo({
     title: currentSeries?.title ? `Serie: ${currentSeries.title}` : 'Dettaglio Serie',
     description: currentSeries?.description
@@ -1028,6 +1071,7 @@ function SeriesDetail() {
         ? `Dettaglio della serie fotografica "${currentSeries.title}" di Kevin Muka.`
         : 'Dettaglio serie fotografica di Kevin Muka.'),
     ogType: 'article',
+    structuredData: seriesStructuredData,
   });
 
 

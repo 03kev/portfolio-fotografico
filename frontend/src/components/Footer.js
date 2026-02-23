@@ -150,7 +150,7 @@ const Footer = () => {
             </Text>
 
             <SocialRow>
-              <SocialLink href="https://instagram.com/kev.muka" target="_blank" rel="noopener noreferrer" aria-label="Instagram" whileTap={{ scale: 0.98 }}>
+              <SocialLink href="https://instagram.com/kev.muka" target="_blank" rel="me noopener noreferrer" aria-label="Instagram" whileTap={{ scale: 0.98 }}>
                 <Instagram size={18} />
               </SocialLink>
               <SocialLink href="https://twitter.com/03kev__" target="_blank" rel="noopener noreferrer" aria-label="Twitter/X" whileTap={{ scale: 0.98 }}>
@@ -182,7 +182,7 @@ const Footer = () => {
             <ContactList>
               <div className="row"><Mail size={16} /> <a href="mailto:kevinmuka03@gmail.com">kevinmuka03@gmail.com</a></div>
               <div className="row"><Globe size={16} /> <Link to="/">fotoportfolio.com</Link></div>
-              <div className="row"><Instagram size={16} /> <a href="https://instagram.com/kev.muka" target="_blank" rel="noreferrer">@kev.muka</a></div>
+              <div className="row"><Instagram size={16} /> <a href="https://instagram.com/kev.muka" target="_blank" rel="me noreferrer">@kev.muka</a></div>
               <div className="row"><MapPin size={16} /> <span>Italia</span></div>
             </ContactList>
           </motion.div>

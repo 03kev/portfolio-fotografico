@@ -4,7 +4,7 @@
   "description": "Portfolio fotografico di Kevin Muka: serie, archivio e mappa interattiva.",
   "icons": [
     {
-      "src": "favicon.ico",
+      "src": "assets/icons/favicon.ico",
       "sizes": "64x64 32x32 24x24 16x16",
       "type": "image/x-icon"
     },
@@ -14,12 +14,12 @@
       "sizes": "32x32"
     },
     {
-      "src": "logo192.png",
+      "src": "assets/icons/logo192.png",
       "type": "image/png",
       "sizes": "192x192"
     },
     {
-      "src": "logo512.png",
+      "src": "assets/icons/logo512.png",
       "type": "image/png",
       "sizes": "512x512"
     }

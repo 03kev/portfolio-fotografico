@@ -151,6 +151,18 @@ const PhotoCard = styled(motion.div)`
   }
 `;
 
+const SeoImageLink = styled.a`
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+`;
+
 const PhotoImage = styled(motion.img)`
   width: 100%;
   height: 100%;
@@ -308,7 +320,7 @@ const NoResults = styled(motion.div)`
   }
 `;
 
-const Gallery = () => {
+const Gallery = ({ headingLevel = 'h2' }) => {
   const { photos, filteredPhotos, loading, actions, filters } = usePhotos();
   const outletContext = useOutletContext();
   const isAdmin = Boolean(outletContext?.isAdmin);
@@ -367,6 +379,9 @@ const Gallery = () => {
     actions.openPhotoModal(photo);
   };
 
+  const getFullImageUrl = (photo) => `${IMAGES_BASE_URL}${photo.image || photo.url || photo.thumbnail || ''}`;
+  const getThumbImageUrl = (photo) => `${IMAGES_BASE_URL}${photo.thumbnail || photo.image || photo.url || ''}`;
+
   const handleDelete = async (e, photoId) => {
     e.stopPropagation();
     if (window.confirm('Sei sicuro di voler eliminare questa foto?')) {
@@ -400,7 +415,7 @@ const Gallery = () => {
     <GallerySection>
       <Container>
         <SectionHeader>
-          <SectionTitle initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.45, ease: 'easeOut' }}>
+          <SectionTitle as={headingLevel} initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.45, ease: 'easeOut' }}>
             Archivio
           </SectionTitle>
           <SectionSubtitle initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.45, ease: 'easeOut', delay: 0.05 }}>
@@ -454,6 +469,9 @@ const Gallery = () => {
                   onClick={() => handlePhotoClick(photo)}
                 >
                   <PhotoCard>
+                    <SeoImageLink href={getFullImageUrl(photo)} aria-hidden="true" tabIndex={-1}>
+                      {photo.title || 'Foto'}
+                    </SeoImageLink>
                     {isAdmin && (
                       <>
                         <EditButton
@@ -473,7 +491,7 @@ const Gallery = () => {
                       </>
                     )}
                     <PhotoImage
-                      src={`${IMAGES_BASE_URL}${photo.thumbnail || photo.image}`}
+                      src={getThumbImageUrl(photo)}
                       alt={photo.title}
                       loading={index < 3 ? 'eager' : 'lazy'}
                       fetchPriority={index < 3 ? 'high' : 'auto'}

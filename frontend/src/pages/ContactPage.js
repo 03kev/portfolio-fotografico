@@ -53,6 +53,7 @@ export default function ContactPage() {
     <Section
       title="Contatti"
       subtitle="Se vuoi saperne di più, questi sono i modi migliori per contattarmi."
+      headingLevel="h1"
     >
       <Wrap>
         <Card>
@@ -62,7 +63,7 @@ export default function ContactPage() {
           </Row>
           <Row>
             <Label>Instagram</Label>
-            <Value href="https://instagram.com/kev.muka" target="_blank" rel="noreferrer">@kev.muka</Value>
+            <Value href="https://instagram.com/kev.muka" target="_blank" rel="me noreferrer">@kev.muka</Value>
           </Row>
         </Card>
       </Wrap>

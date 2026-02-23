@@ -291,7 +291,7 @@ const InfoPopup = styled(motion.div)`
   }
 `;
 
-const WorldMap = () => {
+const WorldMap = ({ headingLevel = 'h2' }) => {
     const { photos, loading, actions, modalOpen, galleryModalOpen, pendingMapFocus } = usePhotos();
     const mountRef = useRef(null);
     const sceneRef = useRef(null);
@@ -1612,7 +1612,7 @@ return (
     animate={inView ? "visible" : "hidden"}
     >
     <Container>
-    <SectionTitle variants={itemVariants}>
+    <SectionTitle as={headingLevel} variants={itemVariants}>
     Il Mondo in foto
     </SectionTitle>
     

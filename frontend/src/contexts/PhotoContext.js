@@ -105,7 +105,7 @@ function photoReducer(state, action) {
             ...state,
             photos: [{
                 ...action.payload,
-                url: action.payload.url || action.payload.thumbnail || action.payload.image || ''
+                url: action.payload.url || action.payload.image || action.payload.thumbnail || ''
             }, ...state.photos]
         };
         
@@ -183,7 +183,7 @@ export function PhotoProvider({ children }) {
                 // Normalizza tutte le foto aggiungendo il campo url se mancante
                 const normalizedPhotos = photos.map(photo => ({
                     ...photo,
-                    url: photo.url || photo.thumbnail || photo.image || ''
+                    url: photo.url || photo.image || photo.thumbnail || ''
                 }));
                 dispatch({ type: ACTIONS.SET_PHOTOS, payload: normalizedPhotos });
             } catch (error) {

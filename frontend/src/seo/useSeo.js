@@ -5,7 +5,7 @@ const BRAND_NAME = 'Kevin Muka';
 const DEFAULT_SITE_NAME = 'Portfolio Fotografico';
 const DEFAULT_TITLE = `${BRAND_NAME} | ${DEFAULT_SITE_NAME}`;
 const DEFAULT_DESCRIPTION = 'Portfolio fotografico di Kevin Muka: serie, archivio completo e mappa interattiva con scatti di viaggio, paesaggi e città.';
-const DEFAULT_OG_IMAGE = '/logo512.png';
+const DEFAULT_OG_IMAGE = '/assets/icons/logo512.png';
 
 function getSiteUrl() {
   if (process.env.REACT_APP_SITE_URL) {
@@ -46,12 +46,44 @@ function upsertCanonical(url) {
   canonical.setAttribute('href', url);
 }
 
+function upsertRelMe(url) {
+  if (!url) return;
+  const selector = `link[rel="me"][href="${url}"]`;
+  let relMe = document.head.querySelector(selector);
+  if (!relMe) {
+    relMe = document.createElement('link');
+    relMe.setAttribute('rel', 'me');
+    relMe.setAttribute('href', url);
+    document.head.appendChild(relMe);
+  }
+}
+
+function upsertStructuredData(structuredData) {
+  const existing = Array.from(document.head.querySelectorAll('script[data-seo-ld="true"]'));
+  existing.forEach((node) => node.remove());
+
+  if (!structuredData) return;
+
+  const payload = Array.isArray(structuredData) ? structuredData : [structuredData];
+  payload
+    .filter(Boolean)
+    .forEach((item, index) => {
+      const script = document.createElement('script');
+      script.setAttribute('type', 'application/ld+json');
+      script.setAttribute('data-seo-ld', 'true');
+      script.setAttribute('data-seo-ld-index', String(index));
+      script.textContent = JSON.stringify(item);
+      document.head.appendChild(script);
+    });
+}
+
 export default function useSeo({
   title,
   description = DEFAULT_DESCRIPTION,
   ogType = 'website',
   noindex = false,
   image = DEFAULT_OG_IMAGE,
+  structuredData = null,
 } = {}) {
   const location = useLocation();
 
@@ -67,6 +99,7 @@ export default function useSeo({
     document.title = normalizedTitle;
 
     upsertCanonical(absoluteUrl);
+    upsertRelMe('https://instagram.com/kev.muka');
     upsertMeta({ name: 'description', content: description });
     upsertMeta({ name: 'robots', content: noindex ? 'noindex, nofollow' : 'index, follow' });
 
@@ -81,5 +114,6 @@ export default function useSeo({
     upsertMeta({ name: 'twitter:title', content: normalizedTitle });
     upsertMeta({ name: 'twitter:description', content: description });
     upsertMeta({ name: 'twitter:image', content: absoluteImage });
-  }, [description, image, location.pathname, noindex, ogType, title]);
+    upsertStructuredData(structuredData);
+  }, [description, image, location.pathname, noindex, ogType, structuredData, title]);
 }
