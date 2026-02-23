@@ -24,6 +24,36 @@ const { protectWriteMethods } = require('../middleware/auth');
 const router = express.Router();
 router.use(protectWriteMethods);
 
+function normalizePublicBaseUrl() {
+    return String(process.env.R2_PUBLIC_URL || '').trim().replace(/\/+$/, '');
+}
+
+function buildPublicAssetUrl(uploadPath) {
+    const value = String(uploadPath || '').trim();
+    if (!value) return value;
+    if (/^https?:\/\//i.test(value)) return value;
+
+    const publicBaseUrl = normalizePublicBaseUrl();
+    if (!publicBaseUrl) return value;
+    if (!value.startsWith('/uploads/')) return value;
+
+    const objectKey = value.replace(/^\/+/, '').replace(/^uploads\/+/, '');
+    return `${publicBaseUrl}/${objectKey}`;
+}
+
+function presentPhoto(photo) {
+    const image = buildPublicAssetUrl(photo.image);
+    const thumbnail = buildPublicAssetUrl(photo.thumbnail);
+    const fallbackUrl = photo.url || photo.thumbnail || photo.image || '';
+
+    return {
+        ...photo,
+        image,
+        thumbnail,
+        url: buildPublicAssetUrl(fallbackUrl)
+    };
+}
+
 function parseAllowedUploadTypes() {
     const defaultValue = 'image/*';
     return String(process.env.UPLOAD_ALLOWED_TYPES || defaultValue)
@@ -165,11 +195,13 @@ router.get('/', async (req, res) => {
                 lens: photo.lens || '',
                 lat: photo.lat || 0,
                 lng: photo.lng || 0,
+                image: photo.image || '',
+                thumbnail: photo.thumbnail || '',
                 url: photo.thumbnail || photo.image || '',
                 settings,
                 tags
             };
-        });
+        }).map(presentPhoto);
         
         res.json({
             success: true,
@@ -202,7 +234,7 @@ router.get('/:id', async (req, res) => {
         
         res.json({
             success: true,
-            data: photo
+            data: presentPhoto(photo)
         });
     } catch (error) {
         console.error('Errore nel recupero foto:', error);
@@ -373,7 +405,7 @@ router.post('/', upload.single('image'), async (req, res) => {
         res.status(201).json({
             success: true,
             message: 'Foto caricata con successo',
-            data: newPhoto
+            data: presentPhoto(newPhoto)
         });
         
     } catch (error) {
@@ -441,7 +473,7 @@ router.put('/:id', async (req, res) => {
         
         res.json({
             success: true,
-            data: updatedPhoto,
+            data: presentPhoto(updatedPhoto),
             message: 'Foto aggiornata con successo'
         });
     } catch (error) {
