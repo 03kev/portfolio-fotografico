@@ -1,4 +1,6 @@
 const express = require('express');
+const path = require('path');
+const crypto = require('crypto');
 const multer = require('multer');
 const sharp = require('sharp');
 const fs = require('fs').promises;
@@ -10,6 +12,7 @@ const {
 } = require('../config/storage');
 const {
     canUseLocalFallback,
+    createUploadPresignedPutUrl,
     deleteUploadObject,
     isR2Enabled,
     putUploadObject
@@ -51,6 +54,22 @@ function parseCoordinate(value, fieldName) {
         throw error;
     }
     return parsed;
+}
+
+function parseUploadSize(value) {
+    const parsed = Number.parseInt(String(value || ''), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+    return parsed;
+}
+
+function buildUploadFilename(originalName, mimetype) {
+    const base = path.basename(String(originalName || ''), path.extname(String(originalName || '')));
+    const sanitizedBase = base.replace(/[^a-zA-Z0-9-_]/g, '').slice(0, 40) || 'photo';
+    const randomId = crypto.randomBytes(6).toString('hex');
+    const extFromName = path.extname(String(originalName || '')).toLowerCase();
+    const mimeExt = mimetype && mimetype.includes('/') ? `.${mimetype.split('/')[1]}` : '';
+    const extension = /^[.][a-z0-9]+$/.test(extFromName) ? extFromName : (mimeExt || '.bin');
+    return `${sanitizedBase}-${Date.now()}-${randomId}${extension}`;
 }
 
 // Utility per leggere/scrivere il database JSON
@@ -190,51 +209,117 @@ router.get('/:id', async (req, res) => {
     }
 });
 
+// POST - Genera URL firmata per upload diretto su R2 (evita limiti body Vercel)
+router.post('/upload-url', async (req, res) => {
+    try {
+        if (!isR2Enabled()) {
+            return res.status(400).json({
+                success: false,
+                message: 'Upload diretto disponibile solo con R2 configurato'
+            });
+        }
+
+        const { filename, mimetype, contentType, fileSize } = req.body || {};
+        const effectiveMimeType = String(mimetype || contentType || '').trim();
+        if (!effectiveMimeType || !isAllowedMimeType(effectiveMimeType, allowedUploadTypes)) {
+            return res.status(400).json({
+                success: false,
+                message: `Tipo file non consentito. Tipi ammessi: ${allowedUploadTypes.join(', ')}`
+            });
+        }
+
+        const parsedSize = parseUploadSize(fileSize);
+        if (parsedSize && parsedSize > uploadMaxSize) {
+            return res.status(400).json({
+                success: false,
+                message: `File troppo grande. Massimo ${uploadMaxSize} byte.`,
+                code: 'LIMIT_FILE_SIZE'
+            });
+        }
+
+        const uploadFilename = buildUploadFilename(filename, effectiveMimeType);
+        const uploadPath = `/uploads/${uploadFilename}`;
+
+        const signed = await createUploadPresignedPutUrl(uploadPath, {
+            contentType: effectiveMimeType,
+            cacheControl: 'public, max-age=31536000, immutable',
+            expiresInSeconds: 300
+        });
+
+        return res.json({
+            success: true,
+            data: {
+                uploadUrl: signed.uploadUrl,
+                imagePath: signed.uploadPath,
+                publicUrl: signed.publicUrl,
+                expiresInSeconds: signed.expiresInSeconds
+            }
+        });
+    } catch (error) {
+        console.error('Errore generazione URL upload diretto:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Errore nella generazione URL upload'
+        });
+    }
+});
+
 // POST - Upload nuova foto
 router.post('/', upload.single('image'), async (req, res) => {
     try {
-        if (!req.file) {
-            return res.status(400).json({
-                success: false,
-                message: 'Nessun file caricato'
-            });
-        }
-        
         const { title, location, lat, lng, description, date, camera, lens, settings, tags } = req.body;
         const parsedLat = parseCoordinate(lat, 'Latitudine');
         const parsedLng = parseCoordinate(lng, 'Longitudine');
-        
-        // Genera nome file unico
         const timestamp = Date.now();
-        const filename = `photo_${timestamp}.webp`;
-        const thumbnailFilename = `photo_${timestamp}_thumb.webp`;
-        const imagePath = `/uploads/${filename}`;
-        const thumbnailPath = `/uploads/thumbnails/${thumbnailFilename}`;
-        
-        // Processa l'immagine principale CON correzione orientamento
-        const processedImage = await sharp(req.file.buffer)
-        .rotate() // ⭐ AGGIUNGE AUTO-ROTAZIONE BASATA SU EXIF
-        .resize(3840, 2160, { fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: 95, effort: 6 })
-        .toBuffer();
-        
-        // Crea thumbnail CON correzione orientamento
-        const thumbnail = await sharp(req.file.buffer)
-        .rotate() // ⭐ AGGIUNGE AUTO-ROTAZIONE BASATA SU EXIF
-        .resize(400, 300, { fit: 'cover' })
-        .webp({ quality: 85 })
-        .toBuffer();
-        
-        // Salva i file (R2 in produzione, filesystem in locale)
-        if (isR2Enabled()) {
-            await putUploadObject(imagePath, processedImage, { contentType: 'image/webp' });
-            await putUploadObject(thumbnailPath, thumbnail, { contentType: 'image/webp' });
-        } else if (canUseLocalFallback()) {
-            await ensureUploadsDirectories();
-            await fs.writeFile(`${UPLOADS_DIR}/${filename}`, processedImage);
-            await fs.writeFile(`${THUMBNAILS_DIR}/${thumbnailFilename}`, thumbnail);
+
+        let imagePath;
+        let thumbnailPath;
+
+        if (req.file) {
+            // Flusso legacy multipart (locale o fallback)
+            const filename = `photo_${timestamp}.webp`;
+            const thumbnailFilename = `photo_${timestamp}_thumb.webp`;
+            imagePath = `/uploads/${filename}`;
+            thumbnailPath = `/uploads/thumbnails/${thumbnailFilename}`;
+
+            const processedImage = await sharp(req.file.buffer)
+                .rotate()
+                .resize(3840, 2160, { fit: 'inside', withoutEnlargement: true })
+                .webp({ quality: 95, effort: 6 })
+                .toBuffer();
+
+            const thumbnail = await sharp(req.file.buffer)
+                .rotate()
+                .resize(400, 300, { fit: 'cover' })
+                .webp({ quality: 85 })
+                .toBuffer();
+
+            if (isR2Enabled()) {
+                await putUploadObject(imagePath, processedImage, { contentType: 'image/webp' });
+                await putUploadObject(thumbnailPath, thumbnail, { contentType: 'image/webp' });
+            } else if (canUseLocalFallback()) {
+                await ensureUploadsDirectories();
+                await fs.writeFile(`${UPLOADS_DIR}/${filename}`, processedImage);
+                await fs.writeFile(`${THUMBNAILS_DIR}/${thumbnailFilename}`, thumbnail);
+            } else {
+                throw new Error('Configurazione R2 mancante: upload immagini consentito solo su R2 in produzione.');
+            }
         } else {
-            throw new Error('Configurazione R2 mancante: upload immagini consentito solo su R2 in produzione.');
+            // Flusso consigliato: upload diretto Browser -> R2 e qui solo metadata
+            const providedImagePath = String(req.body?.imagePath || req.body?.image || '').trim();
+            const providedThumbPath = String(req.body?.thumbnailPath || req.body?.thumbnail || '').trim();
+
+            if (!providedImagePath || !providedImagePath.startsWith('/uploads/')) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'imagePath non valido: usa /uploads/... ottenuto da /api/photos/upload-url'
+                });
+            }
+
+            imagePath = providedImagePath;
+            thumbnailPath = (providedThumbPath && providedThumbPath.startsWith('/uploads/'))
+                ? providedThumbPath
+                : providedImagePath;
         }
         
         // Crea oggetto foto con valori di default

@@ -33,6 +33,9 @@ export const photoService = {
   
   // Ottieni foto per ID
   getById: (id) => api.get(`/photos/${id}`),
+
+  // Genera URL firmata per upload diretto su R2
+  getUploadUrl: (payload) => api.post('/photos/upload-url', payload),
   
   // Upload nuova foto
   upload: (formData) => {
@@ -42,6 +45,9 @@ export const photoService = {
       },
     });
   },
+
+  // Crea foto salvando solo metadata (file gia` caricato su R2)
+  create: (data) => api.post('/photos', data),
   
   // Aggiorna foto
   update: (id, data) => api.put(`/photos/${id}`, data),

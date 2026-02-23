@@ -237,7 +237,10 @@ export function PhotoProvider({ children }) {
         addPhoto: async (photoData) => {
             try {
                 dispatch({ type: ACTIONS.SET_LOADING, payload: true });
-                const response = await photoService.upload(photoData);
+                const isFormData = typeof FormData !== 'undefined' && photoData instanceof FormData;
+                const response = isFormData
+                    ? await photoService.upload(photoData)
+                    : await photoService.create(photoData);
                 const newPhoto = response.data?.data || response.data;
                 
                 // Ricarica tutte le foto dal server per assicurare coerenza

@@ -112,6 +112,7 @@ REACT_APP_API_URL=http://localhost:5001/api
 - In `NODE_ENV=production`: backend **R2-only** (fallback locale disabilitato).
 - In sviluppo: se R2 non è configurato, usa filesystem locale (`backend/storage`).
 - I path delle immagini nei metadata restano in forma `/uploads/...` per compatibilità frontend.
+- Upload immagini in produzione: diretto Browser -> R2 tramite URL firmata (`POST /api/photos/upload-url`), poi salvataggio metadata su `/api/photos`.
 
 ## Script principali
 
@@ -206,6 +207,7 @@ npm run sync:r2:metadata
 - Verifica `R2_PUBLIC_URL`
 - Verifica bucket pubblico / policy accesso
 - Verifica presenza oggetti su R2
+- Verifica CORS del bucket R2 per upload browser (metodo `PUT` dal dominio del frontend)
 
 ### Backend non parte in produzione
 

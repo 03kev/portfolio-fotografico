@@ -1,4 +1,5 @@
 const { Readable } = require('stream');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
 const REQUIRED_ENV_VARS = [
     'R2_ACCOUNT_ID',
@@ -142,6 +143,35 @@ async function putUploadObject(uploadPath, buffer, options = {}) {
     };
 }
 
+async function createUploadPresignedPutUrl(uploadPath, options = {}) {
+    if (!isR2Enabled()) {
+        throw new Error('R2 non configurato: impossibile creare URL di upload firmata.');
+    }
+
+    const key = uploadPathToObjectKey(uploadPath);
+    const client = getR2Client();
+    const { PutObjectCommand } = s3Commands;
+    const expiresInSeconds = Number(options.expiresInSeconds) > 0 ? Number(options.expiresInSeconds) : 300;
+
+    const command = new PutObjectCommand({
+        Bucket: process.env.R2_BUCKET,
+        Key: key,
+        ContentType: options.contentType || 'application/octet-stream',
+        CacheControl: options.cacheControl || 'public, max-age=31536000, immutable'
+    });
+
+    const uploadUrl = await getSignedUrl(client, command, { expiresIn: expiresInSeconds });
+    const publicBaseUrl = normalizePublicBaseUrl();
+
+    return {
+        key,
+        uploadPath: objectKeyToUploadPath(key),
+        uploadUrl,
+        expiresInSeconds,
+        publicUrl: publicBaseUrl ? `${publicBaseUrl}/${key}` : null
+    };
+}
+
 async function deleteUploadObject(uploadPath) {
     if (!isR2Enabled()) {
         return;
@@ -200,6 +230,7 @@ async function getUploadObject(uploadPath) {
 
 module.exports = {
     canUseLocalFallback,
+    createUploadPresignedPutUrl,
     ensureR2ConfiguredInProduction,
     getUploadObject,
     isR2Enabled,

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { AlertTriangle, FolderOpen, Globe, Loader2, MapPin, PencilLine, Save, Upload } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
-import { uploadUtils } from '../utils/api';
+import { photoService, uploadUtils } from '../utils/api';
 import MapSelector from './MapSelector';
 import { AnimatePresence } from 'framer-motion';
 import exifr from 'exifr';  // Libreria per leggere metadati EXIF [oai_citation:1‡stackoverflow.com](https://stackoverflow.com/questions/59580568/read-exif-data-in-react#:~:text=there%27s%20a%20simple%20library%20for,that%20called%20exifr)
@@ -325,16 +325,59 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                 const result = await actions.updatePhoto(photoToEdit.id, updateData);
                 if (onUploadSuccess) onUploadSuccess(result);
             } else {
-                // Modalità CREATE (nuovo upload)
-                const uploadData = uploadUtils.createFormData({
-                    ...formData,
-                    image: selectedFile,
-                    settings: JSON.stringify(formData.settings),
-                    tags: formData.tags
-                });
+                // Modalità CREATE: preferisci upload diretto su R2 per evitare limiti request Vercel.
+                let result;
+                try {
+                    const signResponse = await photoService.getUploadUrl({
+                        filename: selectedFile.name,
+                        mimetype: selectedFile.type,
+                        fileSize: selectedFile.size
+                    });
+                    const signedData = signResponse?.data?.data || signResponse?.data;
 
-                const result = await actions.addPhoto(uploadData);
-                if (onUploadSuccess) onUploadSuccess(result.data);
+                    if (!signedData?.uploadUrl || !signedData?.imagePath) {
+                        throw new Error('URL di upload non valida ricevuta dal server');
+                    }
+
+                    const uploadResponse = await fetch(signedData.uploadUrl, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': selectedFile.type || 'application/octet-stream'
+                        },
+                        body: selectedFile
+                    });
+
+                    if (!uploadResponse.ok) {
+                        throw new Error(`Upload su storage fallito (${uploadResponse.status})`);
+                    }
+
+                    const uploadData = {
+                        ...formData,
+                        imagePath: signedData.imagePath,
+                        thumbnailPath: signedData.imagePath,
+                        settings: formData.settings,
+                        tags: formData.tags
+                    };
+                    result = await actions.addPhoto(uploadData);
+                } catch (directUploadError) {
+                    const directUploadMessage = directUploadError?.message || directUploadError?.error?.message || '';
+                    const shouldFallbackToMultipart =
+                        directUploadMessage.includes('Upload diretto disponibile solo con R2 configurato');
+
+                    if (!shouldFallbackToMultipart) {
+                        throw directUploadError;
+                    }
+
+                    const multipartPayload = uploadUtils.createFormData({
+                        ...formData,
+                        image: selectedFile,
+                        settings: JSON.stringify(formData.settings),
+                        tags: formData.tags
+                    });
+                    result = await actions.addPhoto(multipartPayload);
+                }
+
+                if (onUploadSuccess) onUploadSuccess(result);
             }
             
             // Reset form e chiudi modal
@@ -351,7 +394,11 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             if (onClose) onClose();
         } catch (err) {
             console.error('Errore upload foto:', err);
-            const errorMessage = err.message || 'Errore durante il caricamento';
+            const statusCode = err?.status || err?.code || err?.response?.status || err?.error?.code;
+            const isPayloadTooLarge = String(statusCode) === '413';
+            const errorMessage = isPayloadTooLarge
+                ? 'File troppo grande per l\'upload. Usa upload diretto R2 o riduci la dimensione.'
+                : (err?.message || err?.error?.message || 'Errore durante il caricamento');
             setError(errorMessage);
             if (onUploadError) onUploadError(err);
         } finally {
