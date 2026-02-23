@@ -176,6 +176,11 @@ const AdminBarButton = styled(motion.button)`
   &:hover {
     background: rgba(30, 30, 30, 0.75);
   }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
 `;
 
 const PrimaryAdminButton = styled(AdminBarButton)`
@@ -184,6 +189,11 @@ const PrimaryAdminButton = styled(AdminBarButton)`
 
   &:hover {
     opacity: 0.92;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 `;
 
@@ -925,6 +935,7 @@ function SeriesDetail() {
   const [showEditor, setShowEditor] = useState(false);
   const [seriesPhotos, setSeriesPhotos] = useState([]);
   const [layoutMode, setLayoutMode] = useState(false);
+  const [isSavingLayout, setIsSavingLayout] = useState(false);
   const [draftContent, setDraftContent] = useState([]);
   const [lightboxPhoto, setLightboxPhoto] = useState(null);
   const stageRef = useRef(null);
@@ -1560,17 +1571,26 @@ function SeriesDetail() {
   };
 
   const handleSaveLayout = async () => {
+    if (!currentSeries || isSavingLayout) return;
+
+    const cleanContent = prepareContent(draftContent, true);
+    // UX ottimistica: torna subito alla view, salva in background.
+    setDraftContent(cleanContent);
+    setLayoutMode(false);
+    setIsSavingLayout(true);
+
     try {
-      const cleanContent = prepareContent(draftContent, true);
       await updateSeries(currentSeries.id, {
-        ...currentSeries,
         content: cleanContent,
       });
-      setDraftContent(cleanContent);
       toast.success('Layout serie salvato ✅');
-      setLayoutMode(false);
     } catch (err) {
+      // rollback in caso di errore
+      setLayoutMode(true);
+      setDraftContent(prepareContent(currentSeries.content || [], true));
       toast.error(`Errore salvataggio layout: ${err?.message || 'unknown'}`);
+    } finally {
+      setIsSavingLayout(false);
     }
   };
 
@@ -1933,6 +1953,7 @@ function SeriesDetail() {
               <AdminBarButton
                 type="button"
                 onClick={() => {
+                  if (isSavingLayout) return;
                   if (!layoutMode) {
                     setSelectedId(null);
                     setQuickAddOpen(false);
@@ -1953,17 +1974,19 @@ function SeriesDetail() {
                   <PrimaryAdminButton
                     type="button"
                     onClick={handleSaveLayout}
+                    disabled={isSavingLayout}
                     whileHover={{ scale: 1.03 }}
                     whileTap={{ scale: 0.97 }}
                   >
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                      <Save size={16} /> Salva layout
+                      <Save size={16} /> {isSavingLayout ? 'Salvataggio...' : 'Salva layout'}
                     </span>
                   </PrimaryAdminButton>
 
                   <AdminBarButton
                     type="button"
                     onClick={handleResetLayout}
+                    disabled={isSavingLayout}
                     whileHover={{ scale: 1.03 }}
                     whileTap={{ scale: 0.97 }}
                   >
