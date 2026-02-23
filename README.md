@@ -1,13 +1,13 @@
 # Portfolio Fotografico
 
-Portfolio fotografico full-stack con frontend React e backend Express.
+Applicazione full-stack per portfolio fotografico con frontend React, API Express su Vercel e storage Cloudflare R2.
 
-## Panoramica
+## Stack
 
 - Frontend: React (`frontend/`)
 - Backend API: Express (`backend/`)
-- Deploy: Vercel
-- Storage produzione: Cloudflare R2 (immagini + metadata)
+- Deploy: Vercel (static frontend + serverless API)
+- Storage produzione: Cloudflare R2 (immagini + metadati JSON)
 - Storage locale dev: filesystem (`backend/storage/`)
 
 ## Struttura progetto
@@ -15,24 +15,32 @@ Portfolio fotografico full-stack con frontend React e backend Express.
 ```text
 .
 ├── api/
-│   └── index.js                 # Entrypoint serverless Vercel
+│   └── index.js                    # Entrypoint serverless Vercel (usa backend/src/app.js)
 ├── backend/
-│   ├── data/                    # JSON di riferimento (seed)
-│   │   ├── photos.json
-│   │   └── series.json
+│   ├── data/                       # Seed JSON locali (photos.json, series.json)
 │   ├── scripts/
 │   │   ├── sync-uploads-to-r2.js
 │   │   └── sync-metadata-to-r2.js
 │   ├── src/
 │   │   ├── app.js
-│   │   ├── config/storage.js
+│   │   ├── server.js               # Avvio locale
+│   │   ├── config/
+│   │   │   ├── defaults.js         # Default tecnici versionati
+│   │   │   ├── env.js              # Parsing/validazione env
+│   │   │   └── storage.js
+│   │   ├── middleware/
+│   │   │   └── auth.js
 │   │   ├── routes/
+│   │   │   ├── auth.js
 │   │   │   ├── photos.js
 │   │   │   └── series.js
-│   │   └── services/
-│   │       ├── r2Storage.js
-│   │       └── metadataStorage.js
-│   └── storage/                 # Runtime locale (ignorato da git)
+│   │   ├── services/
+│   │   │   ├── metadataStorage.js
+│   │   │   └── r2Storage.js
+│   │   └── utils/
+│   │       ├── ids.js
+│   │       └── inputSanitizers.js
+│   └── storage/                    # Runtime locale (ignorato da git)
 │       ├── data/
 │       └── uploads/
 ├── frontend/
@@ -44,12 +52,10 @@ Portfolio fotografico full-stack con frontend React e backend Express.
 
 ## Requisiti
 
-- Node.js >= 16
-- npm >= 8
+- Node.js 18+
+- npm 8+
 
-Consigliato: Node.js 18+.
-
-## Setup locale
+## Avvio locale
 
 1. Installa dipendenze:
 
@@ -57,7 +63,7 @@ Consigliato: Node.js 18+.
 npm run setup
 ```
 
-2. Crea i file env:
+2. Crea file env:
 
 ```bash
 cp backend/.env.example backend/.env
@@ -72,94 +78,95 @@ npm start
 
 Servizi locali:
 - Frontend: `http://localhost:3000`
-- Backend API: `http://localhost:5001`
+- API backend: `http://localhost:5001`
 
-## Variabili ambiente
+## Configurazione ambiente
 
 ### Backend (`backend/.env`)
 
-Minimo per sviluppo locale senza R2:
+Variabili essenziali:
 
 ```env
 PORT=5001
 NODE_ENV=development
 CORS_ORIGINS=http://localhost:3000,http://localhost:3001
-# opzionale: protegge le API di scrittura
-API_WRITE_TOKEN=<token-lungo-casuale>
-```
 
-Per usare R2 (obbligatorio in produzione):
+API_WRITE_TOKEN=change_me_with_a_long_random_token
+API_SESSION_SECRET=change_me_with_another_long_random_secret
+API_SESSION_TTL_MS=604800000
+API_AUTH_RATE_LIMIT_WINDOW_MS=600000
+API_AUTH_RATE_LIMIT_MAX_ATTEMPTS=10
 
-```env
-R2_ACCOUNT_ID=...
-R2_ACCESS_KEY_ID=...
-R2_SECRET_ACCESS_KEY=...
-R2_BUCKET=...
-R2_PUBLIC_URL=https://<your-public-r2-url>
-# opzionali
-R2_ENDPOINT=https://<accountid>.r2.cloudflarestorage.com
+R2_ACCOUNT_ID=your_cloudflare_account_id
+R2_ACCESS_KEY_ID=your_r2_access_key_id
+R2_SECRET_ACCESS_KEY=your_r2_secret_access_key
+R2_BUCKET=portfolio-images
+R2_PUBLIC_URL=https://uploads.yourdomain.com
+R2_ENDPOINT=
 R2_METADATA_PREFIX=data
 ```
+
+Note:
+- In produzione il backend è **R2-only**: senza credenziali R2 valide non parte.
+- I default tecnici (body limits, rate limit globale/write, upload defaults) sono in `backend/src/config/defaults.js`.
+- Le env vengono parse/validate in `backend/src/config/env.js`.
 
 ### Frontend (`frontend/.env`)
 
 ```env
 REACT_APP_API_URL=http://localhost:5001/api
+REACT_APP_IMAGES_URL=http://localhost:5001
+REACT_APP_NAME=Portfolio Fotografico
+REACT_APP_VERSION=1.0.0
 ```
 
-## Storage: regole operative
+Note:
+- In produzione su Vercel puoi lasciare non valorizzate `REACT_APP_API_URL` e `REACT_APP_IMAGES_URL` (fallback interni: `/api` e `''`).
+- Non mettere segreti in variabili `REACT_APP_*`.
 
-- In `NODE_ENV=production`: backend **R2-only** (fallback locale disabilitato).
-- In sviluppo: se R2 non è configurato, usa filesystem locale (`backend/storage`).
-- I path delle immagini nei metadata restano in forma `/uploads/...` per compatibilità frontend.
-- Upload immagini in produzione: diretto Browser -> R2 tramite URL firmata (`POST /api/photos/upload-url`), poi salvataggio metadata su `/api/photos`.
+## Architettura storage
 
-## Script principali
+### Produzione
 
-### Root
+- Immagini: upload diretto Browser -> R2 tramite URL firmata (`POST /api/photos/upload-url`)
+- Metadati (`photos.json`, `series.json`): su R2
+- URL pubbliche asset servite da `R2_PUBLIC_URL` (es. `https://uploads.kevinmuka.dev`)
 
-- `npm run setup` installa dipendenze backend + frontend
-- `npm start` avvia backend + frontend in parallelo
-- `npm run build` build frontend produzione
-- `npm run vercel-build` build usata da Vercel
-- `npm run test` test non interattivi (frontend) + placeholder backend
-- `npm run lint` lint frontend + placeholder backend
-- `npm run clean` rimuove `node_modules` backend/frontend
+### Sviluppo locale
 
-### Backend
-
-- `npm run dev` avvio backend con nodemon
-- `npm run sync:r2` sincronizza `backend/storage/uploads` (con fallback legacy `backend/uploads`) su R2
-- `npm run sync:r2:metadata` sincronizza metadata JSON su R2
+- Se R2 non è configurato, usa filesystem locale (`backend/storage`).
+- Seed iniziali letti da `backend/data/`.
 
 ## Deploy su Vercel
 
-### Architettura deploy
+### 1) Variabili su Vercel (Project Settings -> Environment Variables)
 
-- Frontend statico: output `frontend/build`
-- API serverless: `api/index.js` esporta `backend/src/app`
-- Rewrites (`vercel.json`):
-  - `/api/*` -> `/api`
-  - `/uploads/*` -> `/api`
-  - resto -> `/index.html`
+Minimo consigliato in Production:
 
-### Checklist deploy
+- `API_WRITE_TOKEN`
+- `API_SESSION_SECRET`
+- `API_SESSION_TTL_MS` (se vuoi override)
+- `API_AUTH_RATE_LIMIT_WINDOW_MS`
+- `API_AUTH_RATE_LIMIT_MAX_ATTEMPTS`
+- `CORS_ORIGINS` (es. `https://kevinmuka.dev,https://www.kevinmuka.dev`)
+- `R2_ACCOUNT_ID`
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+- `R2_BUCKET`
+- `R2_PUBLIC_URL` (es. `https://uploads.kevinmuka.dev`)
+- opzionali: `R2_ENDPOINT`, `R2_METADATA_PREFIX`
 
-1. Imposta env su Vercel (Project Settings -> Environment Variables):
-   - `NODE_ENV=production`
-   - `API_WRITE_TOKEN`
-   - `API_SESSION_SECRET` (consigliato)
-   - `R2_ACCOUNT_ID`
-   - `R2_ACCESS_KEY_ID`
-   - `R2_SECRET_ACCESS_KEY`
-   - `R2_BUCKET`
-   - `R2_PUBLIC_URL` (consigliato)
-   - opzionali: `R2_ENDPOINT`, `R2_METADATA_PREFIX`, `CORS_ORIGINS`
-     - se `CORS_ORIGINS` non e` impostata, il backend accetta origin in fallback (consigliato impostarla comunque in produzione)
+Non necessario su Vercel:
+- `PORT`
+- `NODE_ENV` (gestita da Vercel)
 
-2. Esegui deploy.
+### 2) Build/Deploy
 
-3. (Prima migrazione) sincronizza dati esistenti su R2 da locale:
+Vercel usa:
+- build frontend (`npm run vercel-build`)
+- API serverless da `api/index.js`
+
+### 3) Prima migrazione dati su R2 (se hai asset locali)
 
 ```bash
 cd backend
@@ -167,7 +174,34 @@ npm run sync:r2
 npm run sync:r2:metadata
 ```
 
-## API essenziali
+## Dominio custom consigliato
+
+Setup tipico:
+- sito: `kevinmuka.dev` (+ redirect da `www`)
+- asset R2: `uploads.kevinmuka.dev`
+
+Checklist:
+- DNS dominio principale puntato a Vercel
+- dominio R2 custom attivo sul bucket
+- `R2_PUBLIC_URL` aggiornato al dominio custom
+- CORS R2 con origins del sito (`https://kevinmuka.dev`, `https://www.kevinmuka.dev`)
+- `Public Development URL` R2 disattivato in produzione
+
+## Sicurezza API
+
+- Letture (`GET`) pubbliche.
+- Scritture (`POST/PUT/DELETE`) protette da auth admin.
+- Sessione admin via cookie `HttpOnly`:
+  - login: `POST /api/auth/session` con `{ token }`
+  - stato: `GET /api/auth/session`
+  - logout: `DELETE /api/auth/session`
+- Supporto header token per uso server-to-server:
+  - `Authorization: Bearer <API_WRITE_TOKEN>`
+  - `x-api-key: <API_WRITE_TOKEN>`
+- Rate limit dedicato sul login auth (`/api/auth/session`).
+- Sanitizzazione payload foto/serie lato backend.
+
+## API principali
 
 - `GET /api/health`
 - `GET /api/auth/session`
@@ -175,52 +209,50 @@ npm run sync:r2:metadata
 - `DELETE /api/auth/session`
 - `GET /api/photos`
 - `GET /api/photos/:id`
+- `POST /api/photos/upload-url`
 - `POST /api/photos`
 - `PUT /api/photos/:id`
 - `DELETE /api/photos/:id`
-- `GET /api/series`
+- `GET /api/series?all=false`
 - `GET /api/series/:identifier`
 - `POST /api/series`
 - `PUT /api/series/:id`
 - `DELETE /api/series/:id`
 
-## Autenticazione API (scrittura)
+## Script utili
 
-- `GET` restano pubbliche.
-- `POST/PUT/DELETE` richiedono autenticazione admin.
-- Flusso frontend consigliato: sessione cookie `HttpOnly`.
-  - login: `POST /api/auth/session` con body `{ token }`
-  - stato: `GET /api/auth/session`
-  - logout: `DELETE /api/auth/session`
-- Header supportati:
-  - `Authorization: Bearer <API_WRITE_TOKEN>`
-  - `x-api-key: <API_WRITE_TOKEN>`
-- In produzione `API_WRITE_TOKEN` è obbligatoria.
-- Login sessione (`POST /api/auth/session`) protetto da rate limit dedicato:
-  - `API_AUTH_RATE_LIMIT_WINDOW_MS` (default 10 min)
-  - `API_AUTH_RATE_LIMIT_MAX_ATTEMPTS` (default 10)
-- Frontend:
-  - abilita admin mode con `?admin=1`
-  - usa il pulsante `API: OFF/ON` in header per aprire/chiudere la sessione admin
+### Root
+
+- `npm run setup` installa dipendenze backend/frontend
+- `npm start` avvia backend + frontend in parallelo
+- `npm run build` build frontend
+- `npm run vercel-build` build usata da Vercel
+- `npm run clean` pulizia `node_modules`
+
+### Backend
+
+- `npm run dev` avvio backend con nodemon
+- `npm run sync:r2` sync upload locali -> R2
+- `npm run sync:r2:metadata` sync metadati locali -> R2
 
 ## Troubleshooting rapido
 
-### Immagini non visibili in produzione
+### `EADDRINUSE` su porta backend locale
 
-- Verifica `R2_PUBLIC_URL`
-- Verifica bucket pubblico / policy accesso
-- Verifica presenza oggetti su R2
-- Verifica CORS del bucket R2 per upload browser (metodo `PUT` dal dominio del frontend)
+Chiudi il processo che usa la porta (`5001`) e riavvia.
 
-### Backend non parte in produzione
+### Upload fallisce con CORS
 
-- Controlla variabili R2: in produzione il backend è R2-only
+Controlla CORS policy bucket R2 (`PUT` + origins del sito).
 
-### Test frontend resta in watch
+### API in produzione non restituisce immagini
 
-- Usa `npm run test` da root (già configurato con `CI=true` e `--watchAll=false`)
+Verifica:
+- `R2_PUBLIC_URL`
+- dominio custom R2 attivo
+- presenza oggetti nel bucket
 
-## Note
+## Note operative
 
-- `backend/storage/` è runtime locale e non va versionata.
-- `backend/data/` contiene i JSON di riferimento del progetto.
+- `backend/storage/` è runtime locale e non va versionato.
+- Ruota periodicamente i segreti (`API_WRITE_TOKEN`, `API_SESSION_SECRET`, chiavi R2).

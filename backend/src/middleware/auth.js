@@ -1,41 +1,34 @@
 const crypto = require('crypto');
+const { env } = require('../config/env');
 
 const DEFAULT_SESSION_COOKIE_NAME = 'pf_admin_session';
-const DEFAULT_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 giorni
+const DEFAULT_SESSION_TTL_MS = env.apiSessionTtlMs;
 
 function isProduction() {
-    return process.env.NODE_ENV === 'production';
-}
-
-function parsePositiveInt(value, fallback) {
-    const parsed = Number.parseInt(String(value || ''), 10);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+    return env.isProduction;
 }
 
 function getConfiguredWriteToken() {
-    const token = process.env.API_WRITE_TOKEN;
-    return typeof token === 'string' ? token.trim() : '';
+    return env.apiWriteToken;
 }
 
 function getSessionSecret() {
-    const explicitSecret = typeof process.env.API_SESSION_SECRET === 'string'
-        ? process.env.API_SESSION_SECRET.trim()
-        : '';
+    const explicitSecret = env.apiSessionSecret;
 
     if (explicitSecret) return explicitSecret;
     return getConfiguredWriteToken();
 }
 
 function getSessionCookieName() {
-    if (process.env.API_SESSION_COOKIE_NAME) {
-        return process.env.API_SESSION_COOKIE_NAME;
+    if (env.apiSessionCookieName) {
+        return env.apiSessionCookieName;
     }
     // In produzione preferisci il prefisso __Host- per cookie host-only più robusti.
     return isProduction() ? `__Host-${DEFAULT_SESSION_COOKIE_NAME}` : DEFAULT_SESSION_COOKIE_NAME;
 }
 
 function getSessionTtlMs() {
-    return parsePositiveInt(process.env.API_SESSION_TTL_MS, DEFAULT_SESSION_TTL_MS);
+    return DEFAULT_SESSION_TTL_MS;
 }
 
 function getSessionCookieOptions() {

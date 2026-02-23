@@ -1,13 +1,14 @@
 const fs = require('fs').promises;
 
 const { ensureDataFile } = require('../config/storage');
+const { env } = require('../config/env');
 const { canUseLocalFallback, getUploadObject, isR2Enabled, putUploadObject } = require('./r2Storage');
 
 const DEFAULT_PREFIX = 'data';
 
 function getMetadataObjectPath(filename) {
     const safeFilename = String(filename || '').replace(/^\/+/, '');
-    const prefix = String(process.env.R2_METADATA_PREFIX || DEFAULT_PREFIX).replace(/^\/+|\/+$/g, '');
+    const prefix = String(env.r2MetadataPrefix || DEFAULT_PREFIX).replace(/^\/+|\/+$/g, '');
     return `/${prefix}/${safeFilename}`;
 }
 

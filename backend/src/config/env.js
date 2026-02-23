@@ -1,0 +1,90 @@
+const dotenv = require('dotenv');
+const DEFAULTS = require('./defaults');
+
+dotenv.config();
+
+function asString(value, fallback = '') {
+    if (value === undefined || value === null) return fallback;
+    return String(value).trim();
+}
+
+function asInt(value, fallback) {
+    const parsed = Number.parseInt(String(value ?? ''), 10);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function asPositiveInt(value, fallback) {
+    const parsed = asInt(value, fallback);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function asCsvList(value) {
+    return asString(value)
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+}
+
+const nodeEnv = asString(process.env.NODE_ENV, 'development');
+const isProduction = nodeEnv === 'production';
+const isDevelopment = nodeEnv !== 'production';
+
+const env = {
+    nodeEnv,
+    isProduction,
+    isDevelopment,
+    port: asPositiveInt(process.env.PORT, DEFAULTS.port),
+    vercel: Boolean(process.env.VERCEL),
+    vercelUrl: asString(process.env.VERCEL_URL),
+
+    corsOrigins: asCsvList(process.env.CORS_ORIGINS),
+
+    apiWriteToken: asString(process.env.API_WRITE_TOKEN),
+    apiSessionSecret: asString(process.env.API_SESSION_SECRET),
+    apiSessionCookieName: asString(process.env.API_SESSION_COOKIE_NAME),
+    apiSessionTtlMs: asPositiveInt(process.env.API_SESSION_TTL_MS, DEFAULTS.apiSessionTtlMs),
+    apiAuthRateLimitWindowMs: asPositiveInt(process.env.API_AUTH_RATE_LIMIT_WINDOW_MS, DEFAULTS.apiAuthRateLimitWindowMs),
+    apiAuthRateLimitMaxAttempts: asPositiveInt(process.env.API_AUTH_RATE_LIMIT_MAX_ATTEMPTS, DEFAULTS.apiAuthRateLimitMaxAttempts),
+
+    r2AccountId: asString(process.env.R2_ACCOUNT_ID),
+    r2AccessKeyId: asString(process.env.R2_ACCESS_KEY_ID),
+    r2SecretAccessKey: asString(process.env.R2_SECRET_ACCESS_KEY),
+    r2Bucket: asString(process.env.R2_BUCKET),
+    r2PublicUrl: asString(process.env.R2_PUBLIC_URL).replace(/\/+$/, ''),
+    r2Endpoint: asString(process.env.R2_ENDPOINT),
+    r2MetadataPrefix: asString(process.env.R2_METADATA_PREFIX, DEFAULTS.r2MetadataPrefix).replace(/^\/+|\/+$/g, '')
+};
+
+function validateEnv() {
+    const errors = [];
+    const warnings = [];
+
+    if (env.isProduction) {
+        if (!env.apiWriteToken) {
+            errors.push('API_WRITE_TOKEN non impostata in produzione.');
+        }
+        if (!env.r2AccountId || !env.r2AccessKeyId || !env.r2SecretAccessKey || !env.r2Bucket) {
+            errors.push('Configurazione R2 incompleta in produzione (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET).');
+        }
+        if (!env.corsOrigins.length) {
+            warnings.push('CORS_ORIGINS non impostata in produzione: verrà usato fallback permissivo controllato.');
+        }
+    }
+
+    if (env.apiWriteToken && !env.apiSessionSecret) {
+        warnings.push('API_SESSION_SECRET non impostata: verrà usato API_WRITE_TOKEN come fallback.');
+    }
+
+    if (warnings.length) {
+        warnings.forEach((message) => console.warn(`[env] ${message}`));
+    }
+
+    if (errors.length) {
+        throw new Error(`[env] Configurazione non valida:\n- ${errors.join('\n- ')}`);
+    }
+}
+
+module.exports = {
+    env,
+    validateEnv
+};

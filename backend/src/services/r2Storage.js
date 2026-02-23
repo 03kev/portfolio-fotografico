@@ -1,23 +1,16 @@
 const { Readable } = require('stream');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-
-const REQUIRED_ENV_VARS = [
-    'R2_ACCOUNT_ID',
-    'R2_ACCESS_KEY_ID',
-    'R2_SECRET_ACCESS_KEY',
-    'R2_BUCKET'
-];
+const { env } = require('../config/env');
 
 let s3ClientInstance = null;
 let s3Commands = null;
 
 function hasAllR2EnvVars() {
-    return REQUIRED_ENV_VARS.every((key) => Boolean(process.env[key]));
+    return Boolean(env.r2AccountId && env.r2AccessKeyId && env.r2SecretAccessKey && env.r2Bucket);
 }
 
 function normalizePublicBaseUrl() {
-    const value = process.env.R2_PUBLIC_URL || '';
-    return value.replace(/\/+$/, '');
+    return env.r2PublicUrl;
 }
 
 function isR2Enabled() {
@@ -25,7 +18,7 @@ function isR2Enabled() {
 }
 
 function isProductionEnvironment() {
-    return process.env.NODE_ENV === 'production';
+    return env.isProduction;
 }
 
 function canUseLocalFallback() {
@@ -53,11 +46,11 @@ function getR2Client() {
         s3ClientInstance = new S3Client({
             region: 'auto',
             endpoint:
-                process.env.R2_ENDPOINT ||
-                `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+                env.r2Endpoint ||
+                `https://${env.r2AccountId}.r2.cloudflarestorage.com`,
             credentials: {
-                accessKeyId: process.env.R2_ACCESS_KEY_ID,
-                secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
+                accessKeyId: env.r2AccessKeyId,
+                secretAccessKey: env.r2SecretAccessKey
             }
         });
     }
@@ -126,7 +119,7 @@ async function putUploadObject(uploadPath, buffer, options = {}) {
 
     await client.send(
         new PutObjectCommand({
-            Bucket: process.env.R2_BUCKET,
+            Bucket: env.r2Bucket,
             Key: key,
             Body: buffer,
             ContentType: options.contentType || 'application/octet-stream',
@@ -154,7 +147,7 @@ async function createUploadPresignedPutUrl(uploadPath, options = {}) {
     const expiresInSeconds = Number(options.expiresInSeconds) > 0 ? Number(options.expiresInSeconds) : 300;
 
     const command = new PutObjectCommand({
-        Bucket: process.env.R2_BUCKET,
+        Bucket: env.r2Bucket,
         Key: key,
         ContentType: options.contentType || 'application/octet-stream',
         CacheControl: options.cacheControl || 'public, max-age=31536000, immutable'
@@ -185,7 +178,7 @@ async function deleteUploadObject(uploadPath) {
 
     await client.send(
         new DeleteObjectCommand({
-            Bucket: process.env.R2_BUCKET,
+            Bucket: env.r2Bucket,
             Key: key
         })
     );
@@ -205,7 +198,7 @@ async function getUploadObject(uploadPath) {
     try {
         const response = await client.send(
             new GetObjectCommand({
-                Bucket: process.env.R2_BUCKET,
+                Bucket: env.r2Bucket,
                 Key: key
             })
         );

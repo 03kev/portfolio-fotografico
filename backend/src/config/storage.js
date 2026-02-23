@@ -1,9 +1,10 @@
 const fs = require('fs').promises;
 const path = require('path');
+const { env } = require('./env');
 
 const BACKEND_ROOT = path.join(__dirname, '..', '..');
 const SOURCE_DATA_DIR = path.join(BACKEND_ROOT, 'data');
-const runtimeOnVercel = Boolean(process.env.VERCEL);
+const runtimeOnVercel = env.vercel;
 const RUNTIME_ROOT = runtimeOnVercel ? '/tmp/portfolio-fotografico' : BACKEND_ROOT;
 const STORAGE_ROOT = path.join(RUNTIME_ROOT, 'storage');
 const DATA_DIR = path.join(STORAGE_ROOT, 'data');

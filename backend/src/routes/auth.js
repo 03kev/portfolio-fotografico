@@ -1,6 +1,6 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
-const { parsePositiveInt } = require('../utils/env');
+const { env } = require('../config/env');
 const {
     clearSessionCookie,
     hasWriteTokenConfigured,
@@ -11,8 +11,8 @@ const {
 
 const router = express.Router();
 
-const authWindowMs = parsePositiveInt(process.env.API_AUTH_RATE_LIMIT_WINDOW_MS, 10 * 60 * 1000);
-const authMaxAttempts = parsePositiveInt(process.env.API_AUTH_RATE_LIMIT_MAX_ATTEMPTS, 10);
+const authWindowMs = env.apiAuthRateLimitWindowMs;
+const authMaxAttempts = env.apiAuthRateLimitMaxAttempts;
 const authLimiter = rateLimit({
     windowMs: authWindowMs,
     max: authMaxAttempts,

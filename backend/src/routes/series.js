@@ -3,6 +3,7 @@ const router = express.Router();
 const Series = require('../models/Series');
 const { readMetadataFile, writeMetadataFile } = require('../services/metadataStorage');
 const { parseNumericIdOrThrow } = require('../utils/ids');
+const { sanitizeSeriesPayload } = require('../utils/inputSanitizers');
 const { protectWriteMethods } = require('../middleware/auth');
 
 router.use(protectWriteMethods);
@@ -72,7 +73,7 @@ router.get('/:identifier', async (req, res) => {
 // POST crea nuova serie
 router.post('/', async (req, res) => {
     try {
-        const seriesData = req.body;
+        const seriesData = sanitizeSeriesPayload(req.body, { partial: false });
 
         // Validazione
         Series.validate(seriesData);
@@ -108,7 +109,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const updateData = req.body;
+        const updateData = sanitizeSeriesPayload(req.body, { partial: true });
 
         const allSeries = await readSeries();
         const index = allSeries.findIndex(s => String(s.id) === id);

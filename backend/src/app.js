@@ -3,13 +3,13 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { pipeline } = require('stream/promises');
-require('dotenv').config();
 
 const authRoutes = require('./routes/auth');
 const photoRoutes = require('./routes/photos');
 const seriesRoutes = require('./routes/series');
 const { UPLOADS_DIR } = require('./config/storage');
-const { parsePositiveInt } = require('./utils/env');
+const { env, validateEnv } = require('./config/env');
+const DEFAULTS = require('./config/defaults');
 const {
     canUseLocalFallback,
     ensureR2ConfiguredInProduction,
@@ -18,6 +18,7 @@ const {
 } = require('./services/r2Storage');
 
 const app = express();
+validateEnv();
 ensureR2ConfiguredInProduction();
 app.set('trust proxy', 1);
 
@@ -38,14 +39,26 @@ app.use(
 );
 
 // Rate limiting
-const rateLimitWindowMs = parsePositiveInt(process.env.RATE_LIMIT_WINDOW_MS, 10 * 60 * 1000);
-const rateLimitMaxRequests = parsePositiveInt(process.env.RATE_LIMIT_MAX_REQUESTS, 500);
+const rateLimitWindowMs = DEFAULTS.rateLimitWindowMs;
+const rateLimitMaxRequests = DEFAULTS.rateLimitMaxRequests;
 
 const limiter = rateLimit({
     windowMs: rateLimitWindowMs,
     max: rateLimitMaxRequests
 });
 app.use(limiter);
+
+const writeLimiter = rateLimit({
+    windowMs: DEFAULTS.writeRateLimitWindowMs,
+    max: DEFAULTS.writeRateLimitMaxRequests,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method),
+    message: {
+        success: false,
+        message: 'Troppi tentativi di modifica. Riprova piu` tardi.'
+    }
+});
 
 function normalizeOriginValue(value) {
     return String(value || '')
@@ -62,12 +75,11 @@ function getOriginHost(origin) {
     }
 }
 
-const configuredOrigins = (process.env.CORS_ORIGINS || '')
-    .split(',')
+const configuredOrigins = env.corsOrigins
     .map((origin) => normalizeOriginValue(origin))
     .filter(Boolean);
 
-if (process.env.NODE_ENV === 'production' && configuredOrigins.length === 0) {
+if (env.isProduction && configuredOrigins.length === 0) {
     console.warn('CORS_ORIGINS non configurata: verranno accettate solo origin consentite automaticamente (es. VERCEL_URL).');
 }
 
@@ -78,7 +90,7 @@ const corsOptions = {
             return callback(null, true);
         }
 
-        if (process.env.NODE_ENV !== 'production') {
+        if (!env.isProduction) {
             const devOrigins = ['http://localhost:3000', 'http://localhost:3001'];
             return callback(null, devOrigins.includes(origin));
         }
@@ -91,8 +103,8 @@ const corsOptions = {
 
         const normalizedOrigin = normalizeOriginValue(origin);
         const originHost = getOriginHost(normalizedOrigin);
-        const vercelOrigin = process.env.VERCEL_URL
-            ? normalizeOriginValue(`https://${process.env.VERCEL_URL}`)
+        const vercelOrigin = env.vercelUrl
+            ? normalizeOriginValue(`https://${env.vercelUrl}`)
             : null;
 
         if (vercelOrigin && normalizedOrigin === vercelOrigin) {
@@ -125,8 +137,8 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
 // Body parsing
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: DEFAULTS.jsonBodyLimit }));
+app.use(express.urlencoded({ extended: true, limit: DEFAULTS.urlencodedBodyLimit }));
 
 async function serveUploadsFromR2(req, res, next) {
     if (!isR2Enabled()) {
@@ -183,7 +195,9 @@ app.use('/uploads', ...uploadsMiddlewares);
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/photos', writeLimiter);
 app.use('/api/photos', photoRoutes);
+app.use('/api/series', writeLimiter);
 app.use('/api/series', seriesRoutes);
 
 // Health check
@@ -191,7 +205,7 @@ app.get('/api/health', (req, res) => {
     res.json({
         status: 'OK',
         timestamp: new Date().toISOString(),
-        env: process.env.NODE_ENV || 'development'
+        env: env.nodeEnv
     });
 });
 
@@ -209,7 +223,7 @@ app.use((error, req, res, next) => {
 
     res.status(error.status || 500).json({
         message: error.message || 'Errore interno del server',
-        ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
+        ...(env.isDevelopment && { stack: error.stack })
     });
 });
 

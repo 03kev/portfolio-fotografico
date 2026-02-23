@@ -17,15 +17,17 @@ const {
     putUploadObject
 } = require('../services/r2Storage');
 const { readMetadataFile, writeMetadataFile } = require('../services/metadataStorage');
-const { parsePositiveInt } = require('../utils/env');
+const { env } = require('../config/env');
+const DEFAULTS = require('../config/defaults');
 const { parseNumericIdOrThrow } = require('../utils/ids');
+const { sanitizePhotoPayload } = require('../utils/inputSanitizers');
 const { protectWriteMethods } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(protectWriteMethods);
 
 function normalizePublicBaseUrl() {
-    return String(process.env.R2_PUBLIC_URL || '').trim().replace(/\/+$/, '');
+    return env.r2PublicUrl;
 }
 
 function buildPublicAssetUrl(uploadPath) {
@@ -55,11 +57,7 @@ function presentPhoto(photo) {
 }
 
 function parseAllowedUploadTypes() {
-    const defaultValue = 'image/*';
-    return String(process.env.UPLOAD_ALLOWED_TYPES || defaultValue)
-        .split(',')
-        .map((value) => value.trim())
-        .filter(Boolean);
+    return DEFAULTS.uploadAllowedTypes;
 }
 
 function isAllowedMimeType(mimetype, allowedTypes) {
@@ -135,7 +133,7 @@ const writeSeriesDB = async (series) => {
 
 // Configurazione multer per upload immagini
 const storage = multer.memoryStorage();
-const uploadMaxSize = parsePositiveInt(process.env.UPLOAD_MAX_SIZE, 50 * 1024 * 1024);
+const uploadMaxSize = DEFAULTS.uploadMaxSize;
 const allowedUploadTypes = parseAllowedUploadTypes();
 const upload = multer({
     storage,
@@ -306,7 +304,8 @@ router.post('/upload-url', async (req, res) => {
 // POST - Upload nuova foto
 router.post('/', upload.single('image'), async (req, res) => {
     try {
-        const { title, location, lat, lng, description, date, camera, lens, settings, tags } = req.body;
+        const { lat, lng } = req.body;
+        const sanitized = sanitizePhotoPayload(req.body, { partial: false });
         const parsedLat = parseCoordinate(lat, 'Latitudine');
         const parsedLng = parseCoordinate(lng, 'Longitudine');
         const timestamp = Date.now();
@@ -364,37 +363,19 @@ router.post('/', upload.single('image'), async (req, res) => {
         // Crea oggetto foto con valori di default
         const newPhoto = {
             id: timestamp, // Usa timestamp come ID temporaneo
-            title: title || 'Foto senza titolo',
-            location: location || 'Posizione sconosciuta',
+            title: sanitized.title,
+            location: sanitized.location,
             lat: parsedLat ?? 0,
             lng: parsedLng ?? 0,
             image: imagePath,
             thumbnail: thumbnailPath,
             url: thumbnailPath, // Aggiungi campo url
-            description: description || '',
-            date: date || new Date().toISOString(),
-            camera: camera || '',
-            lens: lens || '',
-            settings: (() => {
-                try {
-                    if (typeof settings === 'string') {
-                        const parsed = JSON.parse(settings);
-                        return parsed;
-                    }
-                    return settings || {};
-                } catch (e) {
-                    console.warn('Errore nel parsing settings durante il salvataggio:', e);
-                    return {};
-                }
-            })(),
-            tags: (() => {
-                try {
-                    const parsedTags = typeof tags === 'string' ? JSON.parse(tags) : tags;
-                    return Array.isArray(parsedTags) ? parsedTags : [];
-                } catch (e) {
-                    return [];
-                }
-            })()
+            description: sanitized.description,
+            date: sanitized.date,
+            camera: sanitized.camera,
+            lens: sanitized.lens,
+            settings: sanitized.settings,
+            tags: sanitized.tags
         };
         
         // Salva nel database JSON
@@ -438,7 +419,8 @@ router.put('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const photoId = parseNumericIdOrThrow(id, 'ID foto');
-        const { title, location, lat, lng, description, date, camera, lens, settings, tags } = req.body;
+        const { lat, lng } = req.body;
+        const sanitized = sanitizePhotoPayload(req.body, { partial: true });
         
         const photos = await readPhotosDB();
         const photoIndex = photos.findIndex((p) => p.id === photoId);
@@ -456,16 +438,9 @@ router.put('/:id', async (req, res) => {
 
         const updatedPhoto = {
             ...photos[photoIndex],
-            title: title || photos[photoIndex].title,
-            location: location || photos[photoIndex].location,
+            ...sanitized,
             lat: nextLat ?? photos[photoIndex].lat,
             lng: nextLng ?? photos[photoIndex].lng,
-            description: description !== undefined ? description : photos[photoIndex].description,
-            date: date || photos[photoIndex].date,
-            camera: camera !== undefined ? camera : photos[photoIndex].camera,
-            lens: lens !== undefined ? lens : photos[photoIndex].lens,
-            settings: settings || photos[photoIndex].settings,
-            tags: tags || photos[photoIndex].tags
         };
         
         photos[photoIndex] = updatedPhoto;
