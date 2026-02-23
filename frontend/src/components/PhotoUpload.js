@@ -7,6 +7,63 @@ import { AnimatePresence } from 'framer-motion';
 import exifr from 'exifr';  // Libreria per leggere metadati EXIF [oai_citation:1‡stackoverflow.com](https://stackoverflow.com/questions/59580568/read-exif-data-in-react#:~:text=there%27s%20a%20simple%20library%20for,that%20called%20exifr)
 import './PhotoUpload.css';
 
+async function createThumbnailBlob(file, width = 480, height = 360) {
+    let drawable = null;
+    let objectUrl = null;
+
+    try {
+        // Usa orientamento EXIF come nel vecchio flusso backend rotate().
+        if (typeof createImageBitmap === 'function') {
+            try {
+                drawable = await createImageBitmap(file, { imageOrientation: 'from-image' });
+            } catch {
+                drawable = null;
+            }
+        }
+
+        if (!drawable) {
+            drawable = await new Promise((resolve, reject) => {
+                const img = new Image();
+                objectUrl = URL.createObjectURL(file);
+                img.onload = () => resolve(img);
+                img.onerror = () => reject(new Error('Impossibile generare thumbnail'));
+                img.src = objectUrl;
+            });
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            throw new Error('Canvas context non disponibile');
+        }
+
+        // Cover crop centrato come sharp.resize(..., { fit: 'cover' }).
+        const scale = Math.max(width / drawable.width, height / drawable.height);
+        const drawW = drawable.width * scale;
+        const drawH = drawable.height * scale;
+        const offsetX = (width - drawW) / 2;
+        const offsetY = (height - drawH) / 2;
+        ctx.drawImage(drawable, offsetX, offsetY, drawW, drawH);
+
+        return await new Promise((resolve, reject) => {
+            canvas.toBlob(
+                (blob) => (blob ? resolve(blob) : reject(new Error('Generazione thumbnail fallita'))),
+                'image/webp',
+                0.88
+            );
+        });
+    } finally {
+        if (objectUrl) {
+            URL.revokeObjectURL(objectUrl);
+        }
+        if (drawable && typeof drawable.close === 'function') {
+            drawable.close();
+        }
+    }
+}
+
 const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) => {
     const { actions } = usePhotos();
     
@@ -328,8 +385,10 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                 // Modalità CREATE: preferisci upload diretto su R2 per evitare limiti request Vercel.
                 let result;
                 try {
+                    const uploadId = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
                     const signResponse = await photoService.getUploadUrl({
-                        filename: selectedFile.name,
+                        uploadId,
+                        variant: 'image',
                         mimetype: selectedFile.type,
                         fileSize: selectedFile.size
                     });
@@ -342,7 +401,8 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                     const uploadResponse = await fetch(signedData.uploadUrl, {
                         method: 'PUT',
                         headers: {
-                            'Content-Type': selectedFile.type || 'application/octet-stream'
+                            'Content-Type': selectedFile.type || 'application/octet-stream',
+                            'Cache-Control': 'public, max-age=31536000, immutable'
                         },
                         body: selectedFile
                     });
@@ -351,10 +411,38 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                         throw new Error(`Upload su storage fallito (${uploadResponse.status})`);
                     }
 
+                    let thumbnailPath = signedData.imagePath;
+                    try {
+                        const thumbBlob = await createThumbnailBlob(selectedFile);
+                        const thumbSignResponse = await photoService.getUploadUrl({
+                            uploadId,
+                            variant: 'thumbnail',
+                            mimetype: 'image/webp',
+                            fileSize: thumbBlob.size
+                        });
+                        const thumbSignedData = thumbSignResponse?.data?.data || thumbSignResponse?.data;
+
+                        if (thumbSignedData?.uploadUrl && thumbSignedData?.imagePath) {
+                            const thumbUploadResponse = await fetch(thumbSignedData.uploadUrl, {
+                                method: 'PUT',
+                                headers: {
+                                    'Content-Type': 'image/webp',
+                                    'Cache-Control': 'public, max-age=31536000, immutable'
+                                },
+                                body: thumbBlob
+                            });
+                            if (thumbUploadResponse.ok) {
+                                thumbnailPath = thumbSignedData.imagePath;
+                            }
+                        }
+                    } catch (thumbError) {
+                        console.warn('Thumbnail upload fallback su immagine originale:', thumbError);
+                    }
+
                     const uploadData = {
                         ...formData,
                         imagePath: signedData.imagePath,
-                        thumbnailPath: signedData.imagePath,
+                        thumbnailPath,
                         settings: formData.settings,
                         tags: formData.tags
                     };

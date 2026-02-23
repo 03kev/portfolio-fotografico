@@ -16,6 +16,7 @@ export default function SiteLayout() {
   const toast = useToast();
   const [showUpload, setShowUpload] = useState(false);
   const [apiTokenConfigured, setApiTokenConfigured] = useState(false);
+  const [authFeedback, setAuthFeedback] = useState('idle');
   const canEdit = isAdminMode && apiTokenConfigured;
 
   // Classic multi-page behavior: always start at top when changing route.
@@ -75,13 +76,21 @@ export default function SiteLayout() {
     }
   }, [canEdit, showUpload]);
 
+  useEffect(() => {
+    if (authFeedback === 'idle') return;
+    const timer = setTimeout(() => setAuthFeedback('idle'), 1400);
+    return () => clearTimeout(timer);
+  }, [authFeedback]);
+
   const handleConfigureApiToken = async () => {
     if (apiTokenConfigured) {
       try {
         await authService.logout();
         setApiTokenConfigured(false);
+        setAuthFeedback('idle');
       } catch (error) {
         setApiTokenConfigured(false);
+        setAuthFeedback('idle');
       }
       return;
     }
@@ -101,8 +110,10 @@ export default function SiteLayout() {
     try {
       await authService.login(trimmed);
       setApiTokenConfigured(true);
+      setAuthFeedback('success');
     } catch (error) {
       setApiTokenConfigured(false);
+      setAuthFeedback('error');
     }
   };
 
@@ -113,6 +124,7 @@ export default function SiteLayout() {
         onOpenUpload={canEdit ? () => setShowUpload(true) : undefined}
         onConfigureAuth={isAdminMode ? handleConfigureApiToken : undefined}
         hasAuthToken={apiTokenConfigured}
+        authFeedback={authFeedback}
       />
 
       <main>

@@ -937,6 +937,7 @@ function SeriesDetail() {
   const [layoutMode, setLayoutMode] = useState(false);
   const [isSavingLayout, setIsSavingLayout] = useState(false);
   const [draftContent, setDraftContent] = useState([]);
+  const [savedContentPreview, setSavedContentPreview] = useState(null);
   const [lightboxPhoto, setLightboxPhoto] = useState(null);
   const stageRef = useRef(null);
   const canvasFrameRef = useRef(null);
@@ -1042,6 +1043,16 @@ function SeriesDetail() {
     const prepared = prepareContent(currentSeries.content || [], true);
     setDraftContent(prepared);
   }, [currentSeries]);
+
+  useEffect(() => {
+    if (!savedContentPreview || !currentSeries) return;
+
+    const serverContent = JSON.stringify(currentSeries.content || []);
+    const previewContent = JSON.stringify(savedContentPreview || []);
+    if (serverContent === previewContent) {
+      setSavedContentPreview(null);
+    }
+  }, [currentSeries, savedContentPreview]);
 
   useLayoutEffect(() => {
     const container = canvasFrameRef.current;
@@ -1576,6 +1587,7 @@ function SeriesDetail() {
     const cleanContent = prepareContent(draftContent, true);
     // UX ottimistica: torna subito alla view, salva in background.
     setDraftContent(cleanContent);
+    setSavedContentPreview(cleanContent);
     setLayoutMode(false);
     setIsSavingLayout(true);
 
@@ -1586,6 +1598,7 @@ function SeriesDetail() {
       toast.success('Layout serie salvato ✅');
     } catch (err) {
       // rollback in caso di errore
+      setSavedContentPreview(null);
       setLayoutMode(true);
       setDraftContent(prepareContent(currentSeries.content || [], true));
       toast.error(`Errore salvataggio layout: ${err?.message || 'unknown'}`);
@@ -1845,7 +1858,7 @@ function SeriesDetail() {
     return seriesPhotos[0] || null;
   };
 
-  const viewContent = prepareContent(currentSeries?.content || [], false);
+  const viewContent = prepareContent(savedContentPreview || currentSeries?.content || [], false);
   const renderContent = layoutMode ? draftContent : viewContent;
   const selectedIndex = selectedId !== null
     ? draftContent.findIndex(block => String(block.id) === String(selectedId))

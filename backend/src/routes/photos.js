@@ -1,5 +1,4 @@
 const express = require('express');
-const path = require('path');
 const crypto = require('crypto');
 const multer = require('multer');
 const sharp = require('sharp');
@@ -62,14 +61,19 @@ function parseUploadSize(value) {
     return parsed;
 }
 
-function buildUploadFilename(originalName, mimetype) {
-    const base = path.basename(String(originalName || ''), path.extname(String(originalName || '')));
-    const sanitizedBase = base.replace(/[^a-zA-Z0-9-_]/g, '').slice(0, 40) || 'photo';
-    const randomId = crypto.randomBytes(6).toString('hex');
-    const extFromName = path.extname(String(originalName || '')).toLowerCase();
-    const mimeExt = mimetype && mimetype.includes('/') ? `.${mimetype.split('/')[1]}` : '';
-    const extension = /^[.][a-z0-9]+$/.test(extFromName) ? extFromName : (mimeExt || '.bin');
-    return `${sanitizedBase}-${Date.now()}-${randomId}${extension}`;
+function normalizeUploadId(value) {
+    const normalized = String(value || '')
+        .trim()
+        .replace(/[^a-zA-Z0-9_-]/g, '')
+        .slice(0, 48);
+    return normalized || null;
+}
+
+function buildUploadFilename(mimetype, uploadId, variant = 'image') {
+    const safeUploadId = normalizeUploadId(uploadId) || `${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
+    const mimeExt = mimetype && mimetype.includes('/') ? `.${mimetype.split('/')[1]}` : '.bin';
+    const extension = variant === 'thumbnail' ? '.webp' : mimeExt.toLowerCase();
+    return `photo_${safeUploadId}${extension}`;
 }
 
 // Utility per leggere/scrivere il database JSON
@@ -219,7 +223,8 @@ router.post('/upload-url', async (req, res) => {
             });
         }
 
-        const { filename, mimetype, contentType, fileSize } = req.body || {};
+        const { uploadId, mimetype, contentType, fileSize, variant } = req.body || {};
+        const uploadVariant = variant === 'thumbnail' ? 'thumbnail' : 'image';
         const effectiveMimeType = String(mimetype || contentType || '').trim();
         if (!effectiveMimeType || !isAllowedMimeType(effectiveMimeType, allowedUploadTypes)) {
             return res.status(400).json({
@@ -237,8 +242,10 @@ router.post('/upload-url', async (req, res) => {
             });
         }
 
-        const uploadFilename = buildUploadFilename(filename, effectiveMimeType);
-        const uploadPath = `/uploads/${uploadFilename}`;
+        const uploadFilename = buildUploadFilename(effectiveMimeType, uploadId, uploadVariant);
+        const uploadPath = uploadVariant === 'thumbnail'
+            ? `/uploads/thumbnails/${uploadFilename}`
+            : `/uploads/${uploadFilename}`;
 
         const signed = await createUploadPresignedPutUrl(uploadPath, {
             contentType: effectiveMimeType,

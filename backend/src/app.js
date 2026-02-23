@@ -19,6 +19,7 @@ const {
 
 const app = express();
 ensureR2ConfiguredInProduction();
+app.set('trust proxy', 1);
 
 // Middleware di sicurezza con configurazione personalizzata
 app.use(

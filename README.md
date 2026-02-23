@@ -196,6 +196,9 @@ npm run sync:r2:metadata
   - `Authorization: Bearer <API_WRITE_TOKEN>`
   - `x-api-key: <API_WRITE_TOKEN>`
 - In produzione `API_WRITE_TOKEN` è obbligatoria.
+- Login sessione (`POST /api/auth/session`) protetto da rate limit dedicato:
+  - `API_AUTH_RATE_LIMIT_WINDOW_MS` (default 10 min)
+  - `API_AUTH_RATE_LIMIT_MAX_ATTEMPTS` (default 10)
 - Frontend:
   - abilita admin mode con `?admin=1`
   - usa il pulsante `API: OFF/ON` in header per aprire/chiudere la sessione admin

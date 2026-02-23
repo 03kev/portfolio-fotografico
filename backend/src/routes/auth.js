@@ -1,4 +1,6 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
+const { parsePositiveInt } = require('../utils/env');
 const {
     clearSessionCookie,
     hasWriteTokenConfigured,
@@ -9,6 +11,19 @@ const {
 
 const router = express.Router();
 
+const authWindowMs = parsePositiveInt(process.env.API_AUTH_RATE_LIMIT_WINDOW_MS, 10 * 60 * 1000);
+const authMaxAttempts = parsePositiveInt(process.env.API_AUTH_RATE_LIMIT_MAX_ATTEMPTS, 10);
+const authLimiter = rateLimit({
+    windowMs: authWindowMs,
+    max: authMaxAttempts,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+        success: false,
+        message: 'Troppi tentativi di autenticazione. Riprova più tardi.'
+    }
+});
+
 router.get('/session', (req, res) => {
     res.json({
         success: true,
@@ -16,7 +31,7 @@ router.get('/session', (req, res) => {
     });
 });
 
-router.post('/session', (req, res) => {
+router.post('/session', authLimiter, (req, res) => {
     try {
         if (!hasWriteTokenConfigured()) {
             return res.status(503).json({

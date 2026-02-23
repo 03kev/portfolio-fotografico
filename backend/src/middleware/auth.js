@@ -27,7 +27,11 @@ function getSessionSecret() {
 }
 
 function getSessionCookieName() {
-    return process.env.API_SESSION_COOKIE_NAME || DEFAULT_SESSION_COOKIE_NAME;
+    if (process.env.API_SESSION_COOKIE_NAME) {
+        return process.env.API_SESSION_COOKIE_NAME;
+    }
+    // In produzione preferisci il prefisso __Host- per cookie host-only più robusti.
+    return isProduction() ? `__Host-${DEFAULT_SESSION_COOKIE_NAME}` : DEFAULT_SESSION_COOKIE_NAME;
 }
 
 function getSessionTtlMs() {
@@ -40,7 +44,8 @@ function getSessionCookieOptions() {
         secure: isProduction(),
         sameSite: 'lax',
         path: '/',
-        maxAge: getSessionTtlMs()
+        maxAge: getSessionTtlMs(),
+        priority: 'high'
     };
 }
 
