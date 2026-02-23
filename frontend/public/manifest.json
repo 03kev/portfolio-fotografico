@@ -1,7 +1,7 @@
 {
-  "short_name": "FotoPortfolio",
-  "name": "Portfolio Fotografico",
-  "description": "Esplora il mondo attraverso i miei scatti fotografici",
+  "short_name": "Kevin Muka",
+  "name": "Kevin Muka | Portfolio Fotografico",
+  "description": "Portfolio fotografico di Kevin Muka: serie, archivio e mappa interattiva.",
   "icons": [
     {
       "src": "favicon.ico",
@@ -26,7 +26,7 @@
   ],
   "start_url": ".",
   "display": "standalone",
-  "theme_color": "#667eea",
+  "theme_color": "#000000",
   "background_color": "#0c0c0c",
   "orientation": "portrait-primary",
   "categories": ["photography", "portfolio", "travel"],

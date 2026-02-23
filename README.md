@@ -114,14 +114,14 @@ Note:
 ### Frontend (`frontend/.env`)
 
 ```env
-REACT_APP_API_URL=http://localhost:5001/api
-REACT_APP_IMAGES_URL=http://localhost:5001
+REACT_APP_SITE_URL=http://localhost:3000
 REACT_APP_NAME=Portfolio Fotografico
 REACT_APP_VERSION=1.0.0
 ```
 
 Note:
-- In produzione su Vercel puoi lasciare non valorizzate `REACT_APP_API_URL` e `REACT_APP_IMAGES_URL` (fallback interni: `/api` e `''`).
+- API e immagini usano fallback interni (`/api` e `''` in produzione, `localhost:5001` in sviluppo).
+- `REACT_APP_SITE_URL` è opzionale e serve per canonical/OpenGraph assoluti.
 - Non mettere segreti in variabili `REACT_APP_*`.
 
 ## Architettura storage

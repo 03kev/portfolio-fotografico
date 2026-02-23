@@ -6,6 +6,7 @@ import Hero from '../components/Hero';
 import Section from '../ui/Section';
 import FeaturedSeries from '../components/FeaturedSeries';
 import FeaturedGallery from '../components/FeaturedGallery';
+import useSeo from '../seo/useSeo';
 
 const HomeSurface = styled.div`
   position: relative;
@@ -109,6 +110,11 @@ const Button = styled(Link)`
 `;
 
 export default function HomePage() {
+  useSeo({
+    title: 'Portfolio Fotografico',
+    description: 'Portfolio fotografico di Kevin Muka con serie narrative, archivio completo e mappa interattiva di luoghi fotografati.',
+  });
+
   useEffect(() => {
     const root = document.documentElement;
     root.classList.add('home-surface');

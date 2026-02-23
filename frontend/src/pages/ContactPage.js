@@ -1,6 +1,7 @@
 import React from 'react';
 import styled from 'styled-components';
 import Section from '../ui/Section';
+import useSeo from '../seo/useSeo';
 
 const Wrap = styled.div`
   max-width: 820px;
@@ -43,6 +44,11 @@ const Value = styled.a`
 `;
 
 export default function ContactPage() {
+  useSeo({
+    title: 'Contatti',
+    description: 'Contatti ufficiali di Kevin Muka per collaborazioni, progetti fotografici e richieste professionali.',
+  });
+
   return (
     <Section
       title="Contatti"

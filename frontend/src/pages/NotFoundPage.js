@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import styled from 'styled-components';
 import Section from '../ui/Section';
+import useSeo from '../seo/useSeo';
 
 const Center = styled.div`
   text-align: center;
@@ -26,6 +27,12 @@ const Button = styled(Link)`
 `;
 
 export default function NotFoundPage() {
+  useSeo({
+    title: 'Pagina non trovata',
+    description: 'La pagina richiesta non è disponibile.',
+    noindex: true,
+  });
+
   return (
     <Section title="Pagina non trovata" subtitle="La risorsa richiesta non esiste.">
       <Center>

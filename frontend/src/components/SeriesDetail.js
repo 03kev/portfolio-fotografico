@@ -11,6 +11,7 @@ import { usePhotos } from '../contexts/PhotoContext';
 import SeriesEditor from './SeriesEditor';
 import { useToast } from './Toast';
 import { IMAGES_BASE_URL } from '../utils/constants';
+import useSeo from '../seo/useSeo';
 
 const PageContainer = styled.div`
   min-height: 100vh;
@@ -789,7 +790,7 @@ const ClassicFigure = styled.figure`
     border-radius: var(--border-radius-xl);
     background: transparent;
   }
-
+∏
   figcaption {
     margin-top: var(--spacing-sm);
     color: rgba(255, 255, 255, 0.6);
@@ -1019,6 +1020,15 @@ function SeriesDetail() {
   const outletContext = useOutletContext();
   const isAdmin = Boolean(outletContext?.isAdmin);
   const toast = useToast();
+
+  useSeo({
+    title: currentSeries?.title ? `Serie: ${currentSeries.title}` : 'Dettaglio Serie',
+    description: currentSeries?.description
+      || (currentSeries?.title
+        ? `Dettaglio della serie fotografica "${currentSeries.title}" di Kevin Muka.`
+        : 'Dettaglio serie fotografica di Kevin Muka.'),
+    ogType: 'article',
+  });
 
 
   useEffect(() => {
