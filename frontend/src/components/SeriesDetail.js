@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, ChevronLeft, Code, FileText, Image as ImageIcon, Images, Italic, LayoutGrid, Maximize2, PencilLine, RotateCcw, Save, Trash2, Type, Underline, X } from 'lucide-react';
+import { AlertCircle, AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, ChevronLeft, Code, FileText, Image as ImageIcon, Images, Italic, LayoutGrid, Maximize2, PencilLine, RotateCcw, Save, Trash2, Type, Underline, X } from 'lucide-react';
 import GridLayout from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
@@ -903,7 +903,15 @@ const ErrorContainer = styled.div`
 `;
 
 const ErrorIcon = styled.div`
-  font-size: 4rem;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.88);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   margin-bottom: var(--spacing-lg);
 `;
 
@@ -931,11 +939,12 @@ const ErrorButton = styled(motion.button)`
 function SeriesDetail() {
   const { slug } = useParams();
   const navigate = useNavigate();
-  const { currentSeries, fetchSeriesBySlug, updateSeries, loading, error } = useSeries();
+  const { currentSeries, fetchSeriesBySlug, updateSeries, loading } = useSeries();
   const { photos } = usePhotos();
   const [showEditor, setShowEditor] = useState(false);
   const [seriesPhotos, setSeriesPhotos] = useState([]);
   const [layoutMode, setLayoutMode] = useState(false);
+  const [detailFetchState, setDetailFetchState] = useState('idle');
   const [isSavingLayout, setIsSavingLayout] = useState(false);
   const [draftContent, setDraftContent] = useState([]);
   const [savedContentPreview, setSavedContentPreview] = useState(null);
@@ -1076,9 +1085,26 @@ function SeriesDetail() {
 
 
   useEffect(() => {
-    if (slug) {
-      fetchSeriesBySlug(slug);
-    }
+    if (!slug) return undefined;
+
+    let cancelled = false;
+    setDetailFetchState('loading');
+
+    fetchSeriesBySlug(slug)
+      .then(() => {
+        if (!cancelled) {
+          setDetailFetchState('ready');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDetailFetchState('error');
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [slug, fetchSeriesBySlug]);
 
   useEffect(() => {
@@ -1927,7 +1953,8 @@ function SeriesDetail() {
     : getGridRows(viewContent);
   const gridCanvasHeight = gridRows * GRID_STEP_Y - GRID_GUTTER;
 
-  if (loading) {
+  const isDetailLoading = loading || detailFetchState === 'loading' || detailFetchState === 'idle';
+  if (isDetailLoading) {
     return (
       <LoadingContainer>
         <LoadingSpinner
@@ -1938,10 +1965,12 @@ function SeriesDetail() {
     );
   }
 
-  if (error || !currentSeries) {
+  if (detailFetchState === 'error' || !currentSeries) {
     return (
       <ErrorContainer>
-        <ErrorIcon>😕</ErrorIcon>
+        <ErrorIcon>
+          <AlertCircle size={34} />
+        </ErrorIcon>
         <ErrorText>Serie non trovata</ErrorText>
         <p style={{ color: 'rgba(255, 255, 255, 0.7)' }}>
           La serie che stai cercando non esiste o non è più disponibile.

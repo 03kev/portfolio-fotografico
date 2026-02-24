@@ -47,6 +47,52 @@ function parseBooleanLike(value) {
     return Boolean(value);
 }
 
+function toSafeNumber(value, fallback = 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function clampNumber(value, min, max, fallback = min) {
+    const parsed = toSafeNumber(value, fallback);
+    return Math.max(min, Math.min(max, parsed));
+}
+
+function sanitizeLayout(layout, { maxCols = 48, minW = 1, minH = 1 } = {}) {
+    if (!isPlainObject(layout)) {
+        return {
+            x: 0,
+            y: 0,
+            w: minW,
+            h: minH,
+            unit: 'grid',
+            gridVersion: 2
+        };
+    }
+
+    const w = clampNumber(layout.w, minW, maxCols, minW);
+    const h = clampNumber(layout.h, minH, 500, minH);
+    const maxX = Math.max(0, maxCols - w);
+
+    return {
+        x: clampNumber(layout.x, 0, maxX, 0),
+        y: clampNumber(layout.y, 0, 5000, 0),
+        w,
+        h,
+        unit: 'grid',
+        gridVersion: Number.isFinite(Number(layout.gridVersion))
+            ? Number(layout.gridVersion)
+            : 2
+    };
+}
+
+function normalizePhotoId(value) {
+    try {
+        return parseNumericIdOrThrow(value, 'photoId');
+    } catch {
+        return null;
+    }
+}
+
 function sanitizeTags(value) {
     const parsed = parseJsonIfString(value, []);
     if (!Array.isArray(parsed)) return [];
@@ -135,30 +181,84 @@ function sanitizeSeriesContent(value) {
     if (!Array.isArray(value)) return [];
     const maxBlocks = 200;
     return value.slice(0, maxBlocks).map((block, index) => {
-        if (!isPlainObject(block)) return { type: 'text', content: '', order: index };
+        if (!isPlainObject(block)) {
+            return { type: 'text', content: '', order: index, layout: sanitizeLayout(null) };
+        }
 
-        const type = sanitizeString(block.type, { maxLength: 24, fallback: 'text', fieldName: 'content.type' });
+        const rawType = sanitizeString(block.type, {
+            maxLength: 24,
+            fallback: 'text',
+            fieldName: 'content.type'
+        }).toLowerCase();
+        const type = rawType === 'image' ? 'photo' : rawType;
         const order = Number.isFinite(Number(block.order)) ? Number(block.order) : index;
+        const safeType = ['text', 'photo', 'photos'].includes(type) ? type : 'text';
+        const safeLayout = sanitizeLayout(block.layout);
+        const safeId = block.id !== undefined && block.id !== null
+            ? sanitizeString(block.id, { maxLength: 120, fallback: `block-${index}`, fieldName: 'content.id' })
+            : `block-${index}`;
 
-        if (type === 'photos') {
-            const arr = Array.isArray(block.content) ? block.content : [];
+        if (safeType === 'photo') {
+            const photoId = normalizePhotoId(block.content);
             return {
-                type,
+                id: safeId,
+                type: 'photo',
                 order,
-                content: arr.slice(0, 200).map((id) => parseNumericIdOrThrow(id, 'content photo id'))
+                content: photoId,
+                layout: safeLayout,
+                showTitle: parseBooleanLike(block.showTitle),
+                showLightbox: block.showLightbox === undefined ? true : parseBooleanLike(block.showLightbox)
             };
         }
 
-        if (type === 'image') {
-            const imageId = parseNumericIdOrThrow(block.content, 'content image id');
-            return { type, order, content: imageId };
+        if (safeType === 'photos') {
+            const arr = Array.isArray(block.content) ? block.content : [];
+            const content = arr
+                .slice(0, 300)
+                .map((item, itemIndex) => {
+                    if (isPlainObject(item)) {
+                        const id = normalizePhotoId(item.id ?? item.photoId ?? item.content);
+                        if (!id) return null;
+                        return {
+                            id,
+                            layout: sanitizeLayout(item.layout, { maxCols: Math.max(4, safeLayout.w), minW: 1, minH: 1 })
+                        };
+                    }
+
+                    const id = normalizePhotoId(item);
+                    if (!id) return null;
+                    return { id };
+                })
+                .filter(Boolean);
+
+            return {
+                id: safeId,
+                type: 'photos',
+                order,
+                content,
+                layout: safeLayout
+            };
         }
 
         return {
+            id: safeId,
             type: 'text',
             order,
-            content: sanitizeString(block.content, { maxLength: 8000, fallback: '', fieldName: 'content.text' })
+            content: sanitizeString(block.content, { maxLength: 8000, fallback: '', fieldName: 'content.text' }),
+            layout: sanitizeLayout(block.layout, { minW: 2, minH: 2 }),
+            textAlign: ['left', 'center', 'right', 'justify'].includes(String(block.textAlign || '').toLowerCase())
+                ? String(block.textAlign).toLowerCase()
+                : 'left',
+            textSize: sanitizeOptionalString(block.textSize, { maxLength: 20, fieldName: 'textSize' }) || 'base',
+            textBold: parseBooleanLike(block.textBold),
+            textItalic: parseBooleanLike(block.textItalic),
+            textUnderline: parseBooleanLike(block.textUnderline),
+            textMono: parseBooleanLike(block.textMono),
+            textFont: sanitizeOptionalString(block.textFont, { maxLength: 40, fieldName: 'textFont' }) || 'inter'
         };
+    }).filter((block) => {
+        if (block.type === 'photo') return Boolean(block.content);
+        return true;
     });
 }
 
