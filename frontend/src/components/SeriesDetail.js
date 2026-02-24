@@ -877,18 +877,104 @@ const LightboxClose = styled(motion.button)`
 
 const LoadingContainer = styled.div`
   min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   background: #0c0c0c;
 `;
 
-const LoadingSpinner = styled(motion.div)`
-  width: 60px;
-  height: 60px;
-  border: 4px solid rgba(102, 126, 234, 0.2);
-  border-top-color: #667eea;
-  border-radius: 50%;
+const LoadingBody = styled.div`
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--spacing-4xl) var(--spacing-xl) var(--spacing-3xl);
+`;
+
+const shimmer = `
+  @keyframes seriesShimmer {
+    0% { background-position: 180% 0; }
+    100% { background-position: -20% 0; }
+  }
+`;
+
+const SkeletonBlock = styled.div`
+  ${shimmer}
+  background: linear-gradient(
+    110deg,
+    rgba(255, 255, 255, 0.04) 25%,
+    rgba(255, 255, 255, 0.11) 37%,
+    rgba(255, 255, 255, 0.04) 63%
+  );
+  background-size: 200% 100%;
+  animation: seriesShimmer 1.4s linear infinite;
+  border-radius: ${props => props.$radius || '14px'};
+  width: ${props => props.$width || '100%'};
+  height: ${props => props.$height || '20px'};
+`;
+
+const LoadingHero = styled.div`
+  position: relative;
+  height: 60vh;
+  min-height: 400px;
+  overflow: hidden;
+  margin-bottom: 0;
+`;
+
+const LoadingHeroImage = styled(SkeletonBlock)`
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  border-radius: 0;
+`;
+
+const LoadingHeroContent = styled.div`
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+  padding: var(--spacing-4xl) var(--spacing-xl);
+  display: grid;
+  gap: 12px;
+  z-index: 1;
+`;
+
+const LoadingStatus = styled.div`
+  margin-top: var(--spacing-lg);
+  color: rgba(255, 255, 255, 0.68);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--font-size-sm);
+  letter-spacing: 0.02em;
+`;
+
+const LoadingGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 14px;
+
+  @media (max-width: 900px) {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  @media (max-width: 640px) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+`;
+
+const LoadingCard = styled(SkeletonBlock)`
+  height: ${props => props.$height || '220px'};
+  grid-column: span ${props => props.$span || 4};
+  border-radius: var(--border-radius-xl);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background-clip: padding-box;
+
+  @media (max-width: 900px) {
+    grid-column: span 3;
+  }
+
+  @media (max-width: 640px) {
+    grid-column: span 2;
+  }
 `;
 
 const ErrorContainer = styled.div`
@@ -1957,10 +2043,27 @@ function SeriesDetail() {
   if (isDetailLoading) {
     return (
       <LoadingContainer>
-        <LoadingSpinner
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-        />
+        <LoadingHero>
+          <LoadingHeroImage />
+          <LoadingHeroContent>
+            <SkeletonBlock $height="58px" $width="52%" />
+            <SkeletonBlock $height="20px" $width="26%" />
+          </LoadingHeroContent>
+        </LoadingHero>
+        <LoadingBody>
+          <LoadingGrid>
+            <LoadingCard $span={8} $height="280px" />
+            <LoadingCard $span={4} $height="280px" />
+            <LoadingCard $span={4} $height="220px" />
+            <LoadingCard $span={4} $height="220px" />
+            <LoadingCard $span={4} $height="220px" />
+          </LoadingGrid>
+
+          <LoadingStatus>
+            <ImageIcon size={16} />
+            Caricamento serie in corso...
+          </LoadingStatus>
+        </LoadingBody>
       </LoadingContainer>
     );
   }
