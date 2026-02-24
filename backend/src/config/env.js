@@ -40,6 +40,7 @@ const env = {
     corsOrigins: asCsvList(process.env.CORS_ORIGINS),
 
     apiWriteToken: asString(process.env.API_WRITE_TOKEN),
+    apiWriteTokenHash: asString(process.env.API_WRITE_TOKEN_HASH),
     apiSessionSecret: asString(process.env.API_SESSION_SECRET),
     apiSessionCookieName: asString(process.env.API_SESSION_COOKIE_NAME),
     apiSessionTtlMs: asPositiveInt(process.env.API_SESSION_TTL_MS, DEFAULTS.apiSessionTtlMs),
@@ -60,19 +61,30 @@ function validateEnv() {
     const warnings = [];
 
     if (env.isProduction) {
-        if (!env.apiWriteToken) {
-            errors.push('API_WRITE_TOKEN non impostata in produzione.');
+        if (!env.apiWriteTokenHash) {
+            errors.push('API_WRITE_TOKEN_HASH non impostata in produzione.');
+        }
+        if (!env.apiSessionSecret) {
+            errors.push('API_SESSION_SECRET non impostata in produzione.');
         }
         if (!env.r2AccountId || !env.r2AccessKeyId || !env.r2SecretAccessKey || !env.r2Bucket) {
             errors.push('Configurazione R2 incompleta in produzione (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET).');
         }
         if (!env.corsOrigins.length) {
-            warnings.push('CORS_ORIGINS non impostata in produzione: verrà usato fallback permissivo controllato.');
+            warnings.push('CORS_ORIGINS non impostata in produzione: verrà consentito solo VERCEL_URL.');
         }
     }
 
-    if (env.apiWriteToken && !env.apiSessionSecret) {
+    if (env.isDevelopment && env.apiWriteToken && !env.apiSessionSecret) {
         warnings.push('API_SESSION_SECRET non impostata: verrà usato API_WRITE_TOKEN come fallback.');
+    }
+
+    if (env.isDevelopment && !env.apiWriteTokenHash && !env.apiWriteToken) {
+        warnings.push('Nessuna credenziale admin configurata (API_WRITE_TOKEN_HASH / API_WRITE_TOKEN). In locale le write API saranno aperte.');
+    }
+
+    if (env.isProduction && env.apiWriteToken) {
+        warnings.push('API_WRITE_TOKEN in chiaro è presente in produzione: non è necessario se usi API_WRITE_TOKEN_HASH.');
     }
 
     if (warnings.length) {

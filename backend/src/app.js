@@ -79,59 +79,68 @@ function getOriginHost(origin) {
 const configuredOrigins = env.corsOrigins
     .map((origin) => normalizeOriginValue(origin))
     .filter(Boolean);
+const configuredOriginHosts = configuredOrigins
+    .map((origin) => getOriginHost(origin))
+    .filter(Boolean);
+const vercelOrigin = env.vercelUrl
+    ? normalizeOriginValue(`https://${env.vercelUrl}`)
+    : null;
+const vercelOriginHost = vercelOrigin ? getOriginHost(vercelOrigin) : null;
 
 if (env.isProduction && configuredOrigins.length === 0) {
-    console.warn('CORS_ORIGINS non configurata: verranno accettate solo origin consentite automaticamente (es. VERCEL_URL).');
+    console.warn('CORS_ORIGINS non configurata: verrà consentito solo VERCEL_URL in produzione.');
+}
+
+function isAllowedCrossOrigin(origin) {
+    if (!origin) {
+        return true;
+    }
+
+    const normalizedOrigin = normalizeOriginValue(origin);
+    if (!normalizedOrigin) {
+        return false;
+    }
+
+    if (!env.isProduction) {
+        const devOrigins = ['http://localhost:3000', 'http://localhost:3001'];
+        return devOrigins.includes(normalizedOrigin);
+    }
+
+    // In produzione: allowlist esplicita + dominio Vercel.
+    if (configuredOrigins.includes(normalizedOrigin)) {
+        return true;
+    }
+
+    if (vercelOrigin && normalizedOrigin === vercelOrigin) {
+        return true;
+    }
+
+    const originHost = getOriginHost(normalizedOrigin);
+    if (!originHost) {
+        return false;
+    }
+
+    if (configuredOriginHosts.includes(originHost)) {
+        return true;
+    }
+
+    if (vercelOriginHost && originHost === vercelOriginHost) {
+        return true;
+    }
+
+    return false;
 }
 
 // CORS
 const corsOptions = {
     origin(origin, callback) {
-        if (!origin) {
-            return callback(null, true);
-        }
-
-        if (!env.isProduction) {
-            const devOrigins = ['http://localhost:3000', 'http://localhost:3001'];
-            return callback(null, devOrigins.includes(origin));
-        }
-
-        // In produzione, se non e` stata configurata una allowlist esplicita,
-        // consenti l'origin chiamante per evitare blocchi su domini Vercel/custom.
-        if (configuredOrigins.length === 0) {
-            return callback(null, true);
-        }
-
-        const normalizedOrigin = normalizeOriginValue(origin);
-        const originHost = getOriginHost(normalizedOrigin);
-        const vercelOrigin = env.vercelUrl
-            ? normalizeOriginValue(`https://${env.vercelUrl}`)
-            : null;
-
-        if (vercelOrigin && normalizedOrigin === vercelOrigin) {
-            return callback(null, true);
-        }
-
-        if (configuredOrigins.includes(normalizedOrigin)) {
-            return callback(null, true);
-        }
-
-        if (originHost) {
-            const hostAllowed = configuredOrigins.some((allowedOrigin) => getOriginHost(allowedOrigin) === originHost);
-            if (hostAllowed) {
-                return callback(null, true);
-            }
-        }
-
-        if (vercelOrigin && originHost && getOriginHost(vercelOrigin) === originHost) {
-            return callback(null, true);
-        }
-
-        return callback(null, false);
+        return callback(null, isAllowedCrossOrigin(origin));
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'x-requested-with']
+    allowedHeaders: env.isProduction
+        ? ['Content-Type', 'x-requested-with']
+        : ['Content-Type', 'Authorization', 'x-api-key', 'x-requested-with']
 };
 
 app.use(cors(corsOptions));
@@ -140,6 +149,27 @@ app.options('*', cors(corsOptions));
 // Body parsing
 app.use(express.json({ limit: DEFAULTS.jsonBodyLimit }));
 app.use(express.urlencoded({ extended: true, limit: DEFAULTS.urlencodedBodyLimit }));
+
+// Protezione CSRF basata su Origin per tutte le richieste state-changing.
+app.use((req, res, next) => {
+    if (!env.isProduction) {
+        return next();
+    }
+
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+        return next();
+    }
+
+    const origin = req.headers.origin;
+    if (!origin || !isAllowedCrossOrigin(origin)) {
+        return res.status(403).json({
+            success: false,
+            message: 'Origine richiesta non consentita'
+        });
+    }
+
+    return next();
+});
 
 async function serveUploadsFromR2(req, res, next) {
     if (!isR2Enabled()) {

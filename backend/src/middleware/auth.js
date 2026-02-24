@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { env } = require('../config/env');
+const { verifyTokenAgainstHash } = require('../utils/tokenHash');
 
 const DEFAULT_SESSION_COOKIE_NAME = 'pf_admin_session';
 const DEFAULT_SESSION_TTL_MS = env.apiSessionTtlMs;
@@ -12,11 +13,18 @@ function getConfiguredWriteToken() {
     return env.apiWriteToken;
 }
 
+function getConfiguredWriteTokenHash() {
+    return env.apiWriteTokenHash;
+}
+
 function getSessionSecret() {
     const explicitSecret = env.apiSessionSecret;
 
     if (explicitSecret) return explicitSecret;
-    return getConfiguredWriteToken();
+    if (!isProduction()) {
+        return getConfiguredWriteToken();
+    }
+    return '';
 }
 
 function getSessionCookieName() {
@@ -35,7 +43,7 @@ function getSessionCookieOptions() {
     return {
         httpOnly: true,
         secure: isProduction(),
-        sameSite: 'lax',
+        sameSite: isProduction() ? 'strict' : 'lax',
         path: '/',
         maxAge: getSessionTtlMs(),
         priority: 'high'
@@ -80,10 +88,15 @@ function createSignature(payloadPart) {
 }
 
 function hasWriteTokenConfigured() {
-    return Boolean(getConfiguredWriteToken());
+    return Boolean(getConfiguredWriteTokenHash() || getConfiguredWriteToken());
 }
 
 function isWriteTokenValid(token) {
+    const configuredTokenHash = getConfiguredWriteTokenHash();
+    if (configuredTokenHash) {
+        return verifyTokenAgainstHash(token, configuredTokenHash);
+    }
+
     const configuredToken = getConfiguredWriteToken();
     return Boolean(configuredToken) && safeEqual(token, configuredToken);
 }
@@ -153,6 +166,11 @@ function clearSessionCookie(res) {
 }
 
 function extractHeaderToken(req) {
+    // In produzione supportiamo solo autenticazione con sessione cookie.
+    if (isProduction()) {
+        return '';
+    }
+
     const authHeader = req.headers.authorization;
     if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
         return authHeader.slice('Bearer '.length).trim();
@@ -184,7 +202,7 @@ function requireWriteAuth(req, res, next) {
         if (isProduction()) {
             return res.status(503).json({
                 success: false,
-                message: 'Configurazione auth mancante: API_WRITE_TOKEN non impostata.'
+                message: 'Configurazione auth mancante: API_WRITE_TOKEN_HASH non impostata.'
             });
         }
 

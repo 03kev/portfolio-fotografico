@@ -91,7 +91,8 @@ PORT=5001
 NODE_ENV=development
 CORS_ORIGINS=http://localhost:3000,http://localhost:3001
 
-API_WRITE_TOKEN=change_me_with_a_long_random_token
+API_WRITE_TOKEN_HASH=scrypt$16384$8$1$...
+API_WRITE_TOKEN=
 API_SESSION_SECRET=change_me_with_another_long_random_secret
 API_SESSION_TTL_MS=604800000
 API_AUTH_RATE_LIMIT_WINDOW_MS=600000
@@ -108,6 +109,7 @@ R2_METADATA_PREFIX=data
 
 Note:
 - In produzione il backend è **R2-only**: senza credenziali R2 valide non parte.
+- In produzione l'admin auth richiede **API_WRITE_TOKEN_HASH** (token mai in chiaro nelle env).
 - I default tecnici (body limits, rate limit globale/write, upload defaults) sono in `backend/src/config/defaults.js`.
 - Le env vengono parse/validate in `backend/src/config/env.js`.
 
@@ -143,7 +145,7 @@ Note:
 
 Minimo consigliato in Production:
 
-- `API_WRITE_TOKEN`
+- `API_WRITE_TOKEN_HASH`
 - `API_SESSION_SECRET`
 - `API_SESSION_TTL_MS` (se vuoi override)
 - `API_AUTH_RATE_LIMIT_WINDOW_MS`
@@ -159,6 +161,15 @@ Minimo consigliato in Production:
 Non necessario su Vercel:
 - `PORT`
 - `NODE_ENV` (gestita da Vercel)
+
+Genera hash token admin:
+
+```bash
+cd backend
+npm run token:hash -- "il-tuo-token-lungo-random"
+```
+
+Incolla l'output in `API_WRITE_TOKEN_HASH`.
 
 ### 2) Build/Deploy
 
@@ -195,9 +206,7 @@ Checklist:
   - login: `POST /api/auth/session` con `{ token }`
   - stato: `GET /api/auth/session`
   - logout: `DELETE /api/auth/session`
-- Supporto header token per uso server-to-server:
-  - `Authorization: Bearer <API_WRITE_TOKEN>`
-  - `x-api-key: <API_WRITE_TOKEN>`
+- In produzione l'autenticazione avviene via cookie sessione; header token (`Authorization`, `x-api-key`) disabilitati.
 - Rate limit dedicato sul login auth (`/api/auth/session`).
 - Sanitizzazione payload foto/serie lato backend.
 
@@ -255,4 +264,4 @@ Verifica:
 ## Note operative
 
 - `backend/storage/` è runtime locale e non va versionato.
-- Ruota periodicamente i segreti (`API_WRITE_TOKEN`, `API_SESSION_SECRET`, chiavi R2).
+- Ruota periodicamente i segreti (`API_WRITE_TOKEN_HASH`, `API_SESSION_SECRET`, chiavi R2).

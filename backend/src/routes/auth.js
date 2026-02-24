@@ -18,11 +18,16 @@ const authLimiter = rateLimit({
     max: authMaxAttempts,
     standardHeaders: true,
     legacyHeaders: false,
+    skipSuccessfulRequests: true,
     message: {
         success: false,
         message: 'Troppi tentativi di autenticazione. Riprova più tardi.'
     }
 });
+
+function wait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 router.get('/session', (req, res) => {
     res.json({
@@ -31,20 +36,21 @@ router.get('/session', (req, res) => {
     });
 });
 
-router.post('/session', authLimiter, (req, res) => {
+router.post('/session', authLimiter, async (req, res) => {
     try {
         if (!hasWriteTokenConfigured()) {
             return res.status(503).json({
                 success: false,
-                message: 'Configurazione auth mancante: API_WRITE_TOKEN non impostata.'
+                message: 'Configurazione auth mancante: API_WRITE_TOKEN_HASH non impostata.'
             });
         }
 
         const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
         if (!token || !isWriteTokenValid(token)) {
+            await wait(350);
             return res.status(401).json({
                 success: false,
-                message: 'Token non valido'
+                message: 'Credenziali non valide'
             });
         }
 
