@@ -1,6 +1,7 @@
 import React from 'react';
 import styled from 'styled-components';
 import Section from '../ui/Section';
+import useSeo from '../seo/useSeo';
 
 const Wrap = styled.div`
   max-width: 820px;
@@ -20,10 +21,16 @@ const P = styled.p`
 `;
 
 export default function AboutPage() {
+  useSeo({
+    title: 'Chi Sono',
+    description: 'Biografia breve di Kevin Muka, approccio fotografico e visione narrativa del portfolio.',
+  });
+
   return (
     <Section
       title="Chi sono"
       subtitle="Due righe su di me e su come lavoro."
+      headingLevel="h1"
     >
       <Wrap>
         <Card>

@@ -1,11 +1,68 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { AlertTriangle, FolderOpen, Globe, Loader2, MapPin, PencilLine, Save, Upload } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
-import { uploadUtils } from '../utils/api';
+import { photoService, uploadUtils } from '../utils/api';
 import MapSelector from './MapSelector';
 import { AnimatePresence } from 'framer-motion';
 import exifr from 'exifr';  // Libreria per leggere metadati EXIF [oai_citation:1‡stackoverflow.com](https://stackoverflow.com/questions/59580568/read-exif-data-in-react#:~:text=there%27s%20a%20simple%20library%20for,that%20called%20exifr)
 import './PhotoUpload.css';
+
+async function createThumbnailBlob(file, width = 480, height = 360) {
+    let drawable = null;
+    let objectUrl = null;
+
+    try {
+        // Usa orientamento EXIF come nel vecchio flusso backend rotate().
+        if (typeof createImageBitmap === 'function') {
+            try {
+                drawable = await createImageBitmap(file, { imageOrientation: 'from-image' });
+            } catch {
+                drawable = null;
+            }
+        }
+
+        if (!drawable) {
+            drawable = await new Promise((resolve, reject) => {
+                const img = new Image();
+                objectUrl = URL.createObjectURL(file);
+                img.onload = () => resolve(img);
+                img.onerror = () => reject(new Error('Impossibile generare thumbnail'));
+                img.src = objectUrl;
+            });
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            throw new Error('Canvas context non disponibile');
+        }
+
+        // Cover crop centrato come sharp.resize(..., { fit: 'cover' }).
+        const scale = Math.max(width / drawable.width, height / drawable.height);
+        const drawW = drawable.width * scale;
+        const drawH = drawable.height * scale;
+        const offsetX = (width - drawW) / 2;
+        const offsetY = (height - drawH) / 2;
+        ctx.drawImage(drawable, offsetX, offsetY, drawW, drawH);
+
+        return await new Promise((resolve, reject) => {
+            canvas.toBlob(
+                (blob) => (blob ? resolve(blob) : reject(new Error('Generazione thumbnail fallita'))),
+                'image/webp',
+                0.88
+            );
+        });
+    } finally {
+        if (objectUrl) {
+            URL.revokeObjectURL(objectUrl);
+        }
+        if (drawable && typeof drawable.close === 'function') {
+            drawable.close();
+        }
+    }
+}
 
 const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) => {
     const { actions } = usePhotos();
@@ -325,16 +382,90 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                 const result = await actions.updatePhoto(photoToEdit.id, updateData);
                 if (onUploadSuccess) onUploadSuccess(result);
             } else {
-                // Modalità CREATE (nuovo upload)
-                const uploadData = uploadUtils.createFormData({
-                    ...formData,
-                    image: selectedFile,
-                    settings: JSON.stringify(formData.settings),
-                    tags: formData.tags
-                });
+                // Modalità CREATE: preferisci upload diretto su R2 per evitare limiti request Vercel.
+                let result;
+                try {
+                    const uploadId = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+                    const signResponse = await photoService.getUploadUrl({
+                        uploadId,
+                        variant: 'image',
+                        mimetype: selectedFile.type,
+                        fileSize: selectedFile.size
+                    });
+                    const signedData = signResponse?.data?.data || signResponse?.data;
 
-                const result = await actions.addPhoto(uploadData);
-                if (onUploadSuccess) onUploadSuccess(result.data);
+                    if (!signedData?.uploadUrl || !signedData?.imagePath) {
+                        throw new Error('URL di upload non valida ricevuta dal server');
+                    }
+
+                    const uploadResponse = await fetch(signedData.uploadUrl, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': selectedFile.type || 'application/octet-stream',
+                            'Cache-Control': 'public, max-age=31536000, immutable'
+                        },
+                        body: selectedFile
+                    });
+
+                    if (!uploadResponse.ok) {
+                        throw new Error(`Upload su storage fallito (${uploadResponse.status})`);
+                    }
+
+                    let thumbnailPath = signedData.imagePath;
+                    try {
+                        const thumbBlob = await createThumbnailBlob(selectedFile);
+                        const thumbSignResponse = await photoService.getUploadUrl({
+                            uploadId,
+                            variant: 'thumbnail',
+                            mimetype: 'image/webp',
+                            fileSize: thumbBlob.size
+                        });
+                        const thumbSignedData = thumbSignResponse?.data?.data || thumbSignResponse?.data;
+
+                        if (thumbSignedData?.uploadUrl && thumbSignedData?.imagePath) {
+                            const thumbUploadResponse = await fetch(thumbSignedData.uploadUrl, {
+                                method: 'PUT',
+                                headers: {
+                                    'Content-Type': 'image/webp',
+                                    'Cache-Control': 'public, max-age=31536000, immutable'
+                                },
+                                body: thumbBlob
+                            });
+                            if (thumbUploadResponse.ok) {
+                                thumbnailPath = thumbSignedData.imagePath;
+                            }
+                        }
+                    } catch (thumbError) {
+                        console.warn('Thumbnail upload fallback su immagine originale:', thumbError);
+                    }
+
+                    const uploadData = {
+                        ...formData,
+                        imagePath: signedData.imagePath,
+                        thumbnailPath,
+                        settings: formData.settings,
+                        tags: formData.tags
+                    };
+                    result = await actions.addPhoto(uploadData);
+                } catch (directUploadError) {
+                    const directUploadMessage = directUploadError?.message || directUploadError?.error?.message || '';
+                    const shouldFallbackToMultipart =
+                        directUploadMessage.includes('Upload diretto disponibile solo con R2 configurato');
+
+                    if (!shouldFallbackToMultipart) {
+                        throw directUploadError;
+                    }
+
+                    const multipartPayload = uploadUtils.createFormData({
+                        ...formData,
+                        image: selectedFile,
+                        settings: JSON.stringify(formData.settings),
+                        tags: formData.tags
+                    });
+                    result = await actions.addPhoto(multipartPayload);
+                }
+
+                if (onUploadSuccess) onUploadSuccess(result);
             }
             
             // Reset form e chiudi modal
@@ -351,7 +482,11 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             if (onClose) onClose();
         } catch (err) {
             console.error('Errore upload foto:', err);
-            const errorMessage = err.message || 'Errore durante il caricamento';
+            const statusCode = err?.status || err?.code || err?.response?.status || err?.error?.code;
+            const isPayloadTooLarge = String(statusCode) === '413';
+            const errorMessage = isPayloadTooLarge
+                ? 'File troppo grande per l\'upload. Usa upload diretto R2 o riduci la dimensione.'
+                : (err?.message || err?.error?.message || 'Errore durante il caricamento');
             setError(errorMessage);
             if (onUploadError) onUploadError(err);
         } finally {

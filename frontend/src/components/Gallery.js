@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Trash2, Edit3 } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { IMAGES_BASE_URL } from '../utils/constants';
-import useAdminMode from '../hooks/useAdminMode';
 import PhotoUpload from './PhotoUpload';
 
 const DEBOUNCE_DELAY_FILTER = 200;
@@ -149,6 +149,18 @@ const PhotoCard = styled(motion.div)`
     border-color: rgba(214, 179, 106, 0.22);
     box-shadow: var(--shadow-large);
   }
+`;
+
+const SeoImageLink = styled.a`
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 `;
 
 const PhotoImage = styled(motion.img)`
@@ -308,9 +320,13 @@ const NoResults = styled(motion.div)`
   }
 `;
 
-const Gallery = () => {
+const Gallery = ({ headingLevel = 'h2' }) => {
   const { photos, filteredPhotos, loading, actions, filters } = usePhotos();
-  const isAdmin = useAdminMode();
+  const outletContext = useOutletContext();
+  const isAdmin = Boolean(outletContext?.isAdmin);
+  const [searchParams] = useSearchParams();
+  const photoParam = searchParams.get('photo');
+  const autoOpenedPhotoRef = useRef(null);
 
   const [activeFilter, setActiveFilter] = useState(() => {
     return filters.tags && filters.tags.length > 0 ? filters.tags[0] : 'all';
@@ -354,6 +370,22 @@ const Gallery = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters.tags?.join(','), filters.search]);
 
+  useEffect(() => {
+    if (!photoParam) {
+      autoOpenedPhotoRef.current = null;
+      return;
+    }
+
+    if (loading || photos.length === 0) return;
+    if (autoOpenedPhotoRef.current === photoParam) return;
+
+    const targetPhoto = photos.find((photo) => String(photo.id) === photoParam);
+    if (!targetPhoto) return;
+
+    actions.openPhotoModal(targetPhoto);
+    autoOpenedPhotoRef.current = photoParam;
+  }, [photoParam, loading, photos, actions]);
+
   const handleFilterClick = (filter) => {
     setActiveFilter(filter);
     if (filter === 'all') {
@@ -365,6 +397,9 @@ const Gallery = () => {
   const handlePhotoClick = (photo) => {
     actions.openPhotoModal(photo);
   };
+
+  const getThumbImageUrl = (photo) => `${IMAGES_BASE_URL}${photo.thumbnail || photo.image || photo.url || ''}`;
+  const getPhotoCardUrl = (photo) => `/gallery?photo=${encodeURIComponent(String(photo.id))}`;
 
   const handleDelete = async (e, photoId) => {
     e.stopPropagation();
@@ -399,7 +434,7 @@ const Gallery = () => {
     <GallerySection>
       <Container>
         <SectionHeader>
-          <SectionTitle initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.45, ease: 'easeOut' }}>
+          <SectionTitle as={headingLevel} initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.45, ease: 'easeOut' }}>
             Archivio
           </SectionTitle>
           <SectionSubtitle initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.45, ease: 'easeOut', delay: 0.05 }}>
@@ -442,7 +477,7 @@ const Gallery = () => {
         ) : (
           <GalleryGrid key="gallery-grid">
             <AnimatePresence mode="popLayout" initial={false}>
-              {filteredPhotos.map(photo => (
+              {filteredPhotos.map((photo, index) => (
                 <motion.div
                   key={photo.id}
                   layout
@@ -453,6 +488,9 @@ const Gallery = () => {
                   onClick={() => handlePhotoClick(photo)}
                 >
                   <PhotoCard>
+                    <SeoImageLink href={getPhotoCardUrl(photo)} aria-hidden="true" tabIndex={-1}>
+                      {photo.title || 'Foto'}
+                    </SeoImageLink>
                     {isAdmin && (
                       <>
                         <EditButton
@@ -472,9 +510,11 @@ const Gallery = () => {
                       </>
                     )}
                     <PhotoImage
-                      src={`${IMAGES_BASE_URL}${photo.image || photo.thumbnail}`}
+                      src={getThumbImageUrl(photo)}
                       alt={photo.title}
-                      loading="eager"
+                      loading={index < 3 ? 'eager' : 'lazy'}
+                      fetchPriority={index < 3 ? 'high' : 'auto'}
+                      decoding="async"
                       onError={(e) => {
                         e.target.src = 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop';
                       }}

@@ -1,8 +1,8 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, ChevronLeft, Code, FileText, Image as ImageIcon, Images, Italic, LayoutGrid, Maximize2, PencilLine, RotateCcw, Save, Trash2, Type, Underline, X } from 'lucide-react';
+import { AlertCircle, AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, ChevronLeft, Code, FileText, Image as ImageIcon, Images, Italic, LayoutGrid, Maximize2, PencilLine, RotateCcw, Save, Trash2, Type, Underline, X } from 'lucide-react';
 import GridLayout from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
@@ -11,7 +11,7 @@ import { usePhotos } from '../contexts/PhotoContext';
 import SeriesEditor from './SeriesEditor';
 import { useToast } from './Toast';
 import { IMAGES_BASE_URL } from '../utils/constants';
-import useAdminMode from '../hooks/useAdminMode';
+import useSeo from '../seo/useSeo';
 
 const PageContainer = styled.div`
   min-height: 100vh;
@@ -177,6 +177,11 @@ const AdminBarButton = styled(motion.button)`
   &:hover {
     background: rgba(30, 30, 30, 0.75);
   }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
 `;
 
 const PrimaryAdminButton = styled(AdminBarButton)`
@@ -185,6 +190,11 @@ const PrimaryAdminButton = styled(AdminBarButton)`
 
   &:hover {
     opacity: 0.92;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 `;
 
@@ -780,7 +790,7 @@ const ClassicFigure = styled.figure`
     border-radius: var(--border-radius-xl);
     background: transparent;
   }
-
+∏
   figcaption {
     margin-top: var(--spacing-sm);
     color: rgba(255, 255, 255, 0.6);
@@ -867,18 +877,104 @@ const LightboxClose = styled(motion.button)`
 
 const LoadingContainer = styled.div`
   min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   background: #0c0c0c;
 `;
 
-const LoadingSpinner = styled(motion.div)`
-  width: 60px;
-  height: 60px;
-  border: 4px solid rgba(102, 126, 234, 0.2);
-  border-top-color: #667eea;
-  border-radius: 50%;
+const LoadingBody = styled.div`
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--spacing-4xl) var(--spacing-xl) var(--spacing-3xl);
+`;
+
+const shimmer = `
+  @keyframes seriesShimmer {
+    0% { background-position: 180% 0; }
+    100% { background-position: -20% 0; }
+  }
+`;
+
+const SkeletonBlock = styled.div`
+  ${shimmer}
+  background: linear-gradient(
+    110deg,
+    rgba(255, 255, 255, 0.04) 25%,
+    rgba(255, 255, 255, 0.11) 37%,
+    rgba(255, 255, 255, 0.04) 63%
+  );
+  background-size: 200% 100%;
+  animation: seriesShimmer 1.4s linear infinite;
+  border-radius: ${props => props.$radius || '14px'};
+  width: ${props => props.$width || '100%'};
+  height: ${props => props.$height || '20px'};
+`;
+
+const LoadingHero = styled.div`
+  position: relative;
+  height: 60vh;
+  min-height: 400px;
+  overflow: hidden;
+  margin-bottom: 0;
+`;
+
+const LoadingHeroImage = styled(SkeletonBlock)`
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  border-radius: 0;
+`;
+
+const LoadingHeroContent = styled.div`
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+  padding: var(--spacing-4xl) var(--spacing-xl);
+  display: grid;
+  gap: 12px;
+  z-index: 1;
+`;
+
+const LoadingStatus = styled.div`
+  margin-top: var(--spacing-lg);
+  color: rgba(255, 255, 255, 0.68);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--font-size-sm);
+  letter-spacing: 0.02em;
+`;
+
+const LoadingGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 14px;
+
+  @media (max-width: 900px) {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  @media (max-width: 640px) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+`;
+
+const LoadingCard = styled(SkeletonBlock)`
+  height: ${props => props.$height || '220px'};
+  grid-column: span ${props => props.$span || 4};
+  border-radius: var(--border-radius-xl);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background-clip: padding-box;
+
+  @media (max-width: 900px) {
+    grid-column: span 3;
+  }
+
+  @media (max-width: 640px) {
+    grid-column: span 2;
+  }
 `;
 
 const ErrorContainer = styled.div`
@@ -893,7 +989,15 @@ const ErrorContainer = styled.div`
 `;
 
 const ErrorIcon = styled.div`
-  font-size: 4rem;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.88);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   margin-bottom: var(--spacing-lg);
 `;
 
@@ -921,12 +1025,15 @@ const ErrorButton = styled(motion.button)`
 function SeriesDetail() {
   const { slug } = useParams();
   const navigate = useNavigate();
-  const { currentSeries, fetchSeriesBySlug, updateSeries, loading, error } = useSeries();
+  const { currentSeries, fetchSeriesBySlug, updateSeries, loading } = useSeries();
   const { photos } = usePhotos();
   const [showEditor, setShowEditor] = useState(false);
   const [seriesPhotos, setSeriesPhotos] = useState([]);
   const [layoutMode, setLayoutMode] = useState(false);
+  const [detailFetchState, setDetailFetchState] = useState('idle');
+  const [isSavingLayout, setIsSavingLayout] = useState(false);
   const [draftContent, setDraftContent] = useState([]);
+  const [savedContentPreview, setSavedContentPreview] = useState(null);
   const [lightboxPhoto, setLightboxPhoto] = useState(null);
   const stageRef = useRef(null);
   const canvasFrameRef = useRef(null);
@@ -1005,14 +1112,85 @@ function SeriesDetail() {
   const MIN_W_COLS = Math.max(1, Math.round((MIN_W + GRID_GUTTER) / GRID_STEP_X));
   const MIN_H_ROWS = Math.max(1, Math.round((MIN_H + GRID_GUTTER) / GRID_STEP_Y));
 
-  const isAdmin = useAdminMode();
+  const outletContext = useOutletContext();
+  const isAdmin = Boolean(outletContext?.isAdmin);
   const toast = useToast();
+
+  const seriesStructuredData = React.useMemo(() => {
+    if (!currentSeries) return null;
+
+    const toAbsolute = (value) => {
+      const src = String(value || '').trim();
+      if (!src) return '';
+      if (/^https?:\/\//i.test(src)) return src;
+
+      const base = (process.env.REACT_APP_SITE_URL || window.location.origin || '').replace(/\/+$/, '');
+      const resolved = `${IMAGES_BASE_URL}${src}`;
+      if (/^https?:\/\//i.test(resolved)) return resolved;
+      return `${base}${resolved.startsWith('/') ? resolved : `/${resolved}`}`;
+    };
+
+    const site = (process.env.REACT_APP_SITE_URL || window.location.origin || '').replace(/\/+$/, '');
+    const seriesUrl = `${site}/series/${currentSeries.slug || currentSeries.id}`;
+    const galleryBaseUrl = `${site}/gallery`;
+
+    const images = seriesPhotos
+      .slice(0, 120)
+      .map((photo) => {
+        const full = toAbsolute(photo.image);
+        if (!full) return null;
+        return {
+          '@type': 'ImageObject',
+          contentUrl: full,
+          url: `${galleryBaseUrl}?photo=${encodeURIComponent(String(photo.id))}`,
+          name: photo.title || currentSeries.title || 'Fotografia',
+          description: photo.description || currentSeries.description || 'Scatto fotografico'
+        };
+      })
+      .filter(Boolean);
+
+    return {
+      '@context': 'https://schema.org',
+      '@type': 'ImageGallery',
+      name: `${currentSeries.title || 'Serie'} - Kevin Muka`,
+      description: currentSeries.description || 'Serie fotografica',
+      url: seriesUrl,
+      associatedMedia: images
+    };
+  }, [currentSeries, seriesPhotos]);
+
+  useSeo({
+    title: currentSeries?.title ? `Serie: ${currentSeries.title}` : 'Dettaglio Serie',
+    description: currentSeries?.description
+      || (currentSeries?.title
+        ? `Dettaglio della serie fotografica "${currentSeries.title}" di Kevin Muka.`
+        : 'Dettaglio serie fotografica di Kevin Muka.'),
+    ogType: 'article',
+    structuredData: seriesStructuredData,
+  });
 
 
   useEffect(() => {
-    if (slug) {
-      fetchSeriesBySlug(slug);
-    }
+    if (!slug) return undefined;
+
+    let cancelled = false;
+    setDetailFetchState('loading');
+
+    fetchSeriesBySlug(slug)
+      .then(() => {
+        if (!cancelled) {
+          setDetailFetchState('ready');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDetailFetchState('error');
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [slug, fetchSeriesBySlug]);
 
   useEffect(() => {
@@ -1031,6 +1209,16 @@ function SeriesDetail() {
     const prepared = prepareContent(currentSeries.content || [], true);
     setDraftContent(prepared);
   }, [currentSeries]);
+
+  useEffect(() => {
+    if (!savedContentPreview || !currentSeries) return;
+
+    const serverContent = JSON.stringify(currentSeries.content || []);
+    const previewContent = JSON.stringify(savedContentPreview || []);
+    if (serverContent === previewContent) {
+      setSavedContentPreview(null);
+    }
+  }, [currentSeries, savedContentPreview]);
 
   useLayoutEffect(() => {
     const container = canvasFrameRef.current;
@@ -1560,17 +1748,28 @@ function SeriesDetail() {
   };
 
   const handleSaveLayout = async () => {
+    if (!currentSeries || isSavingLayout) return;
+
+    const cleanContent = prepareContent(draftContent, true);
+    // UX ottimistica: torna subito alla view, salva in background.
+    setDraftContent(cleanContent);
+    setSavedContentPreview(cleanContent);
+    setLayoutMode(false);
+    setIsSavingLayout(true);
+
     try {
-      const cleanContent = prepareContent(draftContent, true);
       await updateSeries(currentSeries.id, {
-        ...currentSeries,
         content: cleanContent,
       });
-      setDraftContent(cleanContent);
       toast.success('Layout serie salvato ✅');
-      setLayoutMode(false);
     } catch (err) {
+      // rollback in caso di errore
+      setSavedContentPreview(null);
+      setLayoutMode(true);
+      setDraftContent(prepareContent(currentSeries.content || [], true));
       toast.error(`Errore salvataggio layout: ${err?.message || 'unknown'}`);
+    } finally {
+      setIsSavingLayout(false);
     }
   };
 
@@ -1825,7 +2024,7 @@ function SeriesDetail() {
     return seriesPhotos[0] || null;
   };
 
-  const viewContent = prepareContent(currentSeries?.content || [], false);
+  const viewContent = prepareContent(savedContentPreview || currentSeries?.content || [], false);
   const renderContent = layoutMode ? draftContent : viewContent;
   const selectedIndex = selectedId !== null
     ? draftContent.findIndex(block => String(block.id) === String(selectedId))
@@ -1840,21 +2039,41 @@ function SeriesDetail() {
     : getGridRows(viewContent);
   const gridCanvasHeight = gridRows * GRID_STEP_Y - GRID_GUTTER;
 
-  if (loading) {
+  const isDetailLoading = loading || detailFetchState === 'loading' || detailFetchState === 'idle';
+  if (isDetailLoading) {
     return (
       <LoadingContainer>
-        <LoadingSpinner
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-        />
+        <LoadingHero>
+          <LoadingHeroImage />
+          <LoadingHeroContent>
+            <SkeletonBlock $height="58px" $width="52%" />
+            <SkeletonBlock $height="20px" $width="26%" />
+          </LoadingHeroContent>
+        </LoadingHero>
+        <LoadingBody>
+          <LoadingGrid>
+            <LoadingCard $span={8} $height="280px" />
+            <LoadingCard $span={4} $height="280px" />
+            <LoadingCard $span={4} $height="220px" />
+            <LoadingCard $span={4} $height="220px" />
+            <LoadingCard $span={4} $height="220px" />
+          </LoadingGrid>
+
+          <LoadingStatus>
+            <ImageIcon size={16} />
+            Caricamento serie in corso...
+          </LoadingStatus>
+        </LoadingBody>
       </LoadingContainer>
     );
   }
 
-  if (error || !currentSeries) {
+  if (detailFetchState === 'error' || !currentSeries) {
     return (
       <ErrorContainer>
-        <ErrorIcon>😕</ErrorIcon>
+        <ErrorIcon>
+          <AlertCircle size={34} />
+        </ErrorIcon>
         <ErrorText>Serie non trovata</ErrorText>
         <p style={{ color: 'rgba(255, 255, 255, 0.7)' }}>
           La serie che stai cercando non esiste o non è più disponibile.
@@ -1933,6 +2152,7 @@ function SeriesDetail() {
               <AdminBarButton
                 type="button"
                 onClick={() => {
+                  if (isSavingLayout) return;
                   if (!layoutMode) {
                     setSelectedId(null);
                     setQuickAddOpen(false);
@@ -1953,17 +2173,19 @@ function SeriesDetail() {
                   <PrimaryAdminButton
                     type="button"
                     onClick={handleSaveLayout}
+                    disabled={isSavingLayout}
                     whileHover={{ scale: 1.03 }}
                     whileTap={{ scale: 0.97 }}
                   >
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                      <Save size={16} /> Salva layout
+                      <Save size={16} /> {isSavingLayout ? 'Salvataggio...' : 'Salva layout'}
                     </span>
                   </PrimaryAdminButton>
 
                   <AdminBarButton
                     type="button"
                     onClick={handleResetLayout}
+                    disabled={isSavingLayout}
                     whileHover={{ scale: 1.03 }}
                     whileTap={{ scale: 0.97 }}
                   >

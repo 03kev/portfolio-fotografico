@@ -1,521 +1,299 @@
-# 📸 Portfolio Fotografico v2.0
+# Kevin Muka | Portfolio Fotografico
 
-> **Un'applicazione web moderna e completa per gestire il tuo portfolio fotografico con mappa interattiva, galleria responsiva e sistema di upload avanzato.**
+Portfolio fotografico full-stack con frontend React, API Express su Vercel e storage Cloudflare R2 per immagini e metadati.
 
-![Portfolio Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen?style=for-the-badge)
-![React](https://img.shields.io/badge/React-18+-61DAFB?style=for-the-badge&logo=react)
-![Node.js](https://img.shields.io/badge/Node.js-18+-339933?style=for-the-badge&logo=node.js)
-![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)
+## Panoramica
 
-## 🌟 Caratteristiche Principali
+- Frontend SPA: React (`frontend/`)
+- Backend API: Express (`backend/`)
+- Deploy: Vercel (frontend statico + funzioni serverless)
+- Storage produzione: Cloudflare R2 (`uploads` + metadati JSON)
+- Storage locale sviluppo: filesystem (`backend/storage/`)
 
-### 🎨 **Frontend Moderno**
-- **React 18** con Hooks, Context API e Suspense
-- **Styled Components** per styling modulare e tematizzazione
-- **Framer Motion** per animazioni fluide e micro-interazioni
-- **Responsive Design** ottimizzato per mobile, tablet e desktop
-- **Leaflet Maps** per visualizzazione geografica interattiva
-- **PWA Ready** con Service Worker e caching intelligente
+## Funzionalita principali
 
-### 🔧 **Backend Robusto** 
-- **Node.js & Express** con architettura RESTful
-- **Multer & Sharp** per elaborazione immagini avanzata
-- **WebP Conversion** automatica per ottimizzazione
-- **JSON Database** con backup automatico
-- **Error Handling** completo e logging strutturato
-- **CORS** configurabile e sicurezza avanzata
+- Gestione foto (upload, modifica, eliminazione)
+- Gestione serie (layout, ordine, pubblicazione)
+- Mappa interattiva e archivio filtrabile
+- Modalita admin con sessione cookie HttpOnly
+- SEO base: canonical, OpenGraph, JSON-LD, sitemap immagini API
 
-### 📱 **User Experience Superiore**
-- **Upload Modal** completamente responsive e intuitivo
-- **Drag & Drop** per caricamento file (pianificato)
-- **Real-time Updates** con Context API
-- **Toast Notifications** per feedback immediato
-- **Modal Gallery** con navigazione fluida e zoom
-- **Search & Filter** con algoritmi avanzati
-- **Geolocalizzazione** GPS e selezione manuale da mappa
+## Struttura progetto
 
-### 🛠️ **Strumenti di Sviluppo**
-- **Setup Automatico** con script intelligenti
-- **Hot Reload** per development rapido
-- **Logging Avanzato** per debug e monitoring
-- **Verifica Sistema** automatica
-- **Cross-Platform** supporto Windows, macOS, Linux
-
-## 🚀 Installazione e Setup
-
-### 📦 Opzione 1: Setup Automatico (Consigliato)
-
-Il modo più veloce per iniziare:
-
-```bash
-# 1. Clona il repository
-git clone <repository-url>
-cd portfolio-fotografico
-
-# 2. Esegui il setup automatico
-chmod +x setup-automatico.sh
-./setup-automatico.sh
-
-# 3. Avvia l'applicazione
-./start-unix.sh    # macOS/Linux
-# OPPURE
-start-windows.bat  # Windows (doppio click)
+```text
+.
+├── api/
+│   └── index.js                       # Entrypoint Vercel -> backend/src/app.js
+├── backend/
+│   ├── scripts/
+│   │   ├── hash-write-token.js
+│   │   ├── sync-uploads-to-r2.js
+│   │   └── sync-metadata-to-r2.js
+│   ├── src/
+│   │   ├── app.js                     # App Express condivisa (locale + serverless)
+│   │   ├── server.js                  # Avvio backend locale
+│   │   ├── config/
+│   │   │   ├── defaults.js
+│   │   │   ├── env.js
+│   │   │   └── storage.js
+│   │   ├── middleware/
+│   │   │   └── auth.js
+│   │   ├── routes/
+│   │   │   ├── auth.js
+│   │   │   ├── photos.js
+│   │   │   └── series.js
+│   │   ├── services/
+│   │   │   ├── metadataStorage.js
+│   │   │   └── r2Storage.js
+│   │   └── utils/
+│   └── storage/                       # Runtime locale (gitignored)
+│       ├── data/
+│       └── uploads/
+├── frontend/
+│   ├── public/
+│   └── src/
+├── vercel.json
+└── package.json
 ```
 
-### ⚙️ Opzione 2: Setup Manuale
+## Requisiti
 
-Per un controllo completo del processo:
+- Node.js 18+
+- npm 8+
+
+## Avvio locale
+
+1. Installa dipendenze:
 
 ```bash
-# Installa dipendenze backend
-cd backend
-npm install
+npm run setup
+```
 
-# Installa dipendenze frontend  
-cd ../frontend
-npm install
+2. Crea i file env:
 
-# Configurazione file ambiente
+```bash
 cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
-
-# Crea cartelle necessarie
-mkdir -p backend/uploads/thumbnails
-mkdir -p backend/data
-
-# Avvia servizi (2 terminali separati)
-# Terminal 1 - Backend
-cd backend && npm run dev
-
-# Terminal 2 - Frontend
-cd frontend && npm start
 ```
 
-## 🔧 Configurazione Avanzata
+3. Avvia backend + frontend:
 
-### Backend (.env)
+```bash
+npm start
+```
+
+Servizi locali:
+
+- Frontend: `http://localhost:3000`
+- Backend API: `http://localhost:5001`
+
+## Configurazione ambiente
+
+### Backend (`backend/.env`)
+
+Variabili principali:
+
 ```env
-# Server Configuration
-PORT=5000
+# Runtime locale
+PORT=5001
 NODE_ENV=development
-HOST=localhost
 
-# Upload Settings
-MAX_FILE_SIZE=10485760        # 10MB
-UPLOAD_DIR=./uploads
-ALLOWED_FORMATS=jpg,jpeg,png,webp
-MAX_UPLOAD_FILES=10
+# CORS
+CORS_ORIGINS=http://localhost:3000,http://localhost:3001
 
-# Image Processing
-ENABLE_WEBP_CONVERSION=true
-THUMBNAIL_SIZE=300
-IMAGE_QUALITY=85
+# Admin auth
+API_WRITE_TOKEN_HASH=scrypt$16384$8$1$...
+API_WRITE_TOKEN=
+API_SESSION_SECRET=replace_with_long_random_secret
+API_SESSION_TTL_MS=604800000
+API_AUTH_RATE_LIMIT_WINDOW_MS=600000
+API_AUTH_RATE_LIMIT_MAX_ATTEMPTS=10
 
-# Security
-ALLOWED_ORIGINS=http://localhost:3000
-RATE_LIMIT_WINDOW=900000     # 15 minuti
-RATE_LIMIT_MAX=1000          # Requests per window
-
-# External Services (Opzionali)
-# CLOUDINARY_CLOUD_NAME=your_cloud_name
-# GOOGLE_MAPS_API_KEY=your_api_key
+# Cloudflare R2
+R2_ACCOUNT_ID=your_account_id
+R2_ACCESS_KEY_ID=your_access_key
+R2_SECRET_ACCESS_KEY=your_secret_key
+R2_BUCKET=portfolio-fotografico
+R2_PUBLIC_URL=https://uploads.yourdomain.com
+R2_ENDPOINT=
+R2_METADATA_PREFIX=data
 ```
 
-### Frontend (.env)
+Note:
+
+- In produzione il backend è **R2-only**.
+- In produzione è obbligatoria `API_WRITE_TOKEN_HASH` (token non in chiaro).
+- `API_WRITE_TOKEN` è solo fallback in sviluppo.
+- In locale i metadati vengono mantenuti in `backend/storage/data` (nessun seed fallback da `backend/data`).
+
+Genera hash del token:
+
+```bash
+cd backend
+npm run token:hash -- "il-tuo-token-lungo"
+```
+
+### Frontend (`frontend/.env`)
+
 ```env
-# API Configuration
-REACT_APP_API_URL=http://localhost:5000/api
-REACT_APP_IMAGES_URL=http://localhost:5000
-REACT_APP_API_TIMEOUT=10000
-
-# App Configuration
+REACT_APP_SITE_URL=http://localhost:3000
 REACT_APP_NAME=Portfolio Fotografico
-REACT_APP_VERSION=2.0.0
-REACT_APP_DESCRIPTION=Portfolio fotografico professionale
-
-# Performance
-REACT_APP_ENABLE_COMPRESSION=true
-REACT_APP_LAZY_LOADING=true
-REACT_APP_ENABLE_SERVICE_WORKER=false
-
-# Feature Flags
-REACT_APP_ENABLE_OFFLINE_MODE=false
-REACT_APP_ENABLE_PWA=false
-REACT_APP_ENABLE_ANALYTICS=false
+REACT_APP_VERSION=1.0.0
 ```
 
-## 📁 Architettura del Progetto
+Note:
 
-```
-portfolio-fotografico/
-├── 📁 frontend/                    # React Application
-│   ├── 📁 public/                 # Static assets
-│   ├── 📁 src/
-│   │   ├── 📁 components/         # React Components
-│   │   │   ├── 📄 Gallery.js     # Galleria responsiva
-│   │   │   ├── 📄 WorldMap.js    # Mappa interattiva Leaflet
-│   │   │   ├── 📄 PhotoUpload.js # Modal upload avanzato
-│   │   │   ├── 📄 PhotoModal.js  # Visualizzazione foto
-│   │   │   ├── 📄 Toast.js       # Sistema notifiche
-│   │   │   └── 📄 MapSelector.js # Selezione location
-│   │   ├── 📁 contexts/          # React Context API
-│   │   │   └── 📄 PhotoContext.js # State management foto
-│   │   ├── 📁 utils/             # Utilities e API client
-│   │   │   ├── 📄 api.js         # Client API
-│   │   │   ├── 📄 constants.js   # Configurazioni centrali
-│   │   │   └── 📄 helpers.js     # Funzioni utility
-│   │   ├── 📁 styles/            # Styling globale
-│   │   │   ├── 📄 GlobalStyles.js # Styled-components globali
-│   │   │   └── 📄 leaflet-custom.css # Stili mappa
-│   │   └── 📁 hooks/             # Custom React Hooks
-│   ├── 📄 .env                   # Configurazione frontend
-│   └── 📄 package.json
-├── 📁 backend/                    # Node.js API Server
-│   ├── 📁 src/
-│   │   ├── 📁 routes/            # API Routes
-│   │   │   └── 📄 photos.js      # Endpoint foto
-│   │   ├── 📁 middleware/        # Express Middleware
-│   │   │   ├── 📄 upload.js      # Gestione upload
-│   │   │   ├── 📄 cors.js        # CORS configuration
-│   │   │   └── 📄 error.js       # Error handling
-│   │   └── 📁 models/            # Data Models
-│   │       └── 📄 Photo.js       # Modello foto
-│   ├── 📁 uploads/               # File caricati
-│   │   └── 📁 thumbnails/        # Thumbnail generate
-│   ├── 📁 data/                  # Database JSON
-│   │   └── 📄 photos.json        # Database foto
-│   ├── 📁 logs/                  # File di log
-│   ├── 📄 .env                   # Configurazione backend
-│   └── 📄 package.json
-├── 📄 setup-automatico.sh         # Setup completo
-├── 📄 start-unix.sh              # Avvio Unix/macOS/Linux
-├── 📄 start-windows.bat          # Avvio Windows
-├── 📄 verify-system.sh           # Verifica sistema
-├── 📄 cleanup-backups.sh         # Pulizia file backup
-├── 📄 README.md                  # Documentazione
-├── 📄 package.json              # Dipendenze root
-└── 📄 .gitignore               # Git ignore rules
-```
+- Non inserire segreti in variabili `REACT_APP_*`.
+- In produzione le API usano base path `/api`.
 
-## 🌐 API Reference
+## Modalità admin
 
-### 📡 Endpoints Disponibili
+- Accesso: `https://tuodominio/admin`
+- Logout rapido: `https://tuodominio/admin/logout`
+- Le operazioni di write API richiedono sessione admin valida.
 
-| Metodo | Endpoint | Descrizione | Parametri |
-|--------|----------|-------------|-----------|
-| `GET` | `/api/photos` | Lista tutte le foto | `limit`, `offset`, `search` |
-| `GET` | `/api/photos/:id` | Dettagli foto specifica | `id` (path) |
-| `POST` | `/api/photos` | Carica nuova foto | Form-data con immagine |
-| `PUT` | `/api/photos/:id` | Aggiorna foto esistente | `id` (path), dati foto |
-| `DELETE` | `/api/photos/:id` | Elimina foto | `id` (path) |
-| `GET` | `/api/health` | Stato API e sistema | - |
-| `GET` | `/api/stats` | Statistiche portfolio | - |
+## Sicurezza API
 
-### 📝 Esempi di Utilizzo
+- Helmet attivo con CSP base
+- CORS allowlist in produzione (`CORS_ORIGINS` + dominio Vercel)
+- Cookie admin `HttpOnly`, `Secure` in produzione, `SameSite=strict`
+- CSRF origin-check su metodi state-changing in produzione
+- Rate limit globale + rate limit su login admin
+- Auth header (`Authorization` / `x-api-key`) disabilitata in produzione
 
-```javascript
-// Ottenere tutte le foto
-const response = await fetch('/api/photos');
-const photos = await response.json();
+## Deploy su Vercel
 
-// Caricare una nuova foto
-const formData = new FormData();
-formData.append('image', file);
-formData.append('title', 'Titolo foto');
-formData.append('location', 'Roma, Italia');
-formData.append('lat', '41.9028');
-formData.append('lng', '12.4964');
+### Variabili consigliate in Production
 
-const response = await fetch('/api/photos', {
-  method: 'POST',
-  body: formData
-});
+- `API_WRITE_TOKEN_HASH`
+- `API_SESSION_SECRET`
+- `CORS_ORIGINS` (es. `https://kevinmuka.dev,https://www.kevinmuka.dev`)
+- `R2_ACCOUNT_ID`
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+- `R2_BUCKET`
+- `R2_PUBLIC_URL` (es. `https://uploads.kevinmuka.dev`)
+- opzionali: `R2_ENDPOINT`, `R2_METADATA_PREFIX`, `API_SESSION_TTL_MS`, `API_AUTH_RATE_LIMIT_*`
 
-// Eliminare una foto
-await fetch(`/api/photos/${photoId}`, {
-  method: 'DELETE'
-});
-```
+Non necessari su Vercel:
 
-## 🧪 Testing e Debug
+- `PORT`
+- `NODE_ENV`
 
-### 🔍 Script di Verifica Sistema
+Ogni modifica env richiede redeploy.
+
+### Build/deploy
+
+Vercel usa:
+
+- `buildCommand`: `CI=false npm run vercel-build`
+- output frontend: `frontend/build`
+- API via `api/index.js`
+
+### Post-Deploy Check
+
+Esegui questa checklist dopo ogni deploy in produzione.
+
+1. Health API:
 
 ```bash
-# Verifica completa del sistema
-./verify-system.sh
-
-# Output:
-# ✅ Node.js: v18.17.0
-# ✅ NPM: 9.6.7
-# ✅ Porta 3000 libera
-# ✅ Porta 5000 libera
-# ✅ File configurazione presenti
-# ✅ Dipendenze installate
+curl -fsS https://kevinmuka.dev/api/health
 ```
 
-### 🐛 Debug Manuale
+2. Pagine principali:
+
+- `https://kevinmuka.dev/`
+- `https://kevinmuka.dev/series`
+- `https://kevinmuka.dev/gallery`
+- `https://kevinmuka.dev/map`
+
+3. Dati runtime:
 
 ```bash
-# Test API backend
-curl -X GET http://localhost:5000/api/health
-curl -X GET http://localhost:5000/api/photos
-
-# Controlla file caricati
-ls -la backend/uploads/
-ls -la backend/uploads/thumbnails/
-
-# Verifica database
-cat backend/data/photos.json | jq .
-
-# Monitoraggio log in tempo reale
-tail -f backend.log frontend.log
+curl -fsS https://kevinmuka.dev/api/photos | head
+curl -fsS \"https://kevinmuka.dev/api/series?all=false\" | head
 ```
 
-### 🔧 Comandi Avvio Avanzati
+4. Admin mode:
 
-Usando lo script Unix interattivo:
+- apri `https://kevinmuka.dev/admin`
+- verifica login sessione e una write operation (es. modifica titolo foto o serie)
+- verifica logout su `https://kevinmuka.dev/admin/logout`
+
+5. Asset R2:
+
+- controlla che immagini e thumbnail carichino senza 403/404
+- verifica almeno un URL asset dal JSON `/api/photos` (campo `image`/`thumbnail`)
+
+## Migrazione dati su R2
+
+Se hai dati locali in `backend/storage`:
 
 ```bash
-./start-unix.sh
-
-# Comandi disponibili durante l'esecuzione:
-# s - Mostra status servizi
-# r - Riavvia entrambi i servizi  
-# b - Riavvia solo backend
-# f - Riavvia solo frontend
-# l - Mostra log in tempo reale
-# o - Apri nel browser
-# h - Mostra aiuto
-# q - Termina applicazione
-```
-
-## 🔄 Changelog e Miglioramenti
-
-### ✅ **v2.0 - Completamente Riscritto**
-
-**🎯 Problemi Risolti:**
-- ✅ **Upload Modal Responsive**: Eliminato overflow orizzontale fastidioso
-- ✅ **Script Organizzati**: Rimossi duplicati, mantenuti solo essenziali  
-- ✅ **Setup Automatizzato**: Un solo comando per configurare tutto
-- ✅ **Foto Reali in Galleria**: Non più placeholder, immagini effettive
-- ✅ **Marker Mappa Stabili**: Fix comportamento click sui pin
-- ✅ **Auto-Aggiornamento**: Galleria si aggiorna automaticamente dopo upload
-- ✅ **Sistema Notifiche**: Toast per feedback immediato
-- ✅ **Configurazione Centralizzata**: Constants e URL in file dedicato
-
-**🚀 Nuove Funzionalità:**
-- 🆕 **Script Interattivi**: Controllo completo da terminale
-- 🆕 **Verifica Sistema**: Diagnostica automatica problemi
-- 🆕 **Gestione Porte**: Rilevamento e risoluzione conflitti
-- 🆕 **Log Strutturati**: Monitoring avanzato per debug
-- 🆕 **Backup Automatico**: Protezione dati integrata
-- 🆕 **Cross-Platform**: Supporto completo Windows/macOS/Linux
-
-**🔧 Miglioramenti Tecnici:**
-- ⚡ **Performance**: Lazy loading e ottimizzazioni varie
-- 🔒 **Sicurezza**: CORS configurabile, rate limiting
-- 🎨 **UI/UX**: Animazioni fluide, responsive design
-- 📱 **Mobile-First**: Esperienza ottimizzata su tutti i dispositivi
-- 🗄️ **Database**: Backup automatico e recovery
-
-## 🎯 Roadmap Sviluppi Futuri
-
-### 🔄 **In Sviluppo Attivo**
-- [ ] **Batch Upload**: Caricamento multiplo con progress bar
-- [ ] **EXIF Extraction**: Metadati automatici da foto
-- [ ] **Drag & Drop Interface**: Upload intuitivo
-- [ ] **Compression Client-Side**: Riduzione banda upload
-
-### 🚀 **Pianificati Q2 2025**
-- [ ] **Autenticazione Utenti**: Sistema login/registrazione
-- [ ] **Database Upgrade**: PostgreSQL/MongoDB support
-- [ ] **Cloud Storage**: Integrazione Cloudinary/AWS S3
-- [ ] **PWA Completa**: Supporto offline avanzato
-- [ ] **Social Sharing**: Condivisione diretta social media
-- [ ] **Watermark Automatico**: Protezione copyright
-- [ ] **Export Portfolio**: PDF/ZIP generation
-
-### 🔧 **Miglioramenti Tecnici Q3 2025**
-- [ ] **Docker Container**: Deployment semplificato
-- [ ] **CI/CD Pipeline**: Automazione deployment
-- [ ] **Unit Testing**: Coverage completa
-- [ ] **Performance Monitoring**: Analytics avanzate
-- [ ] **SEO Optimization**: Indicizzazione migliorata
-- [ ] **Service Worker**: Offline-first architecture
-- [ ] **WebP/AVIF**: Formati immagine next-gen
-
-## 🐛 Troubleshooting
-
-### ❗ Problemi Comuni e Soluzioni
-
-**🔴 Porte 3000/5000 occupate**
-```bash
-# Trova e termina processi
-lsof -ti:3000 | xargs kill -9
-lsof -ti:5000 | xargs kill -9
-
-# Con script automatico
-./start-unix.sh  # Offre terminazione automatica
-```
-
-**🔴 Errori CORS**
-```bash
-# Verifica configurazione backend/.env
-ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
-
-# Riavvia backend
-cd backend && npm run dev
-```
-
-**🔴 Immagini non si caricano**
-```bash
-# Controlla permessi cartella uploads
-chmod -R 755 backend/uploads
-
-# Verifica URL frontend/.env
-REACT_APP_IMAGES_URL=http://localhost:5000
-
-# Controlla Network tab nel browser (F12)
-```
-
-**🔴 Database corrotto/mancante**
-```bash
-# Backup e reset
-cp backend/data/photos.json backend/data/photos.backup.json
-echo "[]" > backend/data/photos.json
-
-# Oppure riesegui setup
-./setup-automatico.sh
-```
-
-**🔴 Dipendenze obsolete**
-```bash
-# Aggiorna dipendenze backend
-cd backend && npm update
-
-# Aggiorna dipendenze frontend
-cd frontend && npm update
-
-# Reinstallazione completa
-rm -rf node_modules package-lock.json
-npm install
-```
-
-### 🔧 Debug Avanzato
-
-**Modalità Debug Verbose:**
-```bash
-# Backend con debug completo
 cd backend
-DEBUG=* npm run dev
-
-# Frontend con sourcemap
-cd frontend
-GENERATE_SOURCEMAP=true npm start
+npm run sync:r2
+npm run sync:r2:metadata
 ```
 
-**Analisi Performance:**
-```bash
-# Bundle analyzer frontend
-cd frontend
-npm run build
-npm install -g serve
-serve -s build
+## Endpoint API principali
 
-# Memory usage backend
-cd backend
-node --inspect npm run dev
-# Apri chrome://inspect nel browser
-```
+- `GET /api/health`
+- `GET /api/auth/session`
+- `POST /api/auth/session`
+- `DELETE /api/auth/session`
+- `GET /api/photos`
+- `GET /api/photos/:id`
+- `POST /api/photos/upload-url`
+- `POST /api/photos`
+- `PUT /api/photos/:id`
+- `DELETE /api/photos/:id`
+- `GET /api/series?all=false`
+- `GET /api/series/:identifier`
+- `POST /api/series`
+- `PUT /api/series/:id`
+- `DELETE /api/series/:id`
+- `GET /api/sitemap-images.xml`
 
-## 📄 Licenza e Contributi
+## Script utili
 
-### 📜 Licenza MIT
+### Root
 
-Questo progetto è distribuito sotto licenza MIT. Vedi il file `LICENSE` per maggiori informazioni.
+- `npm run setup` install dipendenze backend/frontend
+- `npm start` avvio locale completo
+- `npm run build` build frontend
+- `npm run vercel-build` build usata da Vercel
+- `npm run clean` pulizia `node_modules`
 
-### 🤝 Come Contribuire
+### Backend
 
-I contributi sono benvenuti! Segui questi passi:
+- `npm run dev` avvio backend con nodemon
+- `npm run token:hash -- "<token>"` genera hash scrypt
+- `npm run sync:r2` upload locali -> R2
+- `npm run sync:r2:metadata` metadati locali -> R2
 
-1. **Fork** del progetto
-2. **Clone** il tuo fork: `git clone <your-fork-url>`
-3. **Branch** per la feature: `git checkout -b feature/amazing-feature`
-4. **Commit** delle modifiche: `git commit -m 'Add amazing feature'`
-5. **Push** del branch: `git push origin feature/amazing-feature`
-6. **Pull Request** con descrizione dettagliata
+## Troubleshooting rapido
 
-### 🧑‍💻 Guidelines per Contributi
+### `EADDRINUSE: 5001`
 
-- Segui le convenzioni di codice esistenti
-- Aggiungi test per nuove funzionalità
-- Aggiorna la documentazione
-- Testa su più piattaforme (Windows/macOS/Linux)
-- Rispetta il design responsive esistente
+Un altro processo usa la porta 5001. Chiudi il processo e riavvia.
 
-## 📞 Supporto e Community
+### Login admin fallisce con 500 in produzione
 
-### 🆘 Ottieni Aiuto
+Verifica nome variabile corretto: `API_WRITE_TOKEN_HASH`.
 
-- 📧 **Email**: [Il tuo email di supporto]
-- 🐛 **Issues**: [GitHub Issues](../../issues)
-- 📖 **Wiki**: [GitHub Wiki](../../wiki)
-- 💬 **Discussioni**: [GitHub Discussions](../../discussions)
+### Immagini non visibili in produzione
 
-### 📚 Risorse Utili
+Controlla:
 
-- [React Documentation](https://react.dev/)
-- [Node.js Guide](https://nodejs.org/en/docs/)
-- [Leaflet Documentation](https://leafletjs.com/)
-- [Express.js Guide](https://expressjs.com/)
+- `R2_PUBLIC_URL`
+- dominio custom R2 attivo
+- oggetti presenti nel bucket
 
-### 🌟 Hall of Fame
+### CORS su upload
 
-Ringraziamenti speciali ai contributor:
+Configura CORS del bucket R2 con origin del sito e metodi `GET,HEAD,PUT`.
 
-- **React Team** - Framework eccezionale
-- **Leaflet Community** - Mappe open source
-- **Node.js Contributors** - Runtime robusto
-- **Sharp Developers** - Elaborazione immagini
-- **Open Source Community** - Ispirazione continua
+## Note operative
 
-## 🎯 Performance e Statistiche
-
-### ⚡ Benchmark
-
-| Metrica | Valore | Target |
-|---------|--------|---------|
-| First Paint | < 1.2s | ✅ |
-| First Contentful Paint | < 1.8s | ✅ |
-| Time to Interactive | < 3.2s | ✅ |
-| Bundle Size (Frontend) | ~145KB gzipped | ✅ |
-| API Response Time | < 200ms | ✅ |
-| Image Processing | < 2s/image | ✅ |
-
-### 📊 Capacità Sistema
-
-- **Upload simultanei**: Fino a 10 file
-- **Dimensione massima file**: 10MB per immagine
-- **Formati supportati**: JPG, PNG, WebP
-- **Risoluzione massima**: 8K (7680×4320)
-- **Storage database**: Illimitato (JSON file-based)
-- **Concurrent users**: 100+ (con reverse proxy)
-
----
-
-<div align="center">
-
-## ✨ **Fatto con ❤️ per i fotografi digitali** ✨
-
-**Portfolio Fotografico v2.0** - *La soluzione completa per il tuo portfolio online*
-
-[⭐ Stella il Repository](../../stargazers) • [🐛 Reporta Bug](../../issues) • [💡 Richiedi Feature](../../issues) • [🤝 Contribuisci](../../pulls)
-
----
-
-*"Ogni grande fotografia inizia con una grande visione. Questo portfolio ti aiuta a condividerla con il mondo."*
-
-**[🚀 Inizia Ora](#-installazione-e-setup)** | **[📖 Documentazione](#-api-reference)** | **[💬 Community](../../discussions)**
-
-</div>
+- `backend/storage/` e runtime locale: non versionarlo.
+- Ruota periodicamente i segreti (`API_WRITE_TOKEN_HASH`, `API_SESSION_SECRET`, chiavi R2).

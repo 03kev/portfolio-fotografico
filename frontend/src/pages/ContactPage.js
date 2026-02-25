@@ -1,6 +1,7 @@
 import React from 'react';
 import styled from 'styled-components';
 import Section from '../ui/Section';
+import useSeo from '../seo/useSeo';
 
 const Wrap = styled.div`
   max-width: 820px;
@@ -43,10 +44,16 @@ const Value = styled.a`
 `;
 
 export default function ContactPage() {
+  useSeo({
+    title: 'Contatti',
+    description: 'Contatti ufficiali di Kevin Muka per collaborazioni, progetti fotografici e richieste professionali.',
+  });
+
   return (
     <Section
       title="Contatti"
       subtitle="Se vuoi saperne di più, questi sono i modi migliori per contattarmi."
+      headingLevel="h1"
     >
       <Wrap>
         <Card>
@@ -56,7 +63,7 @@ export default function ContactPage() {
           </Row>
           <Row>
             <Label>Instagram</Label>
-            <Value href="https://instagram.com/kev.muka" target="_blank" rel="noreferrer">@kev.muka</Value>
+            <Value href="https://instagram.com/kev.muka" target="_blank" rel="me noreferrer">@kev.muka</Value>
           </Row>
         </Card>
       </Wrap>

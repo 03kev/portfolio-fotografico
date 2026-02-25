@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Camera, Menu, X } from 'lucide-react';
+import { Camera, KeyRound, Menu, X } from 'lucide-react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 
 const HeaderContainer = styled(motion.header)`
@@ -9,7 +9,7 @@ const HeaderContainer = styled(motion.header)`
   top: 0;
   width: 100%;
   z-index: var(--z-fixed);
-  background: ${(props) => (props.scrolled ? 'rgba(11, 11, 13, 0.92)' : 'rgba(11, 11, 13, 0.72)')};
+  background: ${(props) => (props.$scrolled ? 'rgba(11, 11, 13, 0.92)' : 'rgba(11, 11, 13, 0.72)')};
   backdrop-filter: blur(18px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 `;
@@ -122,6 +122,33 @@ const UploadButton = styled(motion.button)`
   }
 `;
 
+const TokenButton = styled(motion.button)`
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: var(--border-radius-full);
+  border: 1px solid ${(props) => {
+    if (props.$feedback === 'success') return 'rgba(52, 211, 153, 0.75)';
+    if (props.$feedback === 'error') return 'rgba(248, 113, 113, 0.75)';
+    return props.$active ? 'rgba(52, 211, 153, 0.5)' : 'rgba(255, 255, 255, 0.2)';
+  }};
+  background: ${(props) => {
+    if (props.$feedback === 'success') return 'rgba(52, 211, 153, 0.2)';
+    if (props.$feedback === 'error') return 'rgba(248, 113, 113, 0.2)';
+    return props.$active ? 'rgba(52, 211, 153, 0.12)' : 'rgba(255, 255, 255, 0.04)';
+  }};
+  color: var(--color-text);
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-xs);
+  transition: background 0.2s ease, border-color 0.2s ease;
+
+  &:hover {
+    transform: translateY(-1px);
+    border-color: ${(props) => (props.$active ? 'rgba(52, 211, 153, 0.65)' : 'rgba(255, 255, 255, 0.35)')};
+  }
+`;
+
 const MobileMenuButton = styled(motion.button)`
   width: 38px;
   height: 38px;
@@ -180,7 +207,13 @@ const MobileLink = styled(NavLink)`
   }
 `;
 
-const Header = ({ onOpenUpload, isAdmin = false }) => {
+const Header = ({
+  onOpenUpload,
+  isAdmin = false,
+  onConfigureAuth,
+  hasAuthToken = false,
+  authFeedback = 'idle'
+}) => {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
@@ -208,7 +241,7 @@ const Header = ({ onOpenUpload, isAdmin = false }) => {
 
   return (
     <HeaderContainer
-      scrolled={scrolled}
+      $scrolled={scrolled}
       initial={{ y: -80, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ duration: 0.45, ease: 'easeOut' }}
@@ -229,6 +262,20 @@ const Header = ({ onOpenUpload, isAdmin = false }) => {
         </NavLinks>
 
         <Right>
+          {isAdmin && onConfigureAuth && (
+            <TokenButton
+              type="button"
+              onClick={onConfigureAuth}
+              whileTap={{ scale: 0.98 }}
+              $active={hasAuthToken}
+              $feedback={authFeedback}
+              title={hasAuthToken ? 'Token API configurato' : 'Configura token API'}
+            >
+              <KeyRound size={14} />
+              {hasAuthToken ? 'API: ON' : 'API: OFF'}
+            </TokenButton>
+          )}
+
           {isAdmin && onOpenUpload && (
             <UploadButton onClick={onOpenUpload} whileTap={{ scale: 0.98 }}>
               <Camera size={16} />

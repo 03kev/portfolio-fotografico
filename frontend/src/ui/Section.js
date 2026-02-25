@@ -40,7 +40,7 @@ const Subtitle = styled(motion.p)`
   line-height: 1.7;
 `;
 
-export default function Section({ title, subtitle, children, id, ...rest }) {
+export default function Section({ title, subtitle, children, id, headingLevel = 'h2', ...rest }) {
   const item = {
     hidden: { opacity: 0, y: 10 },
     show: { opacity: 1, y: 0, transition: { duration: 0.45, ease: 'easeOut' } }
@@ -51,7 +51,17 @@ export default function Section({ title, subtitle, children, id, ...rest }) {
       <Container>
         {(title || subtitle) && (
           <Header>
-            {title && <Title variants={item} initial="hidden" whileInView="show" viewport={{ once: true, margin: '-120px' }}>{title}</Title>}
+            {title && (
+              <Title
+                as={headingLevel}
+                variants={item}
+                initial="hidden"
+                whileInView="show"
+                viewport={{ once: true, margin: '-120px' }}
+              >
+                {title}
+              </Title>
+            )}
             {subtitle && <Subtitle variants={item} initial="hidden" whileInView="show" viewport={{ once: true, margin: '-120px' }}>{subtitle}</Subtitle>}
           </Header>
         )}

@@ -105,7 +105,7 @@ function photoReducer(state, action) {
             ...state,
             photos: [{
                 ...action.payload,
-                url: action.payload.url || action.payload.thumbnail || action.payload.image || ''
+                url: action.payload.url || action.payload.image || action.payload.thumbnail || ''
             }, ...state.photos]
         };
         
@@ -183,7 +183,7 @@ export function PhotoProvider({ children }) {
                 // Normalizza tutte le foto aggiungendo il campo url se mancante
                 const normalizedPhotos = photos.map(photo => ({
                     ...photo,
-                    url: photo.url || photo.thumbnail || photo.image || ''
+                    url: photo.url || photo.image || photo.thumbnail || ''
                 }));
                 dispatch({ type: ACTIONS.SET_PHOTOS, payload: normalizedPhotos });
             } catch (error) {
@@ -237,7 +237,10 @@ export function PhotoProvider({ children }) {
         addPhoto: async (photoData) => {
             try {
                 dispatch({ type: ACTIONS.SET_LOADING, payload: true });
-                const response = await photoService.upload(photoData);
+                const isFormData = typeof FormData !== 'undefined' && photoData instanceof FormData;
+                const response = isFormData
+                    ? await photoService.upload(photoData)
+                    : await photoService.create(photoData);
                 const newPhoto = response.data?.data || response.data;
                 
                 // Ricarica tutte le foto dal server per assicurare coerenza

@@ -1,34 +1,143 @@
 const express = require('express');
+const crypto = require('crypto');
 const multer = require('multer');
 const sharp = require('sharp');
-const path = require('path');
 const fs = require('fs').promises;
-const Photo = require('../models/Photo');
+const {
+    THUMBNAILS_DIR,
+    UPLOADS_DIR,
+    ensureUploadsDirectories,
+    resolvePublicFilePath
+} = require('../config/storage');
+const {
+    canUseLocalFallback,
+    createUploadPresignedPutUrl,
+    deleteUploadObject,
+    isR2Enabled,
+    putUploadObject
+} = require('../services/r2Storage');
+const { readMetadataFile, writeMetadataFile } = require('../services/metadataStorage');
+const { env } = require('../config/env');
+const DEFAULTS = require('../config/defaults');
+const { parseNumericIdOrThrow } = require('../utils/ids');
+const { sanitizePhotoPayload } = require('../utils/inputSanitizers');
+const { protectWriteMethods } = require('../middleware/auth');
 
 const router = express.Router();
+router.use(protectWriteMethods);
 
-// File JSON per persistenza temporanea
-const PHOTOS_DB_PATH = path.join(__dirname, '../../data/photos.json');
-const SERIES_DB_PATH = path.join(__dirname, '../../data/series.json');
+function normalizePublicBaseUrl() {
+    // In sviluppo manteniamo path relative (/uploads/...) per compatibilità
+    // con il frontend locale che usa base URL locale/proxy.
+    return env.isProduction ? env.r2PublicUrl : '';
+}
+
+function buildPublicAssetUrl(uploadPath) {
+    const value = String(uploadPath || '').trim();
+    if (!value) return value;
+    if (/^https?:\/\//i.test(value)) return value;
+
+    const publicBaseUrl = normalizePublicBaseUrl();
+    if (!publicBaseUrl) return value;
+    if (!value.startsWith('/uploads/')) return value;
+
+    const objectKey = value.replace(/^\/+/, '').replace(/^uploads\/+/, '');
+    return `${publicBaseUrl}/${objectKey}`;
+}
+
+function normalizeUploadsPath(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+
+    if (raw.startsWith('/uploads/')) {
+        return raw;
+    }
+
+    if (/^https?:\/\//i.test(raw)) {
+        try {
+            const parsed = new URL(raw);
+            const pathname = String(parsed.pathname || '').replace(/^\/+/, '');
+            const key = pathname.replace(/^uploads\/+/, '');
+            return key ? `/uploads/${key}` : '';
+        } catch {
+            return '';
+        }
+    }
+
+    const normalized = raw.replace(/^\/+/, '').replace(/^uploads\/+/, '');
+    return normalized ? `/uploads/${normalized}` : '';
+}
+
+function presentPhoto(photo) {
+    const image = buildPublicAssetUrl(photo.image);
+    const thumbnailPath = normalizeUploadsPath(photo.thumbnail);
+    const thumbnail = thumbnailPath || buildPublicAssetUrl(photo.thumbnail);
+    const fallbackUrl = photo.image || photo.url || photo.thumbnail || '';
+
+    return {
+        ...photo,
+        image,
+        thumbnail,
+        url: buildPublicAssetUrl(fallbackUrl)
+    };
+}
+
+function parseAllowedUploadTypes() {
+    return DEFAULTS.uploadAllowedTypes;
+}
+
+function isAllowedMimeType(mimetype, allowedTypes) {
+    return allowedTypes.some((allowedType) => {
+        if (allowedType.endsWith('/*')) {
+            const prefix = allowedType.slice(0, -1);
+            return mimetype.startsWith(prefix);
+        }
+        return mimetype === allowedType;
+    });
+}
+
+function parseCoordinate(value, fieldName) {
+    if (value === undefined || value === null || value === '') return null;
+
+    const parsed = Number.parseFloat(String(value));
+    if (!Number.isFinite(parsed)) {
+        const error = new Error(`${fieldName} non valido`);
+        error.status = 400;
+        error.code = 'INVALID_COORDINATE';
+        throw error;
+    }
+    return parsed;
+}
+
+function parseUploadSize(value) {
+    const parsed = Number.parseInt(String(value || ''), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+    return parsed;
+}
+
+function normalizeUploadId(value) {
+    const normalized = String(value || '')
+        .trim()
+        .replace(/[^a-zA-Z0-9_-]/g, '')
+        .slice(0, 48);
+    return normalized || null;
+}
+
+function buildUploadFilename(mimetype, uploadId, variant = 'image') {
+    const safeUploadId = normalizeUploadId(uploadId) || `${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
+    const mimeExt = mimetype && mimetype.includes('/') ? `.${mimetype.split('/')[1]}` : '.bin';
+    const extension = variant === 'thumbnail' ? '.webp' : mimeExt.toLowerCase();
+    return `photo_${safeUploadId}${extension}`;
+}
 
 // Utility per leggere/scrivere il database JSON
 const readPhotosDB = async () => {
-    try {
-        const data = await fs.readFile(PHOTOS_DB_PATH, 'utf8');
-        return JSON.parse(data);
-    } catch (error) {
-        // Se il file non esiste, restituisci array vuoto
-        return [];
-    }
+    return readMetadataFile('photos.json', []);
 };
 
 const writePhotosDB = async (photos) => {
     try {
-        // Crea la directory data se non esiste
-        const dataDir = path.join(__dirname, '../../data');
-        await fs.mkdir(dataDir, { recursive: true });
-        
-        await fs.writeFile(PHOTOS_DB_PATH, JSON.stringify(photos, null, 2));
+        await writeMetadataFile('photos.json', photos);
     } catch (error) {
         console.error('Errore nella scrittura del database foto:', error);
         throw error;
@@ -36,20 +145,12 @@ const writePhotosDB = async (photos) => {
 };
 
 const readSeriesDB = async () => {
-    try {
-        const data = await fs.readFile(SERIES_DB_PATH, 'utf8');
-        return JSON.parse(data);
-    } catch (error) {
-        return [];
-    }
+    return readMetadataFile('series.json', []);
 };
 
 const writeSeriesDB = async (series) => {
     try {
-        const dataDir = path.join(__dirname, '../../data');
-        await fs.mkdir(dataDir, { recursive: true });
-        
-        await fs.writeFile(SERIES_DB_PATH, JSON.stringify(series, null, 2));
+        await writeMetadataFile('series.json', series);
     } catch (error) {
         console.error('Errore nella scrittura del database serie:', error);
         throw error;
@@ -58,16 +159,21 @@ const writeSeriesDB = async (series) => {
 
 // Configurazione multer per upload immagini
 const storage = multer.memoryStorage();
+const uploadMaxSize = DEFAULTS.uploadMaxSize;
+const allowedUploadTypes = parseAllowedUploadTypes();
 const upload = multer({
     storage,
     limits: {
-        fileSize: 50 * 1024 * 1024, // 50MB limit
+        fileSize: uploadMaxSize
     },
     fileFilter: (req, file, cb) => {
-        if (file.mimetype.startsWith('image/')) {
+        if (isAllowedMimeType(file.mimetype, allowedUploadTypes)) {
             cb(null, true);
         } else {
-            cb(new Error('Solo file di immagine sono consentiti'), false);
+            const error = new Error(`Tipo file non consentito. Tipi ammessi: ${allowedUploadTypes.join(', ')}`);
+            error.status = 400;
+            error.code = 'INVALID_FILE_TYPE';
+            cb(error, false);
         }
     }
 });
@@ -113,11 +219,13 @@ router.get('/', async (req, res) => {
                 lens: photo.lens || '',
                 lat: photo.lat || 0,
                 lng: photo.lng || 0,
-                url: photo.thumbnail || photo.image || '',
+                image: photo.image || '',
+                thumbnail: photo.thumbnail || '',
+                url: photo.image || photo.thumbnail || '',
                 settings,
                 tags
             };
-        });
+        }).map(presentPhoto);
         
         res.json({
             success: true,
@@ -137,8 +245,9 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
+        const photoId = parseNumericIdOrThrow(id, 'ID foto');
         const photos = await readPhotosDB();
-        const photo = photos.find(p => p.id === parseInt(id));
+        const photo = photos.find((p) => p.id === photoId);
         
         if (!photo) {
             return res.status(404).json({
@@ -149,7 +258,7 @@ router.get('/:id', async (req, res) => {
         
         res.json({
             success: true,
-            data: photo
+            data: presentPhoto(photo)
         });
     } catch (error) {
         console.error('Errore nel recupero foto:', error);
@@ -160,82 +269,139 @@ router.get('/:id', async (req, res) => {
     }
 });
 
+// POST - Genera URL firmata per upload diretto su R2 (evita limiti body Vercel)
+router.post('/upload-url', async (req, res) => {
+    try {
+        if (!isR2Enabled()) {
+            return res.status(400).json({
+                success: false,
+                message: 'Upload diretto disponibile solo con R2 configurato'
+            });
+        }
+
+        const { uploadId, mimetype, contentType, fileSize, variant } = req.body || {};
+        const uploadVariant = variant === 'thumbnail' ? 'thumbnail' : 'image';
+        const effectiveMimeType = String(mimetype || contentType || '').trim();
+        if (!effectiveMimeType || !isAllowedMimeType(effectiveMimeType, allowedUploadTypes)) {
+            return res.status(400).json({
+                success: false,
+                message: `Tipo file non consentito. Tipi ammessi: ${allowedUploadTypes.join(', ')}`
+            });
+        }
+
+        const parsedSize = parseUploadSize(fileSize);
+        if (parsedSize && parsedSize > uploadMaxSize) {
+            return res.status(400).json({
+                success: false,
+                message: `File troppo grande. Massimo ${uploadMaxSize} byte.`,
+                code: 'LIMIT_FILE_SIZE'
+            });
+        }
+
+        const uploadFilename = buildUploadFilename(effectiveMimeType, uploadId, uploadVariant);
+        const uploadPath = uploadVariant === 'thumbnail'
+            ? `/uploads/thumbnails/${uploadFilename}`
+            : `/uploads/${uploadFilename}`;
+
+        const signed = await createUploadPresignedPutUrl(uploadPath, {
+            contentType: effectiveMimeType,
+            cacheControl: 'public, max-age=31536000, immutable',
+            expiresInSeconds: 300
+        });
+
+        return res.json({
+            success: true,
+            data: {
+                uploadUrl: signed.uploadUrl,
+                imagePath: signed.uploadPath,
+                publicUrl: signed.publicUrl,
+                expiresInSeconds: signed.expiresInSeconds
+            }
+        });
+    } catch (error) {
+        console.error('Errore generazione URL upload diretto:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Errore nella generazione URL upload'
+        });
+    }
+});
+
 // POST - Upload nuova foto
 router.post('/', upload.single('image'), async (req, res) => {
     try {
-        if (!req.file) {
-            return res.status(400).json({
-                success: false,
-                message: 'Nessun file caricato'
-            });
-        }
-        
-        const { title, location, lat, lng, description, date, camera, lens, settings, tags } = req.body;
-        
-        // Genera nome file unico
+        const { lat, lng } = req.body;
+        const sanitized = sanitizePhotoPayload(req.body, { partial: false });
+        const parsedLat = parseCoordinate(lat, 'Latitudine');
+        const parsedLng = parseCoordinate(lng, 'Longitudine');
         const timestamp = Date.now();
-        const filename = `photo_${timestamp}.webp`;
-        const thumbnailFilename = `photo_${timestamp}_thumb.webp`;
-        
-        // Processa l'immagine principale CON correzione orientamento
-        const processedImage = await sharp(req.file.buffer)
-        .rotate() // ⭐ AGGIUNGE AUTO-ROTAZIONE BASATA SU EXIF
-        .resize(3840, 2160, { fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: 95, effort: 6 })
-        .toBuffer();
-        
-        // Crea thumbnail CON correzione orientamento
-        const thumbnail = await sharp(req.file.buffer)
-        .rotate() // ⭐ AGGIUNGE AUTO-ROTAZIONE BASATA SU EXIF
-        .resize(400, 300, { fit: 'cover' })
-        .webp({ quality: 85 })
-        .toBuffer();
-        
-        // Salva i file
-        const uploadsDir = path.join(__dirname, '../../uploads');
-        const thumbnailsDir = path.join(uploadsDir, 'thumbnails');
-        
-        // Crea directory se non esistono
-        await fs.mkdir(uploadsDir, { recursive: true });
-        await fs.mkdir(thumbnailsDir, { recursive: true });
-        
-        await fs.writeFile(path.join(uploadsDir, filename), processedImage);
-        await fs.writeFile(path.join(thumbnailsDir, thumbnailFilename), thumbnail);
+
+        let imagePath;
+        let thumbnailPath;
+
+        if (req.file) {
+            // Flusso legacy multipart (locale o fallback)
+            const filename = `photo_${timestamp}.webp`;
+            const thumbnailFilename = `photo_${timestamp}_thumb.webp`;
+            imagePath = `/uploads/${filename}`;
+            thumbnailPath = `/uploads/thumbnails/${thumbnailFilename}`;
+
+            const processedImage = await sharp(req.file.buffer)
+                .rotate()
+                .resize(3840, 2160, { fit: 'inside', withoutEnlargement: true })
+                .webp({ quality: 95, effort: 6 })
+                .toBuffer();
+
+            const thumbnail = await sharp(req.file.buffer)
+                .rotate()
+                .resize(400, 300, { fit: 'cover' })
+                .webp({ quality: 85 })
+                .toBuffer();
+
+            if (isR2Enabled()) {
+                await putUploadObject(imagePath, processedImage, { contentType: 'image/webp' });
+                await putUploadObject(thumbnailPath, thumbnail, { contentType: 'image/webp' });
+            } else if (canUseLocalFallback()) {
+                await ensureUploadsDirectories();
+                await fs.writeFile(`${UPLOADS_DIR}/${filename}`, processedImage);
+                await fs.writeFile(`${THUMBNAILS_DIR}/${thumbnailFilename}`, thumbnail);
+            } else {
+                throw new Error('Configurazione R2 mancante: upload immagini consentito solo su R2 in produzione.');
+            }
+        } else {
+            // Flusso consigliato: upload diretto Browser -> R2 e qui solo metadata
+            const providedImagePath = String(req.body?.imagePath || req.body?.image || '').trim();
+            const providedThumbPath = String(req.body?.thumbnailPath || req.body?.thumbnail || '').trim();
+
+            if (!providedImagePath || !providedImagePath.startsWith('/uploads/')) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'imagePath non valido: usa /uploads/... ottenuto da /api/photos/upload-url'
+                });
+            }
+
+            imagePath = providedImagePath;
+            thumbnailPath = (providedThumbPath && providedThumbPath.startsWith('/uploads/'))
+                ? providedThumbPath
+                : providedImagePath;
+        }
         
         // Crea oggetto foto con valori di default
         const newPhoto = {
             id: timestamp, // Usa timestamp come ID temporaneo
-            title: title || 'Foto senza titolo',
-            location: location || 'Posizione sconosciuta',
-            lat: lat ? parseFloat(lat) : 0,
-            lng: lng ? parseFloat(lng) : 0,
-            image: `/uploads/${filename}`,
-            thumbnail: `/uploads/thumbnails/${thumbnailFilename}`,
-            url: `/uploads/thumbnails/${thumbnailFilename}`, // Aggiungi campo url
-            description: description || '',
-            date: date || new Date().toISOString(),
-            camera: camera || '',
-            lens: lens || '',
-            settings: (() => {
-                try {
-                    if (typeof settings === 'string') {
-                        const parsed = JSON.parse(settings);
-                        return parsed;
-                    }
-                    return settings || {};
-                } catch (e) {
-                    console.warn('Errore nel parsing settings durante il salvataggio:', e);
-                    return {};
-                }
-            })(),
-            tags: (() => {
-                try {
-                    const parsedTags = typeof tags === 'string' ? JSON.parse(tags) : tags;
-                    return Array.isArray(parsedTags) ? parsedTags : [];
-                } catch (e) {
-                    return [];
-                }
-            })()
+            title: sanitized.title,
+            location: sanitized.location,
+            lat: parsedLat ?? 0,
+            lng: parsedLng ?? 0,
+            image: imagePath,
+            thumbnail: thumbnailPath,
+            url: imagePath,
+            description: sanitized.description,
+            date: sanitized.date,
+            camera: sanitized.camera,
+            lens: sanitized.lens,
+            settings: sanitized.settings,
+            tags: sanitized.tags
         };
         
         // Salva nel database JSON
@@ -246,11 +412,27 @@ router.post('/', upload.single('image'), async (req, res) => {
         res.status(201).json({
             success: true,
             message: 'Foto caricata con successo',
-            data: newPhoto
+            data: presentPhoto(newPhoto)
         });
         
     } catch (error) {
         console.error('Errore nell\'upload:', error);
+
+        if (error.code === 'LIMIT_FILE_SIZE') {
+            return res.status(400).json({
+                success: false,
+                message: `File troppo grande. Massimo ${uploadMaxSize} byte.`,
+                code: 'LIMIT_FILE_SIZE'
+            });
+        }
+
+        if (error.code === 'INVALID_FILE_TYPE' || error.code === 'INVALID_COORDINATE' || error.status === 400) {
+            return res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+
         res.status(500).json({
             success: false,
             message: 'Errore nell\'upload della foto'
@@ -262,10 +444,12 @@ router.post('/', upload.single('image'), async (req, res) => {
 router.put('/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { title, location, lat, lng, description, date, camera, lens, settings, tags } = req.body;
+        const photoId = parseNumericIdOrThrow(id, 'ID foto');
+        const { lat, lng } = req.body;
+        const sanitized = sanitizePhotoPayload(req.body, { partial: true });
         
         const photos = await readPhotosDB();
-        const photoIndex = photos.findIndex(p => p.id === parseInt(id));
+        const photoIndex = photos.findIndex((p) => p.id === photoId);
         
         if (photoIndex === -1) {
             return res.status(404).json({
@@ -275,18 +459,14 @@ router.put('/:id', async (req, res) => {
         }
         
         // Aggiorna la foto con i nuovi dati
+        const nextLat = lat !== undefined ? parseCoordinate(lat, 'Latitudine') : photos[photoIndex].lat;
+        const nextLng = lng !== undefined ? parseCoordinate(lng, 'Longitudine') : photos[photoIndex].lng;
+
         const updatedPhoto = {
             ...photos[photoIndex],
-            title: title || photos[photoIndex].title,
-            location: location || photos[photoIndex].location,
-            lat: lat !== undefined ? parseFloat(lat) : photos[photoIndex].lat,
-            lng: lng !== undefined ? parseFloat(lng) : photos[photoIndex].lng,
-            description: description !== undefined ? description : photos[photoIndex].description,
-            date: date || photos[photoIndex].date,
-            camera: camera !== undefined ? camera : photos[photoIndex].camera,
-            lens: lens !== undefined ? lens : photos[photoIndex].lens,
-            settings: settings || photos[photoIndex].settings,
-            tags: tags || photos[photoIndex].tags
+            ...sanitized,
+            lat: nextLat ?? photos[photoIndex].lat,
+            lng: nextLng ?? photos[photoIndex].lng,
         };
         
         photos[photoIndex] = updatedPhoto;
@@ -294,11 +474,17 @@ router.put('/:id', async (req, res) => {
         
         res.json({
             success: true,
-            data: updatedPhoto,
+            data: presentPhoto(updatedPhoto),
             message: 'Foto aggiornata con successo'
         });
     } catch (error) {
         console.error('Errore nell\'aggiornamento:', error);
+        if (error.status === 400 || error.code === 'INVALID_COORDINATE' || error.code === 'INVALID_ID') {
+            return res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
         res.status(500).json({
             success: false,
             message: 'Errore nell\'aggiornamento della foto'
@@ -310,7 +496,7 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const photoId = parseInt(id);
+        const photoId = parseNumericIdOrThrow(id, 'ID foto');
         const photos = await readPhotosDB();
         const photoIndex = photos.findIndex(p => p.id === photoId);
         
@@ -334,7 +520,7 @@ router.delete('/:id', async (req, res) => {
                 // Rimuovi dall'array principale photos
                 if (serie.photos && Array.isArray(serie.photos)) {
                     const originalLength = serie.photos.length;
-                    serie.photos = serie.photos.filter(pid => pid !== photoId);
+                    serie.photos = serie.photos.filter((pid) => Number(pid) !== photoId);
                     if (serie.photos.length !== originalLength) {
                         seriesModified = true;
                     }
@@ -351,7 +537,7 @@ router.delete('/:id', async (req, res) => {
                     serie.content.forEach(block => {
                         if (block.type === 'photos' && Array.isArray(block.content)) {
                             const originalBlockLength = block.content.length;
-                            block.content = block.content.filter(pid => pid !== photoId);
+                            block.content = block.content.filter((pid) => Number(pid) !== photoId);
                             if (block.content.length !== originalBlockLength) {
                                 seriesModified = true;
                             }
@@ -370,12 +556,20 @@ router.delete('/:id', async (req, res) => {
         // Opzionale: elimina i file fisici
         try {
             if (deletedPhoto.image) {
-                const imagePath = path.join(__dirname, '../../', deletedPhoto.image);
-                await fs.unlink(imagePath);
+                if (isR2Enabled()) {
+                    await deleteUploadObject(deletedPhoto.image);
+                } else if (canUseLocalFallback()) {
+                    const imagePath = resolvePublicFilePath(deletedPhoto.image);
+                    await fs.unlink(imagePath);
+                }
             }
             if (deletedPhoto.thumbnail) {
-                const thumbPath = path.join(__dirname, '../../', deletedPhoto.thumbnail);
-                await fs.unlink(thumbPath);
+                if (isR2Enabled()) {
+                    await deleteUploadObject(deletedPhoto.thumbnail);
+                } else if (canUseLocalFallback()) {
+                    const thumbPath = resolvePublicFilePath(deletedPhoto.thumbnail);
+                    await fs.unlink(thumbPath);
+                }
             }
         } catch (fileError) {
             console.warn('Errore nell\'eliminazione file:', fileError);
@@ -387,6 +581,12 @@ router.delete('/:id', async (req, res) => {
         });
     } catch (error) {
         console.error('Errore nell\'eliminazione:', error);
+        if (error.status === 400 || error.code === 'INVALID_ID') {
+            return res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
         res.status(500).json({
             success: false,
             message: 'Errore nell\'eliminazione della foto'

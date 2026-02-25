@@ -234,7 +234,12 @@ const DraftHint = styled.span`
   font-size: var(--font-size-sm);
 `;
 
-export default function PhotoSeries({ showAdmin = false, title = 'Serie', subtitle = "Progetti coerenti: un filo narrativo, un luogo, un'idea." }) {
+export default function PhotoSeries({
+  showAdmin = false,
+  title = 'Serie',
+  subtitle = "Progetti coerenti: un filo narrativo, un luogo, un'idea.",
+  headingLevel = 'h2'
+}) {
   const navigate = useNavigate();
   const { series, loading } = useSeries();
   const { photos } = usePhotos();
@@ -282,7 +287,7 @@ export default function PhotoSeries({ showAdmin = false, title = 'Serie', subtit
       >
         <Container>
           <Heading>
-            <Title>{title}</Title>
+            <Title as={headingLevel}>{title}</Title>
             <Subtitle>{subtitle}</Subtitle>
           </Heading>
           {showAdmin && (
@@ -328,7 +333,7 @@ export default function PhotoSeries({ showAdmin = false, title = 'Serie', subtit
                     <Cover>
                       {cover && (
                         <CoverImage
-                          src={`${IMAGES_BASE_URL}${cover.url}?t=${cover.id}`}
+                          src={`${IMAGES_BASE_URL}${cover.thumbnail || cover.image || cover.url}?t=${cover.id}`}
                           alt={s.title}
                           loading="lazy"
                         />
@@ -389,7 +394,7 @@ export default function PhotoSeries({ showAdmin = false, title = 'Serie', subtit
                         <Cover>
                           {cover && (
                             <CoverImage
-                              src={`${IMAGES_BASE_URL}${cover.url}?t=${cover.id}`}
+                              src={`${IMAGES_BASE_URL}${cover.thumbnail || cover.image || cover.url}?t=${cover.id}`}
                               alt={s.title}
                               loading="lazy"
                             />

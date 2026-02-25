@@ -38,8 +38,9 @@ coverage/
 .parcel-cache/
 
 # Uploads
-uploads/
+backend/uploads/
 temp/
+backend/storage/
 
 # Database
 *.db
@@ -54,3 +55,6 @@ temp/
 frontend/public/textures/*10k*
 frontend/public/textures/*16k*
 frontend/public/textures/*32k*
+
+# Vercel
+.vercel/

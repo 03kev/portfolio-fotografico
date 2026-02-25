@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 
 import Header from '../components/Header';
@@ -8,12 +8,16 @@ import GalleryModal from '../components/GalleryModal';
 import PhotoUpload from '../components/PhotoUpload';
 import ToastProvider, { useToast } from '../components/Toast';
 import useAdminMode from '../hooks/useAdminMode';
+import { authService } from '../utils/api';
 
 export default function SiteLayout() {
   const location = useLocation();
-  const isAdmin = useAdminMode();
+  const isAdminMode = useAdminMode();
   const toast = useToast();
   const [showUpload, setShowUpload] = useState(false);
+  const [apiTokenConfigured, setApiTokenConfigured] = useState(false);
+  const [authFeedback, setAuthFeedback] = useState('idle');
+  const canEdit = isAdminMode && apiTokenConfigured;
 
   // Classic multi-page behavior: always start at top when changing route.
   // useLayoutEffect runs before paint, so you don't see the scroll movement / scrollbar flash.
@@ -47,15 +51,84 @@ export default function SiteLayout() {
     toast.error(`Errore durante il caricamento: ${error?.message || error}`);
   };
 
+  useEffect(() => {
+    let mounted = true;
+
+    authService
+      .getSession()
+      .then((response) => {
+        if (!mounted) return;
+        setApiTokenConfigured(Boolean(response?.data?.authenticated));
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setApiTokenConfigured(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!canEdit && showUpload) {
+      setShowUpload(false);
+    }
+  }, [canEdit, showUpload]);
+
+  useEffect(() => {
+    if (authFeedback === 'idle') return;
+    const timer = setTimeout(() => setAuthFeedback('idle'), 1400);
+    return () => clearTimeout(timer);
+  }, [authFeedback]);
+
+  const handleConfigureApiToken = async () => {
+    if (apiTokenConfigured) {
+      try {
+        await authService.logout();
+        setApiTokenConfigured(false);
+        setAuthFeedback('idle');
+      } catch (error) {
+        setApiTokenConfigured(false);
+        setAuthFeedback('idle');
+      }
+      return;
+    }
+
+    const value = window.prompt(
+      'Inserisci API token per aprire la sessione admin:'
+    );
+
+    if (value === null) return;
+
+    const trimmed = value.trim();
+    if (!trimmed) {
+      setApiTokenConfigured(false);
+      return;
+    }
+
+    try {
+      await authService.login(trimmed);
+      setApiTokenConfigured(true);
+      setAuthFeedback('success');
+    } catch (error) {
+      setApiTokenConfigured(false);
+      setAuthFeedback('error');
+    }
+  };
+
   return (
     <>
       <Header
-        isAdmin={isAdmin}
-        onOpenUpload={isAdmin ? () => setShowUpload(true) : undefined}
+        isAdmin={isAdminMode}
+        onOpenUpload={canEdit ? () => setShowUpload(true) : undefined}
+        onConfigureAuth={isAdminMode ? handleConfigureApiToken : undefined}
+        hasAuthToken={apiTokenConfigured}
+        authFeedback={authFeedback}
       />
 
       <main>
-        <Outlet context={{ isAdmin }} />
+        <Outlet context={{ isAdmin: canEdit, isAdminMode }} />
       </main>
 
       <Footer />

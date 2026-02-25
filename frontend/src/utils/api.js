@@ -1,30 +1,14 @@
 import axios from 'axios';
-
-// Configurazione base axios
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+import { API_BASE_URL } from './constants';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
+  withCredentials: true,
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
-
-// Interceptor per le richieste
-api.interceptors.request.use(
-  (config) => {
-    // Aggiungi token di autenticazione se presente
-    const token = localStorage.getItem('authToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
 
 // Interceptor per le risposte
 api.interceptors.response.use(
@@ -33,14 +17,7 @@ api.interceptors.response.use(
   },
   (error) => {
     console.error('API Error:', error);
-    
-    // Gestione errori specifici
-    if (error.response?.status === 401) {
-      // Token scaduto, rimuovi e redirect al login
-      localStorage.removeItem('authToken');
-      window.location.href = '/login';
-    }
-    
+
     return Promise.reject(error.response?.data || error.message);
   }
 );
@@ -52,6 +29,9 @@ export const photoService = {
   
   // Ottieni foto per ID
   getById: (id) => api.get(`/photos/${id}`),
+
+  // Genera URL firmata per upload diretto su R2
+  getUploadUrl: (payload) => api.post('/photos/upload-url', payload),
   
   // Upload nuova foto
   upload: (formData) => {
@@ -61,6 +41,9 @@ export const photoService = {
       },
     });
   },
+
+  // Crea foto salvando solo metadata (file gia` caricato su R2)
+  create: (data) => api.post('/photos', data),
   
   // Aggiorna foto
   update: (id, data) => api.put(`/photos/${id}`, data),
@@ -107,6 +90,12 @@ export const statsService = {
   getDashboard: () => api.get('/stats/dashboard'),
   getPhotoStats: () => api.get('/stats/photos'),
   getLocationStats: () => api.get('/stats/locations'),
+};
+
+export const authService = {
+  getSession: () => api.get('/auth/session'),
+  login: (token) => api.post('/auth/session', { token }),
+  logout: () => api.delete('/auth/session'),
 };
 
 // Utility functions

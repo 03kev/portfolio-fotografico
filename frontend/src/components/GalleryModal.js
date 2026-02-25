@@ -303,6 +303,10 @@ const GalleryModal = () => {
   };
 
   const getPhotoSrc = (photo) => {
+    if (photo.image && (photo.image.startsWith('http://') || photo.image.startsWith('https://'))) {
+      return photo.image;
+    }
+
     // Se la foto ha un'immagine locale, usala
     if (photo.image && photo.image.startsWith('/')) {
       return `${IMAGES_BASE_URL}${photo.image}`;

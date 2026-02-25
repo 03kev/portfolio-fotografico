@@ -16,6 +16,7 @@ import MapPage from './pages/MapPage';
 import AboutPage from './pages/AboutPage';
 import ContactPage from './pages/ContactPage';
 import NotFoundPage from './pages/NotFoundPage';
+import AdminAccessPage from './pages/AdminAccessPage';
 
 import SeriesDetail from './components/SeriesDetail';
 
@@ -27,6 +28,9 @@ export default function App() {
           <GlobalStyles />
           <Routes>
             <Route element={<SiteLayout />}> 
+              <Route path="/admin" element={<AdminAccessPage />} />
+              <Route path="/admin/logout" element={<AdminAccessPage />} />
+              <Route path="/admin/logout/*" element={<AdminAccessPage />} />
               <Route path="/" element={<HomePage />} />
               <Route path="/series" element={<SeriesPage />} />
               <Route path="/series/:slug" element={<SeriesDetail />} />
