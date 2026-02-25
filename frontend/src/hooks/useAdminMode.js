@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 
 export const ADMIN_MODE_LS_KEY = 'portfolio_admin';
-const ADMIN_ROUTE_PREFIX = '/admin';
 
 export function enableAdminModeStorage() {
   try {
@@ -33,10 +32,8 @@ export default function useAdminMode() {
   });
 
   useEffect(() => {
-    const path = location.pathname || '';
-    const isAdminRoute = path === ADMIN_ROUTE_PREFIX || path.startsWith(`${ADMIN_ROUTE_PREFIX}/`);
-
-    if (!isAdminRoute) return;
+    const rawPath = location.pathname || '';
+    const path = rawPath.replace(/\/+$/, '') || '/';
 
     if (path === '/admin/logout') {
       disableAdminModeStorage();
@@ -44,7 +41,7 @@ export default function useAdminMode() {
       return;
     }
 
-    if (path === '/admin' || path.startsWith('/admin/')) {
+    if (path === '/admin') {
       enableAdminModeStorage();
       setIsAdmin(true);
     }

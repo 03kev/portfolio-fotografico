@@ -29,7 +29,8 @@ export default function App() {
           <Routes>
             <Route element={<SiteLayout />}> 
               <Route path="/admin" element={<AdminAccessPage />} />
-              <Route path="/admin/*" element={<AdminAccessPage />} />
+              <Route path="/admin/logout" element={<AdminAccessPage />} />
+              <Route path="/admin/logout/*" element={<AdminAccessPage />} />
               <Route path="/" element={<HomePage />} />
               <Route path="/series" element={<SeriesPage />} />
               <Route path="/series/:slug" element={<SeriesDetail />} />

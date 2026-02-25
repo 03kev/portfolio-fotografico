@@ -1,32 +1,41 @@
-# Portfolio Fotografico
+# Kevin Muka | Portfolio Fotografico
 
-Applicazione full-stack per portfolio fotografico con frontend React, API Express su Vercel e storage Cloudflare R2.
+Portfolio fotografico full-stack con frontend React, API Express su Vercel e storage Cloudflare R2 per immagini e metadati.
 
-## Stack
+## Panoramica
 
-- Frontend: React (`frontend/`)
+- Frontend SPA: React (`frontend/`)
 - Backend API: Express (`backend/`)
-- Deploy: Vercel (static frontend + serverless API)
-- Storage produzione: Cloudflare R2 (immagini + metadati JSON)
-- Storage locale dev: filesystem (`backend/storage/`)
+- Deploy: Vercel (frontend statico + funzioni serverless)
+- Storage produzione: Cloudflare R2 (`uploads` + metadati JSON)
+- Storage locale sviluppo: filesystem (`backend/storage/`)
+
+## Funzionalita principali
+
+- Gestione foto (upload, modifica, eliminazione)
+- Gestione serie (layout, ordine, pubblicazione)
+- Mappa interattiva e archivio filtrabile
+- Modalita admin con sessione cookie HttpOnly
+- SEO base: canonical, OpenGraph, JSON-LD, sitemap immagini API
 
 ## Struttura progetto
 
 ```text
 .
 ├── api/
-│   └── index.js                    # Entrypoint serverless Vercel (usa backend/src/app.js)
+│   └── index.js                       # Entrypoint Vercel -> backend/src/app.js
 ├── backend/
-│   ├── data/                       # Seed JSON locali (photos.json, series.json)
+│   ├── data/                          # Seed locali (photos.json, series.json)
 │   ├── scripts/
+│   │   ├── hash-write-token.js
 │   │   ├── sync-uploads-to-r2.js
 │   │   └── sync-metadata-to-r2.js
 │   ├── src/
-│   │   ├── app.js
-│   │   ├── server.js               # Avvio locale
+│   │   ├── app.js                     # App Express condivisa (locale + serverless)
+│   │   ├── server.js                  # Avvio backend locale
 │   │   ├── config/
-│   │   │   ├── defaults.js         # Default tecnici versionati
-│   │   │   ├── env.js              # Parsing/validazione env
+│   │   │   ├── defaults.js
+│   │   │   ├── env.js
 │   │   │   └── storage.js
 │   │   ├── middleware/
 │   │   │   └── auth.js
@@ -38,14 +47,12 @@ Applicazione full-stack per portfolio fotografico con frontend React, API Expres
 │   │   │   ├── metadataStorage.js
 │   │   │   └── r2Storage.js
 │   │   └── utils/
-│   │       ├── ids.js
-│   │       └── inputSanitizers.js
-│   └── storage/                    # Runtime locale (ignorato da git)
+│   └── storage/                       # Runtime locale (gitignored)
 │       ├── data/
 │       └── uploads/
 ├── frontend/
-│   ├── src/
-│   └── .env.example
+│   ├── public/
+│   └── src/
 ├── vercel.json
 └── package.json
 ```
@@ -63,55 +70,68 @@ Applicazione full-stack per portfolio fotografico con frontend React, API Expres
 npm run setup
 ```
 
-2. Crea file env:
+2. Crea i file env:
 
 ```bash
 cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
 ```
 
-3. Avvia frontend + backend:
+3. Avvia backend + frontend:
 
 ```bash
 npm start
 ```
 
 Servizi locali:
+
 - Frontend: `http://localhost:3000`
-- API backend: `http://localhost:5001`
+- Backend API: `http://localhost:5001`
 
 ## Configurazione ambiente
 
 ### Backend (`backend/.env`)
 
-Variabili essenziali:
+Variabili principali:
 
 ```env
+# Runtime locale
 PORT=5001
 NODE_ENV=development
+
+# CORS
 CORS_ORIGINS=http://localhost:3000,http://localhost:3001
 
+# Admin auth
 API_WRITE_TOKEN_HASH=scrypt$16384$8$1$...
 API_WRITE_TOKEN=
-API_SESSION_SECRET=change_me_with_another_long_random_secret
+API_SESSION_SECRET=replace_with_long_random_secret
 API_SESSION_TTL_MS=604800000
 API_AUTH_RATE_LIMIT_WINDOW_MS=600000
 API_AUTH_RATE_LIMIT_MAX_ATTEMPTS=10
 
-R2_ACCOUNT_ID=your_cloudflare_account_id
-R2_ACCESS_KEY_ID=your_r2_access_key_id
-R2_SECRET_ACCESS_KEY=your_r2_secret_access_key
-R2_BUCKET=portfolio-images
+# Cloudflare R2
+R2_ACCOUNT_ID=your_account_id
+R2_ACCESS_KEY_ID=your_access_key
+R2_SECRET_ACCESS_KEY=your_secret_key
+R2_BUCKET=portfolio-fotografico
 R2_PUBLIC_URL=https://uploads.yourdomain.com
 R2_ENDPOINT=
 R2_METADATA_PREFIX=data
 ```
 
 Note:
-- In produzione il backend è **R2-only**: senza credenziali R2 valide non parte.
-- In produzione l'admin auth richiede **API_WRITE_TOKEN_HASH** (token mai in chiaro nelle env).
-- I default tecnici (body limits, rate limit globale/write, upload defaults) sono in `backend/src/config/defaults.js`.
-- Le env vengono parse/validate in `backend/src/config/env.js`.
+
+- In produzione il backend è **R2-only**.
+- In produzione è obbligatoria `API_WRITE_TOKEN_HASH` (token non in chiaro).
+- `API_WRITE_TOKEN` è solo fallback in sviluppo.
+
+Genera hash del token:
+
+```bash
+cd backend
+npm run token:hash -- "il-tuo-token-lungo"
+```
 
 ### Frontend (`frontend/.env`)
 
@@ -122,62 +142,92 @@ REACT_APP_VERSION=1.0.0
 ```
 
 Note:
-- API e immagini usano fallback interni (`/api` e `''` in produzione, `localhost:5001` in sviluppo).
-- `REACT_APP_SITE_URL` è opzionale e serve per canonical/OpenGraph assoluti.
-- Non mettere segreti in variabili `REACT_APP_*`.
 
-## Architettura storage
+- Non inserire segreti in variabili `REACT_APP_*`.
+- In produzione le API usano base path `/api`.
 
-### Produzione
+## Modalità admin
 
-- Immagini: upload diretto Browser -> R2 tramite URL firmata (`POST /api/photos/upload-url`)
-- Metadati (`photos.json`, `series.json`): su R2
-- URL pubbliche asset servite da `R2_PUBLIC_URL` (es. `https://uploads.kevinmuka.dev`)
+- Accesso: `https://tuodominio/admin`
+- Logout rapido: `https://tuodominio/admin/logout`
+- Le operazioni di write API richiedono sessione admin valida.
 
-### Sviluppo locale
+## Sicurezza API
 
-- Se R2 non è configurato, usa filesystem locale (`backend/storage`).
-- Seed iniziali letti da `backend/data/`.
+- Helmet attivo con CSP base
+- CORS allowlist in produzione (`CORS_ORIGINS` + dominio Vercel)
+- Cookie admin `HttpOnly`, `Secure` in produzione, `SameSite=strict`
+- CSRF origin-check su metodi state-changing in produzione
+- Rate limit globale + rate limit su login admin
+- Auth header (`Authorization` / `x-api-key`) disabilitata in produzione
 
 ## Deploy su Vercel
 
-### 1) Variabili su Vercel (Project Settings -> Environment Variables)
-
-Minimo consigliato in Production:
+### Variabili consigliate in Production
 
 - `API_WRITE_TOKEN_HASH`
 - `API_SESSION_SECRET`
-- `API_SESSION_TTL_MS` (se vuoi override)
-- `API_AUTH_RATE_LIMIT_WINDOW_MS`
-- `API_AUTH_RATE_LIMIT_MAX_ATTEMPTS`
 - `CORS_ORIGINS` (es. `https://kevinmuka.dev,https://www.kevinmuka.dev`)
 - `R2_ACCOUNT_ID`
 - `R2_ACCESS_KEY_ID`
 - `R2_SECRET_ACCESS_KEY`
 - `R2_BUCKET`
 - `R2_PUBLIC_URL` (es. `https://uploads.kevinmuka.dev`)
-- opzionali: `R2_ENDPOINT`, `R2_METADATA_PREFIX`
+- opzionali: `R2_ENDPOINT`, `R2_METADATA_PREFIX`, `API_SESSION_TTL_MS`, `API_AUTH_RATE_LIMIT_*`
 
-Non necessario su Vercel:
+Non necessari su Vercel:
+
 - `PORT`
-- `NODE_ENV` (gestita da Vercel)
+- `NODE_ENV`
 
-Genera hash token admin:
+Ogni modifica env richiede redeploy.
 
-```bash
-cd backend
-npm run token:hash -- "il-tuo-token-lungo-random"
-```
-
-Incolla l'output in `API_WRITE_TOKEN_HASH`.
-
-### 2) Build/Deploy
+### Build/deploy
 
 Vercel usa:
-- build frontend (`npm run vercel-build`)
-- API serverless da `api/index.js`
 
-### 3) Prima migrazione dati su R2 (se hai asset locali)
+- `buildCommand`: `CI=false npm run vercel-build`
+- output frontend: `frontend/build`
+- API via `api/index.js`
+
+### Post-Deploy Check
+
+Esegui questa checklist dopo ogni deploy in produzione.
+
+1. Health API:
+
+```bash
+curl -fsS https://kevinmuka.dev/api/health
+```
+
+2. Pagine principali:
+
+- `https://kevinmuka.dev/`
+- `https://kevinmuka.dev/series`
+- `https://kevinmuka.dev/gallery`
+- `https://kevinmuka.dev/map`
+
+3. Dati runtime:
+
+```bash
+curl -fsS https://kevinmuka.dev/api/photos | head
+curl -fsS \"https://kevinmuka.dev/api/series?all=false\" | head
+```
+
+4. Admin mode:
+
+- apri `https://kevinmuka.dev/admin`
+- verifica login sessione e una write operation (es. modifica titolo foto o serie)
+- verifica logout su `https://kevinmuka.dev/admin/logout`
+
+5. Asset R2:
+
+- controlla che immagini e thumbnail carichino senza 403/404
+- verifica almeno un URL asset dal JSON `/api/photos` (campo `image`/`thumbnail`)
+
+## Migrazione dati su R2
+
+Se hai dati locali in `backend/storage`:
 
 ```bash
 cd backend
@@ -185,32 +235,7 @@ npm run sync:r2
 npm run sync:r2:metadata
 ```
 
-## Dominio custom consigliato
-
-Setup tipico:
-- sito: `kevinmuka.dev` (+ redirect da `www`)
-- asset R2: `uploads.kevinmuka.dev`
-
-Checklist:
-- DNS dominio principale puntato a Vercel
-- dominio R2 custom attivo sul bucket
-- `R2_PUBLIC_URL` aggiornato al dominio custom
-- CORS R2 con origins del sito (`https://kevinmuka.dev`, `https://www.kevinmuka.dev`)
-- `Public Development URL` R2 disattivato in produzione
-
-## Sicurezza API
-
-- Letture (`GET`) pubbliche.
-- Scritture (`POST/PUT/DELETE`) protette da auth admin.
-- Sessione admin via cookie `HttpOnly`:
-  - login: `POST /api/auth/session` con `{ token }`
-  - stato: `GET /api/auth/session`
-  - logout: `DELETE /api/auth/session`
-- In produzione l'autenticazione avviene via cookie sessione; header token (`Authorization`, `x-api-key`) disabilitati.
-- Rate limit dedicato sul login auth (`/api/auth/session`).
-- Sanitizzazione payload foto/serie lato backend.
-
-## API principali
+## Endpoint API principali
 
 - `GET /api/health`
 - `GET /api/auth/session`
@@ -227,13 +252,14 @@ Checklist:
 - `POST /api/series`
 - `PUT /api/series/:id`
 - `DELETE /api/series/:id`
+- `GET /api/sitemap-images.xml`
 
 ## Script utili
 
 ### Root
 
-- `npm run setup` installa dipendenze backend/frontend
-- `npm start` avvia backend + frontend in parallelo
+- `npm run setup` install dipendenze backend/frontend
+- `npm start` avvio locale completo
 - `npm run build` build frontend
 - `npm run vercel-build` build usata da Vercel
 - `npm run clean` pulizia `node_modules`
@@ -241,27 +267,33 @@ Checklist:
 ### Backend
 
 - `npm run dev` avvio backend con nodemon
-- `npm run sync:r2` sync upload locali -> R2
-- `npm run sync:r2:metadata` sync metadati locali -> R2
+- `npm run token:hash -- "<token>"` genera hash scrypt
+- `npm run sync:r2` upload locali -> R2
+- `npm run sync:r2:metadata` metadati locali -> R2
 
 ## Troubleshooting rapido
 
-### `EADDRINUSE` su porta backend locale
+### `EADDRINUSE: 5001`
 
-Chiudi il processo che usa la porta (`5001`) e riavvia.
+Un altro processo usa la porta 5001. Chiudi il processo e riavvia.
 
-### Upload fallisce con CORS
+### Login admin fallisce con 500 in produzione
 
-Controlla CORS policy bucket R2 (`PUT` + origins del sito).
+Verifica nome variabile corretto: `API_WRITE_TOKEN_HASH`.
 
-### API in produzione non restituisce immagini
+### Immagini non visibili in produzione
 
-Verifica:
+Controlla:
+
 - `R2_PUBLIC_URL`
 - dominio custom R2 attivo
-- presenza oggetti nel bucket
+- oggetti presenti nel bucket
+
+### CORS su upload
+
+Configura CORS del bucket R2 con origin del sito e metodi `GET,HEAD,PUT`.
 
 ## Note operative
 
-- `backend/storage/` è runtime locale e non va versionato.
+- `backend/storage/` e runtime locale: non versionarlo.
 - Ruota periodicamente i segreti (`API_WRITE_TOKEN_HASH`, `API_SESSION_SECRET`, chiavi R2).
