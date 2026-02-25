@@ -22,14 +22,14 @@ export default function GalleryPage() {
     const galleryImages = photos
       .slice(0, 120)
       .map((photo) => {
-        const full = toAbsolute(photo.image || photo.url || photo.thumbnail);
+        const full = toAbsolute(photo.image);
         if (!full) return null;
 
-        const thumb = toAbsolute(photo.thumbnail || photo.image || photo.url);
+        const landingUrl = `${(process.env.REACT_APP_SITE_URL || window.location.origin || '').replace(/\/+$/, '')}/gallery?photo=${encodeURIComponent(String(photo.id))}`;
         return {
           '@type': 'ImageObject',
           contentUrl: full,
-          thumbnailUrl: thumb || full,
+          url: landingUrl,
           name: photo.title || 'Fotografia',
           description: photo.description || photo.location || 'Scatto fotografico'
         };

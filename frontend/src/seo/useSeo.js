@@ -5,7 +5,7 @@ const BRAND_NAME = 'Kevin Muka';
 const DEFAULT_SITE_NAME = 'Portfolio Fotografico';
 const DEFAULT_TITLE = `${BRAND_NAME} | ${DEFAULT_SITE_NAME}`;
 const DEFAULT_DESCRIPTION = 'Portfolio fotografico di Kevin Muka: serie, archivio completo e mappa interattiva con scatti di viaggio, paesaggi e città.';
-const DEFAULT_OG_IMAGE = '/logo512.png';
+const DEFAULT_OG_IMAGE = '';
 
 function getSiteUrl() {
   if (process.env.REACT_APP_SITE_URL) {
@@ -20,10 +20,15 @@ function getSiteUrl() {
 }
 
 function upsertMeta({ name, property, content }) {
-  if (!content) return;
-
   const selector = name ? `meta[name="${name}"]` : `meta[property="${property}"]`;
   let meta = document.head.querySelector(selector);
+
+  if (!content) {
+    if (meta) {
+      meta.remove();
+    }
+    return;
+  }
 
   if (!meta) {
     meta = document.createElement('meta');
@@ -90,10 +95,14 @@ export default function useSeo({
   useEffect(() => {
     const siteUrl = getSiteUrl();
     const pathname = location.pathname || '/';
-    const absoluteUrl = siteUrl ? `${siteUrl}${pathname}` : pathname;
-    const absoluteImage = image && image.startsWith('http')
-      ? image
-      : `${siteUrl}${image}`;
+    const search = location.search || '';
+    const absoluteUrl = siteUrl ? `${siteUrl}${pathname}${search}` : `${pathname}${search}`;
+    let absoluteImage = '';
+    if (image) {
+      absoluteImage = image.startsWith('http')
+        ? image
+        : `${siteUrl}${image}`;
+    }
 
     const normalizedTitle = title ? `${BRAND_NAME} | ${title}` : DEFAULT_TITLE;
     document.title = normalizedTitle;
@@ -115,5 +124,5 @@ export default function useSeo({
     upsertMeta({ name: 'twitter:description', content: description });
     upsertMeta({ name: 'twitter:image', content: absoluteImage });
     upsertStructuredData(structuredData);
-  }, [description, image, location.pathname, noindex, ogType, structuredData, title]);
+  }, [description, image, location.pathname, location.search, noindex, ogType, structuredData, title]);
 }

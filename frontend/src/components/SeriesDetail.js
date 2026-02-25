@@ -1130,24 +1130,24 @@ function SeriesDetail() {
       return `${base}${resolved.startsWith('/') ? resolved : `/${resolved}`}`;
     };
 
+    const site = (process.env.REACT_APP_SITE_URL || window.location.origin || '').replace(/\/+$/, '');
+    const seriesUrl = `${site}/series/${currentSeries.slug || currentSeries.id}`;
+    const galleryBaseUrl = `${site}/gallery`;
+
     const images = seriesPhotos
       .slice(0, 120)
       .map((photo) => {
-        const full = toAbsolute(photo.image || photo.url || photo.thumbnail);
+        const full = toAbsolute(photo.image);
         if (!full) return null;
-        const thumb = toAbsolute(photo.thumbnail || photo.image || photo.url);
         return {
           '@type': 'ImageObject',
           contentUrl: full,
-          thumbnailUrl: thumb || full,
+          url: `${galleryBaseUrl}?photo=${encodeURIComponent(String(photo.id))}`,
           name: photo.title || currentSeries.title || 'Fotografia',
           description: photo.description || currentSeries.description || 'Scatto fotografico'
         };
       })
       .filter(Boolean);
-
-    const site = (process.env.REACT_APP_SITE_URL || window.location.origin || '').replace(/\/+$/, '');
-    const seriesUrl = `${site}/series/${currentSeries.slug || currentSeries.id}`;
 
     return {
       '@context': 'https://schema.org',

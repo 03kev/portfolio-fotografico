@@ -186,6 +186,10 @@ async function serveUploadsFromR2(req, res, next) {
             return next();
         }
 
+        if (req.path.startsWith('/thumbnails/')) {
+            res.setHeader('X-Robots-Tag', 'noimageindex, noindex');
+        }
+
         if (object.contentType) res.setHeader('Content-Type', object.contentType);
         if (object.cacheControl) res.setHeader('Cache-Control', object.cacheControl);
         if (object.contentLength != null) res.setHeader('Content-Length', String(object.contentLength));
@@ -212,6 +216,9 @@ const uploadsMiddlewares = [
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET');
         res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+        if (req.path.startsWith('/thumbnails/')) {
+            res.setHeader('X-Robots-Tag', 'noimageindex, noindex');
+        }
         next();
     },
     serveUploadsFromR2
@@ -270,19 +277,20 @@ app.get('/api/sitemap-images.xml', async (req, res) => {
     try {
         const photos = await readMetadataFile('photos.json', []);
         const siteBaseUrl = getSiteBaseUrl();
-        const pageUrl = `${siteBaseUrl}/gallery`;
 
         const imageEntries = photos
             .map((photo) => {
-                const fullImage = buildPublicAssetUrl(photo.image || photo.url || photo.thumbnail || '');
+                const fullImage = buildPublicAssetUrl(photo.image || '');
                 if (!fullImage) return '';
+                const landingUrl = `${siteBaseUrl}/gallery?photo=${encodeURIComponent(String(photo.id || ''))}`;
+                if (!photo.id) return '';
 
                 const title = escapeXml(photo.title || 'Foto');
                 const caption = escapeXml(photo.description || photo.location || photo.title || '');
 
                 return `
                     <url>
-                    <loc>${escapeXml(pageUrl)}</loc>
+                    <loc>${escapeXml(landingUrl)}</loc>
                     <image:image>
                         <image:loc>${escapeXml(fullImage)}</image:loc>
                         <image:title>${title}</image:title>

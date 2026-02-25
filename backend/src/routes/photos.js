@@ -45,9 +45,33 @@ function buildPublicAssetUrl(uploadPath) {
     return `${publicBaseUrl}/${objectKey}`;
 }
 
+function normalizeUploadsPath(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+
+    if (raw.startsWith('/uploads/')) {
+        return raw;
+    }
+
+    if (/^https?:\/\//i.test(raw)) {
+        try {
+            const parsed = new URL(raw);
+            const pathname = String(parsed.pathname || '').replace(/^\/+/, '');
+            const key = pathname.replace(/^uploads\/+/, '');
+            return key ? `/uploads/${key}` : '';
+        } catch {
+            return '';
+        }
+    }
+
+    const normalized = raw.replace(/^\/+/, '').replace(/^uploads\/+/, '');
+    return normalized ? `/uploads/${normalized}` : '';
+}
+
 function presentPhoto(photo) {
     const image = buildPublicAssetUrl(photo.image);
-    const thumbnail = buildPublicAssetUrl(photo.thumbnail);
+    const thumbnailPath = normalizeUploadsPath(photo.thumbnail);
+    const thumbnail = thumbnailPath || buildPublicAssetUrl(photo.thumbnail);
     const fallbackUrl = photo.image || photo.url || photo.thumbnail || '';
 
     return {

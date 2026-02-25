@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Trash2, Edit3 } from 'lucide-react';
@@ -324,6 +324,9 @@ const Gallery = ({ headingLevel = 'h2' }) => {
   const { photos, filteredPhotos, loading, actions, filters } = usePhotos();
   const outletContext = useOutletContext();
   const isAdmin = Boolean(outletContext?.isAdmin);
+  const [searchParams] = useSearchParams();
+  const photoParam = searchParams.get('photo');
+  const autoOpenedPhotoRef = useRef(null);
 
   const [activeFilter, setActiveFilter] = useState(() => {
     return filters.tags && filters.tags.length > 0 ? filters.tags[0] : 'all';
@@ -367,6 +370,22 @@ const Gallery = ({ headingLevel = 'h2' }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters.tags?.join(','), filters.search]);
 
+  useEffect(() => {
+    if (!photoParam) {
+      autoOpenedPhotoRef.current = null;
+      return;
+    }
+
+    if (loading || photos.length === 0) return;
+    if (autoOpenedPhotoRef.current === photoParam) return;
+
+    const targetPhoto = photos.find((photo) => String(photo.id) === photoParam);
+    if (!targetPhoto) return;
+
+    actions.openPhotoModal(targetPhoto);
+    autoOpenedPhotoRef.current = photoParam;
+  }, [photoParam, loading, photos, actions]);
+
   const handleFilterClick = (filter) => {
     setActiveFilter(filter);
     if (filter === 'all') {
@@ -379,8 +398,8 @@ const Gallery = ({ headingLevel = 'h2' }) => {
     actions.openPhotoModal(photo);
   };
 
-  const getFullImageUrl = (photo) => `${IMAGES_BASE_URL}${photo.image || photo.url || photo.thumbnail || ''}`;
   const getThumbImageUrl = (photo) => `${IMAGES_BASE_URL}${photo.thumbnail || photo.image || photo.url || ''}`;
+  const getPhotoCardUrl = (photo) => `/gallery?photo=${encodeURIComponent(String(photo.id))}`;
 
   const handleDelete = async (e, photoId) => {
     e.stopPropagation();
@@ -469,7 +488,7 @@ const Gallery = ({ headingLevel = 'h2' }) => {
                   onClick={() => handlePhotoClick(photo)}
                 >
                   <PhotoCard>
-                    <SeoImageLink href={getFullImageUrl(photo)} aria-hidden="true" tabIndex={-1}>
+                    <SeoImageLink href={getPhotoCardUrl(photo)} aria-hidden="true" tabIndex={-1}>
                       {photo.title || 'Foto'}
                     </SeoImageLink>
                     {isAdmin && (
