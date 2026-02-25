@@ -27,7 +27,9 @@ const router = express.Router();
 router.use(protectWriteMethods);
 
 function normalizePublicBaseUrl() {
-    return env.r2PublicUrl;
+    // In sviluppo manteniamo path relative (/uploads/...) per compatibilità
+    // con il frontend locale che usa base URL locale/proxy.
+    return env.isProduction ? env.r2PublicUrl : '';
 }
 
 function buildPublicAssetUrl(uploadPath) {

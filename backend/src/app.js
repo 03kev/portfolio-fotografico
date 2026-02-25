@@ -281,22 +281,23 @@ app.get('/api/sitemap-images.xml', async (req, res) => {
                 const caption = escapeXml(photo.description || photo.location || photo.title || '');
 
                 return `
-    <url>
-      <loc>${escapeXml(pageUrl)}</loc>
-      <image:image>
-        <image:loc>${escapeXml(fullImage)}</image:loc>
-        <image:title>${title}</image:title>
-        <image:caption>${caption}</image:caption>
-      </image:image>
-    </url>`;
+                    <url>
+                    <loc>${escapeXml(pageUrl)}</loc>
+                    <image:image>
+                        <image:loc>${escapeXml(fullImage)}</image:loc>
+                        <image:title>${title}</image:title>
+                        <image:caption>${caption}</image:caption>
+                    </image:image>
+                    </url>`;
             })
             .filter(Boolean)
             .join('');
 
-        const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
-        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">${imageEntries}
-</urlset>`;
+        const xml = `
+            <?xml version="1.0" encoding="UTF-8"?>
+            <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+                xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">${imageEntries}
+            </urlset>`;
 
         res.setHeader('Content-Type', 'application/xml; charset=utf-8');
         res.setHeader('Cache-Control', 'public, max-age=600');
