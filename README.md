@@ -25,7 +25,6 @@ Portfolio fotografico full-stack con frontend React, API Express su Vercel e sto
 ├── api/
 │   └── index.js                       # Entrypoint Vercel -> backend/src/app.js
 ├── backend/
-│   ├── data/                          # Seed locali (photos.json, series.json)
 │   ├── scripts/
 │   │   ├── hash-write-token.js
 │   │   ├── sync-uploads-to-r2.js
@@ -125,6 +124,7 @@ Note:
 - In produzione il backend è **R2-only**.
 - In produzione è obbligatoria `API_WRITE_TOKEN_HASH` (token non in chiaro).
 - `API_WRITE_TOKEN` è solo fallback in sviluppo.
+- In locale i metadati vengono mantenuti in `backend/storage/data` (nessun seed fallback da `backend/data`).
 
 Genera hash del token:
 

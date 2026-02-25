@@ -39,7 +39,6 @@ coverage/
 
 # Uploads
 backend/uploads/
-backend/data/
 temp/
 backend/storage/
 

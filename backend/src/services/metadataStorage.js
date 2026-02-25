@@ -51,9 +51,9 @@ async function readMetadataFile(filename, fallbackValue = []) {
 
     if (!object) {
         if (canUseLocalFallback()) {
-            const seedData = await readLocalJson(filename, fallbackValue);
-            await writeMetadataFile(filename, seedData);
-            return seedData;
+            const localData = await readLocalJson(filename, fallbackValue);
+            await writeMetadataFile(filename, localData);
+            return localData;
         }
         return fallbackValue;
     }
