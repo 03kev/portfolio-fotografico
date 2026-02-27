@@ -89,6 +89,8 @@ export default function useSeo({
   noindex = false,
   image = DEFAULT_OG_IMAGE,
   structuredData = null,
+  prependBrand = true,
+  keywords = '',
 } = {}) {
   const location = useLocation();
 
@@ -104,12 +106,15 @@ export default function useSeo({
         : `${siteUrl}${image}`;
     }
 
-    const normalizedTitle = title ? `${BRAND_NAME} | ${title}` : DEFAULT_TITLE;
+    const normalizedTitle = title
+      ? (prependBrand ? `${BRAND_NAME} | ${title}` : title)
+      : DEFAULT_TITLE;
     document.title = normalizedTitle;
 
     upsertCanonical(absoluteUrl);
     upsertRelMe('https://instagram.com/kev.muka');
     upsertMeta({ name: 'description', content: description });
+    upsertMeta({ name: 'keywords', content: keywords });
     upsertMeta({ name: 'robots', content: noindex ? 'noindex, nofollow' : 'index, follow' });
 
     upsertMeta({ property: 'og:title', content: normalizedTitle });
@@ -124,5 +129,5 @@ export default function useSeo({
     upsertMeta({ name: 'twitter:description', content: description });
     upsertMeta({ name: 'twitter:image', content: absoluteImage });
     upsertStructuredData(structuredData);
-  }, [description, image, location.pathname, location.search, noindex, ogType, structuredData, title]);
+  }, [description, image, keywords, location.pathname, location.search, noindex, ogType, prependBrand, structuredData, title]);
 }

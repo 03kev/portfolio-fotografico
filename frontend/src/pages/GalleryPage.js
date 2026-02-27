@@ -25,14 +25,20 @@ export default function GalleryPage() {
         const full = toAbsolute(photo.image);
         if (!full) return null;
 
-        const landingUrl = `${(process.env.REACT_APP_SITE_URL || window.location.origin || '').replace(/\/+$/, '')}/gallery?photo=${encodeURIComponent(String(photo.id))}`;
-        return {
+        const landingUrl = `${(process.env.REACT_APP_SITE_URL || window.location.origin || '').replace(/\/+$/, '')}/photo/${encodeURIComponent(String(photo.id))}`;
+        const data = {
           '@type': 'ImageObject',
           contentUrl: full,
           url: landingUrl,
           name: photo.title || 'Fotografia',
           description: photo.description || photo.location || 'Scatto fotografico'
         };
+
+        if (Array.isArray(photo.tags) && photo.tags.length > 0) {
+          data.keywords = photo.tags.filter(Boolean).join(', ');
+        }
+
+        return data;
       })
       .filter(Boolean);
 

@@ -280,10 +280,20 @@ app.get('/api/sitemap-images.xml', async (req, res) => {
 
         const imageEntries = photos
             .map((photo) => {
-                const fullImage = buildPublicAssetUrl(photo.image || '');
+                const photoId = String(photo.id || '').trim();
+                if (!photoId) return '';
+
+                let fullImage = buildPublicAssetUrl(photo.image || '');
                 if (!fullImage) return '';
-                const landingUrl = `${siteBaseUrl}/gallery?photo=${encodeURIComponent(String(photo.id || ''))}`;
-                if (!photo.id) return '';
+                if (!/^https?:\/\//i.test(fullImage)) {
+                    if (fullImage.startsWith('/')) {
+                        fullImage = `${siteBaseUrl}${fullImage}`;
+                    } else {
+                        fullImage = `${siteBaseUrl}/${fullImage}`;
+                    }
+                }
+
+                const landingUrl = `${siteBaseUrl}/photo/${encodeURIComponent(photoId)}`;
 
                 const title = escapeXml(photo.title || 'Foto');
                 const caption = escapeXml(photo.description || photo.location || photo.title || '');

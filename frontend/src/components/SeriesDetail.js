@@ -1132,20 +1132,26 @@ function SeriesDetail() {
 
     const site = (process.env.REACT_APP_SITE_URL || window.location.origin || '').replace(/\/+$/, '');
     const seriesUrl = `${site}/series/${currentSeries.slug || currentSeries.id}`;
-    const galleryBaseUrl = `${site}/gallery`;
+    const photoBaseUrl = `${site}/photo`;
 
     const images = seriesPhotos
       .slice(0, 120)
       .map((photo) => {
         const full = toAbsolute(photo.image);
         if (!full) return null;
-        return {
+        const imageData = {
           '@type': 'ImageObject',
           contentUrl: full,
-          url: `${galleryBaseUrl}?photo=${encodeURIComponent(String(photo.id))}`,
+          url: `${photoBaseUrl}/${encodeURIComponent(String(photo.id))}`,
           name: photo.title || currentSeries.title || 'Fotografia',
           description: photo.description || currentSeries.description || 'Scatto fotografico'
         };
+
+        if (Array.isArray(photo.tags) && photo.tags.length > 0) {
+          imageData.keywords = photo.tags.filter(Boolean).join(', ');
+        }
+
+        return imageData;
       })
       .filter(Boolean);
 

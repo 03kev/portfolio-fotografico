@@ -12,6 +12,7 @@ import SiteLayout from './layout/SiteLayout';
 import HomePage from './pages/HomePage';
 import SeriesPage from './pages/SeriesPage';
 import GalleryPage from './pages/GalleryPage';
+import PhotoPage from './pages/PhotoPage';
 import MapPage from './pages/MapPage';
 import AboutPage from './pages/AboutPage';
 import ContactPage from './pages/ContactPage';
@@ -35,6 +36,7 @@ export default function App() {
               <Route path="/series" element={<SeriesPage />} />
               <Route path="/series/:slug" element={<SeriesDetail />} />
               <Route path="/gallery" element={<GalleryPage />} />
+              <Route path="/photo/:id" element={<PhotoPage />} />
               <Route path="/map" element={<MapPage />} />
               <Route path="/about" element={<AboutPage />} />
               <Route path="/contact" element={<ContactPage />} />

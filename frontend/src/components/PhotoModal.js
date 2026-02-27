@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Download, Map, MapPin } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { IMAGES_BASE_URL } from '../utils/constants';
@@ -283,7 +283,16 @@ const ActionButton = styled(motion.button)`
 const PhotoModal = () => {
     const { modalOpen, selectedPhoto, actions, galleryModalOpen } = usePhotos();
     const navigate = useNavigate();
-  const originalBodyOverflowRef = React.useRef(null);
+    const location = useLocation();
+    const originalBodyOverflowRef = React.useRef(null);
+
+    const closeModalWithRouteHandling = React.useCallback(() => {
+        actions.closePhotoModal();
+
+        if (/^\/photo\/[^/]+\/?$/.test(location.pathname)) {
+            navigate('/gallery', { replace: true });
+        }
+    }, [actions, location.pathname, navigate]);
     
     useEffect(() => {
         if (modalOpen) {
@@ -305,7 +314,7 @@ const PhotoModal = () => {
     useEffect(() => {
         const handleEscape = (e) => {
             if (e.key === 'Escape') {
-                actions.closePhotoModal();
+                closeModalWithRouteHandling();
             }
         };
         
@@ -316,11 +325,11 @@ const PhotoModal = () => {
         return () => {
             document.removeEventListener('keydown', handleEscape);
         };
-    }, [modalOpen, actions]);
+    }, [modalOpen, closeModalWithRouteHandling]);
     
     const handleOverlayClick = (e) => {
         if (e.target === e.currentTarget) {
-            actions.closePhotoModal();
+            closeModalWithRouteHandling();
         }
     };
     
@@ -391,7 +400,7 @@ const PhotoModal = () => {
             onClick={(e) => e.stopPropagation()}
             >
             <CloseButton
-            onClick={actions.closePhotoModal}
+            onClick={closeModalWithRouteHandling}
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
             >

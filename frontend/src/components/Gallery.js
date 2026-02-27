@@ -320,12 +320,13 @@ const NoResults = styled(motion.div)`
   }
 `;
 
-const Gallery = ({ headingLevel = 'h2' }) => {
+const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null }) => {
   const { photos, filteredPhotos, loading, actions, filters } = usePhotos();
   const outletContext = useOutletContext();
   const isAdmin = Boolean(outletContext?.isAdmin);
   const [searchParams] = useSearchParams();
   const photoParam = searchParams.get('photo');
+  const resolvedPhotoId = forcedPhotoId || photoParam;
   const autoOpenedPhotoRef = useRef(null);
 
   const [activeFilter, setActiveFilter] = useState(() => {
@@ -371,20 +372,20 @@ const Gallery = ({ headingLevel = 'h2' }) => {
   }, [filters.tags?.join(','), filters.search]);
 
   useEffect(() => {
-    if (!photoParam) {
+    if (!resolvedPhotoId) {
       autoOpenedPhotoRef.current = null;
       return;
     }
 
     if (loading || photos.length === 0) return;
-    if (autoOpenedPhotoRef.current === photoParam) return;
+    if (autoOpenedPhotoRef.current === resolvedPhotoId) return;
 
-    const targetPhoto = photos.find((photo) => String(photo.id) === photoParam);
+    const targetPhoto = photos.find((photo) => String(photo.id) === String(resolvedPhotoId));
     if (!targetPhoto) return;
 
     actions.openPhotoModal(targetPhoto);
-    autoOpenedPhotoRef.current = photoParam;
-  }, [photoParam, loading, photos, actions]);
+    autoOpenedPhotoRef.current = resolvedPhotoId;
+  }, [resolvedPhotoId, loading, photos, actions]);
 
   const handleFilterClick = (filter) => {
     setActiveFilter(filter);
@@ -399,7 +400,7 @@ const Gallery = ({ headingLevel = 'h2' }) => {
   };
 
   const getThumbImageUrl = (photo) => `${IMAGES_BASE_URL}${photo.thumbnail || photo.image || photo.url || ''}`;
-  const getPhotoCardUrl = (photo) => `/gallery?photo=${encodeURIComponent(String(photo.id))}`;
+  const getPhotoCardUrl = (photo) => `/photo/${encodeURIComponent(String(photo.id))}`;
 
   const handleDelete = async (e, photoId) => {
     e.stopPropagation();
