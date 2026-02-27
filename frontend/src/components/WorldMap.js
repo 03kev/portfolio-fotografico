@@ -292,7 +292,7 @@ const InfoPopup = styled(motion.div)`
 `;
 
 const WorldMap = ({ headingLevel = 'h2' }) => {
-    const { photos, loading, actions, modalOpen, galleryModalOpen, pendingMapFocus } = usePhotos();
+    const { photos, loading, actions, modalOpen, galleryModalOpen, pendingMapFocus, navigatingToMap } = usePhotos();
     const mountRef = useRef(null);
     const sceneRef = useRef(null);
     const rendererRef = useRef(null);
@@ -1344,7 +1344,7 @@ const focusOnPhoto = (
         skipUnzoomRef.current = true;
     }
     
-    if (!photo || !cameraRef.current || !controlsRef.current) return;
+    if (!photo || !cameraRef.current || !controlsRef.current) return false;
     const controls = controlsRef.current;
     const camera   = cameraRef.current;
     prevRadiusRef.current = controls.spherical.radius;  // distanza attuale
@@ -1405,6 +1405,7 @@ const focusOnPhoto = (
         }
     };
     requestAnimationFrame(animate);
+    return true;
 };
 
 useEffect(() => {
@@ -1413,16 +1414,55 @@ useEffect(() => {
 
 // Handle pending map focus when map is loaded
 useEffect(() => {
-    if (mapLoaded && pendingMapFocus && !loading) {
-        // Wait a bit for everything to be ready
-        const timer = setTimeout(() => {
-            actions.focusOnPhoto(pendingMapFocus);
-            actions.clearPendingMapFocus();
-        }, 500);
-        
-        return () => clearTimeout(timer);
+    if (!mapLoaded || loading || !navigatingToMap) return;
+
+    // Fallback: se arriviamo da "vai alla mappa" ma la foto non è disponibile
+    // non lasciamo il flag bloccato.
+    if (!pendingMapFocus) {
+        actions.resetNavigatingToMap();
+        return;
     }
-}, [mapLoaded, pendingMapFocus, loading, actions]);
+
+    // Wait a bit for everything to be ready
+    const timer = setTimeout(() => {
+        const started = focusOnPhoto(
+            pendingMapFocus,
+            FOCUS_OFFSET_RADIUS,
+            900,
+            () => {
+                scheduleAutoRotateResume();
+                actions.resetNavigatingToMap();
+            }
+        );
+
+        actions.clearPendingMapFocus();
+        if (!started) {
+            actions.resetNavigatingToMap();
+        }
+    }, 500);
+
+    return () => clearTimeout(timer);
+}, [
+    mapLoaded,
+    pendingMapFocus,
+    loading,
+    navigatingToMap,
+    actions,
+    focusOnPhoto,
+    scheduleAutoRotateResume
+]);
+
+// Se arriviamo dal PhotoModal, blocca subito la rotazione in ingresso.
+useEffect(() => {
+    if (!navigatingToMap || !controlsRef.current) return;
+
+    controlsRef.current.autoRotate = false;
+    setAutoRotate(false);
+    if (autoRotateTimerRef.current) {
+        clearTimeout(autoRotateTimerRef.current);
+        autoRotateTimerRef.current = null;
+    }
+}, [navigatingToMap]);
 
 // Gestisci la rotazione della terra in base allo stato del modal
 // effetto completo per gestire l’apertura/chiusura del modal

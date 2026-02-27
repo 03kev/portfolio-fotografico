@@ -38,9 +38,8 @@ coverage/
 .parcel-cache/
 
 # Uploads
-backend/uploads/
 temp/
-backend/storage/
+backend/storage/*
 
 # Database
 *.db

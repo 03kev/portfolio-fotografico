@@ -77,8 +77,7 @@ function photoReducer(state, action) {
         return {
             ...state,
             modalOpen: action.payload,
-            selectedPhoto: action.payload ? state.selectedPhoto : null,
-            navigatingToMap: false // Reset quando il modal cambia stato
+            selectedPhoto: action.payload ? state.selectedPhoto : null
         };
         
         case ACTIONS.SET_NAVIGATING_TO_MAP:
