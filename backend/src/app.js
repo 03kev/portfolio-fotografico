@@ -273,6 +273,20 @@ function buildPublicAssetUrl(uploadPath) {
     return `${publicBaseUrl}/${objectKey}`;
 }
 
+function buildPhotoCaption(photo) {
+    const customDescription = String(photo?.description || '').trim();
+    if (customDescription) return customDescription;
+
+    const title = String(photo?.title || 'Foto').trim() || 'Foto';
+    const location = String(photo?.location || '').trim();
+
+    if (location) {
+        return `Foto "${title}" scattata in ${location}.`;
+    }
+
+    return `Foto "${title}" del portfolio di Kevin Muka.`;
+}
+
 app.get('/api/sitemap-images.xml', async (req, res) => {
     try {
         const photos = await readMetadataFile('photos.json', []);
@@ -296,7 +310,7 @@ app.get('/api/sitemap-images.xml', async (req, res) => {
                 const landingUrl = `${siteBaseUrl}/photo/${encodeURIComponent(photoId)}`;
 
                 const title = escapeXml(photo.title || 'Foto');
-                const caption = escapeXml(photo.description || photo.location || photo.title || '');
+                const caption = escapeXml(buildPhotoCaption(photo));
 
                 return [
                     '<url>',

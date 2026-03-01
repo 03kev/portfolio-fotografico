@@ -31,7 +31,7 @@ const Nav = styled.nav`
 
 const Logo = styled(motion(Link))`
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
   color: var(--color-text);
   font-weight: var(--font-weight-semibold);
@@ -45,6 +45,25 @@ const Logo = styled(motion(Link))`
     background: var(--color-accent);
     display: inline-block;
   }
+`;
+
+const LogoIcon = styled.img`
+  width: 35px;
+  height: 35px;
+  border-radius: 8px;
+  object-fit: contain;
+  background: transparent;
+
+  @media (max-width: 768px) {
+    width: 28px;
+    height: 28px;
+  }
+`;
+
+const LogoText = styled.span`
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
 `;
 
 const NavLinks = styled.ul`
@@ -248,7 +267,10 @@ const Header = ({
     >
       <Nav>
         <Logo to="/" whileTap={{ scale: 0.98 }} aria-label="Torna alla home">
-          FotoPortfolio <span className="dot" />
+          <LogoIcon src="/favicon.svg" alt="" aria-hidden="true" />
+          <LogoText>
+            FotoPortfolio <span className="dot" />
+          </LogoText>
         </Logo>
 
         <NavLinks>

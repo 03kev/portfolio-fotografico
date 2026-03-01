@@ -1,5 +1,9 @@
+// Testo SEO per /photo/:id: aiuta i crawler a leggere contenuto specifico della foto
+// senza mostrare alcun blocco visivo all'utente (evita il flash prima dell'apertura modal).
+
 import React from 'react';
 import { useParams } from 'react-router-dom';
+import styled from 'styled-components';
 import Gallery from '../components/Gallery';
 import useSeo from '../seo/useSeo';
 import { usePhotos } from '../contexts/PhotoContext';
@@ -15,6 +19,51 @@ function toAbsoluteUrl(value) {
   if (/^https?:\/\//i.test(resolved)) return resolved;
   return `${base}${resolved.startsWith('/') ? resolved : `/${resolved}`}`;
 }
+
+function buildPhotoDescription(photo) {
+  if (!photo) {
+    return 'Dettaglio foto nell\'archivio fotografico di Kevin Muka.';
+  }
+
+  const customDescription = String(photo.description || '').trim();
+  if (customDescription) return customDescription;
+
+  const title = String(photo.title || 'senza titolo').trim() || 'senza titolo';
+  const location = String(photo.location || 'luogo non specificato').trim() || 'luogo non specificato';
+  return `Foto "${title}" scattata in ${location}.`;
+}
+
+const SeoOnlyIntro = styled.section`
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+`;
+
+const PhotoTitle = styled.h1`
+  margin: 0 0 8px 0;
+  color: var(--color-text);
+  font-size: clamp(1.8rem, 3.2vw, 2.4rem);
+  line-height: 1.15;
+`;
+
+const PhotoMeta = styled.p`
+  margin: 0 0 10px 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+`;
+
+const PhotoDescription = styled.p`
+  margin: 0;
+  color: rgba(255, 255, 255, 0.88);
+  max-width: 760px;
+  line-height: 1.6;
+`;
 
 export default function PhotoPage() {
   const { id } = useParams();
@@ -32,9 +81,7 @@ export default function PhotoPage() {
     ? `${photo.title} - Kevin Muka`
     : 'Foto - Kevin Muka';
 
-  const seoDescription = photo
-    ? (photo.description || `Foto "${photo.title || 'senza titolo'}" scattata in ${photo.location || 'luogo non specificato'}.`)
-    : 'Dettaglio foto nell\'archivio fotografico di Kevin Muka.';
+  const seoDescription = buildPhotoDescription(photo);
 
   const seoImage = photo ? toAbsoluteUrl(photo.image || photo.url || photo.thumbnail) : '';
   const keywords = React.useMemo(
@@ -50,7 +97,7 @@ export default function PhotoPage() {
       '@context': 'https://schema.org',
       '@type': 'ImageObject',
       name: photo.title || 'Fotografia',
-      description: photo.description || photo.location || 'Scatto fotografico',
+      description: buildPhotoDescription(photo),
       contentUrl: toAbsoluteUrl(photo.image || photo.url || photo.thumbnail),
       url: canonicalUrl,
     };
@@ -77,5 +124,25 @@ export default function PhotoPage() {
     structuredData,
   });
 
-  return <Gallery headingLevel="h1" forcedPhotoId={photoId} />;
+  const visibleTitle = photo?.title || 'Foto';
+  const visibleLocation = photo?.location || 'Luogo non specificato';
+  const visibleDate = photo?.date || '';
+
+  return (
+    <>
+      <SeoOnlyIntro>
+          <PhotoTitle>{visibleTitle}</PhotoTitle>
+          <PhotoMeta>
+            {visibleLocation}
+            {visibleDate ? ` - ${visibleDate}` : ''}
+          </PhotoMeta>
+          <PhotoDescription>{seoDescription}</PhotoDescription>
+      </SeoOnlyIntro>
+      <Gallery
+        headingLevel="h2"
+        forcedPhotoId={photoId}
+        hideCardDescriptions
+      />
+    </>
+  );
 }

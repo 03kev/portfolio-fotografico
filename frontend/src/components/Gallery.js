@@ -320,7 +320,7 @@ const NoResults = styled(motion.div)`
   }
 `;
 
-const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null }) => {
+const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptions = false }) => {
   const { photos, filteredPhotos, loading, actions, filters } = usePhotos();
   const outletContext = useOutletContext();
   const isAdmin = Boolean(outletContext?.isAdmin);
@@ -401,6 +401,15 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null }) => {
 
   const getThumbImageUrl = (photo) => `${IMAGES_BASE_URL}${photo.thumbnail || photo.image || photo.url || ''}`;
   const getPhotoCardUrl = (photo) => `/photo/${encodeURIComponent(String(photo.id))}`;
+  const getPhotoAltText = (photo) => {
+    const title = String(photo?.title || 'Foto').trim() || 'Foto';
+    const description = String(photo?.description || '').trim();
+    const location = String(photo?.location || '').trim();
+
+    if (description) return `${title} - ${description}`;
+    if (location) return `${title} - ${location}`;
+    return title;
+  };
 
   const handleDelete = async (e, photoId) => {
     e.stopPropagation();
@@ -512,7 +521,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null }) => {
                     )}
                     <PhotoImage
                       src={getThumbImageUrl(photo)}
-                      alt={photo.title}
+                      alt={getPhotoAltText(photo)}
                       loading={index < 3 ? 'eager' : 'lazy'}
                       fetchPriority={index < 3 ? 'high' : 'auto'}
                       decoding="async"
@@ -524,7 +533,9 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null }) => {
                       <OverlayContent>
                         <PhotoTitle>{photo.title}</PhotoTitle>
                         <PhotoLocation>{photo.location}</PhotoLocation>
-                        <PhotoDescription>{photo.description}</PhotoDescription>
+                        {!hideCardDescriptions && (
+                          <PhotoDescription>{photo.description}</PhotoDescription>
+                        )}
                         {Array.isArray(photo.tags) && photo.tags.length > 0 && (
                           <PhotoTags>
                             {photo.tags.slice(0, 3).map(tag => (
