@@ -1,0 +1,12 @@
+{
+  "web": "diaframma_k",
+  "pwa": "diaframma_k",
+  "ios": "diaframma_k",
+  "presets": {
+    "mixed": {
+      "web": "diaframma",
+      "pwa": "camera",
+      "ios": "camera"
+    }
+  }
+}

@@ -12,6 +12,7 @@
     "start:frontend": "cd frontend && npm start",
     "build": "npm install --prefix frontend && CI=false npm run build --prefix frontend",
     "vercel-build": "npm install --prefix backend && npm run build",
+    "branding": "node frontend/scripts/apply-branding.mjs",
     "test": "npm run test:backend && npm run test:frontend",
     "test:backend": "cd backend && npm test",
     "test:frontend": "cd frontend && CI=true npm test -- --watchAll=false --passWithNoTests",

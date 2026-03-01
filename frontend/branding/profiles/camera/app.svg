@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Portfolio Muka icon">
+  <rect width="1024" height="1024" rx="240" fill="#0b0f18"/>
+
+  <rect x="170" y="286" width="684" height="458" rx="120" fill="#d6b36a"/>
+  <rect x="205" y="321" width="614" height="388" rx="92" fill="#161e31"/>
+
+  <rect x="292" y="220" width="220" height="124" rx="40" fill="#d6b36a"/>
+
+  <circle cx="512" cy="515" r="152" fill="#d6b36a"/>
+  <circle cx="512" cy="515" r="108" fill="#161e31"/>
+  <circle cx="512" cy="515" r="56" fill="#d6b36a"/>
+
+  <rect x="694" y="360" width="94" height="94" rx="24" fill="#d6b36a"/>
+  <rect x="720" y="386" width="42" height="42" rx="12" fill="#161e31"/>
+</svg>
