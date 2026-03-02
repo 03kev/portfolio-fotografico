@@ -321,7 +321,7 @@ const NoResults = styled(motion.div)`
 `;
 
 const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptions = false }) => {
-  const { photos, filteredPhotos, loading, actions, filters } = usePhotos();
+  const { photos, filteredPhotos, loading, actions, filters, modalOpen } = usePhotos();
   const outletContext = useOutletContext();
   const isAdmin = Boolean(outletContext?.isAdmin);
   const [searchParams] = useSearchParams();
@@ -387,6 +387,11 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     autoOpenedPhotoRef.current = resolvedPhotoId;
   }, [resolvedPhotoId, loading, photos, actions]);
 
+  const hasForcedPhotoId = Boolean(forcedPhotoId);
+  const forcedPhotoExists = !hasForcedPhotoId
+    || photos.some((photo) => String(photo.id) === String(forcedPhotoId));
+  const waitingForForcedModal = hasForcedPhotoId && forcedPhotoExists && !modalOpen;
+
   const handleFilterClick = (filter) => {
     setActiveFilter(filter);
     if (filter === 'all') {
@@ -428,7 +433,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     setEditingPhoto(photo);
   };
 
-  if (loading) {
+  if (loading || waitingForForcedModal) {
     return (
       <GallerySection>
         <Container>
