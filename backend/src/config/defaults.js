@@ -1,5 +1,4 @@
 const DEFAULTS = Object.freeze({
-    port: 5000,
     apiSessionTtlMs: 1000 * 60 * 60 * 24 * 7, // 7 giorni
     apiAuthRateLimitWindowMs: 10 * 60 * 1000,
     apiAuthRateLimitMaxAttempts: 10,

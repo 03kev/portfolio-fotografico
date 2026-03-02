@@ -1,23 +1,12 @@
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
+import { getSiteUrl } from '../utils/siteUrl';
 
 const BRAND_NAME = 'Kevin Muka';
 const DEFAULT_SITE_NAME = 'Portfolio Fotografico';
 const DEFAULT_TITLE = `${BRAND_NAME} | ${DEFAULT_SITE_NAME}`;
 const DEFAULT_DESCRIPTION = 'Portfolio fotografico di Kevin Muka: serie, archivio completo e mappa interattiva con scatti di viaggio, paesaggi e città.';
 const DEFAULT_OG_IMAGE = '';
-
-function getSiteUrl() {
-  if (process.env.REACT_APP_SITE_URL) {
-    return process.env.REACT_APP_SITE_URL.replace(/\/+$/, '');
-  }
-
-  if (typeof window !== 'undefined' && window.location?.origin) {
-    return window.location.origin.replace(/\/+$/, '');
-  }
-
-  return '';
-}
 
 function upsertMeta({ name, property, content }) {
   const selector = name ? `meta[name="${name}"]` : `meta[property="${property}"]`;

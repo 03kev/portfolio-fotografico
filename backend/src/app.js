@@ -101,12 +101,7 @@ function isAllowedCrossOrigin(origin) {
         return false;
     }
 
-    if (!env.isProduction) {
-        const devOrigins = ['http://localhost:3000', 'http://localhost:3001'];
-        return devOrigins.includes(normalizedOrigin);
-    }
-
-    // In produzione: allowlist esplicita + dominio Vercel.
+    // Allowlist esplicita (+ dominio Vercel se presente).
     if (configuredOrigins.includes(normalizedOrigin)) {
         return true;
     }
@@ -248,16 +243,7 @@ function escapeXml(value) {
 }
 
 function getSiteBaseUrl() {
-    if (env.corsOrigins.length > 0) {
-        const firstOrigin = String(env.corsOrigins[0]).trim().replace(/\/+$/, '');
-        if (firstOrigin) return firstOrigin;
-    }
-
-    if (env.vercelUrl) {
-        return `https://${env.vercelUrl}`;
-    }
-
-    return 'https://kevinmuka.dev';
+    return String(env.siteUrl).trim().replace(/\/+$/, '');
 }
 
 function buildPublicAssetUrl(uploadPath) {
@@ -286,6 +272,57 @@ function buildPhotoCaption(photo) {
 
     return `Foto "${title}" del portfolio di Kevin Muka.`;
 }
+
+app.get('/api/sitemap.xml', async (req, res) => {
+    try {
+        const siteBaseUrl = getSiteBaseUrl();
+        const pages = ['/', '/series', '/gallery', '/map', '/about', '/contact'];
+        const entries = pages
+            .map((path) => {
+                const pageUrl = `${siteBaseUrl}${path === '/' ? '/' : path}`;
+                return [
+                    '<url>',
+                    `<loc>${escapeXml(pageUrl)}</loc>`,
+                    '<changefreq>weekly</changefreq>',
+                    path === '/' ? '<priority>1.0</priority>' : '<priority>0.8</priority>',
+                    '</url>'
+                ].join('');
+            })
+            .join('');
+
+        const xml = `<?xml version="1.0" encoding="UTF-8"?>`
+            + `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">`
+            + `${entries}`
+            + `</urlset>`;
+
+        res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+        res.setHeader('Cache-Control', 'public, max-age=600');
+        res.status(200).send(xml);
+    } catch (error) {
+        console.error('Errore generazione sitemap pagine:', error);
+        res.status(500).send('Errore generazione sitemap pagine');
+    }
+});
+
+app.get('/api/robots.txt', (req, res) => {
+    try {
+        const siteBaseUrl = getSiteBaseUrl();
+        const body = [
+            'User-agent: *',
+            'Allow: /',
+            '',
+            `Sitemap: ${siteBaseUrl}/sitemap.xml`,
+            `Sitemap: ${siteBaseUrl}/sitemap-images.xml`
+        ].join('\n');
+
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader('Cache-Control', 'public, max-age=600');
+        res.status(200).send(body);
+    } catch (error) {
+        console.error('Errore generazione robots.txt:', error);
+        res.status(500).send('Errore generazione robots.txt');
+    }
+});
 
 app.get('/api/sitemap-images.xml', async (req, res) => {
     try {

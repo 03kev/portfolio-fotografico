@@ -51,6 +51,18 @@
   ],
   "rewrites": [
     {
+      "source": "/robots.txt",
+      "destination": "/api/robots.txt"
+    },
+    {
+      "source": "/sitemap.xml",
+      "destination": "/api/sitemap.xml"
+    },
+    {
+      "source": "/sitemap-images.xml",
+      "destination": "/api/sitemap-images.xml"
+    },
+    {
       "source": "/api/:path*",
       "destination": "/api"
     },

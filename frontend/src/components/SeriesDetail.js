@@ -11,6 +11,7 @@ import { usePhotos } from '../contexts/PhotoContext';
 import SeriesEditor from './SeriesEditor';
 import { useToast } from './Toast';
 import { IMAGES_BASE_URL } from '../utils/constants';
+import { toAbsoluteImageUrl, toAbsoluteSiteUrl } from '../utils/siteUrl';
 import useSeo from '../seo/useSeo';
 
 const PageContainer = styled.div`
@@ -1119,30 +1120,17 @@ function SeriesDetail() {
   const seriesStructuredData = React.useMemo(() => {
     if (!currentSeries) return null;
 
-    const toAbsolute = (value) => {
-      const src = String(value || '').trim();
-      if (!src) return '';
-      if (/^https?:\/\//i.test(src)) return src;
-
-      const base = (process.env.REACT_APP_SITE_URL || window.location.origin || '').replace(/\/+$/, '');
-      const resolved = `${IMAGES_BASE_URL}${src}`;
-      if (/^https?:\/\//i.test(resolved)) return resolved;
-      return `${base}${resolved.startsWith('/') ? resolved : `/${resolved}`}`;
-    };
-
-    const site = (process.env.REACT_APP_SITE_URL || window.location.origin || '').replace(/\/+$/, '');
-    const seriesUrl = `${site}/series/${currentSeries.slug || currentSeries.id}`;
-    const photoBaseUrl = `${site}/photo`;
+    const seriesUrl = toAbsoluteSiteUrl(`/series/${currentSeries.slug || currentSeries.id}`);
 
     const images = seriesPhotos
       .slice(0, 120)
       .map((photo) => {
-        const full = toAbsolute(photo.image);
+        const full = toAbsoluteImageUrl(photo.image);
         if (!full) return null;
         const imageData = {
           '@type': 'ImageObject',
           contentUrl: full,
-          url: `${photoBaseUrl}/${encodeURIComponent(String(photo.id))}`,
+          url: toAbsoluteSiteUrl(`/photo/${encodeURIComponent(String(photo.id))}`),
           name: photo.title || currentSeries.title || 'Fotografia',
           description: photo.description || currentSeries.description || 'Scatto fotografico'
         };

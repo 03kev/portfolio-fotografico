@@ -1,7 +1,8 @@
+const path = require('path');
 const dotenv = require('dotenv');
 const DEFAULTS = require('./defaults');
 
-dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 function asString(value, fallback = '') {
     if (value === undefined || value === null) return fallback;
@@ -16,6 +17,13 @@ function asInt(value, fallback) {
 function asPositiveInt(value, fallback) {
     const parsed = asInt(value, fallback);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function asOptionalPositiveInt(value) {
+    const raw = asString(value);
+    if (!raw) return null;
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
 function asCsvList(value) {
@@ -33,9 +41,10 @@ const env = {
     nodeEnv,
     isProduction,
     isDevelopment,
-    port: asPositiveInt(process.env.PORT, DEFAULTS.port),
+    port: asOptionalPositiveInt(process.env.PORT),
     vercel: Boolean(process.env.VERCEL),
     vercelUrl: asString(process.env.VERCEL_URL),
+    siteUrl: asString(process.env.SITE_URL),
 
     corsOrigins: asCsvList(process.env.CORS_ORIGINS),
 
@@ -59,6 +68,18 @@ const env = {
 function validateEnv() {
     const errors = [];
     const warnings = [];
+
+    if (env.isDevelopment && !asString(process.env.PORT)) {
+        errors.push('PORT non impostata in development.');
+    }
+
+    if (!env.siteUrl) {
+        errors.push('SITE_URL non impostata.');
+    }
+
+    if (env.isDevelopment && !env.corsOrigins.length) {
+        errors.push('CORS_ORIGINS non impostata in development.');
+    }
 
     if (env.isProduction) {
         if (!env.apiWriteTokenHash) {

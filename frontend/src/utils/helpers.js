@@ -1,4 +1,5 @@
 // Utilità generali per l'applicazione
+import { toAbsoluteSiteUrl } from './siteUrl';
 
 export const formatDate = (dateString, locale = 'it-IT') => {
   return new Date(dateString).toLocaleDateString(locale, {
@@ -184,13 +185,12 @@ export const getColorFromImage = async (imageSrc) => {
 };
 
 export const createShareableLink = (photo) => {
-  const baseUrl = window.location.origin;
   const params = new URLSearchParams({
     photo: photo.id,
     title: photo.title,
     location: photo.location
   });
-  return `${baseUrl}?${params.toString()}`;
+  return `${toAbsoluteSiteUrl('/')}?${params.toString()}`;
 };
 
 export const downloadImage = async (imageUrl, filename) => {

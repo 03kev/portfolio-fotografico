@@ -43,7 +43,8 @@ const Logo = styled(motion(Link))`
     height: 6px;
     border-radius: 999px;
     background: var(--color-accent);
-    display: inline-block;
+    display: block;
+    flex-shrink: 0;
   }
 `;
 
@@ -62,7 +63,7 @@ const LogoIcon = styled.img`
 
 const LogoText = styled.span`
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
 `;
 

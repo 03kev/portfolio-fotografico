@@ -97,6 +97,7 @@ Variabili principali:
 # Runtime locale
 PORT=5001
 NODE_ENV=development
+SITE_URL=http://localhost:3000
 
 # CORS
 CORS_ORIGINS=http://localhost:3000,http://localhost:3001
@@ -105,6 +106,7 @@ CORS_ORIGINS=http://localhost:3000,http://localhost:3001
 API_WRITE_TOKEN_HASH=scrypt$16384$8$1$...
 API_WRITE_TOKEN=
 API_SESSION_SECRET=replace_with_long_random_secret
+API_SESSION_COOKIE_NAME=
 API_SESSION_TTL_MS=604800000
 API_AUTH_RATE_LIMIT_WINDOW_MS=600000
 API_AUTH_RATE_LIMIT_MAX_ATTEMPTS=10
@@ -121,6 +123,8 @@ R2_METADATA_PREFIX=data
 
 Note:
 
+- `PORT` è obbligatoria in sviluppo locale.
+- `CORS_ORIGINS` è obbligatoria in sviluppo; in produzione è raccomandata (se assente verrà consentito solo `VERCEL_URL`).
 - In produzione il backend è **R2-only**.
 - In produzione è obbligatoria `API_WRITE_TOKEN_HASH` (token non in chiaro).
 - `API_WRITE_TOKEN` è solo fallback in sviluppo.
@@ -137,14 +141,15 @@ npm run token:hash -- "il-tuo-token-lungo"
 
 ```env
 REACT_APP_SITE_URL=http://localhost:3000
-REACT_APP_NAME=Portfolio Fotografico
-REACT_APP_VERSION=1.0.0
+REACT_APP_API_BASE_URL=http://localhost:5001/api
+REACT_APP_IMAGES_BASE_URL=http://localhost:5001
 ```
 
 Note:
 
 - Non inserire segreti in variabili `REACT_APP_*`.
-- In produzione le API usano base path `/api`.
+- Queste variabili sono validate prima di `npm start` e `npm run build`.
+- `REACT_APP_IMAGES_BASE_URL` può essere stringa vuota se immagini/API sono servite dallo stesso dominio.
 
 ## Modalità admin
 
@@ -155,7 +160,7 @@ Note:
 ## Sicurezza API
 
 - Helmet attivo con CSP base
-- CORS allowlist in produzione (`CORS_ORIGINS` + dominio Vercel)
+- CORS allowlist sempre attiva (`CORS_ORIGINS`; in produzione viene aggiunto anche `VERCEL_URL` se presente)
 - Cookie admin `HttpOnly`, `Secure` in produzione, `SameSite=strict`
 - CSRF origin-check su metodi state-changing in produzione
 - Rate limit globale + rate limit su login admin
@@ -165,6 +170,7 @@ Note:
 
 ### Variabili consigliate in Production
 
+- `SITE_URL` (es. `https://kevinmuka.dev`)
 - `API_WRITE_TOKEN_HASH`
 - `API_SESSION_SECRET`
 - `CORS_ORIGINS` (es. `https://kevinmuka.dev,https://www.kevinmuka.dev`)
@@ -174,6 +180,9 @@ Note:
 - `R2_BUCKET`
 - `R2_PUBLIC_URL` (es. `https://uploads.kevinmuka.dev`)
 - opzionali: `R2_ENDPOINT`, `R2_METADATA_PREFIX`, `API_SESSION_TTL_MS`, `API_AUTH_RATE_LIMIT_*`
+- `REACT_APP_SITE_URL` (es. `https://kevinmuka.dev`)
+- `REACT_APP_API_BASE_URL` (tipicamente `/api`)
+- `REACT_APP_IMAGES_BASE_URL` (tipicamente stringa vuota o path assoluto)
 
 Non necessari su Vercel:
 
@@ -211,7 +220,7 @@ curl -fsS https://kevinmuka.dev/api/health
 
 ```bash
 curl -fsS https://kevinmuka.dev/api/photos | head
-curl -fsS \"https://kevinmuka.dev/api/series?all=false\" | head
+curl -fsS "https://kevinmuka.dev/api/series?all=false" | head
 ```
 
 4. Admin mode:

@@ -1,11 +1,13 @@
-// API/Assets Configuration
-export const API_BASE_URL = process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:5001/api';
-export const IMAGES_BASE_URL = process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5001';
-export const SITE_BASE_URL = process.env.REACT_APP_SITE_URL || '';
+function requireEnv(name) {
+  if (process.env[name] === undefined) {
+    throw new Error(`[config] Missing environment variable: ${name}`);
+  }
+  return String(process.env[name]).trim();
+}
 
-// App Configuration
-export const APP_NAME = process.env.REACT_APP_NAME || 'Portfolio Fotografico';
-export const APP_VERSION = process.env.REACT_APP_VERSION || '1.0.0';
+// API/Assets Configuration
+export const API_BASE_URL = requireEnv('REACT_APP_API_BASE_URL');
+export const IMAGES_BASE_URL = requireEnv('REACT_APP_IMAGES_BASE_URL');
 
 // Image settings
 export const IMAGE_SETTINGS = {

@@ -7,18 +7,7 @@ import styled from 'styled-components';
 import Gallery from '../components/Gallery';
 import useSeo from '../seo/useSeo';
 import { usePhotos } from '../contexts/PhotoContext';
-import { IMAGES_BASE_URL } from '../utils/constants';
-
-function toAbsoluteUrl(value) {
-  const src = String(value || '').trim();
-  if (!src) return '';
-  if (/^https?:\/\//i.test(src)) return src;
-
-  const base = (process.env.REACT_APP_SITE_URL || window.location.origin || '').replace(/\/+$/, '');
-  const resolved = `${IMAGES_BASE_URL}${src}`;
-  if (/^https?:\/\//i.test(resolved)) return resolved;
-  return `${base}${resolved.startsWith('/') ? resolved : `/${resolved}`}`;
-}
+import { toAbsoluteImageUrl, toAbsoluteSiteUrl } from '../utils/siteUrl';
 
 function buildPhotoDescription(photo) {
   if (!photo) {
@@ -69,8 +58,7 @@ export default function PhotoPage() {
   const { id } = useParams();
   const { photos, loading } = usePhotos();
   const photoId = String(id || '').trim();
-  const siteBase = (process.env.REACT_APP_SITE_URL || window.location.origin || '').replace(/\/+$/, '');
-  const canonicalUrl = `${siteBase}/photo/${encodeURIComponent(photoId)}`;
+  const canonicalUrl = toAbsoluteSiteUrl(`/photo/${encodeURIComponent(photoId)}`);
 
   const photo = React.useMemo(
     () => photos.find((item) => String(item.id) === photoId) || null,
@@ -83,7 +71,7 @@ export default function PhotoPage() {
 
   const seoDescription = buildPhotoDescription(photo);
 
-  const seoImage = photo ? toAbsoluteUrl(photo.image || photo.url || photo.thumbnail) : '';
+  const seoImage = photo ? toAbsoluteImageUrl(photo.image || photo.url || photo.thumbnail) : '';
   const keywords = React.useMemo(
     () => (Array.isArray(photo?.tags) ? photo.tags.filter(Boolean) : []),
     [photo]
@@ -98,7 +86,7 @@ export default function PhotoPage() {
       '@type': 'ImageObject',
       name: photo.title || 'Fotografia',
       description: buildPhotoDescription(photo),
-      contentUrl: toAbsoluteUrl(photo.image || photo.url || photo.thumbnail),
+      contentUrl: toAbsoluteImageUrl(photo.image || photo.url || photo.thumbnail),
       url: canonicalUrl,
     };
 
