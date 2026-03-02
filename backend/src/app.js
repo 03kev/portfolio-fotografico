@@ -273,6 +273,129 @@ function buildPhotoCaption(photo) {
     return `Foto "${title}" del portfolio di Kevin Muka.`;
 }
 
+function toAbsoluteSiteUrl(value, siteBaseUrl) {
+    const src = String(value || '').trim();
+    if (!src) return '';
+    if (/^https?:\/\//i.test(src)) return src;
+    if (src.startsWith('/')) return `${siteBaseUrl}${src}`;
+    return `${siteBaseUrl}/${src}`;
+}
+
+function isThumbnailPath(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return false;
+    return raw.includes('/thumbnails/') || raw.includes('thumbnails/');
+}
+
+function selectSocialImageSource(photo) {
+    const candidates = [
+        photo?.socialImage,
+        photo?.thumbnail,
+        photo?.url,
+        photo?.image
+    ]
+        .map((item) => String(item || '').trim())
+        .filter(Boolean);
+
+    if (candidates.length === 0) return '';
+
+    // Per le card social preferiamo sempre asset leggeri.
+    const thumbnailCandidate = candidates.find((item) => isThumbnailPath(item));
+    return thumbnailCandidate || candidates[0];
+}
+
+function resolvePhotoImageUrl(photo, siteBaseUrl) {
+    const raw = selectSocialImageSource(photo);
+    if (!raw) return '';
+
+    const normalized = buildPublicAssetUrl(raw);
+    return toAbsoluteSiteUrl(normalized, siteBaseUrl);
+}
+
+function renderPhotoSeoHtml({ title, description, canonicalUrl, imageUrl, noindex = false }) {
+    const safeTitle = escapeXml(title || 'Foto - Kevin Muka');
+    const safeDescription = escapeXml(description || 'Dettaglio foto del portfolio di Kevin Muka.');
+    const safeCanonical = escapeXml(canonicalUrl || '');
+    const safeImage = escapeXml(imageUrl || '');
+    const robotsContent = noindex ? 'noindex, nofollow' : 'index, follow';
+    const twitterCard = imageUrl ? 'summary_large_image' : 'summary';
+    const ogImageBlock = imageUrl
+        ? [
+            `<meta property="og:image" content="${safeImage}" />`,
+            `<meta name="twitter:image" content="${safeImage}" />`
+        ].join('\n')
+        : '';
+
+    return [
+        '<!doctype html>',
+        '<html lang="it">',
+        '<head>',
+        '  <meta charset="utf-8" />',
+        '  <meta name="viewport" content="width=device-width, initial-scale=1" />',
+        `  <title>${safeTitle}</title>`,
+        `  <meta name="description" content="${safeDescription}" />`,
+        `  <meta name="robots" content="${robotsContent}" />`,
+        `  <link rel="canonical" href="${safeCanonical}" />`,
+        '  <meta property="og:type" content="article" />',
+        `  <meta property="og:title" content="${safeTitle}" />`,
+        `  <meta property="og:description" content="${safeDescription}" />`,
+        `  <meta property="og:url" content="${safeCanonical}" />`,
+        '  <meta property="og:site_name" content="Kevin Muka" />',
+        `  <meta name="twitter:card" content="${twitterCard}" />`,
+        `  <meta name="twitter:title" content="${safeTitle}" />`,
+        `  <meta name="twitter:description" content="${safeDescription}" />`,
+        `  ${ogImageBlock}`,
+        '</head>',
+        '<body>',
+        `  <h1>${safeTitle}</h1>`,
+        `  <p>${safeDescription}</p>`,
+        '</body>',
+        '</html>'
+    ].join('\n');
+}
+
+async function handlePhotoSeoPage(req, res, next) {
+    try {
+        const siteBaseUrl = getSiteBaseUrl();
+        const rawId = String(req.params.id || '').trim();
+        const decodedPhotoId = decodeURIComponent(rawId);
+        const canonicalUrl = `${siteBaseUrl}/photo/${encodeURIComponent(decodedPhotoId)}`;
+        const photos = await readMetadataFile('photos.json', []);
+        const photo = photos.find((item) => String(item?.id || '').trim() === decodedPhotoId);
+
+        if (!photo) {
+            const notFoundHtml = renderPhotoSeoHtml({
+                title: 'Foto non trovata - Kevin Muka',
+                description: 'La foto richiesta non è disponibile.',
+                canonicalUrl,
+                imageUrl: '',
+                noindex: true
+            });
+
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            res.setHeader('Cache-Control', 'public, max-age=60');
+            return res.status(404).send(notFoundHtml);
+        }
+
+        const photoTitle = String(photo.title || 'Foto').trim() || 'Foto';
+        const title = `${photoTitle} - Kevin Muka`;
+        const description = buildPhotoCaption(photo);
+        const imageUrl = resolvePhotoImageUrl(photo, siteBaseUrl);
+        const html = renderPhotoSeoHtml({
+            title,
+            description,
+            canonicalUrl,
+            imageUrl
+        });
+
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=86400');
+        return res.status(200).send(html);
+    } catch (error) {
+        return next(error);
+    }
+}
+
 async function handleSitemapPages(req, res) {
     try {
         const siteBaseUrl = getSiteBaseUrl();
@@ -382,6 +505,7 @@ async function handleSitemapImages(req, res) {
 app.get('/sitemap.xml', handleSitemapPages);
 app.get('/robots.txt', handleRobotsTxt);
 app.get('/sitemap-images.xml', handleSitemapImages);
+app.get('/photo/:id', handlePhotoSeoPage);
 
 // Health check
 app.get('/api/health', (req, res) => {

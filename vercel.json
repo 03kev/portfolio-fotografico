@@ -63,6 +63,17 @@
       "destination": "/api"
     },
     {
+      "source": "/photo/:id",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(facebookexternalhit|Facebot|Instagram|Twitterbot|LinkedInBot|WhatsApp|TelegramBot|Discordbot|Slackbot|SkypeUriPreview|Pinterestbot|redditbot|vkShare).*"
+        }
+      ],
+      "destination": "/api"
+    },
+    {
       "source": "/api/:path*",
       "destination": "/api"
     },
