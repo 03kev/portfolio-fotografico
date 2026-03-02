@@ -22,15 +22,6 @@
       ]
     },
     {
-      "source": "/favicon-48x48.png",
-      "headers": [
-        {
-          "key": "X-Robots-Tag",
-          "value": "noindex, noimageindex"
-        }
-      ]
-    },
-    {
       "source": "/favicon.svg",
       "headers": [
         {
@@ -52,15 +43,15 @@
   "rewrites": [
     {
       "source": "/robots.txt",
-      "destination": "/api/robots.txt"
+      "destination": "/api"
     },
     {
       "source": "/sitemap.xml",
-      "destination": "/api/sitemap.xml"
+      "destination": "/api"
     },
     {
       "source": "/sitemap-images.xml",
-      "destination": "/api/sitemap-images.xml"
+      "destination": "/api"
     },
     {
       "source": "/api/:path*",

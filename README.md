@@ -261,7 +261,9 @@ npm run sync:r2:metadata
 - `POST /api/series`
 - `PUT /api/series/:id`
 - `DELETE /api/series/:id`
-- `GET /api/sitemap-images.xml`
+- `GET /robots.txt`
+- `GET /sitemap.xml`
+- `GET /sitemap-images.xml`
 
 ## Script utili
 

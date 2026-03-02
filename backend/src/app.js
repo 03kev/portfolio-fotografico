@@ -273,7 +273,7 @@ function buildPhotoCaption(photo) {
     return `Foto "${title}" del portfolio di Kevin Muka.`;
 }
 
-app.get('/api/sitemap.xml', async (req, res) => {
+async function handleSitemapPages(req, res) {
     try {
         const siteBaseUrl = getSiteBaseUrl();
         const pages = ['/', '/series', '/gallery', '/map', '/about', '/contact'];
@@ -302,9 +302,9 @@ app.get('/api/sitemap.xml', async (req, res) => {
         console.error('Errore generazione sitemap pagine:', error);
         res.status(500).send('Errore generazione sitemap pagine');
     }
-});
+}
 
-app.get('/api/robots.txt', (req, res) => {
+function handleRobotsTxt(req, res) {
     try {
         const siteBaseUrl = getSiteBaseUrl();
         const body = [
@@ -322,9 +322,9 @@ app.get('/api/robots.txt', (req, res) => {
         console.error('Errore generazione robots.txt:', error);
         res.status(500).send('Errore generazione robots.txt');
     }
-});
+}
 
-app.get('/api/sitemap-images.xml', async (req, res) => {
+async function handleSitemapImages(req, res) {
     try {
         const photos = await readMetadataFile('photos.json', []);
         const siteBaseUrl = getSiteBaseUrl();
@@ -376,7 +376,12 @@ app.get('/api/sitemap-images.xml', async (req, res) => {
         console.error('Errore generazione sitemap immagini:', error);
         res.status(500).send('Errore generazione sitemap immagini');
     }
-});
+}
+
+// SEO endpoints pubblici (root).
+app.get('/sitemap.xml', handleSitemapPages);
+app.get('/robots.txt', handleRobotsTxt);
+app.get('/sitemap-images.xml', handleSitemapImages);
 
 // Health check
 app.get('/api/health', (req, res) => {
