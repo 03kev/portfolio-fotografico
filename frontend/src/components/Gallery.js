@@ -4,7 +4,7 @@ import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Trash2, Edit3 } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
-import { IMAGES_BASE_URL } from '../utils/constants';
+import { LOCAL_IMAGE_FALLBACK, resolveAssetUrl } from '../utils/imageUrl';
 import PhotoUpload from './PhotoUpload';
 
 const DEBOUNCE_DELAY_FILTER = 200;
@@ -404,7 +404,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     actions.openPhotoModal(photo);
   };
 
-  const getThumbImageUrl = (photo) => `${IMAGES_BASE_URL}${photo.thumbnail || photo.image || photo.url || ''}`;
+  const getThumbImageUrl = (photo) => resolveAssetUrl(photo.thumbnail || photo.image || photo.url);
   const getPhotoCardUrl = (photo) => `/photo/${encodeURIComponent(String(photo.id))}`;
   const getPhotoAltText = (photo) => {
     const title = String(photo?.title || 'Foto').trim() || 'Foto';
@@ -531,7 +531,8 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                       fetchPriority={index < 3 ? 'high' : 'auto'}
                       decoding="async"
                       onError={(e) => {
-                        e.target.src = 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop';
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = LOCAL_IMAGE_FALLBACK;
                       }}
                     />
                     <PhotoOverlay>

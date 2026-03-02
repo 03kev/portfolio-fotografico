@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Download, Map, MapPin } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
-import { IMAGES_BASE_URL } from '../utils/constants';
+import { LOCAL_IMAGE_FALLBACK, resolveAssetUrl } from '../utils/imageUrl';
 
 const ModalOverlay = styled(motion.div)`
   position: fixed;
@@ -382,6 +382,10 @@ const PhotoModal = () => {
     };
     
     if (!selectedPhoto) return null;
+
+    const imageSrc = resolveAssetUrl(selectedPhoto.image || selectedPhoto.url || selectedPhoto.thumbnail);
+    const downloadSrc = resolveAssetUrl(selectedPhoto.image || selectedPhoto.url || selectedPhoto.thumbnail, '');
+    const canDownload = Boolean(downloadSrc);
     
     return (
         <AnimatePresence>
@@ -409,13 +413,14 @@ const PhotoModal = () => {
             
             <ImageContainer>
             <ModalImage
-            src={`${IMAGES_BASE_URL}${selectedPhoto.image}`}
+            src={imageSrc}
             alt={selectedPhoto.title}
             initial={{ scale: 1.1 }}
             animate={{ scale: 1 }}
             transition={{ duration: 0.4 }}
             onError={(e) => {
-                e.target.src = `https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1200&h=900&fit=crop`;
+                e.currentTarget.onerror = null;
+                e.currentTarget.src = LOCAL_IMAGE_FALLBACK;
             }}
             />
             </ImageContainer>
@@ -533,10 +538,12 @@ const PhotoModal = () => {
             </ActionButton>
             <ActionButton
             className="primary"
+            disabled={!canDownload}
             onClick={() => {
+                if (!canDownload) return;
                 if (galleryModalOpen) actions.closeGalleryModal();
                 const link = document.createElement('a');
-                link.href = `https://images.unsplash.com/photo-${selectedPhoto.id > 3 ? '1516426122078-c23e76319801' : '1506905925346-21bda4d32df4'}?w=1920&h=1080&fit=crop`;
+                link.href = downloadSrc;
                 link.download = `${selectedPhoto.title}.jpg`;
                 link.click();
             }}

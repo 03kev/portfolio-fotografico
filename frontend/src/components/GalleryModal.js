@@ -3,7 +3,7 @@ import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapPin, Camera } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
-import { IMAGES_BASE_URL } from '../utils/constants';
+import { resolveAssetUrl } from '../utils/imageUrl';
 
 const ModalOverlay = styled(motion.div)`
   position: fixed;
@@ -302,19 +302,7 @@ const GalleryModal = () => {
     actions.openPhotoModal(photo);
   };
 
-  const getPhotoSrc = (photo) => {
-    if (photo.image && (photo.image.startsWith('http://') || photo.image.startsWith('https://'))) {
-      return photo.image;
-    }
-
-    // Se la foto ha un'immagine locale, usala
-    if (photo.image && photo.image.startsWith('/')) {
-      return `${IMAGES_BASE_URL}${photo.image}`;
-    }
-    
-    // Altrimenti usa l'immagine di fallback
-    return `https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&h=400&fit=crop`;
-  };
+  const getPhotoSrc = (photo) => resolveAssetUrl(photo.image || photo.thumbnail || photo.url);
 
   if (!galleryPhotos || galleryPhotos.length === 0) {
     return null;

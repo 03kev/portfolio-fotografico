@@ -70,8 +70,9 @@ function normalizeUploadsPath(value) {
 
 function presentPhoto(photo) {
     const image = buildPublicAssetUrl(photo.image);
-    const thumbnailPath = normalizeUploadsPath(photo.thumbnail);
-    const thumbnail = thumbnailPath || buildPublicAssetUrl(photo.thumbnail);
+    const imagePath = normalizeUploadsPath(photo.image);
+    const thumbnailPath = normalizeUploadsPath(photo.thumbnail) || imagePath;
+    const thumbnail = buildPublicAssetUrl(thumbnailPath || photo.thumbnail);
     const fallbackUrl = photo.image || photo.url || photo.thumbnail || '';
 
     return {

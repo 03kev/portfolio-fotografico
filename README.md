@@ -128,6 +128,7 @@ Note:
 - In produzione il backend è **R2-only**.
 - In produzione è obbligatoria `API_WRITE_TOKEN_HASH` (token non in chiaro).
 - `API_WRITE_TOKEN` è solo fallback in sviluppo.
+- Le thumbnail vengono esposte su `R2_PUBLIC_URL` in produzione; configura lato Cloudflare `X-Robots-Tag: noindex, noimageindex` su `/thumbnails/*`.
 - In locale i metadati vengono mantenuti in `backend/storage/data` (nessun seed fallback da `backend/data`).
 
 Genera hash del token:

@@ -38,6 +38,15 @@
           "value": "noindex, noimageindex"
         }
       ]
+    },
+    {
+      "source": "/photo-fallback.svg",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, noimageindex"
+        }
+      ]
     }
   ],
   "rewrites": [

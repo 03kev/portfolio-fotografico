@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc">
+  <title id="title">Foto non disponibile</title>
+  <desc id="desc">Placeholder immagine del portfolio</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b1017" />
+      <stop offset="100%" stop-color="#181e30" />
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="900" fill="url(#bg)" />
+  <circle cx="600" cy="430" r="170" fill="none" stroke="#d4ad54" stroke-width="18" opacity="0.92" />
+  <circle cx="600" cy="430" r="70" fill="none" stroke="#d4ad54" stroke-width="18" opacity="0.92" />
+  <circle cx="600" cy="430" r="18" fill="#d4ad54" opacity="0.92" />
+  <text x="600" y="700" text-anchor="middle" fill="#f1f4ff" font-size="44" font-family="Inter, system-ui, sans-serif" opacity="0.88">
+    Foto non disponibile
+  </text>
+</svg>
