@@ -281,27 +281,22 @@ function toAbsoluteSiteUrl(value, siteBaseUrl) {
     return `${siteBaseUrl}/${src}`;
 }
 
-function isThumbnailPath(value) {
-    const raw = String(value || '').trim();
-    if (!raw) return false;
-    return raw.includes('/thumbnails/') || raw.includes('thumbnails/');
-}
-
 function selectSocialImageSource(photo) {
-    const candidates = [
+    const orderedCandidates = [
         photo?.socialImage,
         photo?.thumbnail,
+        photo?.thumbnail43,
+        photo?.thumbnail11,
         photo?.url,
         photo?.image
-    ]
-        .map((item) => String(item || '').trim())
-        .filter(Boolean);
+    ];
 
-    if (candidates.length === 0) return '';
+    for (const candidate of orderedCandidates) {
+        const value = String(candidate || '').trim();
+        if (value) return value;
+    }
 
-    // Per le card social preferiamo sempre asset leggeri.
-    const thumbnailCandidate = candidates.find((item) => isThumbnailPath(item));
-    return thumbnailCandidate || candidates[0];
+    return '';
 }
 
 function resolvePhotoImageUrl(photo, siteBaseUrl) {
