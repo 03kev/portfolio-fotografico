@@ -27,6 +27,8 @@ Portfolio fotografico full-stack con frontend React, API Express su Vercel e sto
 ├── backend/
 │   ├── scripts/
 │   │   ├── hash-write-token.js
+│   │   ├── backfill-private-sources.js
+│   │   ├── backfill-public-derivatives.js
 │   │   ├── sync-uploads-to-r2.js
 │   │   └── sync-metadata-to-r2.js
 │   ├── src/
@@ -116,6 +118,7 @@ R2_ACCOUNT_ID=your_account_id
 R2_ACCESS_KEY_ID=your_access_key
 R2_SECRET_ACCESS_KEY=your_secret_key
 R2_BUCKET=portfolio-fotografico
+R2_PRIVATE_BUCKET=portfolio-fotografico-private
 R2_PUBLIC_URL=https://uploads.yourdomain.com
 R2_ENDPOINT=
 R2_METADATA_PREFIX=data
@@ -128,7 +131,9 @@ Note:
 - In produzione il backend è **R2-only**.
 - In produzione è obbligatoria `API_WRITE_TOKEN_HASH` (token non in chiaro).
 - `API_WRITE_TOKEN` è solo fallback in sviluppo.
-- Le thumbnail vengono esposte su `R2_PUBLIC_URL` in produzione; configura lato Cloudflare `X-Robots-Tag: noindex, noimageindex` su `/thumbnails/*`.
+- Le derivate pubbliche vengono esposte su `R2_PUBLIC_URL` in produzione (`/thumbnails/*`, `/social/*`, `/photo_*.webp`).
+- Configura lato Cloudflare `X-Robots-Tag: noindex, noimageindex` su `/thumbnails/*` e `/social/*`.
+- `R2_PRIVATE_BUCKET` è consigliata per i source full-res: il backend genera sempre le derivate partendo da source privata.
 - In locale i metadati vengono mantenuti in `backend/storage/data` (nessun seed fallback da `backend/data`).
 
 Genera hash del token:
@@ -179,6 +184,7 @@ Note:
 - `R2_ACCESS_KEY_ID`
 - `R2_SECRET_ACCESS_KEY`
 - `R2_BUCKET`
+- `R2_PRIVATE_BUCKET` (consigliata, bucket privata source)
 - `R2_PUBLIC_URL` (es. `https://uploads.kevinmuka.dev`)
 - opzionali: `R2_ENDPOINT`, `R2_METADATA_PREFIX`, `API_SESSION_TTL_MS`, `API_AUTH_RATE_LIMIT_*`
 - `REACT_APP_SITE_URL` (es. `https://kevinmuka.dev`)
@@ -245,6 +251,27 @@ npm run sync:r2
 npm run sync:r2:metadata
 ```
 
+Se hai foto storiche presenti solo nel bucket pubblico (`/uploads/...`) e vuoi popolare i nuovi `sourcePath` privati senza re-upload:
+
+```bash
+cd backend
+npm run backfill:private-sources -- --dry-run
+npm run backfill:private-sources
+```
+
+Opzionale:
+
+- `--force` forza la ricopia e sovrascrive anche se `sourcePath` esiste gia.
+
+Per popolare/rigenerare le derivate pubbliche (`image`, `thumbnails`, `social`) partendo dalle source private:
+
+```bash
+cd backend
+npm run backfill:public-derivatives -- --dry-run
+npm run backfill:public-derivatives
+npm run backfill:public-derivatives -- --verify-only
+```
+
 ## Endpoint API principali
 
 - `GET /api/health`
@@ -255,6 +282,7 @@ npm run sync:r2:metadata
 - `GET /api/photos/:id`
 - `POST /api/photos/upload-url`
 - `POST /api/photos`
+- `POST /api/photos/:id/regenerate-derivatives`
 - `PUT /api/photos/:id`
 - `DELETE /api/photos/:id`
 - `GET /api/series?all=false`
@@ -282,6 +310,11 @@ npm run sync:r2:metadata
 - `npm run token:hash -- "<token>"` genera hash scrypt
 - `npm run sync:r2` upload locali -> R2
 - `npm run sync:r2:metadata` metadati locali -> R2
+- `npm run backfill:private-sources -- --dry-run` anteprima migrazione source private
+- `npm run backfill:private-sources` copia source da pubblico a privato e aggiorna `photos.json`
+- `npm run backfill:public-derivatives -- --dry-run` anteprima rigenerazione derivate pubbliche
+- `npm run backfill:public-derivatives` rigenera derivate pubbliche da source private
+- `npm run backfill:public-derivatives -- --verify-only` verifica copertura asset pubblici
 
 ## Troubleshooting rapido
 

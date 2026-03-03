@@ -404,7 +404,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     actions.openPhotoModal(photo);
   };
 
-  const getThumbImageUrl = (photo) => resolveAssetUrl(photo.thumbnail || photo.image || photo.url);
+  const getThumbImageUrl = (photo) => resolveAssetUrl(photo.thumbnail43 || photo.thumbnail || photo.image || photo.url);
   const getPhotoCardUrl = (photo) => `/photo/${encodeURIComponent(String(photo.id))}`;
   const getPhotoAltText = (photo) => {
     const title = String(photo?.title || 'Foto').trim() || 'Foto';

@@ -9,6 +9,8 @@ const STORAGE_ROOT = path.join(RUNTIME_ROOT, 'storage');
 const DATA_DIR = path.join(STORAGE_ROOT, 'data');
 const UPLOADS_DIR = path.join(STORAGE_ROOT, 'uploads');
 const THUMBNAILS_DIR = path.join(UPLOADS_DIR, 'thumbnails');
+const PRIVATE_DIR = path.join(STORAGE_ROOT, 'private');
+const PRIVATE_SOURCE_DIR = path.join(PRIVATE_DIR, 'source');
 
 async function ensureDir(dirPath) {
     await fs.mkdir(dirPath, { recursive: true });
@@ -36,6 +38,7 @@ async function ensureDataFile(filename) {
 async function ensureUploadsDirectories() {
     await ensureDir(UPLOADS_DIR);
     await ensureDir(THUMBNAILS_DIR);
+    await ensureDir(PRIVATE_SOURCE_DIR);
 }
 
 function resolvePublicFilePath(publicPath) {
@@ -43,13 +46,23 @@ function resolvePublicFilePath(publicPath) {
     return path.join(STORAGE_ROOT, normalizedPath);
 }
 
+function resolvePrivateFilePath(privatePath) {
+    const normalizedPath = String(privatePath || '')
+        .replace(/^\/+/, '')
+        .replace(/^private\/+/, '');
+    return path.join(PRIVATE_DIR, normalizedPath);
+}
+
 module.exports = {
     BACKEND_ROOT,
     DATA_DIR,
+    PRIVATE_DIR,
+    PRIVATE_SOURCE_DIR,
     STORAGE_ROOT,
     THUMBNAILS_DIR,
     UPLOADS_DIR,
     ensureDataFile,
     ensureUploadsDirectories,
+    resolvePrivateFilePath,
     resolvePublicFilePath
 };

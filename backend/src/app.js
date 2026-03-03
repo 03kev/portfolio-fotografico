@@ -181,7 +181,7 @@ async function serveUploadsFromR2(req, res, next) {
             return next();
         }
 
-        if (req.path.startsWith('/thumbnails/')) {
+        if (req.path.startsWith('/thumbnails/') || req.path.startsWith('/social/')) {
             res.setHeader('X-Robots-Tag', 'noimageindex, noindex');
         }
 
@@ -211,7 +211,7 @@ const uploadsMiddlewares = [
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET');
         res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
-        if (req.path.startsWith('/thumbnails/')) {
+        if (req.path.startsWith('/thumbnails/') || req.path.startsWith('/social/')) {
             res.setHeader('X-Robots-Tag', 'noimageindex, noindex');
         }
         next();

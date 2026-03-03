@@ -114,7 +114,10 @@ export default function FeaturedSeries({ limit = 6 }) {
     const coverId = s.coverImage || s.photos?.[0];
     const photo = photos.find(p => p.id === coverId);
     if (!photo) return null;
-    return { url: `${IMAGES_BASE_URL}${photo.thumbnail || photo.image || photo.url}?t=${photo.id}`, alt: s.title };
+    return {
+      url: `${IMAGES_BASE_URL}${photo.thumbnail11 || photo.thumbnail43 || photo.thumbnail || photo.image || photo.url}?v=${photo.derivativesVersion || photo.id}`,
+      alt: s.title
+    };
   };
 
   const variants = {

@@ -3,17 +3,21 @@ const crypto = require('crypto');
 const multer = require('multer');
 const sharp = require('sharp');
 const fs = require('fs').promises;
+const path = require('path');
 const {
-    THUMBNAILS_DIR,
-    UPLOADS_DIR,
     ensureUploadsDirectories,
+    resolvePrivateFilePath,
     resolvePublicFilePath
 } = require('../config/storage');
 const {
     canUseLocalFallback,
+    createPrivateUploadPresignedPutUrl,
     createUploadPresignedPutUrl,
+    deletePrivateObject,
     deleteUploadObject,
+    getPrivateObject,
     isR2Enabled,
+    putPrivateObject,
     putUploadObject
 } = require('../services/r2Storage');
 const { readMetadataFile, writeMetadataFile } = require('../services/metadataStorage');
@@ -68,17 +72,62 @@ function normalizeUploadsPath(value) {
     return normalized ? `/uploads/${normalized}` : '';
 }
 
-function presentPhoto(photo) {
-    const image = buildPublicAssetUrl(photo.image);
+function normalizePrivatePath(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+
+    if (raw.startsWith('/private/')) {
+        return raw;
+    }
+
+    if (/^https?:\/\//i.test(raw)) {
+        try {
+            const parsed = new URL(raw);
+            const pathname = String(parsed.pathname || '').replace(/^\/+/, '');
+            const key = pathname.replace(/^private\/+/, '');
+            return key ? `/private/${key}` : '';
+        } catch {
+            return '';
+        }
+    }
+
+    const normalized = raw.replace(/^\/+/, '').replace(/^private\/+/, '');
+    return normalized ? `/private/${normalized}` : '';
+}
+
+function withDefaultPhotoVariants(photo) {
     const imagePath = normalizeUploadsPath(photo.image);
-    const thumbnailPath = normalizeUploadsPath(photo.thumbnail) || imagePath;
-    const thumbnail = buildPublicAssetUrl(thumbnailPath || photo.thumbnail);
-    const fallbackUrl = photo.image || photo.url || photo.thumbnail || '';
+    const thumbnail43Path = normalizeUploadsPath(photo.thumbnail43 || photo.thumbnail) || imagePath;
+    const thumbnail11Path = normalizeUploadsPath(photo.thumbnail11);
+    const socialImagePath = normalizeUploadsPath(photo.socialImage);
 
     return {
         ...photo,
+        image: imagePath,
+        thumbnail43: thumbnail43Path,
+        thumbnail: thumbnail43Path,
+        thumbnail11: thumbnail11Path,
+        socialImage: socialImagePath,
+        url: imagePath || thumbnail43Path || thumbnail11Path || socialImagePath || ''
+    };
+}
+
+function presentPhoto(photo) {
+    const normalized = withDefaultPhotoVariants(photo);
+    const image = buildPublicAssetUrl(normalized.image);
+    const thumbnail = buildPublicAssetUrl(normalized.thumbnail);
+    const thumbnail11 = buildPublicAssetUrl(normalized.thumbnail11);
+    const socialImage = buildPublicAssetUrl(normalized.socialImage);
+    const fallbackUrl = normalized.url || normalized.image || normalized.thumbnail || normalized.thumbnail11 || normalized.socialImage;
+    const { sourcePath, sourceContentType, ...publicPhoto } = normalized;
+
+    return {
+        ...publicPhoto,
         image,
         thumbnail,
+        thumbnail43: thumbnail,
+        thumbnail11,
+        socialImage,
         url: buildPublicAssetUrl(fallbackUrl)
     };
 }
@@ -129,6 +178,135 @@ function buildUploadFilename(mimetype, uploadId, variant = 'image') {
     const mimeExt = mimetype && mimetype.includes('/') ? `.${mimetype.split('/')[1]}` : '.bin';
     const extension = variant === 'thumbnail' ? '.webp' : mimeExt.toLowerCase();
     return `photo_${safeUploadId}${extension}`;
+}
+
+function getImageExtensionFromMimeType(mimetype) {
+    const subtype = String(mimetype || '')
+        .split('/')
+        .slice(1)
+        .join('/')
+        .split(';')[0]
+        .trim()
+        .toLowerCase();
+
+    if (!subtype) return 'bin';
+    if (subtype === 'jpeg') return 'jpg';
+    return subtype.replace(/[^a-z0-9]/g, '') || 'bin';
+}
+
+function buildPhotoAssetPaths(photoId, sourceExtension = 'bin') {
+    const baseName = `photo_${photoId}`;
+    const cleanSourceExtension = String(sourceExtension || 'bin').replace(/[^a-z0-9]/gi, '') || 'bin';
+
+    return {
+        sourcePath: `/private/source/${baseName}.${cleanSourceExtension}`,
+        imagePath: `/uploads/${baseName}.webp`,
+        thumbnail43Path: `/uploads/thumbnails/4x3/${baseName}.webp`,
+        thumbnail11Path: `/uploads/thumbnails/1x1/${baseName}.webp`,
+        socialImagePath: `/uploads/social/${baseName}.jpg`
+    };
+}
+
+async function readStreamToBuffer(stream) {
+    const chunks = [];
+    for await (const chunk of stream) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
+}
+
+async function ensureParentDir(filePath) {
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+}
+
+async function writePublicObject(uploadPath, buffer, contentType) {
+    if (isR2Enabled()) {
+        await putUploadObject(uploadPath, buffer, {
+            contentType,
+            cacheControl: 'public, max-age=31536000, immutable'
+        });
+        return;
+    }
+
+    if (!canUseLocalFallback()) {
+        throw new Error('Configurazione R2 mancante: scrittura asset pubblici non disponibile in produzione.');
+    }
+
+    await ensureUploadsDirectories();
+    const filePath = resolvePublicFilePath(uploadPath);
+    await ensureParentDir(filePath);
+    await fs.writeFile(filePath, buffer);
+}
+
+async function writePrivateObject(privatePath, buffer, contentType) {
+    if (isR2Enabled()) {
+        await putPrivateObject(privatePath, buffer, {
+            contentType,
+            cacheControl: 'private, no-store'
+        });
+        return;
+    }
+
+    if (!canUseLocalFallback()) {
+        throw new Error('Configurazione R2 mancante: scrittura source privata non disponibile in produzione.');
+    }
+
+    await ensureUploadsDirectories();
+    const filePath = resolvePrivateFilePath(privatePath);
+    await ensureParentDir(filePath);
+    await fs.writeFile(filePath, buffer);
+}
+
+async function readPrivateSourceBuffer(privatePath) {
+    if (isR2Enabled()) {
+        const object = await getPrivateObject(privatePath);
+        if (!object || !object.stream) {
+            return null;
+        }
+        return readStreamToBuffer(object.stream);
+    }
+
+    if (!canUseLocalFallback()) {
+        return null;
+    }
+
+    try {
+        const filePath = resolvePrivateFilePath(privatePath);
+        return await fs.readFile(filePath);
+    } catch (error) {
+        if (error.code === 'ENOENT') return null;
+        throw error;
+    }
+}
+
+async function generatePhotoDerivatives(sourceBuffer) {
+    const base = sharp(sourceBuffer).rotate();
+
+    const image = await base
+        .clone()
+        .resize(3840, 2160, { fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 92, effort: 6 })
+        .toBuffer();
+
+    const thumbnail43 = await base
+        .clone()
+        .resize(400, 300, { fit: 'cover', position: sharp.strategy.attention })
+        .webp({ quality: 84, effort: 5 })
+        .toBuffer();
+
+    const thumbnail11 = await base
+        .clone()
+        .resize(400, 400, { fit: 'cover', position: sharp.strategy.attention })
+        .webp({ quality: 84, effort: 5 })
+        .toBuffer();
+
+    const socialImage = await base
+        .clone()
+        .resize(1200, 630, { fit: 'cover', position: sharp.strategy.attention })
+        .jpeg({ quality: 84, mozjpeg: true, progressive: true })
+        .toBuffer();
+
+    return { image, thumbnail43, thumbnail11, socialImage };
 }
 
 // Utility per leggere/scrivere il database JSON
@@ -221,8 +399,12 @@ router.get('/', async (req, res) => {
                 lat: photo.lat || 0,
                 lng: photo.lng || 0,
                 image: photo.image || '',
-                thumbnail: photo.thumbnail || '',
-                url: photo.image || photo.thumbnail || '',
+                thumbnail43: photo.thumbnail43 || photo.thumbnail || '',
+                thumbnail: photo.thumbnail43 || photo.thumbnail || '',
+                thumbnail11: photo.thumbnail11 || '',
+                socialImage: photo.socialImage || '',
+                url: photo.image || photo.thumbnail43 || photo.thumbnail || photo.thumbnail11 || '',
+                derivativesVersion: photo.derivativesVersion || photo.updatedAt || photo.id || Date.now(),
                 settings,
                 tags
             };
@@ -281,7 +463,8 @@ router.post('/upload-url', async (req, res) => {
         }
 
         const { uploadId, mimetype, contentType, fileSize, variant } = req.body || {};
-        const uploadVariant = variant === 'thumbnail' ? 'thumbnail' : 'image';
+        const rawVariant = String(variant || 'source').trim().toLowerCase();
+        const uploadVariant = ['source', 'image', 'thumbnail'].includes(rawVariant) ? rawVariant : 'source';
         const effectiveMimeType = String(mimetype || contentType || '').trim();
         if (!effectiveMimeType || !isAllowedMimeType(effectiveMimeType, allowedUploadTypes)) {
             return res.status(400).json({
@@ -300,21 +483,31 @@ router.post('/upload-url', async (req, res) => {
         }
 
         const uploadFilename = buildUploadFilename(effectiveMimeType, uploadId, uploadVariant);
-        const uploadPath = uploadVariant === 'thumbnail'
-            ? `/uploads/thumbnails/${uploadFilename}`
-            : `/uploads/${uploadFilename}`;
+        const uploadPath = uploadVariant === 'source'
+            ? `/private/source/${uploadFilename}`
+            : (uploadVariant === 'thumbnail'
+                ? `/uploads/thumbnails/${uploadFilename}`
+                : `/uploads/${uploadFilename}`);
 
-        const signed = await createUploadPresignedPutUrl(uploadPath, {
-            contentType: effectiveMimeType,
-            cacheControl: 'public, max-age=31536000, immutable',
-            expiresInSeconds: 300
-        });
+        const signed = uploadVariant === 'source'
+            ? await createPrivateUploadPresignedPutUrl(uploadPath, {
+                contentType: effectiveMimeType,
+                cacheControl: 'private, no-store',
+                expiresInSeconds: 300
+            })
+            : await createUploadPresignedPutUrl(uploadPath, {
+                contentType: effectiveMimeType,
+                cacheControl: 'public, max-age=31536000, immutable',
+                expiresInSeconds: 300
+            });
 
         return res.json({
             success: true,
             data: {
                 uploadUrl: signed.uploadUrl,
                 imagePath: signed.uploadPath,
+                sourcePath: uploadVariant === 'source' ? signed.uploadPath : '',
+                variant: uploadVariant,
                 publicUrl: signed.publicUrl,
                 expiresInSeconds: signed.expiresInSeconds
             }
@@ -335,68 +528,99 @@ router.post('/', upload.single('image'), async (req, res) => {
         const sanitized = sanitizePhotoPayload(req.body, { partial: false });
         const parsedLat = parseCoordinate(lat, 'Latitudine');
         const parsedLng = parseCoordinate(lng, 'Longitudine');
-        const timestamp = Date.now();
+        const requestedPhotoId = Number.parseInt(String(req.body?.photoId || ''), 10);
+        const photoId = Number.isFinite(requestedPhotoId) && requestedPhotoId > 0
+            ? requestedPhotoId
+            : Date.now();
+        const sourceExtension = getImageExtensionFromMimeType(req.file?.mimetype || req.body?.sourceContentType);
+        const assets = buildPhotoAssetPaths(photoId, sourceExtension);
+        const photos = await readPhotosDB();
 
-        let imagePath;
-        let thumbnailPath;
+        if (photos.some((item) => Number(item.id) === photoId)) {
+            return res.status(409).json({
+                success: false,
+                message: 'photoId già esistente, riprova con un nuovo upload.'
+            });
+        }
+
+        let sourcePath = '';
+        let sourceContentType = String(req.file?.mimetype || req.body?.sourceContentType || '').trim();
+        let imagePath = '';
+        let thumbnailPath = '';
+        let thumbnail11Path = '';
+        let socialImagePath = '';
 
         if (req.file) {
-            // Flusso legacy multipart (locale o fallback)
-            const filename = `photo_${timestamp}.webp`;
-            const thumbnailFilename = `photo_${timestamp}_thumb.webp`;
-            imagePath = `/uploads/${filename}`;
-            thumbnailPath = `/uploads/thumbnails/${thumbnailFilename}`;
+            sourcePath = assets.sourcePath;
+            await writePrivateObject(sourcePath, req.file.buffer, sourceContentType || 'application/octet-stream');
 
-            const processedImage = await sharp(req.file.buffer)
-                .rotate()
-                .resize(3840, 2160, { fit: 'inside', withoutEnlargement: true })
-                .webp({ quality: 95, effort: 6 })
-                .toBuffer();
+            const derivatives = await generatePhotoDerivatives(req.file.buffer);
+            await writePublicObject(assets.imagePath, derivatives.image, 'image/webp');
+            await writePublicObject(assets.thumbnail43Path, derivatives.thumbnail43, 'image/webp');
+            await writePublicObject(assets.thumbnail11Path, derivatives.thumbnail11, 'image/webp');
+            await writePublicObject(assets.socialImagePath, derivatives.socialImage, 'image/jpeg');
 
-            const thumbnail = await sharp(req.file.buffer)
-                .rotate()
-                .resize(400, 300, { fit: 'cover' })
-                .webp({ quality: 85 })
-                .toBuffer();
-
-            if (isR2Enabled()) {
-                await putUploadObject(imagePath, processedImage, { contentType: 'image/webp' });
-                await putUploadObject(thumbnailPath, thumbnail, { contentType: 'image/webp' });
-            } else if (canUseLocalFallback()) {
-                await ensureUploadsDirectories();
-                await fs.writeFile(`${UPLOADS_DIR}/${filename}`, processedImage);
-                await fs.writeFile(`${THUMBNAILS_DIR}/${thumbnailFilename}`, thumbnail);
-            } else {
-                throw new Error('Configurazione R2 mancante: upload immagini consentito solo su R2 in produzione.');
-            }
+            imagePath = assets.imagePath;
+            thumbnailPath = assets.thumbnail43Path;
+            thumbnail11Path = assets.thumbnail11Path;
+            socialImagePath = assets.socialImagePath;
         } else {
-            // Flusso consigliato: upload diretto Browser -> R2 e qui solo metadata
-            const providedImagePath = String(req.body?.imagePath || req.body?.image || '').trim();
-            const providedThumbPath = String(req.body?.thumbnailPath || req.body?.thumbnail || '').trim();
+            const providedSourcePath = normalizePrivatePath(req.body?.sourcePath);
+            const providedImagePath = normalizeUploadsPath(req.body?.imagePath || req.body?.image);
+            const providedThumbPath = normalizeUploadsPath(req.body?.thumbnailPath || req.body?.thumbnail);
 
-            if (!providedImagePath || !providedImagePath.startsWith('/uploads/')) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'imagePath non valido: usa /uploads/... ottenuto da /api/photos/upload-url'
-                });
+            if (providedSourcePath) {
+                sourcePath = providedSourcePath;
+                const sourceBuffer = await readPrivateSourceBuffer(sourcePath);
+                if (!sourceBuffer) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'sourcePath non trovato: carica prima il file originale su /api/photos/upload-url'
+                    });
+                }
+
+                const derivatives = await generatePhotoDerivatives(sourceBuffer);
+                await writePublicObject(assets.imagePath, derivatives.image, 'image/webp');
+                await writePublicObject(assets.thumbnail43Path, derivatives.thumbnail43, 'image/webp');
+                await writePublicObject(assets.thumbnail11Path, derivatives.thumbnail11, 'image/webp');
+                await writePublicObject(assets.socialImagePath, derivatives.socialImage, 'image/jpeg');
+
+                imagePath = assets.imagePath;
+                thumbnailPath = assets.thumbnail43Path;
+                thumbnail11Path = assets.thumbnail11Path;
+                socialImagePath = assets.socialImagePath;
+            } else {
+                // Fallback legacy: mantiene compatibilità con client che inviano solo path pubblici.
+                if (!providedImagePath) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'sourcePath non valido: usa /private/... ottenuto da /api/photos/upload-url'
+                    });
+                }
+
+                imagePath = providedImagePath;
+                thumbnailPath = providedThumbPath || providedImagePath;
+                thumbnail11Path = normalizeUploadsPath(req.body?.thumbnail11Path || req.body?.thumbnail11) || '';
+                socialImagePath = normalizeUploadsPath(req.body?.socialImagePath || req.body?.socialImage) || '';
             }
-
-            imagePath = providedImagePath;
-            thumbnailPath = (providedThumbPath && providedThumbPath.startsWith('/uploads/'))
-                ? providedThumbPath
-                : providedImagePath;
         }
-        
+
         // Crea oggetto foto con valori di default
         const newPhoto = {
-            id: timestamp, // Usa timestamp come ID temporaneo
+            id: photoId,
             title: sanitized.title,
             location: sanitized.location,
             lat: parsedLat ?? 0,
             lng: parsedLng ?? 0,
             image: imagePath,
             thumbnail: thumbnailPath,
+            thumbnail43: thumbnailPath,
+            thumbnail11: thumbnail11Path,
+            socialImage: socialImagePath,
             url: imagePath,
+            sourcePath,
+            sourceContentType: sourceContentType || '',
+            derivativesVersion: Date.now(),
             description: sanitized.description,
             date: sanitized.date,
             camera: sanitized.camera,
@@ -406,7 +630,6 @@ router.post('/', upload.single('image'), async (req, res) => {
         };
         
         // Salva nel database JSON
-        const photos = await readPhotosDB();
         photos.unshift(newPhoto); // Aggiungi all'inizio dell'array
         await writePhotosDB(photos);
         
@@ -437,6 +660,84 @@ router.post('/', upload.single('image'), async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Errore nell\'upload della foto'
+        });
+    }
+});
+
+// POST - Rigenera derivate da source full-res (stessi path, overwrite su R2)
+router.post('/:id/regenerate-derivatives', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const photoId = parseNumericIdOrThrow(id, 'ID foto');
+        const photos = await readPhotosDB();
+        const photoIndex = photos.findIndex((p) => Number(p.id) === photoId);
+
+        if (photoIndex === -1) {
+            return res.status(404).json({
+                success: false,
+                message: 'Foto non trovata'
+            });
+        }
+
+        const photo = photos[photoIndex];
+        const sourcePath = normalizePrivatePath(photo.sourcePath);
+        if (!sourcePath) {
+            return res.status(400).json({
+                success: false,
+                message: 'Source full-res non disponibile per questa foto.'
+            });
+        }
+
+        const sourceBuffer = await readPrivateSourceBuffer(sourcePath);
+        if (!sourceBuffer) {
+            return res.status(404).json({
+                success: false,
+                message: 'Source full-res non trovata nello storage.'
+            });
+        }
+
+        const defaultAssets = buildPhotoAssetPaths(photoId, path.extname(sourcePath).replace(/^\./, '') || 'bin');
+        const imagePath = normalizeUploadsPath(photo.image) || defaultAssets.imagePath;
+        const thumbnail43Path = normalizeUploadsPath(photo.thumbnail43 || photo.thumbnail) || defaultAssets.thumbnail43Path;
+        const thumbnail11Path = normalizeUploadsPath(photo.thumbnail11) || defaultAssets.thumbnail11Path;
+        const socialImagePath = normalizeUploadsPath(photo.socialImage) || defaultAssets.socialImagePath;
+
+        const derivatives = await generatePhotoDerivatives(sourceBuffer);
+        await writePublicObject(imagePath, derivatives.image, 'image/webp');
+        await writePublicObject(thumbnail43Path, derivatives.thumbnail43, 'image/webp');
+        await writePublicObject(thumbnail11Path, derivatives.thumbnail11, 'image/webp');
+        await writePublicObject(socialImagePath, derivatives.socialImage, 'image/jpeg');
+
+        const updatedPhoto = {
+            ...photo,
+            image: imagePath,
+            thumbnail: thumbnail43Path,
+            thumbnail43: thumbnail43Path,
+            thumbnail11: thumbnail11Path,
+            socialImage: socialImagePath,
+            url: imagePath,
+            derivativesVersion: Date.now()
+        };
+
+        photos[photoIndex] = updatedPhoto;
+        await writePhotosDB(photos);
+
+        return res.json({
+            success: true,
+            message: 'Derivate rigenerate con successo',
+            data: presentPhoto(updatedPhoto)
+        });
+    } catch (error) {
+        console.error('Errore rigenerazione derivate:', error);
+        if (error.status === 400 || error.code === 'INVALID_ID') {
+            return res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+        return res.status(500).json({
+            success: false,
+            message: 'Errore durante la rigenerazione derivate'
         });
     }
 });
@@ -556,20 +857,30 @@ router.delete('/:id', async (req, res) => {
         
         // Opzionale: elimina i file fisici
         try {
-            if (deletedPhoto.image) {
+            const publicPathsToDelete = [
+                normalizeUploadsPath(deletedPhoto.image),
+                normalizeUploadsPath(deletedPhoto.thumbnail43 || deletedPhoto.thumbnail),
+                normalizeUploadsPath(deletedPhoto.thumbnail11),
+                normalizeUploadsPath(deletedPhoto.socialImage)
+            ].filter(Boolean);
+
+            const uniquePublicPaths = [...new Set(publicPathsToDelete)];
+            for (const publicPath of uniquePublicPaths) {
                 if (isR2Enabled()) {
-                    await deleteUploadObject(deletedPhoto.image);
+                    await deleteUploadObject(publicPath);
                 } else if (canUseLocalFallback()) {
-                    const imagePath = resolvePublicFilePath(deletedPhoto.image);
-                    await fs.unlink(imagePath);
+                    const localPublicPath = resolvePublicFilePath(publicPath);
+                    await fs.unlink(localPublicPath);
                 }
             }
-            if (deletedPhoto.thumbnail) {
+
+            const privateSourcePath = normalizePrivatePath(deletedPhoto.sourcePath);
+            if (privateSourcePath) {
                 if (isR2Enabled()) {
-                    await deleteUploadObject(deletedPhoto.thumbnail);
+                    await deletePrivateObject(privateSourcePath);
                 } else if (canUseLocalFallback()) {
-                    const thumbPath = resolvePublicFilePath(deletedPhoto.thumbnail);
-                    await fs.unlink(thumbPath);
+                    const localPrivatePath = resolvePrivateFilePath(privateSourcePath);
+                    await fs.unlink(localPrivatePath);
                 }
             }
         } catch (fileError) {

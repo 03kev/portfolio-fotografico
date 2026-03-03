@@ -113,7 +113,7 @@ export default function FeaturedGallery({ limit = 18 }) {
             aria-label={p.title || 'Apri foto'}
           >
             <Img 
-              src={`${IMAGES_BASE_URL}${p.thumbnail || p.image || p.url}?t=${p.id}`} 
+              src={`${IMAGES_BASE_URL}${p.thumbnail11 || p.thumbnail43 || p.thumbnail || p.image || p.url}?v=${p.derivativesVersion || p.id}`} 
               alt={p.title || 'Foto'} 
               loading="lazy" 
             />

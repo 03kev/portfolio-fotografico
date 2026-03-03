@@ -60,6 +60,7 @@ const env = {
     r2AccessKeyId: asString(process.env.R2_ACCESS_KEY_ID),
     r2SecretAccessKey: asString(process.env.R2_SECRET_ACCESS_KEY),
     r2Bucket: asString(process.env.R2_BUCKET),
+    r2PrivateBucket: asString(process.env.R2_PRIVATE_BUCKET),
     r2PublicUrl: asString(process.env.R2_PUBLIC_URL).replace(/\/+$/, ''),
     r2Endpoint: asString(process.env.R2_ENDPOINT),
     r2MetadataPrefix: asString(process.env.R2_METADATA_PREFIX, DEFAULTS.r2MetadataPrefix).replace(/^\/+|\/+$/g, '')
@@ -90,6 +91,9 @@ function validateEnv() {
         }
         if (!env.r2AccountId || !env.r2AccessKeyId || !env.r2SecretAccessKey || !env.r2Bucket) {
             errors.push('Configurazione R2 incompleta in produzione (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET).');
+        }
+        if (!env.r2PrivateBucket) {
+            warnings.push('R2_PRIVATE_BUCKET non impostata: i source full-res useranno R2_BUCKET (non realmente privato).');
         }
         if (!env.corsOrigins.length) {
             warnings.push('CORS_ORIGINS non impostata in produzione: verrà consentito solo VERCEL_URL.');

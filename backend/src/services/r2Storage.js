@@ -13,6 +13,10 @@ function normalizePublicBaseUrl() {
     return env.r2PublicUrl;
 }
 
+function getPrivateBucketName() {
+    return env.r2PrivateBucket || env.r2Bucket;
+}
+
 function isR2Enabled() {
     return hasAllR2EnvVars();
 }
@@ -64,6 +68,12 @@ function normalizeObjectKey(key) {
         .replace(/^uploads\/+/, '');
 }
 
+function normalizePrivateObjectKey(key) {
+    return String(key || '')
+        .replace(/^\/+/, '')
+        .replace(/^private\/+/, '');
+}
+
 function uploadPathToObjectKey(uploadPath) {
     const raw = String(uploadPath || '').trim();
 
@@ -81,9 +91,31 @@ function uploadPathToObjectKey(uploadPath) {
     return normalizeObjectKey(raw.replace(/^\/+/, ''));
 }
 
+function privatePathToObjectKey(privatePath) {
+    const raw = String(privatePath || '').trim();
+
+    if (!raw) return null;
+
+    if (raw.startsWith('http://') || raw.startsWith('https://')) {
+        try {
+            const parsed = new URL(raw);
+            return normalizePrivateObjectKey(parsed.pathname);
+        } catch (error) {
+            return null;
+        }
+    }
+
+    return normalizePrivateObjectKey(raw.replace(/^\/+/, ''));
+}
+
 function objectKeyToUploadPath(objectKey) {
     const key = normalizeObjectKey(objectKey);
     return `/uploads/${key}`;
+}
+
+function objectKeyToPrivatePath(objectKey) {
+    const key = normalizePrivateObjectKey(objectKey);
+    return `/private/${key}`;
 }
 
 function objectBodyToNodeStream(body) {
@@ -114,6 +146,9 @@ async function putUploadObject(uploadPath, buffer, options = {}) {
     }
 
     const key = uploadPathToObjectKey(uploadPath);
+    if (!key) {
+        throw new Error('uploadPath non valido per oggetto pubblico R2.');
+    }
     const client = getR2Client();
     const { PutObjectCommand } = s3Commands;
 
@@ -136,12 +171,44 @@ async function putUploadObject(uploadPath, buffer, options = {}) {
     };
 }
 
+async function putPrivateObject(privatePath, buffer, options = {}) {
+    if (!isR2Enabled()) {
+        throw new Error('R2 non configurato: impossibile caricare l\'oggetto privato.');
+    }
+
+    const key = privatePathToObjectKey(privatePath);
+    if (!key) {
+        throw new Error('privatePath non valido per oggetto privato R2.');
+    }
+
+    const client = getR2Client();
+    const { PutObjectCommand } = s3Commands;
+
+    await client.send(
+        new PutObjectCommand({
+            Bucket: getPrivateBucketName(),
+            Key: key,
+            Body: buffer,
+            ContentType: options.contentType || 'application/octet-stream',
+            CacheControl: options.cacheControl || 'private, no-store'
+        })
+    );
+
+    return {
+        key,
+        privatePath: objectKeyToPrivatePath(key)
+    };
+}
+
 async function createUploadPresignedPutUrl(uploadPath, options = {}) {
     if (!isR2Enabled()) {
         throw new Error('R2 non configurato: impossibile creare URL di upload firmata.');
     }
 
     const key = uploadPathToObjectKey(uploadPath);
+    if (!key) {
+        throw new Error('uploadPath non valido per URL firmata pubblica.');
+    }
     const client = getR2Client();
     const { PutObjectCommand } = s3Commands;
     const expiresInSeconds = Number(options.expiresInSeconds) > 0 ? Number(options.expiresInSeconds) : 300;
@@ -165,6 +232,38 @@ async function createUploadPresignedPutUrl(uploadPath, options = {}) {
     };
 }
 
+async function createPrivateUploadPresignedPutUrl(privatePath, options = {}) {
+    if (!isR2Enabled()) {
+        throw new Error('R2 non configurato: impossibile creare URL firmata privata.');
+    }
+
+    const key = privatePathToObjectKey(privatePath);
+    if (!key) {
+        throw new Error('privatePath non valido per URL firmata privata.');
+    }
+
+    const client = getR2Client();
+    const { PutObjectCommand } = s3Commands;
+    const expiresInSeconds = Number(options.expiresInSeconds) > 0 ? Number(options.expiresInSeconds) : 300;
+
+    const command = new PutObjectCommand({
+        Bucket: getPrivateBucketName(),
+        Key: key,
+        ContentType: options.contentType || 'application/octet-stream',
+        CacheControl: options.cacheControl || 'private, no-store'
+    });
+
+    const uploadUrl = await getSignedUrl(client, command, { expiresIn: expiresInSeconds });
+
+    return {
+        key,
+        uploadPath: objectKeyToPrivatePath(key),
+        uploadUrl,
+        expiresInSeconds,
+        publicUrl: null
+    };
+}
+
 async function deleteUploadObject(uploadPath) {
     if (!isR2Enabled()) {
         return;
@@ -179,6 +278,25 @@ async function deleteUploadObject(uploadPath) {
     await client.send(
         new DeleteObjectCommand({
             Bucket: env.r2Bucket,
+            Key: key
+        })
+    );
+}
+
+async function deletePrivateObject(privatePath) {
+    if (!isR2Enabled()) {
+        return;
+    }
+
+    const key = privatePathToObjectKey(privatePath);
+    if (!key) return;
+
+    const client = getR2Client();
+    const { DeleteObjectCommand } = s3Commands;
+
+    await client.send(
+        new DeleteObjectCommand({
+            Bucket: getPrivateBucketName(),
             Key: key
         })
     );
@@ -221,14 +339,57 @@ async function getUploadObject(uploadPath) {
     }
 }
 
+async function getPrivateObject(privatePath) {
+    if (!isR2Enabled()) {
+        return null;
+    }
+
+    const key = privatePathToObjectKey(privatePath);
+    if (!key) return null;
+
+    const client = getR2Client();
+    const { GetObjectCommand } = s3Commands;
+
+    try {
+        const response = await client.send(
+            new GetObjectCommand({
+                Bucket: getPrivateBucketName(),
+                Key: key
+            })
+        );
+
+        return {
+            key,
+            stream: objectBodyToNodeStream(response.Body),
+            contentType: response.ContentType,
+            cacheControl: response.CacheControl,
+            contentLength: response.ContentLength,
+            etag: response.ETag,
+            lastModified: response.LastModified
+        };
+    } catch (error) {
+        const statusCode = error?.$metadata?.httpStatusCode;
+        if (statusCode === 404 || error?.name === 'NoSuchKey' || error?.Code === 'NoSuchKey') {
+            return null;
+        }
+        throw error;
+    }
+}
+
 module.exports = {
     canUseLocalFallback,
+    createPrivateUploadPresignedPutUrl,
     createUploadPresignedPutUrl,
+    deletePrivateObject,
+    deleteUploadObject,
     ensureR2ConfiguredInProduction,
+    getPrivateObject,
     getUploadObject,
     isR2Enabled,
+    objectKeyToPrivatePath,
     objectKeyToUploadPath,
+    privatePathToObjectKey,
+    putPrivateObject,
     putUploadObject,
-    uploadPathToObjectKey,
-    deleteUploadObject
+    uploadPathToObjectKey
 };
