@@ -2,214 +2,10 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { AlertTriangle, FolderOpen, Globe, Loader2, MapPin, PencilLine, Save, Upload } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { photoService, uploadUtils } from '../utils/api';
-import { IMAGES_BASE_URL } from '../utils/constants';
 import MapSelector from './MapSelector';
 import { AnimatePresence } from 'framer-motion';
 import exifr from 'exifr';
 import './PhotoUpload.css';
-
-const CROP_PRESETS = [
-    { key: 'r43', label: 'Archivio 4:3', ratio: '4 / 3' },
-    { key: 'r11', label: 'Home 1:1', ratio: '1 / 1' },
-    { key: 'social', label: 'Social 1200x630', ratio: '1200 / 630' }
-];
-
-const DEFAULT_CROP_PROFILE = { x: 0.5, y: 0.5, scale: 1 };
-const CROP_MIN_SIZE_PX = 56;
-const CROP_MAX_SCALE = 5;
-const CROP_HANDLES = ['nw', 'ne', 'sw', 'se'];
-
-const clamp01 = (value) => Math.max(0, Math.min(1, value));
-const clampScale = (value) => Math.max(1, Math.min(CROP_MAX_SCALE, value));
-const clampBetween = (value, min, max) => Math.max(min, Math.min(max, value));
-
-const parseAspectRatio = (ratio) => {
-    if (typeof ratio !== 'string') return 4 / 3;
-    const [rawWidth, rawHeight] = ratio.split('/');
-    const width = Number(rawWidth?.trim());
-    const height = Number(rawHeight?.trim());
-    if (!Number.isFinite(width) || !Number.isFinite(height) || height <= 0) return 4 / 3;
-    return width / height;
-};
-
-const getPresetRatioValue = (presetKey) => {
-    const preset = CROP_PRESETS.find((item) => item.key === presetKey);
-    return parseAspectRatio(preset?.ratio || '4 / 3');
-};
-
-const getBaseCropSize = (sourceWidth, sourceHeight, targetRatio) => {
-    const srcW = Math.max(1, Number(sourceWidth) || 1);
-    const srcH = Math.max(1, Number(sourceHeight) || 1);
-    const ratio = Number.isFinite(targetRatio) && targetRatio > 0 ? targetRatio : 4 / 3;
-    const sourceRatio = srcW / srcH;
-
-    if (sourceRatio > ratio) {
-        return {
-            width: Math.max(1, Math.round(srcH * ratio)),
-            height: srcH
-        };
-    }
-
-    return {
-        width: srcW,
-        height: Math.max(1, Math.round(srcW / ratio))
-    };
-};
-
-const profileToSourceRect = (profile, sourceWidth, sourceHeight, targetRatio) => {
-    const srcW = Math.max(1, Number(sourceWidth) || 1);
-    const srcH = Math.max(1, Number(sourceHeight) || 1);
-    const base = getBaseCropSize(srcW, srcH, targetRatio);
-    const normalized = normalizeCropProfile(profile);
-
-    const cropWidth = Math.max(1, Math.min(srcW, Math.round(base.width / normalized.scale)));
-    const cropHeight = Math.max(1, Math.min(srcH, Math.round(base.height / normalized.scale)));
-
-    const centerX = clamp01(normalized.x) * srcW;
-    const centerY = clamp01(normalized.y) * srcH;
-    const maxLeft = srcW - cropWidth;
-    const maxTop = srcH - cropHeight;
-
-    const left = Math.max(0, Math.min(maxLeft, Math.round(centerX - cropWidth / 2)));
-    const top = Math.max(0, Math.min(maxTop, Math.round(centerY - cropHeight / 2)));
-
-    return { left, top, width: cropWidth, height: cropHeight };
-};
-
-const sourceRectToProfile = (rect, sourceWidth, sourceHeight, targetRatio) => {
-    const srcW = Math.max(1, Number(sourceWidth) || 1);
-    const srcH = Math.max(1, Number(sourceHeight) || 1);
-    const base = getBaseCropSize(srcW, srcH, targetRatio);
-
-    const width = Math.max(1, Math.min(srcW, Number(rect?.width) || 1));
-    const height = Math.max(1, Math.min(srcH, Number(rect?.height) || 1));
-    const left = Math.max(0, Math.min(srcW - width, Number(rect?.left) || 0));
-    const top = Math.max(0, Math.min(srcH - height, Number(rect?.top) || 0));
-    const centerX = left + width / 2;
-    const centerY = top + height / 2;
-    const scale = clampScale(base.width / width);
-
-    return normalizeCropProfile({
-        x: centerX / srcW,
-        y: centerY / srcH,
-        scale
-    });
-};
-
-const sourceRectToViewportRect = (sourceRect, viewport) => ({
-    left: viewport.left + (sourceRect.left / viewport.naturalWidth) * viewport.width,
-    top: viewport.top + (sourceRect.top / viewport.naturalHeight) * viewport.height,
-    width: (sourceRect.width / viewport.naturalWidth) * viewport.width,
-    height: (sourceRect.height / viewport.naturalHeight) * viewport.height
-});
-
-const viewportRectToSourceRect = (viewportRect, viewport) => ({
-    left: ((viewportRect.left - viewport.left) / viewport.width) * viewport.naturalWidth,
-    top: ((viewportRect.top - viewport.top) / viewport.height) * viewport.naturalHeight,
-    width: (viewportRect.width / viewport.width) * viewport.naturalWidth,
-    height: (viewportRect.height / viewport.height) * viewport.naturalHeight
-});
-
-const resizeRectFromCorner = ({ startRect, handle, dx, dy, viewport, ratio, minWidth, maxWidth }) => {
-    const right = viewport.left + viewport.width;
-    const bottom = viewport.top + viewport.height;
-
-    const startCornerX = handle.includes('w') ? startRect.left : startRect.left + startRect.width;
-    const startCornerY = handle.includes('n') ? startRect.top : startRect.top + startRect.height;
-
-    let anchorX = startRect.left;
-    let anchorY = startRect.top;
-
-    if (handle === 'nw') {
-        anchorX = startRect.left + startRect.width;
-        anchorY = startRect.top + startRect.height;
-    } else if (handle === 'ne') {
-        anchorX = startRect.left;
-        anchorY = startRect.top + startRect.height;
-    } else if (handle === 'sw') {
-        anchorX = startRect.left + startRect.width;
-        anchorY = startRect.top;
-    }
-
-    const pointerX = startCornerX + dx;
-    const pointerY = startCornerY + dy;
-    const widthFromX = Math.abs(anchorX - pointerX);
-    const widthFromY = Math.abs(anchorY - pointerY) * ratio;
-    const useHorizontal = Math.abs(dx) >= Math.abs(dy) * ratio;
-
-    let width = useHorizontal ? widthFromX : widthFromY;
-    if (!Number.isFinite(width) || width <= 0) width = startRect.width;
-
-    let maxWidthByBounds = maxWidth;
-    if (handle === 'nw') {
-        maxWidthByBounds = Math.min(anchorX - viewport.left, (anchorY - viewport.top) * ratio);
-    } else if (handle === 'ne') {
-        maxWidthByBounds = Math.min(right - anchorX, (anchorY - viewport.top) * ratio);
-    } else if (handle === 'sw') {
-        maxWidthByBounds = Math.min(anchorX - viewport.left, (bottom - anchorY) * ratio);
-    } else if (handle === 'se') {
-        maxWidthByBounds = Math.min(right - anchorX, (bottom - anchorY) * ratio);
-    }
-
-    const finalMaxWidth = Math.max(minWidth, Math.min(maxWidth, maxWidthByBounds));
-    width = clampBetween(width, minWidth, finalMaxWidth);
-
-    const height = width / ratio;
-
-    let left = startRect.left;
-    let top = startRect.top;
-
-    if (handle === 'nw') {
-        left = anchorX - width;
-        top = anchorY - height;
-    } else if (handle === 'ne') {
-        left = anchorX;
-        top = anchorY - height;
-    } else if (handle === 'sw') {
-        left = anchorX - width;
-        top = anchorY;
-    } else if (handle === 'se') {
-        left = anchorX;
-        top = anchorY;
-    }
-
-    return {
-        left: clampBetween(left, viewport.left, right - width),
-        top: clampBetween(top, viewport.top, bottom - height),
-        width,
-        height
-    };
-};
-
-const normalizeCropProfile = (value) => {
-    if (!value || typeof value !== 'object') return { ...DEFAULT_CROP_PROFILE };
-    const x = Number(value.x);
-    const y = Number(value.y);
-    const scale = Number(value.scale);
-
-    return {
-        x: Number.isFinite(x) ? clamp01(x) : DEFAULT_CROP_PROFILE.x,
-        y: Number.isFinite(y) ? clamp01(y) : DEFAULT_CROP_PROFILE.y,
-        scale: Number.isFinite(scale) ? clampScale(scale) : DEFAULT_CROP_PROFILE.scale
-    };
-};
-
-const normalizeCropProfiles = (value) => {
-    const raw = value && typeof value === 'object' ? value : {};
-    return {
-        r43: normalizeCropProfile(raw.r43),
-        r11: normalizeCropProfile(raw.r11),
-        social: normalizeCropProfile(raw.social)
-    };
-};
-
-const normalizeImageAssetUrl = (value) => {
-    const raw = String(value || '').trim();
-    if (!raw) return '';
-    if (/^https?:\/\//i.test(raw)) return raw;
-    if (raw.startsWith('/')) return `${IMAGES_BASE_URL}${raw}`;
-    return `${IMAGES_BASE_URL}/${raw}`;
-};
 
 const getPhotoSettings = (photo) => {
     if (!photo) return {};
@@ -291,17 +87,8 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
     const [currentStep, setCurrentStep] = useState(firstStep);
     const [isClosing, setIsClosing] = useState(false);
 
-    const [activeCropPreset, setActiveCropPreset] = useState('r43');
-    const [cropProfiles, setCropProfiles] = useState(() => normalizeCropProfiles(getPhotoSettings(photoToEdit).cropProfiles));
-    const [cropViewport, setCropViewport] = useState(null);
-    const [activeCropRect, setActiveCropRect] = useState(null);
-    const [isCropInteracting, setIsCropInteracting] = useState(false);
-
     const fileInputRef = useRef(null);
     const tagInputRef = useRef(null);
-    const cropWorkspaceRef = useRef(null);
-    const cropImageRef = useRef(null);
-    const cropPointerStateRef = useRef(null);
 
     useEffect(() => {
         const originalOverflow = document.body.style.overflow;
@@ -313,8 +100,6 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
 
     useEffect(() => {
         setCurrentStep(firstStep);
-        setActiveCropPreset('r43');
-        setCropProfiles(normalizeCropProfiles(getPhotoSettings(photoToEdit).cropProfiles));
     }, [photoToEdit, firstStep]);
 
     const extractImageMetadata = useCallback(async (file) => {
@@ -498,13 +283,17 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         if (error) setError('');
     };
 
-    const addTag = (tag) => {
+    const addTag = useCallback((tag) => {
         const newTag = tag.trim();
-        if (newTag && !formData.tags.includes(newTag)) {
-            setFormData((prev) => ({ ...prev, tags: [...prev.tags, newTag] }));
+        if (newTag) {
+            setFormData((prev) => (
+                prev.tags.includes(newTag)
+                    ? prev
+                    : { ...prev, tags: [...prev.tags, newTag] }
+            ));
         }
         setTagInput('');
-    };
+    }, []);
 
     const removeTag = (tagToRemove) => {
         setFormData((prev) => ({ ...prev, tags: prev.tags.filter((t) => t !== tagToRemove) }));
@@ -522,195 +311,6 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         setIsClosing(true);
         setTimeout(() => onClose?.(), 75);
     };
-
-    const cropImageSrc = preview || normalizeImageAssetUrl(photoToEdit?.image || photoToEdit?.url || photoToEdit?.thumbnail);
-    const activeCropProfile = cropProfiles[activeCropPreset] || DEFAULT_CROP_PROFILE;
-
-    const updateActiveCropProfile = useCallback((patch) => {
-        setCropProfiles((prev) => ({
-            ...prev,
-            [activeCropPreset]: normalizeCropProfile({ ...(prev[activeCropPreset] || DEFAULT_CROP_PROFILE), ...patch })
-        }));
-    }, [activeCropPreset]);
-
-    const refreshCropViewport = useCallback(() => {
-        const workspace = cropWorkspaceRef.current;
-        const image = cropImageRef.current;
-        if (!workspace || !image || !image.naturalWidth || !image.naturalHeight) return;
-
-        const containerWidth = workspace.clientWidth;
-        const containerHeight = workspace.clientHeight;
-        if (!containerWidth || !containerHeight) return;
-
-        const naturalWidth = image.naturalWidth;
-        const naturalHeight = image.naturalHeight;
-        const imageRatio = naturalWidth / naturalHeight;
-        const containerRatio = containerWidth / containerHeight;
-
-        let width = containerWidth;
-        let height = containerHeight;
-        let left = 0;
-        let top = 0;
-
-        if (imageRatio > containerRatio) {
-            width = containerWidth;
-            height = width / imageRatio;
-            top = (containerHeight - height) / 2;
-        } else {
-            height = containerHeight;
-            width = height * imageRatio;
-            left = (containerWidth - width) / 2;
-        }
-
-        setCropViewport({
-            left,
-            top,
-            width,
-            height,
-            naturalWidth,
-            naturalHeight
-        });
-    }, []);
-
-    const saveRectToPreset = useCallback((rect, presetKey, viewportOverride = null) => {
-        const viewport = viewportOverride || cropViewport;
-        if (!viewport) return;
-        const ratio = getPresetRatioValue(presetKey);
-        const sourceRect = viewportRectToSourceRect(rect, viewport);
-        const profile = sourceRectToProfile(sourceRect, viewport.naturalWidth, viewport.naturalHeight, ratio);
-        setCropProfiles((prev) => ({
-            ...prev,
-            [presetKey]: profile
-        }));
-    }, [cropViewport]);
-
-    const beginCropMove = useCallback((event) => {
-        if (!event.isPrimary || !cropViewport || !activeCropRect) return;
-        event.preventDefault();
-
-        cropPointerStateRef.current = {
-            mode: 'move',
-            pointerId: event.pointerId,
-            startX: event.clientX,
-            startY: event.clientY,
-            startRect: { ...activeCropRect },
-            viewport: cropViewport,
-            presetKey: activeCropPreset
-        };
-        setIsCropInteracting(true);
-    }, [activeCropPreset, activeCropRect, cropViewport]);
-
-    const beginCropResize = useCallback((event, handle) => {
-        if (!event.isPrimary || !cropViewport || !activeCropRect) return;
-        event.preventDefault();
-        event.stopPropagation();
-
-        const ratio = getPresetRatioValue(activeCropPreset);
-        const base = getBaseCropSize(cropViewport.naturalWidth, cropViewport.naturalHeight, ratio);
-        const minWidthByScale = (base.width / CROP_MAX_SCALE / cropViewport.naturalWidth) * cropViewport.width;
-        const maxWidthByScale = (base.width / cropViewport.naturalWidth) * cropViewport.width;
-        const minWidth = Math.max(CROP_MIN_SIZE_PX, minWidthByScale);
-
-        cropPointerStateRef.current = {
-            mode: 'resize',
-            handle,
-            pointerId: event.pointerId,
-            startX: event.clientX,
-            startY: event.clientY,
-            startRect: { ...activeCropRect },
-            viewport: cropViewport,
-            presetKey: activeCropPreset,
-            ratio,
-            minWidth,
-            maxWidth: Math.max(minWidth, maxWidthByScale)
-        };
-        setIsCropInteracting(true);
-    }, [activeCropPreset, activeCropRect, cropViewport]);
-
-    useEffect(() => {
-        if (!cropWorkspaceRef.current || typeof ResizeObserver === 'undefined') return undefined;
-        const observer = new ResizeObserver(() => refreshCropViewport());
-        observer.observe(cropWorkspaceRef.current);
-        return () => observer.disconnect();
-    }, [refreshCropViewport]);
-
-    useEffect(() => {
-        if (!cropViewport || isCropInteracting) return;
-        const ratio = getPresetRatioValue(activeCropPreset);
-        const sourceRect = profileToSourceRect(
-            activeCropProfile,
-            cropViewport.naturalWidth,
-            cropViewport.naturalHeight,
-            ratio
-        );
-        setActiveCropRect(sourceRectToViewportRect(sourceRect, cropViewport));
-    }, [activeCropPreset, activeCropProfile, cropViewport, isCropInteracting]);
-
-    useEffect(() => {
-        setCropViewport(null);
-        setActiveCropRect(null);
-        setIsCropInteracting(false);
-        cropPointerStateRef.current = null;
-    }, [cropImageSrc]);
-
-    useEffect(() => {
-        const onPointerMove = (event) => {
-            const state = cropPointerStateRef.current;
-            if (!state || event.pointerId !== state.pointerId) return;
-
-            const dx = event.clientX - state.startX;
-            const dy = event.clientY - state.startY;
-            const viewport = state.viewport;
-            const right = viewport.left + viewport.width;
-            const bottom = viewport.top + viewport.height;
-            let nextRect = state.startRect;
-
-            if (state.mode === 'move') {
-                const left = clampBetween(
-                    state.startRect.left + dx,
-                    viewport.left,
-                    right - state.startRect.width
-                );
-                const top = clampBetween(
-                    state.startRect.top + dy,
-                    viewport.top,
-                    bottom - state.startRect.height
-                );
-                nextRect = { ...state.startRect, left, top };
-            } else if (state.mode === 'resize') {
-                nextRect = resizeRectFromCorner({
-                    startRect: state.startRect,
-                    handle: state.handle,
-                    dx,
-                    dy,
-                    viewport,
-                    ratio: state.ratio,
-                    minWidth: state.minWidth,
-                    maxWidth: state.maxWidth
-                });
-            }
-
-            setActiveCropRect(nextRect);
-            saveRectToPreset(nextRect, state.presetKey, viewport);
-        };
-
-        const onPointerEnd = (event) => {
-            const state = cropPointerStateRef.current;
-            if (!state || event.pointerId !== state.pointerId) return;
-            cropPointerStateRef.current = null;
-            setIsCropInteracting(false);
-        };
-
-        window.addEventListener('pointermove', onPointerMove);
-        window.addEventListener('pointerup', onPointerEnd);
-        window.addEventListener('pointercancel', onPointerEnd);
-
-        return () => {
-            window.removeEventListener('pointermove', onPointerMove);
-            window.removeEventListener('pointerup', onPointerEnd);
-            window.removeEventListener('pointercancel', onPointerEnd);
-        };
-    }, [saveRectToPreset]);
 
     const nextStep = useCallback(() => {
         if (loading) return;
@@ -740,7 +340,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         }
     }, [loading, currentStep, steps]);
 
-    const handleUpload = async () => {
+    const handleUpload = useCallback(async () => {
         if (!isEditMode && !selectedFile) {
             setError('Nessuna immagine selezionata');
             return;
@@ -840,8 +440,6 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             setSelectedFile(null);
             setPreview(null);
             setTagInput('');
-            setCropProfiles(normalizeCropProfiles());
-            setActiveCropPreset('r43');
             setCurrentStep(firstStep);
             if (onClose) onClose();
         } catch (err) {
@@ -856,7 +454,17 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         } finally {
             setLoading(false);
         }
-    };
+    }, [
+        isEditMode,
+        selectedFile,
+        formData,
+        actions,
+        photoToEdit,
+        onUploadSuccess,
+        onUploadError,
+        firstStep,
+        onClose
+    ]);
 
     useEffect(() => {
         const onKeyDown = (e) => {
@@ -903,53 +511,6 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         loading ||
         (!isEditMode && currentStep === 1 && !selectedFile) ||
         (currentStep === 2 && !formData.title.trim());
-
-    const getProfilePreviewStyle = (profile) => ({
-        objectPosition: `${profile.x * 100}% ${profile.y * 100}%`,
-        transform: `scale(${profile.scale})`
-    });
-
-    const activePresetRatio = getPresetRatioValue(activeCropPreset);
-    const cropSelection = cropViewport && activeCropRect ? {
-        left: activeCropRect.left,
-        top: activeCropRect.top,
-        width: activeCropRect.width,
-        height: activeCropRect.height
-    } : null;
-
-    const cropMaskTopStyle = cropViewport && cropSelection ? {
-        left: cropViewport.left,
-        top: cropViewport.top,
-        width: cropViewport.width,
-        height: Math.max(0, cropSelection.top - cropViewport.top)
-    } : null;
-
-    const cropMaskBottomStyle = cropViewport && cropSelection ? {
-        left: cropViewport.left,
-        top: cropSelection.top + cropSelection.height,
-        width: cropViewport.width,
-        height: Math.max(
-            0,
-            (cropViewport.top + cropViewport.height) - (cropSelection.top + cropSelection.height)
-        )
-    } : null;
-
-    const cropMaskLeftStyle = cropViewport && cropSelection ? {
-        left: cropViewport.left,
-        top: cropSelection.top,
-        width: Math.max(0, cropSelection.left - cropViewport.left),
-        height: cropSelection.height
-    } : null;
-
-    const cropMaskRightStyle = cropViewport && cropSelection ? {
-        left: cropSelection.left + cropSelection.width,
-        top: cropSelection.top,
-        width: Math.max(
-            0,
-            (cropViewport.left + cropViewport.width) - (cropSelection.left + cropSelection.width)
-        ),
-        height: cropSelection.height
-    } : null;
 
     return (
         <div className="photo-upload-modal" onClick={() => !loading && initClose()}>
@@ -1188,120 +749,6 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                                     </div>
                                 )}
                             </div>
-                        </div>
-                    )}
-
-                    {currentStep === 4 && (
-                        <div className="step-content">
-                            {cropImageSrc ? (
-                                <div className="crop-editor-section">
-                                    <div className="crop-editor-header">
-                                        <h3>Composizione</h3>
-                                        <button
-                                            type="button"
-                                            className="crop-reset-btn"
-                                            disabled={loading}
-                                            onClick={() => updateActiveCropProfile({ ...DEFAULT_CROP_PROFILE })}
-                                        >
-                                            Reset preset
-                                        </button>
-                                    </div>
-
-                                    <p className="crop-editor-hint">
-                                        Ridimensiona e sposta il riquadro: l&apos;immagine resta fissa, come in un editor crop.
-                                    </p>
-
-                                    <div className="crop-ratio-tabs">
-                                        {CROP_PRESETS.map((preset) => (
-                                            <button
-                                                key={preset.key}
-                                                type="button"
-                                                className={`crop-ratio-tab ${activeCropPreset === preset.key ? 'active' : ''}`}
-                                                onClick={() => setActiveCropPreset(preset.key)}
-                                            >
-                                                {preset.label}
-                                            </button>
-                                        ))}
-                                    </div>
-
-                                    <div className="crop-workspace-shell" style={{ aspectRatio: activePresetRatio }}>
-                                        <div
-                                            ref={cropWorkspaceRef}
-                                            className={`crop-workspace ${isCropInteracting ? 'is-interacting' : ''}`}
-                                        >
-                                            <img
-                                                ref={cropImageRef}
-                                                className="crop-workspace-image"
-                                                src={cropImageSrc}
-                                                alt="Editor composizione"
-                                                draggable="false"
-                                                onLoad={refreshCropViewport}
-                                            />
-
-                                            {cropViewport && (
-                                                <div
-                                                    className="crop-image-bounds"
-                                                    style={{
-                                                        left: cropViewport.left,
-                                                        top: cropViewport.top,
-                                                        width: cropViewport.width,
-                                                        height: cropViewport.height
-                                                    }}
-                                                />
-                                            )}
-
-                                            {cropSelection && (
-                                                <>
-                                                    <div className="crop-mask-segment" style={cropMaskTopStyle} />
-                                                    <div className="crop-mask-segment" style={cropMaskBottomStyle} />
-                                                    <div className="crop-mask-segment" style={cropMaskLeftStyle} />
-                                                    <div className="crop-mask-segment" style={cropMaskRightStyle} />
-
-                                                    <div
-                                                        className="crop-selection-box"
-                                                        style={cropSelection}
-                                                        onPointerDown={beginCropMove}
-                                                    >
-                                                        <div className="crop-grid-lines" />
-                                                        {CROP_HANDLES.map((handle) => (
-                                                            <button
-                                                                key={handle}
-                                                                type="button"
-                                                                className={`crop-handle crop-handle-${handle}`}
-                                                                onPointerDown={(event) => beginCropResize(event, handle)}
-                                                                aria-label={`Ridimensiona ${handle}`}
-                                                            />
-                                                        ))}
-                                                    </div>
-                                                </>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    <div className="crop-editor-previews">
-                                        {CROP_PRESETS.map((preset) => {
-                                            const profile = cropProfiles[preset.key] || DEFAULT_CROP_PROFILE;
-                                            return (
-                                                <div key={preset.key} className="crop-preview crop-preview-item">
-                                                    <div className="crop-preview-frame" style={{ aspectRatio: preset.ratio }}>
-                                                        <img
-                                                            src={cropImageSrc}
-                                                            alt={`Anteprima ${preset.label}`}
-                                                            draggable="false"
-                                                            style={getProfilePreviewStyle(profile)}
-                                                        />
-                                                    </div>
-                                                    <span>{preset.label}</span>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="crop-editor-empty">
-                                    Nessuna immagine disponibile per la composizione.
-                                </div>
-                            )}
                         </div>
                     )}
 
