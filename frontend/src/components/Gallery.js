@@ -2,10 +2,11 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Trash2, Edit3 } from 'lucide-react';
+import { Search, Trash2, Edit3, Crop } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { LOCAL_IMAGE_FALLBACK, resolveAssetUrl } from '../utils/imageUrl';
 import PhotoUpload from './PhotoUpload';
+import PhotoCropModal from './PhotoCropModal';
 
 const DEBOUNCE_DELAY_FILTER = 200;
 
@@ -243,6 +244,33 @@ const EditButton = styled(motion.button)`
   }
 `;
 
+const CropButton = styled(motion.button)`
+  position: absolute;
+  top: var(--spacing-md);
+  right: calc(var(--spacing-md) + 96px);
+  background: rgba(39, 137, 255, 0.88);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: white;
+  padding: 8px;
+  border-radius: var(--border-radius-full);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity var(--transition-normal), background var(--transition-normal);
+  z-index: 10;
+
+  ${PhotoCard}:hover & {
+    opacity: 1;
+  }
+
+  &:hover {
+    background: rgba(18, 118, 236, 1);
+  }
+`;
+
 const OverlayContent = styled.div`
   width: 100%;
 `;
@@ -336,6 +364,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     return filters.search || '';
   });
   const [editingPhoto, setEditingPhoto] = useState(null);
+  const [croppingPhoto, setCroppingPhoto] = useState(null);
 
   const debouncedSearchTerm = useDebounce(searchTerm, DEBOUNCE_DELAY_FILTER);
 
@@ -433,6 +462,11 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     setEditingPhoto(photo);
   };
 
+  const handleCrop = (e, photo) => {
+    e.stopPropagation();
+    setCroppingPhoto(photo);
+  };
+
   if (loading || waitingForForcedModal) {
     return (
       <GallerySection>
@@ -508,6 +542,14 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                     </SeoImageLink>
                     {isAdmin && (
                       <>
+                        <CropButton
+                          onClick={(e) => handleCrop(e, photo)}
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                          title="Modifica crop"
+                        >
+                          <Crop size={18} />
+                        </CropButton>
                         <EditButton
                           onClick={(e) => handleEdit(e, photo)}
                           whileHover={{ scale: 1.1 }}
@@ -568,6 +610,16 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
             }}
           />
         )}
+
+        <PhotoCropModal
+          photo={croppingPhoto}
+          isOpen={isAdmin && Boolean(croppingPhoto)}
+          onClose={() => setCroppingPhoto(null)}
+          onSaved={async () => {
+            setCroppingPhoto(null);
+            await actions.fetchPhotos();
+          }}
+        />
       </Container>
     </GallerySection>
   );

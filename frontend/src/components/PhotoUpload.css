@@ -194,6 +194,247 @@
   background: #fff;
 }
 
+.crop-editor-section {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.05) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.crop-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.crop-editor-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.crop-editor-hint {
+  margin: 0 0 12px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.9rem;
+}
+
+.crop-ratio-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.crop-ratio-tab {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.85);
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.crop-ratio-tab:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.crop-ratio-tab.active {
+  background: rgba(212, 173, 84, 0.22);
+  border-color: rgba(212, 173, 84, 0.6);
+  color: #f4dc9a;
+}
+
+.crop-reset-btn {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.95);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: transform 0.2s, background 0.2s;
+}
+
+.crop-reset-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.crop-reset-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.crop-workspace-shell {
+  position: relative;
+  width: 100%;
+  max-height: 72vh;
+  min-height: 280px;
+}
+
+.crop-workspace {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: linear-gradient(145deg, #090d17 0%, #04070d 100%);
+  cursor: default;
+  touch-action: none;
+}
+
+.crop-workspace.is-interacting {
+  cursor: move;
+}
+
+.crop-workspace-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.crop-image-bounds {
+  position: absolute;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  pointer-events: none;
+}
+
+.crop-mask-segment {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.46);
+  pointer-events: none;
+}
+
+.crop-selection-box {
+  position: absolute;
+  border: 2px solid rgba(255, 255, 255, 0.82);
+  box-shadow: 0 0 0 1px rgba(10, 13, 19, 0.4);
+  cursor: move;
+}
+
+.crop-grid-lines {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+}
+
+.crop-grid-lines::before,
+.crop-grid-lines::after {
+  content: '';
+  position: absolute;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.crop-grid-lines::before {
+  top: 33.333%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  box-shadow: 0 calc(33.333% + 1px) 0 rgba(255, 255, 255, 0.35);
+}
+
+.crop-grid-lines::after {
+  left: 33.333%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  box-shadow: calc(33.333% + 1px) 0 0 rgba(255, 255, 255, 0.35);
+}
+
+.crop-handle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.95);
+  background: rgba(8, 10, 16, 0.92);
+  border-radius: 2px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.crop-handle:hover {
+  border-color: #f4dc9a;
+}
+
+.crop-handle-nw {
+  left: -8px;
+  top: -8px;
+  cursor: nwse-resize;
+}
+
+.crop-handle-ne {
+  right: -8px;
+  top: -8px;
+  cursor: nesw-resize;
+}
+
+.crop-handle-sw {
+  left: -8px;
+  bottom: -8px;
+  cursor: nesw-resize;
+}
+
+.crop-handle-se {
+  right: -8px;
+  bottom: -8px;
+  cursor: nwse-resize;
+}
+
+.crop-editor-empty {
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+  border-radius: 12px;
+  padding: 18px;
+  color: rgba(255, 255, 255, 0.65);
+  text-align: center;
+}
+
+.crop-editor-previews {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.crop-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.crop-preview-frame {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+  background: rgba(3, 6, 10, 0.45);
+}
+
+.crop-preview img {
+  width: 100%;
+  height: 100%;
+  border-radius: 10px;
+  object-fit: cover;
+  transform-origin: center center;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.crop-preview span {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
 /* Step 2: Dettagli base */
 .form-group {
   display: flex;
@@ -588,6 +829,9 @@
   .settings-row {
     grid-template-columns: 1fr 1fr;
     gap: 8px;
+  }
+  .crop-editor-previews {
+    grid-template-columns: 1fr;
   }
   .upload-actions {
     flex-direction: column;

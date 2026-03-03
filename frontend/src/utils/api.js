@@ -47,6 +47,9 @@ export const photoService = {
   
   // Aggiorna foto
   update: (id, data) => api.put(`/photos/${id}`, data),
+
+  // Rigenera derivate pubbliche da source full-res
+  regenerateDerivatives: (id) => api.post(`/photos/${id}/regenerate-derivatives`),
   
   // Elimina foto
   delete: (id) => api.delete(`/photos/${id}`),
