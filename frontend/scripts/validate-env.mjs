@@ -1,3 +1,8 @@
+/**
+ * Validazione env frontend (build/dev).
+ * Carica i file .env* con priorita simile a CRA e verifica la presenza
+ * delle variabili REACT_APP_* richieste, fallendo con exit code 1 se mancanti.
+ */
 import fs from 'fs';
 import path from 'path';
 

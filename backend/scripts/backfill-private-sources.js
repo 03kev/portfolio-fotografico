@@ -1,30 +1,20 @@
 #!/usr/bin/env node
+/**
+ * Script di manutenzione: backfill delle source full-res private.
+ * Legge photos.json e, dove manca sourcePath, copia l'asset pubblico esistente
+ * nel path privato (/private/source/...) aggiornando i metadati.
+ *
+ * Opzioni:
+ * - --dry-run: non scrive su storage né su photos.json.
+ * - --force: rigenera sourcePath anche se già presente.
+ */
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const { readMetadataFile, writeMetadataFile } = require('../src/services/metadataStorage');
 const { getUploadObject, isR2Enabled, putPrivateObject } = require('../src/services/r2Storage');
-
-function normalizeUploadsPath(value) {
-    const raw = String(value || '').trim();
-    if (!raw) return '';
-
-    if (raw.startsWith('/uploads/')) return raw;
-
-    if (/^https?:\/\//i.test(raw)) {
-        try {
-            const parsed = new URL(raw);
-            const pathname = String(parsed.pathname || '').replace(/^\/+/, '');
-            const key = pathname.replace(/^uploads\/+/, '');
-            return key ? `/uploads/${key}` : '';
-        } catch {
-            return '';
-        }
-    }
-
-    const normalized = raw.replace(/^\/+/, '').replace(/^uploads\/+/, '');
-    return normalized ? `/uploads/${normalized}` : '';
-}
+const { normalizeUploadsPath } = require('../src/services/photoDerivatives');
+const { readStreamToBuffer } = require('../src/utils/streams');
 
 function getExtensionFromContentType(contentType) {
     const type = String(contentType || '').toLowerCase();
@@ -40,14 +30,6 @@ function buildSourcePath(photoId, sourcePath, contentType) {
     const extFromPath = path.extname(String(sourcePath || '')).replace(/^\./, '').toLowerCase();
     const extension = extFromPath || getExtensionFromContentType(contentType) || 'bin';
     return `/private/source/photo_${photoId}.${extension}`;
-}
-
-async function readStreamToBuffer(stream) {
-    const chunks = [];
-    for await (const chunk of stream) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    }
-    return Buffer.concat(chunks);
 }
 
 async function main() {

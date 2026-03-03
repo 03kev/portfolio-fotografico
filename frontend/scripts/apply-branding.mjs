@@ -1,3 +1,11 @@
+/**
+ * Script branding frontend.
+ * Applica un profilo icone per canale (web/pwa/ios), aggiorna branding/config.json
+ * e rigenera gli asset in /public (favicon, logo app, maskable, apple-touch-icon).
+ *
+ * Uso:
+ *   npm run branding -- <profilo|preset> [--web <profilo>] [--pwa <profilo>] [--ios <profilo>]
+ */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';

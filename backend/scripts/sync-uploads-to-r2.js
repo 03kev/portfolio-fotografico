@@ -1,4 +1,9 @@
 #!/usr/bin/env node
+/**
+ * Script di sync assets upload locali -> R2 pubblico.
+ * Scansiona la cartella uploads locale (o fallback legacy) e carica i file
+ * mantenendo la stessa struttura path sotto /uploads/.
+ */
 const fs = require('fs').promises;
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });

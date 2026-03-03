@@ -1,4 +1,9 @@
 #!/usr/bin/env node
+/**
+ * Script di sync metadati locali -> R2.
+ * Legge photos.json/series.json dal data store locale e li pubblica su R2
+ * tramite metadataStorage (scrittura canonicale del backend).
+ */
 const fs = require('fs').promises;
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });

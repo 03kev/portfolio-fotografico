@@ -1,4 +1,11 @@
 #!/usr/bin/env node
+/**
+ * Utility CLI per hashare il token di scrittura admin.
+ * Stampa su stdout l'hash da usare in API_WRITE_TOKEN_HASH.
+ *
+ * Uso:
+ *   node scripts/hash-write-token.js "<TOKEN_LUNGO_RANDOM>"
+ */
 const { createTokenHash } = require('../src/utils/tokenHash');
 
 const token = process.argv[2];
