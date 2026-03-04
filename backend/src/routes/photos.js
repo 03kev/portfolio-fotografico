@@ -15,7 +15,6 @@ const {
     deletePrivateObject,
     deleteUploadObject,
     getPrivateObject,
-    getUploadObject,
     isR2Enabled,
     putPrivateObject,
     putUploadObject
@@ -232,28 +231,6 @@ async function readPrivateSourceBuffer(privatePath) {
 
     try {
         const filePath = resolvePrivateFilePath(privatePath);
-        return await fs.readFile(filePath);
-    } catch (error) {
-        if (error.code === 'ENOENT') return null;
-        throw error;
-    }
-}
-
-async function readPublicSourceBuffer(uploadPath) {
-    if (isR2Enabled()) {
-        const object = await getUploadObject(uploadPath);
-        if (!object || !object.stream) {
-            return null;
-        }
-        return readStreamToBuffer(object.stream);
-    }
-
-    if (!canUseLocalFallback()) {
-        return null;
-    }
-
-    try {
-        const filePath = resolvePublicFilePath(uploadPath);
         return await fs.readFile(filePath);
     } catch (error) {
         if (error.code === 'ENOENT') return null;
@@ -639,28 +616,18 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
 
         const photo = photos[photoIndex];
         const sourcePath = normalizePrivatePath(photo.sourcePath);
-        let sourceBuffer = sourcePath ? await readPrivateSourceBuffer(sourcePath) : null;
-        let sourceKind = sourcePath ? 'private' : 'none';
-
-        if (!sourceBuffer) {
-            const fallbackPublicPath = normalizeUploadsPath(
-                photo.image || photo.url || photo.thumbnail43 || photo.thumbnail || photo.thumbnail11 || photo.socialImage
-            );
-            if (fallbackPublicPath) {
-                sourceBuffer = await readPublicSourceBuffer(fallbackPublicPath);
-                if (sourceBuffer) {
-                    sourceKind = 'public_fallback';
-                    console.warn(
-                        `[photo:${photoId}] sourcePath non disponibile; rigenero da asset pubblico (${fallbackPublicPath}).`
-                    );
-                }
-            }
-        }
-
-        if (!sourceBuffer) {
+        if (!sourcePath) {
             return res.status(400).json({
                 success: false,
-                message: 'Source full-res non disponibile: carica la sorgente privata o esegui il backfill.'
+                message: 'Source full-res non disponibile per questa foto.'
+            });
+        }
+
+        const sourceBuffer = await readPrivateSourceBuffer(sourcePath);
+        if (!sourceBuffer) {
+            return res.status(404).json({
+                success: false,
+                message: 'Source full-res non trovata nello storage.'
             });
         }
 
@@ -685,8 +652,7 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
             thumbnail11: thumbnail11Path,
             socialImage: socialImagePath,
             url: imagePath,
-            derivativesVersion: Date.now(),
-            lastDerivativesSource: sourceKind
+            derivativesVersion: Date.now()
         };
 
         photos[photoIndex] = updatedPhoto;
