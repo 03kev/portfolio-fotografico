@@ -122,6 +122,10 @@ R2_PRIVATE_BUCKET=portfolio-fotografico-private
 R2_PUBLIC_URL=https://uploads.yourdomain.com
 R2_ENDPOINT=
 R2_METADATA_PREFIX=data
+
+# Cloudflare cache purge (opzionale, consigliato)
+CLOUDFLARE_ZONE_ID=
+CLOUDFLARE_API_TOKEN=
 ```
 
 Note:
@@ -132,8 +136,10 @@ Note:
 - In produzione è obbligatoria `API_WRITE_TOKEN_HASH` (token non in chiaro).
 - `API_WRITE_TOKEN` è solo fallback in sviluppo.
 - Le derivate pubbliche vengono esposte su `R2_PUBLIC_URL` in produzione (`/thumbnails/*`, `/social/*`, `/photo_*.webp`).
+- Gli asset pubblici immagini usano cache revalidabile (no `immutable`) per supportare overwrite sugli stessi URL.
 - Configura lato Cloudflare `X-Robots-Tag: noindex, noimageindex` su `/thumbnails/*` e `/social/*`.
 - `R2_PRIVATE_BUCKET` è consigliata per i source full-res: il backend genera sempre le derivate partendo da source privata.
+- Se imposti `CLOUDFLARE_ZONE_ID` + `CLOUDFLARE_API_TOKEN`, il backend esegue purge automatico su upload/regenerate/delete.
 - In locale i metadati vengono mantenuti in `backend/storage/data` (nessun seed fallback da `backend/data`).
 
 Genera hash del token:
@@ -186,6 +192,8 @@ Note:
 - `R2_BUCKET`
 - `R2_PRIVATE_BUCKET` (consigliata, bucket privata source)
 - `R2_PUBLIC_URL` (es. `https://uploads.kevinmuka.dev`)
+- `CLOUDFLARE_ZONE_ID` (consigliata per purge automatico cache immagini)
+- `CLOUDFLARE_API_TOKEN` (token Cloudflare con permesso Cache Purge)
 - opzionali: `R2_ENDPOINT`, `R2_METADATA_PREFIX`, `API_SESSION_TTL_MS`, `API_AUTH_RATE_LIMIT_*`
 - `REACT_APP_SITE_URL` (es. `https://kevinmuka.dev`)
 - `REACT_APP_API_BASE_URL` (tipicamente `/api`)

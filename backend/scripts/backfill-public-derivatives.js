@@ -13,6 +13,7 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const { readMetadataFile, writeMetadataFile } = require('../src/services/metadataStorage');
 const { getPrivateObject, getUploadObject, isR2Enabled, putUploadObject } = require('../src/services/r2Storage');
+const DEFAULTS = require('../src/config/defaults');
 const {
     buildPhotoAssetPaths,
     generatePhotoDerivatives,
@@ -21,6 +22,7 @@ const {
     normalizeUploadsPath
 } = require('../src/services/photoDerivatives');
 const { readStreamToBuffer } = require('../src/utils/streams');
+const PUBLIC_ASSET_CACHE_CONTROL = DEFAULTS.publicAssetCacheControl;
 
 async function objectExists(uploadPath) {
     const object = await getUploadObject(uploadPath);
@@ -101,19 +103,19 @@ async function main() {
 
             await putUploadObject(imagePath, derivatives.image, {
                 contentType: 'image/webp',
-                cacheControl: 'public, max-age=31536000, immutable'
+                cacheControl: PUBLIC_ASSET_CACHE_CONTROL
             });
             await putUploadObject(thumbnail43Path, derivatives.thumbnail43, {
                 contentType: 'image/webp',
-                cacheControl: 'public, max-age=31536000, immutable'
+                cacheControl: PUBLIC_ASSET_CACHE_CONTROL
             });
             await putUploadObject(thumbnail11Path, derivatives.thumbnail11, {
                 contentType: 'image/webp',
-                cacheControl: 'public, max-age=31536000, immutable'
+                cacheControl: PUBLIC_ASSET_CACHE_CONTROL
             });
             await putUploadObject(socialImagePath, derivatives.socialImage, {
                 contentType: 'image/jpeg',
-                cacheControl: 'public, max-age=31536000, immutable'
+                cacheControl: PUBLIC_ASSET_CACHE_CONTROL
             });
         } else if (sourceObject.stream && typeof sourceObject.stream.destroy === 'function') {
             sourceObject.stream.destroy();

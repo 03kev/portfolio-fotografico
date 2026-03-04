@@ -27,6 +27,10 @@ const {
     normalizePrivatePath,
     normalizeUploadsPath
 } = require('../services/photoDerivatives');
+const {
+    normalizeUploadPathToAbsoluteUrl,
+    purgeUrls
+} = require('../services/cloudflareCache');
 const { env } = require('../config/env');
 const DEFAULTS = require('../config/defaults');
 const { readStreamToBuffer } = require('../utils/streams');
@@ -36,6 +40,7 @@ const { protectWriteMethods } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(protectWriteMethods);
+const PUBLIC_ASSET_CACHE_CONTROL = DEFAULTS.publicAssetCacheControl;
 
 function normalizePublicBaseUrl() {
     // In sviluppo manteniamo path relative (/uploads/...) per compatibilità
@@ -54,6 +59,20 @@ function buildPublicAssetUrl(uploadPath) {
 
     const objectKey = value.replace(/^\/+/, '').replace(/^uploads\/+/, '');
     return `${publicBaseUrl}/${objectKey}`;
+}
+
+async function purgePublicAssetsBestEffort(uploadPaths = [], reason = 'photos_update') {
+    const urls = uploadPaths
+        .map((uploadPath) => normalizeUploadPathToAbsoluteUrl(uploadPath))
+        .filter(Boolean);
+
+    if (!urls.length) return;
+
+    try {
+        await purgeUrls(urls, { reason });
+    } catch (error) {
+        console.warn(`[cache] purge fallita (${reason}):`, error.message);
+    }
 }
 
 function withDefaultPhotoVariants(photo) {
@@ -163,7 +182,7 @@ async function writePublicObject(uploadPath, buffer, contentType) {
     if (isR2Enabled()) {
         await putUploadObject(uploadPath, buffer, {
             contentType,
-            cacheControl: 'public, max-age=31536000, immutable'
+            cacheControl: PUBLIC_ASSET_CACHE_CONTROL
         });
         return;
     }
@@ -407,7 +426,7 @@ router.post('/upload-url', async (req, res) => {
             })
             : await createUploadPresignedPutUrl(uploadPath, {
                 contentType: effectiveMimeType,
-                cacheControl: 'public, max-age=31536000, immutable',
+                cacheControl: PUBLIC_ASSET_CACHE_CONTROL,
                 expiresInSeconds: 300
             });
 
@@ -543,6 +562,11 @@ router.post('/', upload.single('image'), async (req, res) => {
         // Salva nel database JSON
         photos.unshift(newPhoto); // Aggiungi all'inizio dell'array
         await writePhotosDB(photos);
+
+        await purgePublicAssetsBestEffort(
+            [newPhoto.image, newPhoto.thumbnail43 || newPhoto.thumbnail, newPhoto.thumbnail11, newPhoto.socialImage],
+            'photo_create'
+        );
         
         res.status(201).json({
             success: true,
@@ -633,6 +657,11 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
 
         photos[photoIndex] = updatedPhoto;
         await writePhotosDB(photos);
+
+        await purgePublicAssetsBestEffort(
+            [imagePath, thumbnail43Path, thumbnail11Path, socialImagePath],
+            'photo_regenerate_derivatives'
+        );
 
         return res.json({
             success: true,
@@ -767,16 +796,16 @@ router.delete('/:id', async (req, res) => {
             console.warn('Errore nell\'aggiornamento delle serie:', seriesError);
         }
         
+        const publicPathsToDelete = [
+            normalizeUploadsPath(deletedPhoto.image),
+            normalizeUploadsPath(deletedPhoto.thumbnail43 || deletedPhoto.thumbnail),
+            normalizeUploadsPath(deletedPhoto.thumbnail11),
+            normalizeUploadsPath(deletedPhoto.socialImage)
+        ].filter(Boolean);
+        const uniquePublicPaths = [...new Set(publicPathsToDelete)];
+
         // Opzionale: elimina i file fisici
         try {
-            const publicPathsToDelete = [
-                normalizeUploadsPath(deletedPhoto.image),
-                normalizeUploadsPath(deletedPhoto.thumbnail43 || deletedPhoto.thumbnail),
-                normalizeUploadsPath(deletedPhoto.thumbnail11),
-                normalizeUploadsPath(deletedPhoto.socialImage)
-            ].filter(Boolean);
-
-            const uniquePublicPaths = [...new Set(publicPathsToDelete)];
             for (const publicPath of uniquePublicPaths) {
                 if (isR2Enabled()) {
                     await deleteUploadObject(publicPath);
@@ -798,6 +827,8 @@ router.delete('/:id', async (req, res) => {
         } catch (fileError) {
             console.warn('Errore nell\'eliminazione file:', fileError);
         }
+
+        await purgePublicAssetsBestEffort(uniquePublicPaths, 'photo_delete');
         
         res.json({
             success: true,

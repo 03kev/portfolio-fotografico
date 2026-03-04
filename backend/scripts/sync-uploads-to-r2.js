@@ -9,8 +9,10 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const { isR2Enabled, putUploadObject } = require('../src/services/r2Storage');
+const DEFAULTS = require('../src/config/defaults');
 const { UPLOADS_DIR } = require('../src/config/storage');
 const LEGACY_UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
+const PUBLIC_ASSET_CACHE_CONTROL = DEFAULTS.publicAssetCacheControl;
 
 function getContentTypeByExtension(filename) {
     const extension = path.extname(filename).toLowerCase();
@@ -80,7 +82,10 @@ async function main() {
         const contentType = getContentTypeByExtension(relativePath);
         const buffer = await fs.readFile(fullPath);
 
-        await putUploadObject(uploadPath, buffer, { contentType });
+        await putUploadObject(uploadPath, buffer, {
+            contentType,
+            cacheControl: PUBLIC_ASSET_CACHE_CONTROL
+        });
         uploadedCount += 1;
 
         console.log(`[${uploadedCount}/${files.length}] ${uploadPath}`);
