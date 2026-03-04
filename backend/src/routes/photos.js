@@ -15,6 +15,7 @@ const {
     deletePrivateObject,
     deleteUploadObject,
     getPrivateObject,
+    getUploadObject,
     isR2Enabled,
     putPrivateObject,
     putUploadObject
@@ -238,6 +239,28 @@ async function readPrivateSourceBuffer(privatePath) {
     }
 }
 
+async function readPublicSourceBuffer(uploadPath) {
+    if (isR2Enabled()) {
+        const object = await getUploadObject(uploadPath);
+        if (!object || !object.stream) {
+            return null;
+        }
+        return readStreamToBuffer(object.stream);
+    }
+
+    if (!canUseLocalFallback()) {
+        return null;
+    }
+
+    try {
+        const filePath = resolvePublicFilePath(uploadPath);
+        return await fs.readFile(filePath);
+    } catch (error) {
+        if (error.code === 'ENOENT') return null;
+        throw error;
+    }
+}
+
 // Utility per leggere/scrivere il database JSON
 const readPhotosDB = async () => {
     return readMetadataFile('photos.json', []);
@@ -359,7 +382,7 @@ router.get('/:id', async (req, res) => {
         const { id } = req.params;
         const photoId = parseNumericIdOrThrow(id, 'ID foto');
         const photos = await readPhotosDB();
-        const photo = photos.find((p) => p.id === photoId);
+        const photo = photos.find((p) => Number(p.id) === photoId);
         
         if (!photo) {
             return res.status(404).json({
@@ -616,18 +639,28 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
 
         const photo = photos[photoIndex];
         const sourcePath = normalizePrivatePath(photo.sourcePath);
-        if (!sourcePath) {
-            return res.status(400).json({
-                success: false,
-                message: 'Source full-res non disponibile per questa foto.'
-            });
+        let sourceBuffer = sourcePath ? await readPrivateSourceBuffer(sourcePath) : null;
+        let sourceKind = sourcePath ? 'private' : 'none';
+
+        if (!sourceBuffer) {
+            const fallbackPublicPath = normalizeUploadsPath(
+                photo.image || photo.url || photo.thumbnail43 || photo.thumbnail || photo.thumbnail11 || photo.socialImage
+            );
+            if (fallbackPublicPath) {
+                sourceBuffer = await readPublicSourceBuffer(fallbackPublicPath);
+                if (sourceBuffer) {
+                    sourceKind = 'public_fallback';
+                    console.warn(
+                        `[photo:${photoId}] sourcePath non disponibile; rigenero da asset pubblico (${fallbackPublicPath}).`
+                    );
+                }
+            }
         }
 
-        const sourceBuffer = await readPrivateSourceBuffer(sourcePath);
         if (!sourceBuffer) {
-            return res.status(404).json({
+            return res.status(400).json({
                 success: false,
-                message: 'Source full-res non trovata nello storage.'
+                message: 'Source full-res non disponibile: carica la sorgente privata o esegui il backfill.'
             });
         }
 
@@ -652,7 +685,8 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
             thumbnail11: thumbnail11Path,
             socialImage: socialImagePath,
             url: imagePath,
-            derivativesVersion: Date.now()
+            derivativesVersion: Date.now(),
+            lastDerivativesSource: sourceKind
         };
 
         photos[photoIndex] = updatedPhoto;
@@ -692,7 +726,7 @@ router.put('/:id', async (req, res) => {
         const sanitized = sanitizePhotoPayload(req.body, { partial: true });
         
         const photos = await readPhotosDB();
-        const photoIndex = photos.findIndex((p) => p.id === photoId);
+        const photoIndex = photos.findIndex((p) => Number(p.id) === photoId);
         
         if (photoIndex === -1) {
             return res.status(404).json({
@@ -741,7 +775,7 @@ router.delete('/:id', async (req, res) => {
         const { id } = req.params;
         const photoId = parseNumericIdOrThrow(id, 'ID foto');
         const photos = await readPhotosDB();
-        const photoIndex = photos.findIndex(p => p.id === photoId);
+        const photoIndex = photos.findIndex((p) => Number(p.id) === photoId);
         
         if (photoIndex === -1) {
             return res.status(404).json({
@@ -769,7 +803,7 @@ router.delete('/:id', async (req, res) => {
                     }
                     
                     // Se la foto eliminata era la cover image, rimuovila
-                    if (serie.coverImage === photoId) {
+                    if (Number(serie.coverImage) === photoId) {
                         serie.coverImage = serie.photos[0] || null;
                         seriesModified = true;
                     }

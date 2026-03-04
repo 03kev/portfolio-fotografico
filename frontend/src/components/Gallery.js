@@ -433,7 +433,13 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     actions.openPhotoModal(photo);
   };
 
-  const getThumbImageUrl = (photo) => resolveAssetUrl(photo.thumbnail43 || photo.thumbnail || photo.image || photo.url);
+  const getThumbImageUrl = (photo) => {
+    const baseUrl = resolveAssetUrl(photo.thumbnail43 || photo.thumbnail || photo.image || photo.url);
+    const version = photo?.derivativesVersion || photo?.updatedAt || photo?.id;
+    if (!version) return baseUrl;
+    const separator = baseUrl.includes('?') ? '&' : '?';
+    return `${baseUrl}${separator}v=${encodeURIComponent(String(version))}`;
+  };
   const getPhotoCardUrl = (photo) => `/photo/${encodeURIComponent(String(photo.id))}`;
   const getPhotoAltText = (photo) => {
     const title = String(photo?.title || 'Foto').trim() || 'Foto';
