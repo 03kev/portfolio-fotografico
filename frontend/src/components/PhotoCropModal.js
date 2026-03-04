@@ -46,6 +46,7 @@ const getErrorMessage = (error) => {
 const PhotoCropModal = ({ photo, isOpen, onClose, onSaved }) => {
   const [activePreset, setActivePreset] = useState('r43');
   const [cropProfiles, setCropProfiles] = useState(() => normalizeCropProfiles());
+  const [initialCropProfiles, setInitialCropProfiles] = useState(() => normalizeCropProfiles());
   const [cropViewport, setCropViewport] = useState(null);
   const [cropRect, setCropRect] = useState(null);
   const [isInteracting, setIsInteracting] = useState(false);
@@ -113,8 +114,10 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onSaved }) => {
     if (!isOpen || !photo) return;
 
     const settings = getPhotoSettings(photo);
+    const normalizedProfiles = normalizeCropProfiles(settings.cropProfiles);
     setActivePreset('r43');
-    setCropProfiles(normalizeCropProfiles(settings.cropProfiles));
+    setCropProfiles(normalizedProfiles);
+    setInitialCropProfiles(normalizedProfiles);
     setCropViewport(null);
     setCropRect(null);
     setIsInteracting(false);
@@ -273,7 +276,8 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onSaved }) => {
   }, [saveRectToProfile]);
 
   const handleResetPreset = () => {
-    setCropProfiles((prev) => ({ ...prev, [activePreset]: { ...DEFAULT_CROP_PROFILE } }));
+    const sourceProfile = initialCropProfiles?.[activePreset] || DEFAULT_CROP_PROFILE;
+    setCropProfiles((prev) => ({ ...prev, [activePreset]: { ...sourceProfile } }));
   };
 
   const handleApply = async () => {
