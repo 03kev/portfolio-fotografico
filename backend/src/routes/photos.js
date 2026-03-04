@@ -145,6 +145,14 @@ function parseUploadSize(value) {
     return parsed;
 }
 
+function describeDeleteError(error) {
+    return {
+        message: error?.message || 'Errore sconosciuto',
+        code: error?.code || error?.name || 'UNKNOWN_ERROR',
+        statusCode: error?.$metadata?.httpStatusCode || null
+    };
+}
+
 function normalizeUploadId(value) {
     const normalized = String(value || '')
         .trim()
@@ -804,35 +812,75 @@ router.delete('/:id', async (req, res) => {
         ].filter(Boolean);
         const uniquePublicPaths = [...new Set(publicPathsToDelete)];
 
-        // Opzionale: elimina i file fisici
-        try {
-            for (const publicPath of uniquePublicPaths) {
+        const deletedAssets = [];
+        const failedAssets = [];
+
+        for (const publicPath of uniquePublicPaths) {
+            try {
                 if (isR2Enabled()) {
                     await deleteUploadObject(publicPath);
                 } else if (canUseLocalFallback()) {
                     const localPublicPath = resolvePublicFilePath(publicPath);
                     await fs.unlink(localPublicPath);
                 }
+                deletedAssets.push({ scope: 'public', path: publicPath });
+            } catch (error) {
+                const errorInfo = describeDeleteError(error);
+                failedAssets.push({ scope: 'public', path: publicPath, ...errorInfo });
+                console.warn('[photo_delete_asset_failed]', {
+                    photoId,
+                    scope: 'public',
+                    path: publicPath,
+                    ...errorInfo
+                });
             }
+        }
 
-            const privateSourcePath = normalizePrivatePath(deletedPhoto.sourcePath);
-            if (privateSourcePath) {
+        const privateSourcePath = normalizePrivatePath(deletedPhoto.sourcePath);
+        if (privateSourcePath) {
+            try {
                 if (isR2Enabled()) {
                     await deletePrivateObject(privateSourcePath);
                 } else if (canUseLocalFallback()) {
                     const localPrivatePath = resolvePrivateFilePath(privateSourcePath);
                     await fs.unlink(localPrivatePath);
                 }
+                deletedAssets.push({ scope: 'private', path: privateSourcePath });
+            } catch (error) {
+                const errorInfo = describeDeleteError(error);
+                failedAssets.push({ scope: 'private', path: privateSourcePath, ...errorInfo });
+                console.warn('[photo_delete_asset_failed]', {
+                    photoId,
+                    scope: 'private',
+                    path: privateSourcePath,
+                    ...errorInfo
+                });
             }
-        } catch (fileError) {
-            console.warn('Errore nell\'eliminazione file:', fileError);
         }
 
-        await purgePublicAssetsBestEffort(uniquePublicPaths, 'photo_delete');
+        const deletedPublicPaths = deletedAssets
+            .filter((asset) => asset.scope === 'public')
+            .map((asset) => asset.path);
+
+        await purgePublicAssetsBestEffort(deletedPublicPaths, 'photo_delete');
+
+        if (failedAssets.length) {
+            console.warn('[photo_delete_partial_cleanup]', {
+                photoId,
+                failedCount: failedAssets.length,
+                failedAssets
+            });
+        }
         
         res.json({
             success: true,
-            message: 'Foto eliminata con successo'
+            message: failedAssets.length
+                ? 'Foto eliminata con successo (cleanup asset parziale)'
+                : 'Foto eliminata con successo',
+            data: {
+                deletedAssets,
+                failedAssets
+            }
         });
     } catch (error) {
         console.error('Errore nell\'eliminazione:', error);
