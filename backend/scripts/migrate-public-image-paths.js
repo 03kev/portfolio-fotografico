@@ -1,26 +1,31 @@
 #!/usr/bin/env node
 /**
- * Migrazione esplicita path thumbnail 4:3.
+ * Migrazione esplicita path immagini pubbliche.
  *
  * Obiettivo:
- * - Uniformare tutte le thumb 4:3 su /uploads/thumbnails/4x3/photo_<id>.webp
- * - Aggiornare photos.json (campo thumbnail43)
- * - Rigenerare la thumb 4:3 dal source private (crop profile incluso) nel nuovo path
+ * - Uniformare image/url su /uploads/photo_<id>.webp
+ * - Rigenerare l'immagine pubblica dal source private nello stesso standard
+ * - Aggiornare photos.json
  *
  * Opzioni:
  * - --dry-run: simula la migrazione senza scrivere su storage/metadati
- * - --delete-legacy: elimina la vecchia thumb 4:3 quando il path cambia
+ * - --delete-legacy: elimina il vecchio file pubblico image quando il path cambia
  */
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const { readMetadataFile, writeMetadataFile } = require('../src/services/metadataStorage');
-const { deleteUploadObject, getPrivateObject, getUploadObject, isR2Enabled, putUploadObject } = require('../src/services/r2Storage');
+const {
+    deleteUploadObject,
+    getPrivateObject,
+    getUploadObject,
+    isR2Enabled,
+    putUploadObject
+} = require('../src/services/r2Storage');
 const DEFAULTS = require('../src/config/defaults');
 const {
     buildPhotoAssetPaths,
     generatePhotoDerivatives,
-    getCropProfilesFromSettings,
     normalizePrivatePath,
     normalizeUploadsPath
 } = require('../src/services/photoDerivatives');
@@ -58,7 +63,6 @@ async function main() {
     let skippedMissingSourceObject = 0;
     let deletedLegacy = 0;
     let wouldDeleteLegacy = 0;
-
     let metadataChanged = false;
 
     for (let i = 0; i < photos.length; i += 1) {
@@ -67,15 +71,15 @@ async function main() {
         if (!photoId) continue;
 
         const sourcePath = normalizePrivatePath(photo.sourcePath);
-        const current43Path = normalizeUploadsPath(photo.thumbnail43);
+        const currentImagePath = normalizeUploadsPath(photo.image || photo.url);
         const defaultAssets = buildPhotoAssetPaths(photoId, extensionFromPrivatePath(sourcePath));
-        const target43Path = defaultAssets.thumbnail43Path;
+        const targetImagePath = defaultAssets.imagePath;
 
-        const needsMetadataUpdate = photo.thumbnail43 !== target43Path;
-        const targetExists = await objectExists(target43Path);
-        const needsDerivativeWrite = current43Path !== target43Path || !targetExists;
+        const needsMetadataUpdate = photo.image !== targetImagePath || photo.url !== targetImagePath;
+        const targetExists = await objectExists(targetImagePath);
+        const needsImageWrite = currentImagePath !== targetImagePath || !targetExists;
 
-        if (!needsMetadataUpdate && !needsDerivativeWrite) {
+        if (!needsMetadataUpdate && !needsImageWrite) {
             skippedAlreadyNormalized += 1;
             continue;
         }
@@ -93,35 +97,34 @@ async function main() {
 
         if (!dryRun) {
             const sourceBuffer = await readStreamToBuffer(sourceObject.stream);
-            const cropProfiles = getCropProfilesFromSettings(photo.settings);
-            const derivatives = await generatePhotoDerivatives(sourceBuffer, cropProfiles);
+            const derivatives = await generatePhotoDerivatives(sourceBuffer, null);
 
-            await putUploadObject(target43Path, derivatives.thumbnail43, {
+            await putUploadObject(targetImagePath, derivatives.image, {
                 contentType: 'image/webp',
                 cacheControl: PUBLIC_ASSET_CACHE_CONTROL
             });
 
-            if (deleteLegacy && current43Path && current43Path !== target43Path) {
-                await deleteUploadObject(current43Path);
+            if (deleteLegacy && currentImagePath && currentImagePath !== targetImagePath) {
+                await deleteUploadObject(currentImagePath);
                 deletedLegacy += 1;
             }
         } else {
             if (sourceObject.stream && typeof sourceObject.stream.destroy === 'function') {
                 sourceObject.stream.destroy();
             }
-            if (deleteLegacy && current43Path && current43Path !== target43Path) {
+            if (deleteLegacy && currentImagePath && currentImagePath !== targetImagePath) {
                 wouldDeleteLegacy += 1;
             }
         }
 
-        const updatedPhoto = {
+        photos[i] = {
             ...photo,
-            thumbnail43: target43Path,
+            image: targetImagePath,
+            url: targetImagePath,
             derivativesVersion: Date.now()
         };
-        photos[i] = updatedPhoto;
-        metadataUpdated += 1;
         migrated += 1;
+        metadataUpdated += 1;
         metadataChanged = true;
     }
 
@@ -131,7 +134,7 @@ async function main() {
 
     console.log(`Mode: ${dryRun ? 'dry-run' : 'apply'}`);
     console.log(`Photos total: ${photos.length}`);
-    console.log(`Migrated thumbnails 4:3: ${migrated}`);
+    console.log(`Migrated public image paths: ${migrated}`);
     console.log(`Metadata updated: ${metadataUpdated}`);
     console.log(`Skipped (already normalized): ${skippedAlreadyNormalized}`);
     console.log(`Skipped (missing sourcePath): ${skippedMissingSourcePath}`);
@@ -141,6 +144,7 @@ async function main() {
 }
 
 main().catch((error) => {
-    console.error('Errore durante la migrazione thumbnail 4:3:', error);
+    console.error('Errore durante la migrazione path immagini pubbliche:', error);
     process.exit(1);
 });
+

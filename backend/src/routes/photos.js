@@ -77,7 +77,7 @@ async function purgePublicAssetsBestEffort(uploadPaths = [], reason = 'photos_up
 
 function withDefaultPhotoVariants(photo) {
     const imagePath = normalizeUploadsPath(photo.image);
-    const thumbnail43Path = normalizeUploadsPath(photo.thumbnail43) || imagePath;
+    const thumbnail43Path = normalizeUploadsPath(photo.thumbnail43);
     const thumbnail11Path = normalizeUploadsPath(photo.thumbnail11);
     const socialImagePath = normalizeUploadsPath(photo.socialImage);
 
@@ -85,7 +85,6 @@ function withDefaultPhotoVariants(photo) {
         ...photo,
         image: imagePath,
         thumbnail43: thumbnail43Path,
-        thumbnail: thumbnail43Path,
         thumbnail11: thumbnail11Path,
         socialImage: socialImagePath,
         url: imagePath || thumbnail43Path || thumbnail11Path || socialImagePath || ''
@@ -95,7 +94,7 @@ function withDefaultPhotoVariants(photo) {
 function presentPhoto(photo) {
     const normalized = withDefaultPhotoVariants(photo);
     const image = buildPublicAssetUrl(normalized.image);
-    const thumbnail = buildPublicAssetUrl(normalized.thumbnail);
+    const thumbnail43 = buildPublicAssetUrl(normalized.thumbnail43);
     const thumbnail11 = buildPublicAssetUrl(normalized.thumbnail11);
     const socialImage = buildPublicAssetUrl(normalized.socialImage);
     const fallbackUrl = normalized.url || normalized.image || normalized.thumbnail43 || normalized.thumbnail11 || normalized.socialImage;
@@ -104,8 +103,7 @@ function presentPhoto(photo) {
     return {
         ...publicPhoto,
         image,
-        thumbnail,
-        thumbnail43: thumbnail,
+        thumbnail43,
         thumbnail11,
         socialImage,
         url: buildPublicAssetUrl(fallbackUrl)
@@ -161,10 +159,10 @@ function normalizeUploadId(value) {
     return normalized || null;
 }
 
-function buildUploadFilename(mimetype, uploadId, variant = 'image') {
+function buildUploadFilename(mimetype, uploadId) {
     const safeUploadId = normalizeUploadId(uploadId) || `${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
     const mimeExt = mimetype && mimetype.includes('/') ? `.${mimetype.split('/')[1]}` : '.bin';
-    const extension = variant === 'thumbnail' ? '.webp' : mimeExt.toLowerCase();
+    const extension = mimeExt.toLowerCase();
     return `photo_${safeUploadId}${extension}`;
 }
 
@@ -337,7 +335,6 @@ router.get('/', async (req, res) => {
                 lng: photo.lng || 0,
                 image: photo.image || '',
                 thumbnail43: photo.thumbnail43 || '',
-                thumbnail: photo.thumbnail43 || '',
                 thumbnail11: photo.thumbnail11 || '',
                 socialImage: photo.socialImage || '',
                 url: photo.image || photo.thumbnail43 || photo.thumbnail11 || '',
@@ -401,7 +398,7 @@ router.post('/upload-url', async (req, res) => {
 
         const { uploadId, mimetype, contentType, fileSize, variant } = req.body || {};
         const rawVariant = String(variant || 'source').trim().toLowerCase();
-        const uploadVariant = ['source', 'image', 'thumbnail'].includes(rawVariant) ? rawVariant : 'source';
+        const uploadVariant = ['source', 'image'].includes(rawVariant) ? rawVariant : 'source';
         const effectiveMimeType = String(mimetype || contentType || '').trim();
         if (!effectiveMimeType || !isAllowedMimeType(effectiveMimeType, allowedUploadTypes)) {
             return res.status(400).json({
@@ -419,12 +416,10 @@ router.post('/upload-url', async (req, res) => {
             });
         }
 
-        const uploadFilename = buildUploadFilename(effectiveMimeType, uploadId, uploadVariant);
+        const uploadFilename = buildUploadFilename(effectiveMimeType, uploadId);
         const uploadPath = uploadVariant === 'source'
             ? `/private/source/${uploadFilename}`
-            : (uploadVariant === 'thumbnail'
-                ? `/uploads/thumbnails/${uploadFilename}`
-                : `/uploads/${uploadFilename}`);
+            : `/uploads/${uploadFilename}`;
 
         const signed = uploadVariant === 'source'
             ? await createPrivateUploadPresignedPutUrl(uploadPath, {
@@ -504,43 +499,32 @@ router.post('/', upload.single('image'), async (req, res) => {
             socialImagePath = assets.socialImagePath;
         } else {
             const providedSourcePath = normalizePrivatePath(req.body?.sourcePath);
-            const providedImagePath = normalizeUploadsPath(req.body?.imagePath || req.body?.image);
-            const providedThumbPath = normalizeUploadsPath(req.body?.thumbnailPath);
-
-            if (providedSourcePath) {
-                sourcePath = providedSourcePath;
-                const sourceBuffer = await readPrivateSourceBuffer(sourcePath);
-                if (!sourceBuffer) {
-                    return res.status(400).json({
-                        success: false,
-                        message: 'sourcePath non trovato: carica prima il file originale su /api/photos/upload-url'
-                    });
-                }
-
-                const derivatives = await generatePhotoDerivatives(sourceBuffer, cropProfiles);
-                await writePublicObject(assets.imagePath, derivatives.image, 'image/webp');
-                await writePublicObject(assets.thumbnail43Path, derivatives.thumbnail43, 'image/webp');
-                await writePublicObject(assets.thumbnail11Path, derivatives.thumbnail11, 'image/webp');
-                await writePublicObject(assets.socialImagePath, derivatives.socialImage, 'image/jpeg');
-
-                imagePath = assets.imagePath;
-                thumbnailPath = assets.thumbnail43Path;
-                thumbnail11Path = assets.thumbnail11Path;
-                socialImagePath = assets.socialImagePath;
-            } else {
-                // Fallback legacy: mantiene compatibilità con client che inviano solo path pubblici.
-                if (!providedImagePath) {
-                    return res.status(400).json({
-                        success: false,
-                        message: 'sourcePath non valido: usa /private/... ottenuto da /api/photos/upload-url'
-                    });
-                }
-
-                imagePath = providedImagePath;
-                thumbnailPath = providedThumbPath || providedImagePath;
-                thumbnail11Path = normalizeUploadsPath(req.body?.thumbnail11Path || req.body?.thumbnail11) || '';
-                socialImagePath = normalizeUploadsPath(req.body?.socialImagePath || req.body?.socialImage) || '';
+            if (!providedSourcePath) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'sourcePath non valido: usa /private/... ottenuto da /api/photos/upload-url'
+                });
             }
+
+            sourcePath = providedSourcePath;
+            const sourceBuffer = await readPrivateSourceBuffer(sourcePath);
+            if (!sourceBuffer) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'sourcePath non trovato: carica prima il file originale su /api/photos/upload-url'
+                });
+            }
+
+            const derivatives = await generatePhotoDerivatives(sourceBuffer, cropProfiles);
+            await writePublicObject(assets.imagePath, derivatives.image, 'image/webp');
+            await writePublicObject(assets.thumbnail43Path, derivatives.thumbnail43, 'image/webp');
+            await writePublicObject(assets.thumbnail11Path, derivatives.thumbnail11, 'image/webp');
+            await writePublicObject(assets.socialImagePath, derivatives.socialImage, 'image/jpeg');
+
+            imagePath = assets.imagePath;
+            thumbnailPath = assets.thumbnail43Path;
+            thumbnail11Path = assets.thumbnail11Path;
+            socialImagePath = assets.socialImagePath;
         }
 
         // Crea oggetto foto con valori di default
@@ -551,7 +535,6 @@ router.post('/', upload.single('image'), async (req, res) => {
             lat: parsedLat ?? 0,
             lng: parsedLng ?? 0,
             image: imagePath,
-            thumbnail: thumbnailPath,
             thumbnail43: thumbnailPath,
             thumbnail11: thumbnail11Path,
             socialImage: socialImagePath,
@@ -655,7 +638,6 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
         const updatedPhoto = {
             ...photo,
             image: imagePath,
-            thumbnail: thumbnail43Path,
             thumbnail43: thumbnail43Path,
             thumbnail11: thumbnail11Path,
             socialImage: socialImagePath,

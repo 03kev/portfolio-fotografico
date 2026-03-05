@@ -383,8 +383,8 @@ const PhotoModal = () => {
     
     if (!selectedPhoto) return null;
 
-    const imageSrc = resolveAssetUrl(selectedPhoto.image || selectedPhoto.url || selectedPhoto.thumbnail);
-    const downloadSrc = resolveAssetUrl(selectedPhoto.image || selectedPhoto.url || selectedPhoto.thumbnail, '');
+    const imageSrc = resolveAssetUrl(selectedPhoto.image || selectedPhoto.url || selectedPhoto.thumbnail43);
+    const downloadSrc = resolveAssetUrl(selectedPhoto.image || selectedPhoto.url || selectedPhoto.thumbnail43, '');
     const canDownload = Boolean(downloadSrc);
     
     return (

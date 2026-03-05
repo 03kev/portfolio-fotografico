@@ -302,7 +302,7 @@ const GalleryModal = () => {
     actions.openPhotoModal(photo);
   };
 
-  const getPhotoSrc = (photo) => resolveAssetUrl(photo.image || photo.thumbnail || photo.url);
+  const getPhotoSrc = (photo) => resolveAssetUrl(photo.image || photo.thumbnail43 || photo.url);
 
   if (!galleryPhotos || galleryPhotos.length === 0) {
     return null;

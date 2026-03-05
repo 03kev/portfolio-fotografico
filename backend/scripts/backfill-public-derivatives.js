@@ -124,7 +124,6 @@ async function main() {
         const nextPhoto = {
             ...photo,
             image: imagePath,
-            thumbnail: thumbnail43Path,
             thumbnail43: thumbnail43Path,
             thumbnail11: thumbnail11Path,
             socialImage: socialImagePath,

@@ -434,7 +434,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   };
 
   const getThumbImageUrl = (photo) => {
-    const baseUrl = resolveAssetUrl(photo.thumbnail43 || photo.thumbnail || photo.image || photo.url);
+    const baseUrl = resolveAssetUrl(photo.thumbnail43 || photo.image || photo.url);
     const version = photo?.derivativesVersion || photo?.updatedAt || photo?.id;
     if (!version) return baseUrl;
     const separator = baseUrl.includes('?') ? '&' : '?';

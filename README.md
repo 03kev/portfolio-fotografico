@@ -247,8 +247,8 @@ curl -fsS "https://kevinmuka.dev/api/series?all=false" | head
 
 5. Asset R2:
 
-- controlla che immagini e thumbnail carichino senza 403/404
-- verifica almeno un URL asset dal JSON `/api/photos` (campo `image`/`thumbnail`)
+- controlla che immagini e derivate (`thumbnail43`, `thumbnail11`, `socialImage`) carichino senza 403/404
+- verifica almeno un URL asset dal JSON `/api/photos` (campo `image`/`thumbnail43`)
 
 ## Migrazione dati su R2
 

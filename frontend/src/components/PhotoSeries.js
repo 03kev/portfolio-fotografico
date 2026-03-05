@@ -333,7 +333,7 @@ export default function PhotoSeries({
                     <Cover>
                       {cover && (
                         <CoverImage
-                          src={`${IMAGES_BASE_URL}${cover.thumbnail || cover.image || cover.url}?t=${cover.id}`}
+                          src={`${IMAGES_BASE_URL}${cover.thumbnail43 || cover.image || cover.url}?t=${cover.id}`}
                           alt={s.title}
                           loading="lazy"
                         />
@@ -394,7 +394,7 @@ export default function PhotoSeries({
                         <Cover>
                           {cover && (
                             <CoverImage
-                              src={`${IMAGES_BASE_URL}${cover.thumbnail || cover.image || cover.url}?t=${cover.id}`}
+                              src={`${IMAGES_BASE_URL}${cover.thumbnail43 || cover.image || cover.url}?t=${cover.id}`}
                               alt={s.title}
                               loading="lazy"
                             />

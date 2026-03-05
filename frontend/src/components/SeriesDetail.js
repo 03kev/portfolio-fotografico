@@ -2370,7 +2370,7 @@ function SeriesDetail() {
                               title={p.title || ''}
                             >
                               <InspectorImg
-                                src={`${IMAGES_BASE_URL}${p.thumbnail || p.image}`}
+                                src={`${IMAGES_BASE_URL}${p.thumbnail43 || p.image}`}
                                 alt={p.title}
                                 loading="lazy"
                               />

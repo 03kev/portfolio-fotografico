@@ -734,7 +734,7 @@ function SeriesEditor({ series, onClose }) {
                           whileTap={{ scale: 0.95 }}
                         >
                           <img 
-                            src={`${IMAGES_BASE_URL}${photo.thumbnail || photo.image}`} 
+                            src={`${IMAGES_BASE_URL}${photo.thumbnail43 || photo.image}`} 
                             alt={photo.title}
                           />
                           {formData.photos.includes(photo.id) && (
@@ -768,7 +768,7 @@ function SeriesEditor({ series, onClose }) {
                             whileTap={{ scale: 0.95 }}
                           >
                             <img 
-                              src={`${IMAGES_BASE_URL}${photo.thumbnail || photo.image}`} 
+                              src={`${IMAGES_BASE_URL}${photo.thumbnail43 || photo.image}`} 
                               alt={photo.title}
                             />
                             {formData.coverImage === photo.id && (
@@ -872,7 +872,7 @@ function SeriesEditor({ series, onClose }) {
                                               whileTap={{ scale: 0.95 }}
                                             >
                                               <img 
-                                                src={`${IMAGES_BASE_URL}${photo.thumbnail || photo.image}`} 
+                                                src={`${IMAGES_BASE_URL}${photo.thumbnail43 || photo.image}`} 
                                                 alt={photo.title}
                                               />
                                               {block.content === photo.id && (
@@ -904,7 +904,7 @@ function SeriesEditor({ series, onClose }) {
                                               whileTap={{ scale: 0.95 }}
                                             >
                                               <img 
-                                                src={`${IMAGES_BASE_URL}${photo.thumbnail || photo.image}`} 
+                                                src={`${IMAGES_BASE_URL}${photo.thumbnail43 || photo.image}`} 
                                                 alt={photo.title}
                                               />
                                               {block.content.includes(photo.id) && (
