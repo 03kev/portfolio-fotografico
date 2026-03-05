@@ -31,6 +31,7 @@ const {
     normalizeUploadPathToAbsoluteUrl,
     purgeUrls
 } = require('../services/cloudflareCache');
+const { toRuntimePhoto, toStoragePhoto } = require('../services/photoRecord');
 const { env } = require('../config/env');
 const DEFAULTS = require('../config/defaults');
 const { readStreamToBuffer } = require('../utils/streams');
@@ -76,10 +77,12 @@ async function purgePublicAssetsBestEffort(uploadPaths = [], reason = 'photos_up
 }
 
 function withDefaultPhotoVariants(photo) {
-    const imagePath = normalizeUploadsPath(photo.image);
-    const thumbnail43Path = normalizeUploadsPath(photo.thumbnail43);
-    const thumbnail11Path = normalizeUploadsPath(photo.thumbnail11);
-    const socialImagePath = normalizeUploadsPath(photo.socialImage);
+    const photoId = String(photo?.id || '').trim();
+    const assets = photoId ? buildPhotoAssetPaths(photoId) : null;
+    const imagePath = assets ? normalizeUploadsPath(assets.imagePath) : '';
+    const thumbnail43Path = assets ? normalizeUploadsPath(assets.thumbnail43Path) : '';
+    const thumbnail11Path = assets ? normalizeUploadsPath(assets.thumbnail11Path) : '';
+    const socialImagePath = assets ? normalizeUploadsPath(assets.socialImagePath) : '';
 
     return {
         ...photo,
@@ -245,12 +248,18 @@ async function readPrivateSourceBuffer(privatePath) {
 
 // Utility per leggere/scrivere il database JSON
 const readPhotosDB = async () => {
-    return readMetadataFile('photos.json', []);
+    const rawPhotos = await readMetadataFile('photos.json', []);
+    return Array.isArray(rawPhotos)
+        ? rawPhotos.map((photo) => toRuntimePhoto(photo))
+        : [];
 };
 
 const writePhotosDB = async (photos) => {
     try {
-        await writeMetadataFile('photos.json', photos);
+        const normalizedPhotos = Array.isArray(photos)
+            ? photos.map((photo) => toStoragePhoto(photo))
+            : [];
+        await writeMetadataFile('photos.json', normalizedPhotos);
     } catch (error) {
         console.error('Errore nella scrittura del database foto:', error);
         throw error;
@@ -332,11 +341,6 @@ router.get('/', async (req, res) => {
                 lens: photo.lens || '',
                 lat: photo.lat || 0,
                 lng: photo.lng || 0,
-                image: photo.image || '',
-                thumbnail43: photo.thumbnail43 || '',
-                thumbnail11: photo.thumbnail11 || '',
-                socialImage: photo.socialImage || '',
-                url: photo.image || '',
                 derivativesVersion: photo.derivativesVersion || photo.updatedAt || photo.id || Date.now(),
                 settings,
                 tags
@@ -477,11 +481,6 @@ router.post('/', upload.single('image'), async (req, res) => {
 
         let sourcePath = '';
         let sourceContentType = String(req.file?.mimetype || req.body?.sourceContentType || '').trim();
-        let imagePath = '';
-        let thumbnailPath = '';
-        let thumbnail11Path = '';
-        let socialImagePath = '';
-
         if (req.file) {
             sourcePath = assets.sourcePath;
             await writePrivateObject(sourcePath, req.file.buffer, sourceContentType || 'application/octet-stream');
@@ -491,11 +490,6 @@ router.post('/', upload.single('image'), async (req, res) => {
             await writePublicObject(assets.thumbnail43Path, derivatives.thumbnail43, 'image/webp');
             await writePublicObject(assets.thumbnail11Path, derivatives.thumbnail11, 'image/webp');
             await writePublicObject(assets.socialImagePath, derivatives.socialImage, 'image/jpeg');
-
-            imagePath = assets.imagePath;
-            thumbnailPath = assets.thumbnail43Path;
-            thumbnail11Path = assets.thumbnail11Path;
-            socialImagePath = assets.socialImagePath;
         } else {
             const providedSourcePath = normalizePrivatePath(req.body?.sourcePath);
             if (!providedSourcePath) {
@@ -519,11 +513,6 @@ router.post('/', upload.single('image'), async (req, res) => {
             await writePublicObject(assets.thumbnail43Path, derivatives.thumbnail43, 'image/webp');
             await writePublicObject(assets.thumbnail11Path, derivatives.thumbnail11, 'image/webp');
             await writePublicObject(assets.socialImagePath, derivatives.socialImage, 'image/jpeg');
-
-            imagePath = assets.imagePath;
-            thumbnailPath = assets.thumbnail43Path;
-            thumbnail11Path = assets.thumbnail11Path;
-            socialImagePath = assets.socialImagePath;
         }
 
         // Crea oggetto foto con valori di default
@@ -533,11 +522,6 @@ router.post('/', upload.single('image'), async (req, res) => {
             location: sanitized.location,
             lat: parsedLat ?? 0,
             lng: parsedLng ?? 0,
-            image: imagePath,
-            thumbnail43: thumbnailPath,
-            thumbnail11: thumbnail11Path,
-            socialImage: socialImagePath,
-            url: imagePath,
             sourcePath,
             sourceContentType: sourceContentType || '',
             derivativesVersion: Date.now(),
@@ -554,7 +538,7 @@ router.post('/', upload.single('image'), async (req, res) => {
         await writePhotosDB(photos);
 
         await purgePublicAssetsBestEffort(
-            [newPhoto.image, newPhoto.thumbnail43, newPhoto.thumbnail11, newPhoto.socialImage],
+            [assets.imagePath, assets.thumbnail43Path, assets.thumbnail11Path, assets.socialImagePath],
             'photo_create'
         );
         
@@ -621,36 +605,17 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
             });
         }
 
-        const imagePath = normalizeUploadsPath(photo.image);
-        const thumbnail43Path = normalizeUploadsPath(photo.thumbnail43);
-        const thumbnail11Path = normalizeUploadsPath(photo.thumbnail11);
-        const socialImagePath = normalizeUploadsPath(photo.socialImage);
-        const missingPaths = [];
-        if (!imagePath) missingPaths.push('image');
-        if (!thumbnail43Path) missingPaths.push('thumbnail43');
-        if (!thumbnail11Path) missingPaths.push('thumbnail11');
-        if (!socialImagePath) missingPaths.push('socialImage');
-        if (missingPaths.length > 0) {
-            return res.status(409).json({
-                success: false,
-                message: `Metadati foto incompleti: mancano ${missingPaths.join(', ')}`
-            });
-        }
+        const publicAssets = withDefaultPhotoVariants(photo);
 
         const cropProfiles = getCropProfilesFromSettings(photo.settings);
         const derivatives = await generatePhotoDerivatives(sourceBuffer, cropProfiles);
-        await writePublicObject(imagePath, derivatives.image, 'image/webp');
-        await writePublicObject(thumbnail43Path, derivatives.thumbnail43, 'image/webp');
-        await writePublicObject(thumbnail11Path, derivatives.thumbnail11, 'image/webp');
-        await writePublicObject(socialImagePath, derivatives.socialImage, 'image/jpeg');
+        await writePublicObject(publicAssets.image, derivatives.image, 'image/webp');
+        await writePublicObject(publicAssets.thumbnail43, derivatives.thumbnail43, 'image/webp');
+        await writePublicObject(publicAssets.thumbnail11, derivatives.thumbnail11, 'image/webp');
+        await writePublicObject(publicAssets.socialImage, derivatives.socialImage, 'image/jpeg');
 
         const updatedPhoto = {
             ...photo,
-            image: imagePath,
-            thumbnail43: thumbnail43Path,
-            thumbnail11: thumbnail11Path,
-            socialImage: socialImagePath,
-            url: imagePath,
             derivativesVersion: Date.now()
         };
 
@@ -658,7 +623,7 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
         await writePhotosDB(photos);
 
         await purgePublicAssetsBestEffort(
-            [imagePath, thumbnail43Path, thumbnail11Path, socialImagePath],
+            [publicAssets.image, publicAssets.thumbnail43, publicAssets.thumbnail11, publicAssets.socialImage],
             'photo_regenerate_derivatives'
         );
 
@@ -795,11 +760,12 @@ router.delete('/:id', async (req, res) => {
             console.warn('Errore nell\'aggiornamento delle serie:', seriesError);
         }
         
+        const publicAssets = withDefaultPhotoVariants(deletedPhoto);
         const publicPathsToDelete = [
-            normalizeUploadsPath(deletedPhoto.image),
-            normalizeUploadsPath(deletedPhoto.thumbnail43),
-            normalizeUploadsPath(deletedPhoto.thumbnail11),
-            normalizeUploadsPath(deletedPhoto.socialImage)
+            publicAssets.image,
+            publicAssets.thumbnail43,
+            publicAssets.thumbnail11,
+            publicAssets.socialImage
         ].filter(Boolean);
         const uniquePublicPaths = [...new Set(publicPathsToDelete)];
 

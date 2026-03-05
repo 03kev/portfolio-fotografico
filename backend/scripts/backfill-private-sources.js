@@ -13,7 +13,8 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const { readMetadataFile, writeMetadataFile } = require('../src/services/metadataStorage');
 const { getUploadObject, isR2Enabled, putPrivateObject } = require('../src/services/r2Storage');
-const { normalizeUploadsPath } = require('../src/services/photoDerivatives');
+const { buildPhotoAssetPaths, normalizeUploadsPath } = require('../src/services/photoDerivatives');
+const { toRuntimePhoto, toStoragePhoto } = require('../src/services/photoRecord');
 const { readStreamToBuffer } = require('../src/utils/streams');
 
 function getExtensionFromContentType(contentType) {
@@ -40,7 +41,8 @@ async function main() {
 
     const dryRun = process.argv.includes('--dry-run');
     const force = process.argv.includes('--force');
-    const photos = await readMetadataFile('photos.json', []);
+    const rawPhotos = await readMetadataFile('photos.json', []);
+    const photos = Array.isArray(rawPhotos) ? rawPhotos.map((photo) => toRuntimePhoto(photo)) : [];
 
     let copied = 0;
     let updated = 0;
@@ -57,7 +59,7 @@ async function main() {
             continue;
         }
 
-        const publicImagePath = normalizeUploadsPath(photo.image);
+        const publicImagePath = normalizeUploadsPath(buildPhotoAssetPaths(photoId).imagePath);
         if (!publicImagePath) {
             skippedMissingImage += 1;
             continue;
@@ -86,7 +88,7 @@ async function main() {
     }
 
     if (!dryRun && updated > 0) {
-        await writeMetadataFile('photos.json', photos);
+        await writeMetadataFile('photos.json', photos.map((photo) => toStoragePhoto(photo)));
     }
 
     console.log(`Mode: ${dryRun ? 'dry-run' : 'apply'}`);

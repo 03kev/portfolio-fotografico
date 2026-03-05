@@ -17,6 +17,8 @@ const {
     getUploadObject,
     isR2Enabled
 } = require('./services/r2Storage');
+const { buildPhotoAssetPaths } = require('./services/photoDerivatives');
+const { toRuntimePhoto } = require('./services/photoRecord');
 
 const app = express();
 validateEnv();
@@ -282,7 +284,9 @@ function toAbsoluteSiteUrl(value, siteBaseUrl) {
 }
 
 function resolvePhotoImageUrl(photo, siteBaseUrl) {
-    const raw = String(photo?.socialImage || '').trim();
+    const photoId = String(photo?.id || '').trim();
+    if (!photoId) return '';
+    const raw = buildPhotoAssetPaths(photoId).socialImagePath;
     if (!raw) return '';
 
     const normalized = buildPublicAssetUrl(raw);
@@ -337,7 +341,8 @@ async function handlePhotoSeoPage(req, res, next) {
         const rawId = String(req.params.id || '').trim();
         const decodedPhotoId = decodeURIComponent(rawId);
         const canonicalUrl = `${siteBaseUrl}/photo/${encodeURIComponent(decodedPhotoId)}`;
-        const photos = await readMetadataFile('photos.json', []);
+        const rawPhotos = await readMetadataFile('photos.json', []);
+        const photos = Array.isArray(rawPhotos) ? rawPhotos.map((item) => toRuntimePhoto(item)) : [];
         const photo = photos.find((item) => String(item?.id || '').trim() === decodedPhotoId);
 
         if (!photo) {
@@ -426,7 +431,8 @@ function handleRobotsTxt(req, res) {
 
 async function handleSitemapImages(req, res) {
     try {
-        const photos = await readMetadataFile('photos.json', []);
+        const rawPhotos = await readMetadataFile('photos.json', []);
+        const photos = Array.isArray(rawPhotos) ? rawPhotos.map((item) => toRuntimePhoto(item)) : [];
         const siteBaseUrl = getSiteBaseUrl();
 
         const imageEntries = photos
@@ -434,7 +440,7 @@ async function handleSitemapImages(req, res) {
                 const photoId = String(photo.id || '').trim();
                 if (!photoId) return '';
 
-                let fullImage = buildPublicAssetUrl(photo.image || '');
+                let fullImage = buildPublicAssetUrl(buildPhotoAssetPaths(photoId).imagePath);
                 if (!fullImage) return '';
                 if (!/^https?:\/\//i.test(fullImage)) {
                     if (fullImage.startsWith('/')) {

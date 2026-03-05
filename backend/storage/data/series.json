@@ -20,9 +20,10 @@
     ],
     "content": [
       {
+        "id": "block-c26f91dff217b8-mjxbzxns",
         "type": "photo",
-        "content": 1767351827175,
         "order": 2,
+        "content": 1767351827175,
         "layout": {
           "x": 1,
           "y": 7,
@@ -31,7 +32,6 @@
           "unit": "grid",
           "gridVersion": 2
         },
-        "id": "block-c26f91dff217b8-mjxbzxns",
         "showTitle": true,
         "showLightbox": true
       },
@@ -64,7 +64,7 @@
           "unit": "grid",
           "gridVersion": 2
         },
-        "textAlign": "justify-center",
+        "textAlign": "left",
         "textSize": "xl",
         "textBold": false,
         "textItalic": true,
@@ -138,7 +138,7 @@
           "unit": "grid",
           "gridVersion": 2
         },
-        "textAlign": "justify-right",
+        "textAlign": "left",
         "textSize": "lg",
         "textBold": false,
         "textItalic": true,
@@ -211,6 +211,7 @@
               "y": 0,
               "w": 7,
               "h": 15,
+              "unit": "grid",
               "gridVersion": 2
             }
           },
@@ -221,6 +222,7 @@
               "y": 0,
               "w": 7,
               "h": 15,
+              "unit": "grid",
               "gridVersion": 2
             }
           },
@@ -231,6 +233,7 @@
               "y": 17,
               "w": 7,
               "h": 12,
+              "unit": "grid",
               "gridVersion": 2
             }
           },
@@ -241,6 +244,7 @@
               "y": 18,
               "w": 8,
               "h": 10,
+              "unit": "grid",
               "gridVersion": 2
             }
           },
@@ -251,6 +255,7 @@
               "y": 17,
               "w": 7,
               "h": 12,
+              "unit": "grid",
               "gridVersion": 2
             }
           }
@@ -288,6 +293,6 @@
     ],
     "published": true,
     "createdAt": "2026-01-02T00:34:11.494Z",
-    "updatedAt": "2026-01-15T22:36:16.279Z"
+    "updatedAt": "2026-03-05T20:50:24.444Z"
   }
 ]

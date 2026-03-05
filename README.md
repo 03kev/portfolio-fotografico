@@ -29,7 +29,6 @@ Portfolio fotografico full-stack con frontend React, API Express su Vercel e sto
 │   │   ├── hash-write-token.js
 │   │   ├── backfill-private-sources.js
 │   │   ├── backfill-public-derivatives.js
-│   │   ├── migrate-thumbnail43-paths.js
 │   │   ├── sync-uploads-to-r2.js
 │   │   └── sync-metadata-to-r2.js
 │   ├── src/
@@ -281,14 +280,30 @@ npm run backfill:public-derivatives
 npm run backfill:public-derivatives -- --verify-only
 ```
 
-Per uniformare esplicitamente tutte le thumbnail 4:3 legacy su `thumbnails/4x3`:
+Nota: i path pubblici (`image`, `thumbnail43`, `thumbnail11`, `socialImage`) vengono derivati a runtime da `photo.id`; in `backend/storage/data/photos.json` vengono salvati solo i campi canonici (metadati, source private, crop/settings, versioning).
 
-```bash
-cd backend
-npm run migrate:thumbnail43-paths -- --dry-run
-npm run migrate:thumbnail43-paths
-# opzionale: elimina i vecchi file legacy una volta verificato tutto
-npm run migrate:thumbnail43-paths -- --delete-legacy
+Schema canonico (storage) per ogni foto:
+
+```json
+{
+  "id": 1772709771525,
+  "title": "Cascata",
+  "description": "",
+  "date": "2023-07-28",
+  "location": { "name": "Fiè allo Sciliar, Italia", "lat": 46.511847, "lng": 11.582267 },
+  "exif": {
+    "camera": "Nikon D750",
+    "lens": "Tamron SP 15-30mm F2.8 Di VC USD",
+    "aperture": "f/22",
+    "shutter": "1/5s",
+    "iso": "50",
+    "focal": "15mm"
+  },
+  "composition": { "cropProfiles": { "r43": {}, "r11": {}, "social": {} } },
+  "tags": ["Alpe di Siusi"],
+  "source": { "path": "/private/source/photo_1772709771525.jpeg", "contentType": "image/jpeg" },
+  "derivativesVersion": 1772709835199
+}
 ```
 
 ## Endpoint API principali
@@ -329,9 +344,6 @@ npm run migrate:thumbnail43-paths -- --delete-legacy
 - `npm run token:hash -- "<token>"` genera hash scrypt
 - `npm run sync:r2` upload locali -> R2
 - `npm run sync:r2:metadata` metadati locali -> R2
-- `npm run migrate:thumbnail43-paths -- --dry-run` anteprima migrazione path thumb 4:3 legacy
-- `npm run migrate:thumbnail43-paths` migra path thumb 4:3 su `uploads/thumbnails/4x3`
-- `npm run migrate:thumbnail43-paths -- --delete-legacy` migra e rimuove i vecchi asset thumb 4:3
 - `npm run backfill:private-sources -- --dry-run` anteprima migrazione source private
 - `npm run backfill:private-sources` copia source da pubblico a privato e aggiorna `photos.json`
 - `npm run backfill:public-derivatives -- --dry-run` anteprima rigenerazione derivate pubbliche

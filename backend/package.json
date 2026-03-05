@@ -11,8 +11,7 @@
     "sync:r2": "node scripts/sync-uploads-to-r2.js",
     "sync:r2:metadata": "node scripts/sync-metadata-to-r2.js",
     "backfill:private-sources": "node scripts/backfill-private-sources.js",
-    "backfill:public-derivatives": "node scripts/backfill-public-derivatives.js",
-    "migrate:thumbnail43-paths": "node scripts/migrate-thumbnail43-paths.js"
+    "backfill:public-derivatives": "node scripts/backfill-public-derivatives.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.862.0",

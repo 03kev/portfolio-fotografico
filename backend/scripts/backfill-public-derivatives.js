@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * Script di manutenzione: verifica/rigenera derivate pubbliche da source private.
- * Per ogni foto con sourcePath genera image + thumbnail43 + thumbnail11 + social,
- * sovrascrive gli stessi path e aggiorna photos.json.
+ * Per ogni foto con sourcePath genera image + thumbnail43 + thumbnail11 + social
+ * su path canonici derivati da photoId e aggiorna photos.json (derivativesVersion).
  *
  * Opzioni:
  * - --verify-only: solo controllo presenza oggetti pubblici, nessuna generazione.
@@ -15,11 +15,12 @@ const { readMetadataFile, writeMetadataFile } = require('../src/services/metadat
 const { getPrivateObject, getUploadObject, isR2Enabled, putUploadObject } = require('../src/services/r2Storage');
 const DEFAULTS = require('../src/config/defaults');
 const {
+    buildPhotoAssetPaths,
     generatePhotoDerivatives,
     getCropProfilesFromSettings,
-    normalizePrivatePath,
-    normalizeUploadsPath
+    normalizePrivatePath
 } = require('../src/services/photoDerivatives');
+const { toRuntimePhoto, toStoragePhoto } = require('../src/services/photoRecord');
 const { readStreamToBuffer } = require('../src/utils/streams');
 const PUBLIC_ASSET_CACHE_CONTROL = DEFAULTS.publicAssetCacheControl;
 
@@ -41,12 +42,12 @@ async function main() {
 
     const dryRun = process.argv.includes('--dry-run');
     const verifyOnly = process.argv.includes('--verify-only');
-    const photos = await readMetadataFile('photos.json', []);
+    const rawPhotos = await readMetadataFile('photos.json', []);
+    const photos = Array.isArray(rawPhotos) ? rawPhotos.map((photo) => toRuntimePhoto(photo)) : [];
 
     let withSource = 0;
     let missingSourcePath = 0;
     let missingSourceObject = 0;
-    let skippedIncompletePaths = 0;
     let generated = 0;
     let skippedVerifyOnly = 0;
     let metadataUpdated = 0;
@@ -69,14 +70,11 @@ async function main() {
         }
         withSource += 1;
 
-        const imagePath = normalizeUploadsPath(photo.image);
-        const thumbnail43Path = normalizeUploadsPath(photo.thumbnail43);
-        const thumbnail11Path = normalizeUploadsPath(photo.thumbnail11);
-        const socialImagePath = normalizeUploadsPath(photo.socialImage);
-        if (!imagePath || !thumbnail43Path || !thumbnail11Path || !socialImagePath) {
-            skippedIncompletePaths += 1;
-            continue;
-        }
+        const assets = buildPhotoAssetPaths(photoId);
+        const imagePath = assets.imagePath;
+        const thumbnail43Path = assets.thumbnail43Path;
+        const thumbnail11Path = assets.thumbnail11Path;
+        const socialImagePath = assets.socialImagePath;
 
         const hasImage = await objectExists(imagePath);
         const has43 = await objectExists(thumbnail43Path);
@@ -126,11 +124,6 @@ async function main() {
 
         const nextPhoto = {
             ...photo,
-            image: imagePath,
-            thumbnail43: thumbnail43Path,
-            thumbnail11: thumbnail11Path,
-            socialImage: socialImagePath,
-            url: imagePath,
             derivativesVersion: Date.now()
         };
 
@@ -144,7 +137,7 @@ async function main() {
     }
 
     if (!dryRun && !verifyOnly && metadataChanged) {
-        await writeMetadataFile('photos.json', photos);
+        await writeMetadataFile('photos.json', photos.map((photo) => toStoragePhoto(photo)));
     }
 
     console.log(`Mode: ${verifyOnly ? 'verify-only' : dryRun ? 'dry-run' : 'apply'}`);
@@ -152,7 +145,6 @@ async function main() {
     console.log(`Photos with sourcePath: ${withSource}`);
     console.log(`Missing sourcePath: ${missingSourcePath}`);
     console.log(`Missing source object: ${missingSourceObject}`);
-    console.log(`Skipped (incomplete image paths): ${skippedIncompletePaths}`);
     console.log(`Processed for generation: ${generated}`);
     console.log(`Metadata updated: ${metadataUpdated}`);
     console.log(`Public missing image: ${missingPublicImage}`);
