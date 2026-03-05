@@ -7,6 +7,8 @@ import { AnimatePresence } from 'framer-motion';
 import exifr from 'exifr';
 import './PhotoUpload.css';
 
+const METADATA_FILE_ACCEPT = 'image/*,.nef,.nrw,.cr2,.cr3,.arw,.dng,.rw2,.orf,.raf,.pef,.srw,.raw,.tif,.tiff';
+
 const getPhotoSettings = (photo) => {
     if (!photo) return {};
     if (typeof photo.settings === 'string') {
@@ -86,8 +88,11 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
     const [showMapSelector, setShowMapSelector] = useState(false);
     const [currentStep, setCurrentStep] = useState(firstStep);
     const [isClosing, setIsClosing] = useState(false);
+    const [metadataLoading, setMetadataLoading] = useState(false);
+    const [metadataStatus, setMetadataStatus] = useState({ type: '', message: '' });
 
     const fileInputRef = useRef(null);
+    const metadataFileInputRef = useRef(null);
     const tagInputRef = useRef(null);
 
     useEffect(() => {
@@ -102,7 +107,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         setCurrentStep(firstStep);
     }, [photoToEdit, firstStep]);
 
-    const extractImageMetadata = useCallback(async (file) => {
+    const extractImageMetadata = useCallback(async (file, sourceLabel = 'file selezionato') => {
         try {
             const exifData = await exifr.parse(file, [
                 'Model',
@@ -118,7 +123,13 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                 'GPSLatitudeRef',
                 'GPSLongitudeRef'
             ]);
-            if (!exifData) return;
+            if (!exifData || Object.keys(exifData).length === 0) {
+                setMetadataStatus({
+                    type: 'warning',
+                    message: `Nessun metadato rilevato in ${sourceLabel}.`
+                });
+                return false;
+            }
 
             const cameraModel = exifData.Make && exifData.Model
                 ? `${exifData.Make} ${exifData.Model}`.trim()
@@ -188,8 +199,19 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                     }));
                 }
             }
+
+            setMetadataStatus({
+                type: 'success',
+                message: `Metadati estratti da ${sourceLabel}.`
+            });
+            return true;
         } catch (err) {
             console.warn('Estrazione metadati EXIF fallita:', err);
+            setMetadataStatus({
+                type: 'warning',
+                message: `Impossibile estrarre metadati da ${sourceLabel}.`
+            });
+            return false;
         }
     }, []);
 
@@ -206,12 +228,23 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             reader.onload = (e) => setPreview(e.target.result);
             reader.readAsDataURL(file);
 
-            extractImageMetadata(file);
+            void extractImageMetadata(file, file.name || 'file selezionato');
         } catch (err) {
             setSelectedFile(null);
             setPreview(null);
             setError(err.message || 'File non valido');
         }
+    }, [extractImageMetadata]);
+
+    const handleMetadataFileSelect = useCallback(async (event) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+
+        setMetadataLoading(true);
+        setError('');
+        await extractImageMetadata(file, file.name || 'file metadati');
+        setMetadataLoading(false);
     }, [extractImageMetadata]);
 
     const getCurrentLocation = useCallback(() => {
@@ -548,6 +581,14 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                 </nav>
 
                 <div className="steps-container">
+                    <input
+                        ref={metadataFileInputRef}
+                        type="file"
+                        accept={METADATA_FILE_ACCEPT}
+                        style={{ display: 'none' }}
+                        onChange={handleMetadataFileSelect}
+                    />
+
                     {!isEditMode && currentStep === 1 && (
                         <div className="step-content">
                             <div
@@ -656,7 +697,23 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                     {currentStep === 3 && (
                         <div className="step-content">
                             <div className="tech-details">
-                                <h3>Dettagli Tecnici</h3>
+                                <div className="tech-header-actions">
+                                    <h3>Dettagli Tecnici</h3>
+                                    <button
+                                        type="button"
+                                        className="metadata-btn"
+                                        onClick={() => metadataFileInputRef.current?.click()}
+                                        disabled={loading || metadataLoading}
+                                    >
+                                        {metadataLoading ? <Loader2 size={16} /> : <FolderOpen size={16} />}
+                                        {metadataLoading ? 'Importing...' : 'Import metadata'}
+                                    </button>
+                                </div>
+                                {metadataStatus.message && (
+                                    <p className={`metadata-status ${metadataStatus.type}`}>
+                                        {metadataStatus.message}
+                                    </p>
+                                )}
                                 <div className="form-group">
                                     <label>Data</label>
                                     <input
