@@ -77,7 +77,7 @@ async function purgePublicAssetsBestEffort(uploadPaths = [], reason = 'photos_up
 
 function withDefaultPhotoVariants(photo) {
     const imagePath = normalizeUploadsPath(photo.image);
-    const thumbnail43Path = normalizeUploadsPath(photo.thumbnail43 || photo.thumbnail) || imagePath;
+    const thumbnail43Path = normalizeUploadsPath(photo.thumbnail43) || imagePath;
     const thumbnail11Path = normalizeUploadsPath(photo.thumbnail11);
     const socialImagePath = normalizeUploadsPath(photo.socialImage);
 
@@ -98,7 +98,7 @@ function presentPhoto(photo) {
     const thumbnail = buildPublicAssetUrl(normalized.thumbnail);
     const thumbnail11 = buildPublicAssetUrl(normalized.thumbnail11);
     const socialImage = buildPublicAssetUrl(normalized.socialImage);
-    const fallbackUrl = normalized.url || normalized.image || normalized.thumbnail || normalized.thumbnail11 || normalized.socialImage;
+    const fallbackUrl = normalized.url || normalized.image || normalized.thumbnail43 || normalized.thumbnail11 || normalized.socialImage;
     const { sourcePath, sourceContentType, ...publicPhoto } = normalized;
 
     return {
@@ -336,11 +336,11 @@ router.get('/', async (req, res) => {
                 lat: photo.lat || 0,
                 lng: photo.lng || 0,
                 image: photo.image || '',
-                thumbnail43: photo.thumbnail43 || photo.thumbnail || '',
-                thumbnail: photo.thumbnail43 || photo.thumbnail || '',
+                thumbnail43: photo.thumbnail43 || '',
+                thumbnail: photo.thumbnail43 || '',
                 thumbnail11: photo.thumbnail11 || '',
                 socialImage: photo.socialImage || '',
-                url: photo.image || photo.thumbnail43 || photo.thumbnail || photo.thumbnail11 || '',
+                url: photo.image || photo.thumbnail43 || photo.thumbnail11 || '',
                 derivativesVersion: photo.derivativesVersion || photo.updatedAt || photo.id || Date.now(),
                 settings,
                 tags
@@ -505,7 +505,7 @@ router.post('/', upload.single('image'), async (req, res) => {
         } else {
             const providedSourcePath = normalizePrivatePath(req.body?.sourcePath);
             const providedImagePath = normalizeUploadsPath(req.body?.imagePath || req.body?.image);
-            const providedThumbPath = normalizeUploadsPath(req.body?.thumbnailPath || req.body?.thumbnail);
+            const providedThumbPath = normalizeUploadsPath(req.body?.thumbnailPath);
 
             if (providedSourcePath) {
                 sourcePath = providedSourcePath;
@@ -572,7 +572,7 @@ router.post('/', upload.single('image'), async (req, res) => {
         await writePhotosDB(photos);
 
         await purgePublicAssetsBestEffort(
-            [newPhoto.image, newPhoto.thumbnail43 || newPhoto.thumbnail, newPhoto.thumbnail11, newPhoto.socialImage],
+            [newPhoto.image, newPhoto.thumbnail43, newPhoto.thumbnail11, newPhoto.socialImage],
             'photo_create'
         );
         
@@ -641,7 +641,7 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
 
         const defaultAssets = buildPhotoAssetPaths(photoId, path.extname(sourcePath).replace(/^\./, '') || 'bin');
         const imagePath = normalizeUploadsPath(photo.image) || defaultAssets.imagePath;
-        const thumbnail43Path = normalizeUploadsPath(photo.thumbnail43 || photo.thumbnail) || defaultAssets.thumbnail43Path;
+        const thumbnail43Path = normalizeUploadsPath(photo.thumbnail43) || defaultAssets.thumbnail43Path;
         const thumbnail11Path = normalizeUploadsPath(photo.thumbnail11) || defaultAssets.thumbnail11Path;
         const socialImagePath = normalizeUploadsPath(photo.socialImage) || defaultAssets.socialImagePath;
 
@@ -806,7 +806,7 @@ router.delete('/:id', async (req, res) => {
         
         const publicPathsToDelete = [
             normalizeUploadsPath(deletedPhoto.image),
-            normalizeUploadsPath(deletedPhoto.thumbnail43 || deletedPhoto.thumbnail),
+            normalizeUploadsPath(deletedPhoto.thumbnail43),
             normalizeUploadsPath(deletedPhoto.thumbnail11),
             normalizeUploadsPath(deletedPhoto.socialImage)
         ].filter(Boolean);

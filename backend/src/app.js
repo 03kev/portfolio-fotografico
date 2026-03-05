@@ -284,7 +284,6 @@ function toAbsoluteSiteUrl(value, siteBaseUrl) {
 function selectSocialImageSource(photo) {
     const orderedCandidates = [
         photo?.socialImage,
-        photo?.thumbnail,
         photo?.thumbnail43,
         photo?.thumbnail11,
         photo?.url,

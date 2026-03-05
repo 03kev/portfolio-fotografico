@@ -71,7 +71,7 @@ async function main() {
 
         const defaultAssets = buildPhotoAssetPaths(photoId, path.extname(sourcePath).replace(/^\./, '') || 'bin');
         const imagePath = normalizeUploadsPath(photo.image) || defaultAssets.imagePath;
-        const thumbnail43Path = normalizeUploadsPath(photo.thumbnail43 || photo.thumbnail) || defaultAssets.thumbnail43Path;
+        const thumbnail43Path = normalizeUploadsPath(photo.thumbnail43) || defaultAssets.thumbnail43Path;
         const thumbnail11Path = normalizeUploadsPath(photo.thumbnail11) || defaultAssets.thumbnail11Path;
         const socialImagePath = normalizeUploadsPath(photo.socialImage) || defaultAssets.socialImagePath;
 

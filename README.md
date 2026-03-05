@@ -29,6 +29,7 @@ Portfolio fotografico full-stack con frontend React, API Express su Vercel e sto
 │   │   ├── hash-write-token.js
 │   │   ├── backfill-private-sources.js
 │   │   ├── backfill-public-derivatives.js
+│   │   ├── migrate-thumbnail43-paths.js
 │   │   ├── sync-uploads-to-r2.js
 │   │   └── sync-metadata-to-r2.js
 │   ├── src/
@@ -280,6 +281,16 @@ npm run backfill:public-derivatives
 npm run backfill:public-derivatives -- --verify-only
 ```
 
+Per uniformare esplicitamente tutte le thumbnail 4:3 legacy su `thumbnails/4x3`:
+
+```bash
+cd backend
+npm run migrate:thumbnail43-paths -- --dry-run
+npm run migrate:thumbnail43-paths
+# opzionale: elimina i vecchi file legacy una volta verificato tutto
+npm run migrate:thumbnail43-paths -- --delete-legacy
+```
+
 ## Endpoint API principali
 
 - `GET /api/health`
@@ -318,6 +329,9 @@ npm run backfill:public-derivatives -- --verify-only
 - `npm run token:hash -- "<token>"` genera hash scrypt
 - `npm run sync:r2` upload locali -> R2
 - `npm run sync:r2:metadata` metadati locali -> R2
+- `npm run migrate:thumbnail43-paths -- --dry-run` anteprima migrazione path thumb 4:3 legacy
+- `npm run migrate:thumbnail43-paths` migra path thumb 4:3 su `uploads/thumbnails/4x3`
+- `npm run migrate:thumbnail43-paths -- --delete-legacy` migra e rimuove i vecchi asset thumb 4:3
 - `npm run backfill:private-sources -- --dry-run` anteprima migrazione source private
 - `npm run backfill:private-sources` copia source da pubblico a privato e aggiorna `photos.json`
 - `npm run backfill:public-derivatives -- --dry-run` anteprima rigenerazione derivate pubbliche
