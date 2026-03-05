@@ -25,9 +25,7 @@ Portfolio fotografico full-stack con frontend React, API Express su Vercel e sto
 │   └── index.js                       # Entrypoint Vercel -> backend/src/app.js
 ├── backend/
 │   ├── scripts/
-│   │   ├── hash-write-token.js
-│   │   ├── backfill-private-sources.js
-│   │   └── backfill-public-derivatives.js
+│   │   └── hash-write-token.js
 │   ├── src/
 │   │   ├── app.js                     # App Express condivisa (locale + serverless)
 │   │   ├── server.js                  # Avvio backend locale
@@ -242,30 +240,9 @@ curl -fsS "https://kevinmuka.dev/api/series?all=false" | head
 - controlla che immagini e derivate (`thumbnail43`, `thumbnail11`, `socialImage`) carichino senza 403/404
 - verifica almeno un URL asset dal JSON `/api/photos` (campo `image`/`thumbnail43`)
 
-## Migrazione dati su R2
+## Dati su R2
 
-Se hai foto storiche presenti solo nel bucket pubblico (`/uploads/...`) e vuoi popolare i nuovi `sourcePath` privati senza re-upload:
-
-```bash
-cd backend
-npm run backfill:private-sources -- --dry-run
-npm run backfill:private-sources
-```
-
-Opzionale:
-
-- `--force` forza la ricopia e sovrascrive anche se `sourcePath` esiste gia.
-
-Per popolare/rigenerare le derivate pubbliche (`image`, `thumbnails`, `social`) partendo dalle source private:
-
-```bash
-cd backend
-npm run backfill:public-derivatives -- --dry-run
-npm run backfill:public-derivatives
-npm run backfill:public-derivatives -- --verify-only
-```
-
-Nota: i path pubblici (`image`, `thumbnail43`, `thumbnail11`, `socialImage`) vengono derivati a runtime da `photo.id`; in `data/photos.json` su R2 vengono salvati solo i campi canonici (metadati, source private, crop/settings, versioning).
+I path pubblici (`image`, `thumbnail43`, `thumbnail11`, `socialImage`) vengono derivati a runtime da `photo.id`; in `data/photos.json` su R2 vengono salvati solo i campi canonici (metadati, source private, crop/settings, versioning).
 
 Schema canonico (storage) per ogni foto:
 
@@ -327,11 +304,6 @@ Schema canonico (storage) per ogni foto:
 
 - `npm run dev` avvio backend con nodemon
 - `npm run token:hash -- "<token>"` genera hash scrypt
-- `npm run backfill:private-sources -- --dry-run` anteprima migrazione source private
-- `npm run backfill:private-sources` copia source da pubblico a privato e aggiorna `photos.json`
-- `npm run backfill:public-derivatives -- --dry-run` anteprima rigenerazione derivate pubbliche
-- `npm run backfill:public-derivatives` rigenera derivate pubbliche da source private
-- `npm run backfill:public-derivatives -- --verify-only` verifica copertura asset pubblici
 
 ## Troubleshooting rapido
 

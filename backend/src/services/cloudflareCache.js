@@ -69,7 +69,6 @@ async function purgeUrls(urls = [], options = {}) {
 }
 
 module.exports = {
-    isCloudflarePurgeConfigured,
     normalizeUploadPathToAbsoluteUrl,
     purgeUrls
 };

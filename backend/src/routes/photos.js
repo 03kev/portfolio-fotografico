@@ -7,7 +7,6 @@ const {
     deletePrivateObject,
     deleteUploadObject,
     getPrivateObject,
-    isR2Enabled,
     putPrivateObject,
     putUploadObject
 } = require('../services/r2Storage');
@@ -349,13 +348,6 @@ router.get('/:id', async (req, res) => {
 // POST - Genera URL firmata per upload diretto su R2 (evita limiti body Vercel)
 router.post('/upload-url', async (req, res) => {
     try {
-        if (!isR2Enabled()) {
-            return res.status(400).json({
-                success: false,
-                message: 'Upload diretto disponibile solo con R2 configurato'
-            });
-        }
-
         const { uploadId, mimetype, contentType, fileSize, variant } = req.body || {};
         const rawVariant = String(variant || 'source').trim().toLowerCase();
         const uploadVariant = ['source', 'image'].includes(rawVariant) ? rawVariant : 'source';

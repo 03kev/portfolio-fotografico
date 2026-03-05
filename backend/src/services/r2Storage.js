@@ -378,10 +378,6 @@ module.exports = {
     getPrivateObject,
     getUploadObject,
     isR2Enabled,
-    objectKeyToPrivatePath,
-    objectKeyToUploadPath,
-    privatePathToObjectKey,
     putPrivateObject,
     putUploadObject,
-    uploadPathToObjectKey
 };

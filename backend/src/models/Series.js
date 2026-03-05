@@ -62,24 +62,6 @@ class Series {
         this.updatedAt = new Date().toISOString();
     }
 
-    addContentBlock(block) {
-        // block: { type: 'text|image|photos', content: string|photoId|photoIds, order: number }
-        this.content.push(block);
-        this.updatedAt = new Date().toISOString();
-    }
-
-    updateContentBlock(index, block) {
-        if (this.content[index]) {
-            this.content[index] = { ...this.content[index], ...block };
-            this.updatedAt = new Date().toISOString();
-        }
-    }
-
-    removeContentBlock(index) {
-        this.content.splice(index, 1);
-        this.updatedAt = new Date().toISOString();
-    }
-
     toJSON() {
         return {
             id: this.id,

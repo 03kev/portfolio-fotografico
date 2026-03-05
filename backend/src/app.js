@@ -17,8 +17,7 @@ const {
 } = require('./config/assetPaths');
 const {
     ensureR2Configured,
-    getUploadObject,
-    isR2Enabled
+    getUploadObject
 } = require('./services/r2Storage');
 const { buildPhotoAssetPaths } = require('./services/photoDerivatives');
 const { toRuntimePhoto } = require('./services/photoRecord');
@@ -172,10 +171,6 @@ app.use((req, res, next) => {
 });
 
 async function serveUploadsFromR2(req, res, next) {
-    if (!isR2Enabled()) {
-        return next();
-    }
-
     if (req.method !== 'GET' && req.method !== 'HEAD') {
         return next();
     }

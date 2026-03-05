@@ -229,12 +229,9 @@ function protectWriteMethods(req, res, next) {
 
 module.exports = {
     clearSessionCookie,
-    getSessionCookieName,
-    getSessionCookieOptions,
     hasWriteTokenConfigured,
     isAuthenticatedRequest,
     isWriteTokenValid,
     protectWriteMethods,
-    requireWriteAuth,
     setSessionCookie
 };
