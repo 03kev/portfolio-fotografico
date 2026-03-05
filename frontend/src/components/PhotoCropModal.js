@@ -58,7 +58,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onSaved }) => {
   const pointerStateRef = useRef(null);
 
   const cropImageSrc = useMemo(
-    () => resolveAssetUrl(photo?.image || photo?.url || photo?.thumbnail43),
+    () => resolveAssetUrl(photo?.image),
     [photo]
   );
 

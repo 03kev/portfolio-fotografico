@@ -15,7 +15,6 @@ const { readMetadataFile, writeMetadataFile } = require('../src/services/metadat
 const { getPrivateObject, getUploadObject, isR2Enabled, putUploadObject } = require('../src/services/r2Storage');
 const DEFAULTS = require('../src/config/defaults');
 const {
-    buildPhotoAssetPaths,
     generatePhotoDerivatives,
     getCropProfilesFromSettings,
     normalizePrivatePath,
@@ -47,6 +46,7 @@ async function main() {
     let withSource = 0;
     let missingSourcePath = 0;
     let missingSourceObject = 0;
+    let skippedIncompletePaths = 0;
     let generated = 0;
     let skippedVerifyOnly = 0;
     let metadataUpdated = 0;
@@ -69,11 +69,14 @@ async function main() {
         }
         withSource += 1;
 
-        const defaultAssets = buildPhotoAssetPaths(photoId, path.extname(sourcePath).replace(/^\./, '') || 'bin');
-        const imagePath = normalizeUploadsPath(photo.image) || defaultAssets.imagePath;
-        const thumbnail43Path = normalizeUploadsPath(photo.thumbnail43) || defaultAssets.thumbnail43Path;
-        const thumbnail11Path = normalizeUploadsPath(photo.thumbnail11) || defaultAssets.thumbnail11Path;
-        const socialImagePath = normalizeUploadsPath(photo.socialImage) || defaultAssets.socialImagePath;
+        const imagePath = normalizeUploadsPath(photo.image);
+        const thumbnail43Path = normalizeUploadsPath(photo.thumbnail43);
+        const thumbnail11Path = normalizeUploadsPath(photo.thumbnail11);
+        const socialImagePath = normalizeUploadsPath(photo.socialImage);
+        if (!imagePath || !thumbnail43Path || !thumbnail11Path || !socialImagePath) {
+            skippedIncompletePaths += 1;
+            continue;
+        }
 
         const hasImage = await objectExists(imagePath);
         const has43 = await objectExists(thumbnail43Path);
@@ -149,6 +152,7 @@ async function main() {
     console.log(`Photos with sourcePath: ${withSource}`);
     console.log(`Missing sourcePath: ${missingSourcePath}`);
     console.log(`Missing source object: ${missingSourceObject}`);
+    console.log(`Skipped (incomplete image paths): ${skippedIncompletePaths}`);
     console.log(`Processed for generation: ${generated}`);
     console.log(`Metadata updated: ${metadataUpdated}`);
     console.log(`Public missing image: ${missingPublicImage}`);

@@ -102,10 +102,7 @@ function photoReducer(state, action) {
         case ACTIONS.ADD_PHOTO:
         return {
             ...state,
-            photos: [{
-                ...action.payload,
-                url: action.payload.url || action.payload.image || action.payload.thumbnail43 || ''
-            }, ...state.photos]
+            photos: [action.payload, ...state.photos]
         };
         
         case ACTIONS.UPDATE_PHOTO:
@@ -179,12 +176,7 @@ export function PhotoProvider({ children }) {
                 dispatch({ type: ACTIONS.SET_LOADING, payload: true });
                 const response = await photoService.getAll();
                 const photos = response.data?.data || response.data || [];
-                // Normalizza tutte le foto aggiungendo il campo url se mancante
-                const normalizedPhotos = photos.map(photo => ({
-                    ...photo,
-                    url: photo.url || photo.image || photo.thumbnail43 || ''
-                }));
-                dispatch({ type: ACTIONS.SET_PHOTOS, payload: normalizedPhotos });
+                dispatch({ type: ACTIONS.SET_PHOTOS, payload: photos });
             } catch (error) {
                 console.error('Error fetching photos:', error);
                 dispatch({ type: ACTIONS.SET_ERROR, payload: 'Errore nel caricamento delle foto' });

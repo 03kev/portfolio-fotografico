@@ -57,7 +57,7 @@ async function main() {
             continue;
         }
 
-        const publicImagePath = normalizeUploadsPath(photo.image || photo.url || photo.thumbnail43);
+        const publicImagePath = normalizeUploadsPath(photo.image);
         if (!publicImagePath) {
             skippedMissingImage += 1;
             continue;

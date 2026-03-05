@@ -71,7 +71,7 @@ async function main() {
         if (!photoId) continue;
 
         const sourcePath = normalizePrivatePath(photo.sourcePath);
-        const currentImagePath = normalizeUploadsPath(photo.image || photo.url);
+        const currentImagePath = normalizeUploadsPath(photo.image);
         const defaultAssets = buildPhotoAssetPaths(photoId, extensionFromPrivatePath(sourcePath));
         const targetImagePath = defaultAssets.imagePath;
 
@@ -147,4 +147,3 @@ main().catch((error) => {
     console.error('Errore durante la migrazione path immagini pubbliche:', error);
     process.exit(1);
 });
-

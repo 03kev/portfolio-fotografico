@@ -87,7 +87,7 @@ function withDefaultPhotoVariants(photo) {
         thumbnail43: thumbnail43Path,
         thumbnail11: thumbnail11Path,
         socialImage: socialImagePath,
-        url: imagePath || thumbnail43Path || thumbnail11Path || socialImagePath || ''
+        url: imagePath
     };
 }
 
@@ -97,7 +97,6 @@ function presentPhoto(photo) {
     const thumbnail43 = buildPublicAssetUrl(normalized.thumbnail43);
     const thumbnail11 = buildPublicAssetUrl(normalized.thumbnail11);
     const socialImage = buildPublicAssetUrl(normalized.socialImage);
-    const fallbackUrl = normalized.url || normalized.image || normalized.thumbnail43 || normalized.thumbnail11 || normalized.socialImage;
     const { sourcePath, sourceContentType, ...publicPhoto } = normalized;
 
     return {
@@ -106,7 +105,7 @@ function presentPhoto(photo) {
         thumbnail43,
         thumbnail11,
         socialImage,
-        url: buildPublicAssetUrl(fallbackUrl)
+        url: buildPublicAssetUrl(normalized.url)
     };
 }
 
@@ -337,7 +336,7 @@ router.get('/', async (req, res) => {
                 thumbnail43: photo.thumbnail43 || '',
                 thumbnail11: photo.thumbnail11 || '',
                 socialImage: photo.socialImage || '',
-                url: photo.image || photo.thumbnail43 || photo.thumbnail11 || '',
+                url: photo.image || '',
                 derivativesVersion: photo.derivativesVersion || photo.updatedAt || photo.id || Date.now(),
                 settings,
                 tags
@@ -622,11 +621,21 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
             });
         }
 
-        const defaultAssets = buildPhotoAssetPaths(photoId, path.extname(sourcePath).replace(/^\./, '') || 'bin');
-        const imagePath = normalizeUploadsPath(photo.image) || defaultAssets.imagePath;
-        const thumbnail43Path = normalizeUploadsPath(photo.thumbnail43) || defaultAssets.thumbnail43Path;
-        const thumbnail11Path = normalizeUploadsPath(photo.thumbnail11) || defaultAssets.thumbnail11Path;
-        const socialImagePath = normalizeUploadsPath(photo.socialImage) || defaultAssets.socialImagePath;
+        const imagePath = normalizeUploadsPath(photo.image);
+        const thumbnail43Path = normalizeUploadsPath(photo.thumbnail43);
+        const thumbnail11Path = normalizeUploadsPath(photo.thumbnail11);
+        const socialImagePath = normalizeUploadsPath(photo.socialImage);
+        const missingPaths = [];
+        if (!imagePath) missingPaths.push('image');
+        if (!thumbnail43Path) missingPaths.push('thumbnail43');
+        if (!thumbnail11Path) missingPaths.push('thumbnail11');
+        if (!socialImagePath) missingPaths.push('socialImage');
+        if (missingPaths.length > 0) {
+            return res.status(409).json({
+                success: false,
+                message: `Metadati foto incompleti: mancano ${missingPaths.join(', ')}`
+            });
+        }
 
         const cropProfiles = getCropProfilesFromSettings(photo.settings);
         const derivatives = await generatePhotoDerivatives(sourceBuffer, cropProfiles);

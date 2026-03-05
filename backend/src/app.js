@@ -281,25 +281,8 @@ function toAbsoluteSiteUrl(value, siteBaseUrl) {
     return `${siteBaseUrl}/${src}`;
 }
 
-function selectSocialImageSource(photo) {
-    const orderedCandidates = [
-        photo?.socialImage,
-        photo?.thumbnail43,
-        photo?.thumbnail11,
-        photo?.url,
-        photo?.image
-    ];
-
-    for (const candidate of orderedCandidates) {
-        const value = String(candidate || '').trim();
-        if (value) return value;
-    }
-
-    return '';
-}
-
 function resolvePhotoImageUrl(photo, siteBaseUrl) {
-    const raw = selectSocialImageSource(photo);
+    const raw = String(photo?.socialImage || '').trim();
     if (!raw) return '';
 
     const normalized = buildPublicAssetUrl(raw);

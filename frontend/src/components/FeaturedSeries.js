@@ -113,9 +113,9 @@ export default function FeaturedSeries({ limit = 6 }) {
   const getCover = (s) => {
     const coverId = s.coverImage || s.photos?.[0];
     const photo = photos.find(p => p.id === coverId);
-    if (!photo) return null;
+    if (!photo || !photo.thumbnail11) return null;
     return {
-      url: `${IMAGES_BASE_URL}${photo.thumbnail11 || photo.thumbnail43 || photo.image || photo.url}?v=${photo.derivativesVersion || photo.id}`,
+      url: `${IMAGES_BASE_URL}${photo.thumbnail11}?v=${photo.derivativesVersion || photo.id}`,
       alt: s.title
     };
   };

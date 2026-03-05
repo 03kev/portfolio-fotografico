@@ -71,7 +71,7 @@ export default function PhotoPage() {
 
   const seoDescription = buildPhotoDescription(photo);
 
-  const seoImage = photo ? toAbsoluteImageUrl(photo.socialImage || photo.image || photo.url || photo.thumbnail43) : '';
+  const seoImage = photo ? toAbsoluteImageUrl(photo.socialImage) : '';
   const keywords = React.useMemo(
     () => (Array.isArray(photo?.tags) ? photo.tags.filter(Boolean) : []),
     [photo]
@@ -86,7 +86,7 @@ export default function PhotoPage() {
       '@type': 'ImageObject',
       name: photo.title || 'Fotografia',
       description: buildPhotoDescription(photo),
-      contentUrl: toAbsoluteImageUrl(photo.socialImage || photo.image || photo.url || photo.thumbnail43),
+      contentUrl: toAbsoluteImageUrl(photo.socialImage),
       url: canonicalUrl,
     };
 
