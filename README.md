@@ -7,8 +7,7 @@ Portfolio fotografico full-stack con frontend React, API Express su Vercel e sto
 - Frontend SPA: React (`frontend/`)
 - Backend API: Express (`backend/`)
 - Deploy: Vercel (frontend statico + funzioni serverless)
-- Storage produzione: Cloudflare R2 (`uploads` + metadati JSON)
-- Storage locale sviluppo: filesystem (`backend/storage/`)
+- Storage immagini/metadati: Cloudflare R2 (`uploads` + metadati JSON), in locale e produzione
 
 ## Funzionalita principali
 
@@ -28,16 +27,14 @@ Portfolio fotografico full-stack con frontend React, API Express su Vercel e sto
 │   ├── scripts/
 │   │   ├── hash-write-token.js
 │   │   ├── backfill-private-sources.js
-│   │   ├── backfill-public-derivatives.js
-│   │   ├── sync-uploads-to-r2.js
-│   │   └── sync-metadata-to-r2.js
+│   │   └── backfill-public-derivatives.js
 │   ├── src/
 │   │   ├── app.js                     # App Express condivisa (locale + serverless)
 │   │   ├── server.js                  # Avvio backend locale
 │   │   ├── config/
 │   │   │   ├── defaults.js
-│   │   │   ├── env.js
-│   │   │   └── storage.js
+│   │   │   ├── assetPaths.js
+│   │   │   └── env.js
 │   │   ├── middleware/
 │   │   │   └── auth.js
 │   │   ├── routes/
@@ -48,9 +45,6 @@ Portfolio fotografico full-stack con frontend React, API Express su Vercel e sto
 │   │   │   ├── metadataStorage.js
 │   │   │   └── r2Storage.js
 │   │   └── utils/
-│   └── storage/                       # Runtime locale (gitignored)
-│       ├── data/
-│       └── uploads/
 ├── frontend/
 │   ├── public/
 │   └── src/
@@ -132,7 +126,7 @@ Note:
 
 - `PORT` è obbligatoria in sviluppo locale.
 - `CORS_ORIGINS` è obbligatoria in sviluppo; in produzione è raccomandata (se assente verrà consentito solo `VERCEL_URL`).
-- In produzione il backend è **R2-only**.
+- Il backend è **R2-only** in tutti gli ambienti (locale incluso).
 - In produzione è obbligatoria `API_WRITE_TOKEN_HASH` (token non in chiaro).
 - `API_WRITE_TOKEN` è solo fallback in sviluppo.
 - Le derivate pubbliche vengono esposte su `R2_PUBLIC_URL` in produzione (`/thumbnails/*`, `/social/*`, `/photo_*.webp`).
@@ -140,7 +134,6 @@ Note:
 - Configura lato Cloudflare `X-Robots-Tag: noindex, noimageindex` su `/thumbnails/*` e `/social/*`.
 - `R2_PRIVATE_BUCKET` è consigliata per i source full-res: il backend genera sempre le derivate partendo da source privata.
 - Se imposti `CLOUDFLARE_ZONE_ID` + `CLOUDFLARE_API_TOKEN`, il backend esegue purge automatico su upload/regenerate/delete.
-- In locale i metadati vengono mantenuti in `backend/storage/data` (nessun seed fallback da `backend/data`).
 
 Genera hash del token:
 
@@ -251,14 +244,6 @@ curl -fsS "https://kevinmuka.dev/api/series?all=false" | head
 
 ## Migrazione dati su R2
 
-Se hai dati locali in `backend/storage`:
-
-```bash
-cd backend
-npm run sync:r2
-npm run sync:r2:metadata
-```
-
 Se hai foto storiche presenti solo nel bucket pubblico (`/uploads/...`) e vuoi popolare i nuovi `sourcePath` privati senza re-upload:
 
 ```bash
@@ -280,7 +265,7 @@ npm run backfill:public-derivatives
 npm run backfill:public-derivatives -- --verify-only
 ```
 
-Nota: i path pubblici (`image`, `thumbnail43`, `thumbnail11`, `socialImage`) vengono derivati a runtime da `photo.id`; in `backend/storage/data/photos.json` vengono salvati solo i campi canonici (metadati, source private, crop/settings, versioning).
+Nota: i path pubblici (`image`, `thumbnail43`, `thumbnail11`, `socialImage`) vengono derivati a runtime da `photo.id`; in `data/photos.json` su R2 vengono salvati solo i campi canonici (metadati, source private, crop/settings, versioning).
 
 Schema canonico (storage) per ogni foto:
 
@@ -342,8 +327,6 @@ Schema canonico (storage) per ogni foto:
 
 - `npm run dev` avvio backend con nodemon
 - `npm run token:hash -- "<token>"` genera hash scrypt
-- `npm run sync:r2` upload locali -> R2
-- `npm run sync:r2:metadata` metadati locali -> R2
 - `npm run backfill:private-sources -- --dry-run` anteprima migrazione source private
 - `npm run backfill:private-sources` copia source da pubblico a privato e aggiorna `photos.json`
 - `npm run backfill:public-derivatives -- --dry-run` anteprima rigenerazione derivate pubbliche
@@ -374,5 +357,4 @@ Configura CORS del bucket R2 con origin del sito e metodi `GET,HEAD,PUT`.
 
 ## Note operative
 
-- `backend/storage/` e runtime locale: non versionarlo.
 - Ruota periodicamente i segreti (`API_WRITE_TOKEN_HASH`, `API_SESSION_SECRET`, chiavi R2).

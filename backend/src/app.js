@@ -8,12 +8,15 @@ const { readMetadataFile } = require('./services/metadataStorage');
 const authRoutes = require('./routes/auth');
 const photoRoutes = require('./routes/photos');
 const seriesRoutes = require('./routes/series');
-const { UPLOADS_DIR } = require('./config/storage');
 const { env, validateEnv } = require('./config/env');
 const DEFAULTS = require('./config/defaults');
 const {
-    canUseLocalFallback,
-    ensureR2ConfiguredInProduction,
+    PUBLIC_UPLOADS_PREFIX,
+    SOCIAL_ROUTE_PREFIX,
+    THUMBNAILS_ROUTE_PREFIX
+} = require('./config/assetPaths');
+const {
+    ensureR2Configured,
     getUploadObject,
     isR2Enabled
 } = require('./services/r2Storage');
@@ -22,7 +25,7 @@ const { toRuntimePhoto } = require('./services/photoRecord');
 
 const app = express();
 validateEnv();
-ensureR2ConfiguredInProduction();
+ensureR2Configured();
 app.set('trust proxy', 1);
 
 // Middleware di sicurezza con configurazione personalizzata
@@ -178,12 +181,12 @@ async function serveUploadsFromR2(req, res, next) {
     }
 
     try {
-        const object = await getUploadObject(`/uploads${req.path}`);
+        const object = await getUploadObject(`${PUBLIC_UPLOADS_PREFIX}${req.path}`);
         if (!object) {
             return next();
         }
 
-        if (req.path.startsWith('/thumbnails/') || req.path.startsWith('/social/')) {
+        if (req.path.startsWith(THUMBNAILS_ROUTE_PREFIX) || req.path.startsWith(SOCIAL_ROUTE_PREFIX)) {
             res.setHeader('X-Robots-Tag', 'noimageindex, noindex');
         }
 
@@ -213,7 +216,7 @@ const uploadsMiddlewares = [
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET');
         res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
-        if (req.path.startsWith('/thumbnails/') || req.path.startsWith('/social/')) {
+        if (req.path.startsWith(THUMBNAILS_ROUTE_PREFIX) || req.path.startsWith(SOCIAL_ROUTE_PREFIX)) {
             res.setHeader('X-Robots-Tag', 'noimageindex, noindex');
         }
         next();
@@ -221,12 +224,8 @@ const uploadsMiddlewares = [
     serveUploadsFromR2
 ];
 
-if (canUseLocalFallback()) {
-    uploadsMiddlewares.push(express.static(UPLOADS_DIR));
-}
-
 // Servire file statici (immagini) con header CORP
-app.use('/uploads', ...uploadsMiddlewares);
+app.use(PUBLIC_UPLOADS_PREFIX, ...uploadsMiddlewares);
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -255,9 +254,12 @@ function buildPublicAssetUrl(uploadPath) {
 
     const publicBaseUrl = env.r2PublicUrl;
     if (!publicBaseUrl) return value;
-    if (!value.startsWith('/uploads/')) return value;
+    if (!value.startsWith(`${PUBLIC_UPLOADS_PREFIX}/`)) return value;
 
-    const objectKey = value.replace(/^\/+/, '').replace(/^uploads\/+/, '');
+    const publicPrefix = PUBLIC_UPLOADS_PREFIX.replace(/^\/+/, '');
+    const objectKey = value
+        .replace(/^\/+/, '')
+        .replace(new RegExp(`^${publicPrefix}/+`), '');
     return `${publicBaseUrl}/${objectKey}`;
 }
 

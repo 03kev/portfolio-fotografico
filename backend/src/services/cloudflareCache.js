@@ -1,4 +1,5 @@
 const { env } = require('../config/env');
+const { PUBLIC_UPLOADS_PREFIX } = require('../config/assetPaths');
 
 function isCloudflarePurgeConfigured() {
     return Boolean(env.cloudflareZoneId && env.cloudflareApiToken);
@@ -8,10 +9,13 @@ function normalizeUploadPathToAbsoluteUrl(uploadPath) {
     const raw = String(uploadPath || '').trim();
     if (!raw) return '';
     if (/^https?:\/\//i.test(raw)) return raw;
-    if (!raw.startsWith('/uploads/')) return '';
+    if (!raw.startsWith(`${PUBLIC_UPLOADS_PREFIX}/`)) return '';
     if (!env.r2PublicUrl) return '';
 
-    const objectKey = raw.replace(/^\/+/, '').replace(/^uploads\/+/, '');
+    const publicPrefix = PUBLIC_UPLOADS_PREFIX.replace(/^\/+/, '');
+    const objectKey = raw
+        .replace(/^\/+/, '')
+        .replace(new RegExp(`^${publicPrefix}/+`), '');
     return `${env.r2PublicUrl}/${objectKey}`;
 }
 

@@ -1,10 +1,18 @@
 const sharp = require('sharp');
+const {
+    PRIVATE_PREFIX,
+    PRIVATE_SOURCE_PREFIX,
+    PUBLIC_UPLOADS_PREFIX,
+    SOCIAL_PREFIX,
+    THUMBNAIL_11_PREFIX,
+    THUMBNAIL_43_PREFIX
+} = require('../config/assetPaths');
 
 function normalizeUploadsPath(value) {
     const raw = String(value || '').trim();
     if (!raw) return '';
 
-    if (raw.startsWith('/uploads/')) {
+    if (raw.startsWith(`${PUBLIC_UPLOADS_PREFIX}/`)) {
         return raw;
     }
 
@@ -12,22 +20,29 @@ function normalizeUploadsPath(value) {
         try {
             const parsed = new URL(raw);
             const pathname = String(parsed.pathname || '').replace(/^\/+/, '');
-            const key = pathname.replace(/^uploads\/+/, '');
-            return key ? `/uploads/${key}` : '';
+            const publicPrefix = PUBLIC_UPLOADS_PREFIX.replace(/^\/+/, '');
+            const key = pathname.startsWith(`${publicPrefix}/`)
+                ? pathname.slice(publicPrefix.length + 1)
+                : pathname;
+            return key ? `${PUBLIC_UPLOADS_PREFIX}/${key}` : '';
         } catch {
             return '';
         }
     }
 
-    const normalized = raw.replace(/^\/+/, '').replace(/^uploads\/+/, '');
-    return normalized ? `/uploads/${normalized}` : '';
+    const normalized = raw.replace(/^\/+/, '');
+    const publicPrefix = PUBLIC_UPLOADS_PREFIX.replace(/^\/+/, '');
+    const key = normalized.startsWith(`${publicPrefix}/`)
+        ? normalized.slice(publicPrefix.length + 1)
+        : normalized;
+    return key ? `${PUBLIC_UPLOADS_PREFIX}/${key}` : '';
 }
 
 function normalizePrivatePath(value) {
     const raw = String(value || '').trim();
     if (!raw) return '';
 
-    if (raw.startsWith('/private/')) {
+    if (raw.startsWith(`${PRIVATE_PREFIX}/`)) {
         return raw;
     }
 
@@ -35,15 +50,22 @@ function normalizePrivatePath(value) {
         try {
             const parsed = new URL(raw);
             const pathname = String(parsed.pathname || '').replace(/^\/+/, '');
-            const key = pathname.replace(/^private\/+/, '');
-            return key ? `/private/${key}` : '';
+            const privatePrefix = PRIVATE_PREFIX.replace(/^\/+/, '');
+            const key = pathname.startsWith(`${privatePrefix}/`)
+                ? pathname.slice(privatePrefix.length + 1)
+                : pathname;
+            return key ? `${PRIVATE_PREFIX}/${key}` : '';
         } catch {
             return '';
         }
     }
 
-    const normalized = raw.replace(/^\/+/, '').replace(/^private\/+/, '');
-    return normalized ? `/private/${normalized}` : '';
+    const normalized = raw.replace(/^\/+/, '');
+    const privatePrefix = PRIVATE_PREFIX.replace(/^\/+/, '');
+    const key = normalized.startsWith(`${privatePrefix}/`)
+        ? normalized.slice(privatePrefix.length + 1)
+        : normalized;
+    return key ? `${PRIVATE_PREFIX}/${key}` : '';
 }
 
 function buildPhotoAssetPaths(photoId, sourceExtension = 'bin') {
@@ -51,11 +73,11 @@ function buildPhotoAssetPaths(photoId, sourceExtension = 'bin') {
     const cleanSourceExtension = String(sourceExtension || 'bin').replace(/[^a-z0-9]/gi, '') || 'bin';
 
     return {
-        sourcePath: `/private/source/${baseName}.${cleanSourceExtension}`,
-        imagePath: `/uploads/${baseName}.webp`,
-        thumbnail43Path: `/uploads/thumbnails/4x3/${baseName}.webp`,
-        thumbnail11Path: `/uploads/thumbnails/1x1/${baseName}.webp`,
-        socialImagePath: `/uploads/social/${baseName}.jpg`
+        sourcePath: `${PRIVATE_SOURCE_PREFIX}/${baseName}.${cleanSourceExtension}`,
+        imagePath: `${PUBLIC_UPLOADS_PREFIX}/${baseName}.webp`,
+        thumbnail43Path: `${THUMBNAIL_43_PREFIX}/${baseName}.webp`,
+        thumbnail11Path: `${THUMBNAIL_11_PREFIX}/${baseName}.webp`,
+        socialImagePath: `${SOCIAL_PREFIX}/${baseName}.jpg`
     };
 }
 

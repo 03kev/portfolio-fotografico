@@ -85,18 +85,20 @@ function validateEnv() {
         errors.push('CORS_ORIGINS non impostata in development.');
     }
 
+    if (!env.r2AccountId || !env.r2AccessKeyId || !env.r2SecretAccessKey || !env.r2Bucket) {
+        errors.push('Configurazione R2 incompleta (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET).');
+    }
+
+    if (!env.r2PrivateBucket) {
+        warnings.push('R2_PRIVATE_BUCKET non impostata: i source full-res useranno R2_BUCKET (non realmente privato).');
+    }
+
     if (env.isProduction) {
         if (!env.apiWriteTokenHash) {
             errors.push('API_WRITE_TOKEN_HASH non impostata in produzione.');
         }
         if (!env.apiSessionSecret) {
             errors.push('API_SESSION_SECRET non impostata in produzione.');
-        }
-        if (!env.r2AccountId || !env.r2AccessKeyId || !env.r2SecretAccessKey || !env.r2Bucket) {
-            errors.push('Configurazione R2 incompleta in produzione (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET).');
-        }
-        if (!env.r2PrivateBucket) {
-            warnings.push('R2_PRIVATE_BUCKET non impostata: i source full-res useranno R2_BUCKET (non realmente privato).');
         }
         if (!env.corsOrigins.length) {
             warnings.push('CORS_ORIGINS non impostata in produzione: verrà consentito solo VERCEL_URL.');

@@ -1,6 +1,7 @@
 const { Readable } = require('stream');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { env } = require('../config/env');
+const { PRIVATE_PREFIX, PUBLIC_UPLOADS_PREFIX } = require('../config/assetPaths');
 
 let s3ClientInstance = null;
 let s3Commands = null;
@@ -21,18 +22,10 @@ function isR2Enabled() {
     return hasAllR2EnvVars();
 }
 
-function isProductionEnvironment() {
-    return env.isProduction;
-}
-
-function canUseLocalFallback() {
-    return !isProductionEnvironment();
-}
-
-function ensureR2ConfiguredInProduction() {
-    if (isProductionEnvironment() && !isR2Enabled()) {
+function ensureR2Configured() {
+    if (!isR2Enabled()) {
         throw new Error(
-            'Configurazione R2 mancante: in produzione il backend e` R2-only. ' +
+            'Configurazione R2 mancante: il backend e` R2-only in tutti gli ambienti. ' +
             'Imposta R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY e R2_BUCKET.'
         );
     }
@@ -63,15 +56,15 @@ function getR2Client() {
 }
 
 function normalizeObjectKey(key) {
-    return String(key || '')
-        .replace(/^\/+/, '')
-        .replace(/^uploads\/+/, '');
+    const normalized = String(key || '').replace(/^\/+/, '');
+    const publicPrefix = PUBLIC_UPLOADS_PREFIX.replace(/^\/+/, '');
+    return normalized.replace(new RegExp(`^${publicPrefix}/+`), '');
 }
 
 function normalizePrivateObjectKey(key) {
-    return String(key || '')
-        .replace(/^\/+/, '')
-        .replace(/^private\/+/, '');
+    const normalized = String(key || '').replace(/^\/+/, '');
+    const privatePrefix = PRIVATE_PREFIX.replace(/^\/+/, '');
+    return normalized.replace(new RegExp(`^${privatePrefix}/+`), '');
 }
 
 function uploadPathToObjectKey(uploadPath) {
@@ -110,12 +103,12 @@ function privatePathToObjectKey(privatePath) {
 
 function objectKeyToUploadPath(objectKey) {
     const key = normalizeObjectKey(objectKey);
-    return `/uploads/${key}`;
+    return `${PUBLIC_UPLOADS_PREFIX}/${key}`;
 }
 
 function objectKeyToPrivatePath(objectKey) {
     const key = normalizePrivateObjectKey(objectKey);
-    return `/private/${key}`;
+    return `${PRIVATE_PREFIX}/${key}`;
 }
 
 function objectBodyToNodeStream(body) {
@@ -377,12 +370,11 @@ async function getPrivateObject(privatePath) {
 }
 
 module.exports = {
-    canUseLocalFallback,
     createPrivateUploadPresignedPutUrl,
     createUploadPresignedPutUrl,
     deletePrivateObject,
     deleteUploadObject,
-    ensureR2ConfiguredInProduction,
+    ensureR2Configured,
     getPrivateObject,
     getUploadObject,
     isR2Enabled,

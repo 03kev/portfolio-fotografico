@@ -61,39 +61,29 @@ function normalizeSettings(settingsValue, exif = {}, cropProfiles = null) {
 function toRuntimePhoto(record) {
     if (!isPlainObject(record)) return record;
 
-    const legacyLocation = typeof record.location === 'string' ? toTrimmedString(record.location) : '';
     const locationObject = isPlainObject(record.location) ? record.location : {};
     const exifObject = isPlainObject(record.exif) ? record.exif : {};
     const sourceObject = isPlainObject(record.source) ? record.source : {};
     const compositionObject = isPlainObject(record.composition) ? record.composition : {};
-    const settingsObject = isPlainObject(parseJsonIfString(record.settings, {}))
-        ? parseJsonIfString(record.settings, {})
-        : {};
-    const cropProfiles = isPlainObject(compositionObject.cropProfiles)
-        ? compositionObject.cropProfiles
-        : (
-            isPlainObject(settingsObject.cropProfiles)
-                ? settingsObject.cropProfiles
-                : (isPlainObject(record.cropProfiles) ? record.cropProfiles : null)
-        );
+    const cropProfiles = isPlainObject(compositionObject.cropProfiles) ? compositionObject.cropProfiles : null;
 
     const runtimePhoto = {
         id: Number.isFinite(Number(record.id)) ? Number(record.id) : record.id,
         title: toTrimmedString(record.title, 'Foto senza titolo'),
         description: toTrimmedString(record.description),
         date: toTrimmedString(record.date),
-        location: pickFirstNonEmpty(locationObject.name, locationObject.label, legacyLocation, 'Posizione sconosciuta'),
-        lat: toFiniteNumberOr(locationObject.lat ?? record.lat, 0),
-        lng: toFiniteNumberOr(locationObject.lng ?? record.lng, 0),
-        camera: pickFirstNonEmpty(exifObject.camera, record.camera),
-        lens: pickFirstNonEmpty(exifObject.lens, record.lens),
-        settings: normalizeSettings(settingsObject, exifObject, cropProfiles),
+        location: pickFirstNonEmpty(locationObject.name, locationObject.label, 'Posizione sconosciuta'),
+        lat: toFiniteNumberOr(locationObject.lat, 0),
+        lng: toFiniteNumberOr(locationObject.lng, 0),
+        camera: pickFirstNonEmpty(exifObject.camera),
+        lens: pickFirstNonEmpty(exifObject.lens),
+        settings: normalizeSettings({}, exifObject, cropProfiles),
         tags: normalizeTags(record.tags),
-        sourcePath: pickFirstNonEmpty(sourceObject.path, record.sourcePath),
-        sourceContentType: pickFirstNonEmpty(sourceObject.contentType, record.sourceContentType),
+        sourcePath: pickFirstNonEmpty(sourceObject.path),
+        sourceContentType: pickFirstNonEmpty(sourceObject.contentType),
         derivativesVersion: Number.isFinite(Number(record.derivativesVersion))
             ? Number(record.derivativesVersion)
-            : (Number.isFinite(Number(record.updatedAt)) ? Number(record.updatedAt) : Date.now())
+            : Date.now()
     };
 
     return runtimePhoto;
@@ -112,8 +102,29 @@ function compactObject(input) {
 }
 
 function toStoragePhoto(runtimePhoto) {
-    const photo = toRuntimePhoto(runtimePhoto);
-    if (!isPlainObject(photo)) return photo;
+    if (!isPlainObject(runtimePhoto)) return runtimePhoto;
+
+    const settings = isPlainObject(parseJsonIfString(runtimePhoto.settings, {}))
+        ? parseJsonIfString(runtimePhoto.settings, {})
+        : {};
+    const photo = {
+        id: Number.isFinite(Number(runtimePhoto.id)) ? Number(runtimePhoto.id) : runtimePhoto.id,
+        title: toTrimmedString(runtimePhoto.title, 'Foto senza titolo'),
+        description: toTrimmedString(runtimePhoto.description),
+        date: toTrimmedString(runtimePhoto.date),
+        location: toTrimmedString(runtimePhoto.location, 'Posizione sconosciuta'),
+        lat: toFiniteNumberOr(runtimePhoto.lat, 0),
+        lng: toFiniteNumberOr(runtimePhoto.lng, 0),
+        camera: toTrimmedString(runtimePhoto.camera),
+        lens: toTrimmedString(runtimePhoto.lens),
+        settings,
+        tags: normalizeTags(runtimePhoto.tags),
+        sourcePath: toTrimmedString(runtimePhoto.sourcePath),
+        sourceContentType: toTrimmedString(runtimePhoto.sourceContentType),
+        derivativesVersion: Number.isFinite(Number(runtimePhoto.derivativesVersion))
+            ? Number(runtimePhoto.derivativesVersion)
+            : Date.now()
+    };
 
     const cropProfiles = isPlainObject(photo.settings?.cropProfiles) ? photo.settings.cropProfiles : null;
     const exif = compactObject({

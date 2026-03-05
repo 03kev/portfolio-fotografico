@@ -1,15 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const multer = require('multer');
-const fs = require('fs').promises;
-const path = require('path');
 const {
-    ensureUploadsDirectories,
-    resolvePrivateFilePath,
-    resolvePublicFilePath
-} = require('../config/storage');
-const {
-    canUseLocalFallback,
     createPrivateUploadPresignedPutUrl,
     createUploadPresignedPutUrl,
     deletePrivateObject,
@@ -32,6 +24,10 @@ const {
     purgeUrls
 } = require('../services/cloudflareCache');
 const { toRuntimePhoto, toStoragePhoto } = require('../services/photoRecord');
+const {
+    PRIVATE_SOURCE_PREFIX,
+    PUBLIC_UPLOADS_PREFIX
+} = require('../config/assetPaths');
 const { env } = require('../config/env');
 const DEFAULTS = require('../config/defaults');
 const { readStreamToBuffer } = require('../utils/streams');
@@ -56,9 +52,12 @@ function buildPublicAssetUrl(uploadPath) {
 
     const publicBaseUrl = normalizePublicBaseUrl();
     if (!publicBaseUrl) return value;
-    if (!value.startsWith('/uploads/')) return value;
+    if (!value.startsWith(`${PUBLIC_UPLOADS_PREFIX}/`)) return value;
 
-    const objectKey = value.replace(/^\/+/, '').replace(/^uploads\/+/, '');
+    const publicPrefix = PUBLIC_UPLOADS_PREFIX.replace(/^\/+/, '');
+    const objectKey = value
+        .replace(/^\/+/, '')
+        .replace(new RegExp(`^${publicPrefix}/+`), '');
     return `${publicBaseUrl}/${objectKey}`;
 }
 
@@ -182,68 +181,26 @@ function getImageExtensionFromMimeType(mimetype) {
     return subtype.replace(/[^a-z0-9]/g, '') || 'bin';
 }
 
-async function ensureParentDir(filePath) {
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-}
-
 async function writePublicObject(uploadPath, buffer, contentType) {
-    if (isR2Enabled()) {
-        await putUploadObject(uploadPath, buffer, {
-            contentType,
-            cacheControl: PUBLIC_ASSET_CACHE_CONTROL
-        });
-        return;
-    }
-
-    if (!canUseLocalFallback()) {
-        throw new Error('Configurazione R2 mancante: scrittura asset pubblici non disponibile in produzione.');
-    }
-
-    await ensureUploadsDirectories();
-    const filePath = resolvePublicFilePath(uploadPath);
-    await ensureParentDir(filePath);
-    await fs.writeFile(filePath, buffer);
+    await putUploadObject(uploadPath, buffer, {
+        contentType,
+        cacheControl: PUBLIC_ASSET_CACHE_CONTROL
+    });
 }
 
 async function writePrivateObject(privatePath, buffer, contentType) {
-    if (isR2Enabled()) {
-        await putPrivateObject(privatePath, buffer, {
-            contentType,
-            cacheControl: 'private, no-store'
-        });
-        return;
-    }
-
-    if (!canUseLocalFallback()) {
-        throw new Error('Configurazione R2 mancante: scrittura source privata non disponibile in produzione.');
-    }
-
-    await ensureUploadsDirectories();
-    const filePath = resolvePrivateFilePath(privatePath);
-    await ensureParentDir(filePath);
-    await fs.writeFile(filePath, buffer);
+    await putPrivateObject(privatePath, buffer, {
+        contentType,
+        cacheControl: 'private, no-store'
+    });
 }
 
 async function readPrivateSourceBuffer(privatePath) {
-    if (isR2Enabled()) {
-        const object = await getPrivateObject(privatePath);
-        if (!object || !object.stream) {
-            return null;
-        }
-        return readStreamToBuffer(object.stream);
-    }
-
-    if (!canUseLocalFallback()) {
+    const object = await getPrivateObject(privatePath);
+    if (!object || !object.stream) {
         return null;
     }
-
-    try {
-        const filePath = resolvePrivateFilePath(privatePath);
-        return await fs.readFile(filePath);
-    } catch (error) {
-        if (error.code === 'ENOENT') return null;
-        throw error;
-    }
+    return readStreamToBuffer(object.stream);
 }
 
 // Utility per leggere/scrivere il database JSON
@@ -421,8 +378,8 @@ router.post('/upload-url', async (req, res) => {
 
         const uploadFilename = buildUploadFilename(effectiveMimeType, uploadId);
         const uploadPath = uploadVariant === 'source'
-            ? `/private/source/${uploadFilename}`
-            : `/uploads/${uploadFilename}`;
+            ? `${PRIVATE_SOURCE_PREFIX}/${uploadFilename}`
+            : `${PUBLIC_UPLOADS_PREFIX}/${uploadFilename}`;
 
         const signed = uploadVariant === 'source'
             ? await createPrivateUploadPresignedPutUrl(uploadPath, {
@@ -774,12 +731,7 @@ router.delete('/:id', async (req, res) => {
 
         for (const publicPath of uniquePublicPaths) {
             try {
-                if (isR2Enabled()) {
-                    await deleteUploadObject(publicPath);
-                } else if (canUseLocalFallback()) {
-                    const localPublicPath = resolvePublicFilePath(publicPath);
-                    await fs.unlink(localPublicPath);
-                }
+                await deleteUploadObject(publicPath);
                 deletedAssets.push({ scope: 'public', path: publicPath });
             } catch (error) {
                 const errorInfo = describeDeleteError(error);
@@ -796,12 +748,7 @@ router.delete('/:id', async (req, res) => {
         const privateSourcePath = normalizePrivatePath(deletedPhoto.sourcePath);
         if (privateSourcePath) {
             try {
-                if (isR2Enabled()) {
-                    await deletePrivateObject(privateSourcePath);
-                } else if (canUseLocalFallback()) {
-                    const localPrivatePath = resolvePrivateFilePath(privateSourcePath);
-                    await fs.unlink(localPrivatePath);
-                }
+                await deletePrivateObject(privateSourcePath);
                 deletedAssets.push({ scope: 'private', path: privateSourcePath });
             } catch (error) {
                 const errorInfo = describeDeleteError(error);
