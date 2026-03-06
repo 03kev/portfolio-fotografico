@@ -20,7 +20,8 @@ const DEFAULTS = require('../config/defaults');
 const { parseNumericIdOrThrow } = require('../utils/ids');
 const { sanitizePhotoPayload } = require('../utils/inputSanitizers');
 const { protectWriteMethods } = require('../middleware/auth');
-const { readPhotosDB, writePhotosDB, readSeriesDB, writeSeriesDB } = require('./photos.db');
+const { readPhotosDB, writePhotosDB } = require('./photos.db');
+const { cleanupPhotoReferencesInSeries } = require('../services/seriesPhotoCleanup');
 const {
     buildUploadFilename,
     describeDeleteError,
@@ -106,6 +107,12 @@ router.get('/:id', async (req, res) => {
         });
     } catch (error) {
         console.error('Errore nel recupero foto:', error);
+        if (error.status === 400 || error.code === 'INVALID_ID') {
+            return res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
         res.status(500).json({
             success: false,
             message: 'Errore nel recupero della foto'
@@ -437,42 +444,7 @@ router.delete('/:id', async (req, res) => {
         
         // Rimuovi l'ID della foto da tutte le serie
         try {
-            const series = await readSeriesDB();
-            let seriesModified = false;
-            
-            series.forEach(serie => {
-                // Rimuovi dall'array principale photos
-                if (serie.photos && Array.isArray(serie.photos)) {
-                    const originalLength = serie.photos.length;
-                    serie.photos = serie.photos.filter((pid) => Number(pid) !== photoId);
-                    if (serie.photos.length !== originalLength) {
-                        seriesModified = true;
-                    }
-                    
-                    // Se la foto eliminata era la cover image, rimuovila
-                    if (Number(serie.coverImage) === photoId) {
-                        serie.coverImage = serie.photos[0] || null;
-                        seriesModified = true;
-                    }
-                }
-                
-                // Rimuovi dai content blocks
-                if (serie.content && Array.isArray(serie.content)) {
-                    serie.content.forEach(block => {
-                        if (block.type === 'photos' && Array.isArray(block.content)) {
-                            const originalBlockLength = block.content.length;
-                            block.content = block.content.filter((pid) => Number(pid) !== photoId);
-                            if (block.content.length !== originalBlockLength) {
-                                seriesModified = true;
-                            }
-                        }
-                    });
-                }
-            });
-            
-            if (seriesModified) {
-                await writeSeriesDB(series);
-            }
+            await cleanupPhotoReferencesInSeries(photoId);
         } catch (seriesError) {
             console.warn('Errore nell\'aggiornamento delle serie:', seriesError);
         }

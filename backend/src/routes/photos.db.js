@@ -15,17 +15,7 @@ async function writePhotosDB(photos) {
     await writeMetadataFile('photos.json', normalizedPhotos);
 }
 
-async function readSeriesDB() {
-    return readMetadataFile('series.json', []);
-}
-
-async function writeSeriesDB(series) {
-    await writeMetadataFile('series.json', series);
-}
-
 module.exports = {
     readPhotosDB,
-    writePhotosDB,
-    readSeriesDB,
-    writeSeriesDB
+    writePhotosDB
 };
