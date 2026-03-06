@@ -1,239 +1,46 @@
 const express = require('express');
-const crypto = require('crypto');
 const multer = require('multer');
 const {
     createPrivateUploadPresignedPutUrl,
     createUploadPresignedPutUrl,
     deletePrivateObject,
-    deleteUploadObject,
-    getPrivateObject,
-    putPrivateObject,
-    putUploadObject
+    deleteUploadObject
 } = require('../services/r2Storage');
-const { readMetadataFile, writeMetadataFile } = require('../services/metadataStorage');
 const {
     buildPhotoAssetPaths,
     generatePhotoDerivatives,
     getCropProfilesFromSettings,
-    normalizePrivatePath,
-    normalizeUploadsPath
+    normalizePrivateSourcePathForPhotoId
 } = require('../services/photoDerivatives');
-const {
-    normalizeUploadPathToAbsoluteUrl,
-    purgeUrls
-} = require('../services/cloudflareCache');
-const { toRuntimePhoto, toStoragePhoto } = require('../services/photoRecord');
 const {
     PRIVATE_SOURCE_PREFIX,
     PUBLIC_UPLOADS_PREFIX
 } = require('../config/assetPaths');
-const { env } = require('../config/env');
 const DEFAULTS = require('../config/defaults');
-const { readStreamToBuffer } = require('../utils/streams');
 const { parseNumericIdOrThrow } = require('../utils/ids');
 const { sanitizePhotoPayload } = require('../utils/inputSanitizers');
 const { protectWriteMethods } = require('../middleware/auth');
+const { readPhotosDB, writePhotosDB, readSeriesDB, writeSeriesDB } = require('./photos.db');
+const {
+    buildUploadFilename,
+    describeDeleteError,
+    getImageExtensionFromMimeType,
+    isAllowedMimeType,
+    normalizePhotoForApiList,
+    parseAllowedUploadTypes,
+    parseCoordinate,
+    parseUploadSize,
+    presentPhoto,
+    purgePublicAssetsBestEffort,
+    readPrivateSourceBuffer,
+    withDefaultPhotoVariants,
+    writePrivateObject,
+    writePublicObject
+} = require('./photos.helpers');
 
 const router = express.Router();
 router.use(protectWriteMethods);
 const PUBLIC_ASSET_CACHE_CONTROL = DEFAULTS.publicAssetCacheControl;
-
-function normalizePublicBaseUrl() {
-    // In sviluppo manteniamo path relative (/uploads/...) per compatibilità
-    // con il frontend locale che usa base URL locale/proxy.
-    return env.isProduction ? env.r2PublicUrl : '';
-}
-
-function buildPublicAssetUrl(uploadPath) {
-    const value = String(uploadPath || '').trim();
-    if (!value) return value;
-    if (/^https?:\/\//i.test(value)) return value;
-
-    const publicBaseUrl = normalizePublicBaseUrl();
-    if (!publicBaseUrl) return value;
-    if (!value.startsWith(`${PUBLIC_UPLOADS_PREFIX}/`)) return value;
-
-    const publicPrefix = PUBLIC_UPLOADS_PREFIX.replace(/^\/+/, '');
-    const objectKey = value
-        .replace(/^\/+/, '')
-        .replace(new RegExp(`^${publicPrefix}/+`), '');
-    return `${publicBaseUrl}/${objectKey}`;
-}
-
-async function purgePublicAssetsBestEffort(uploadPaths = [], reason = 'photos_update') {
-    const urls = uploadPaths
-        .map((uploadPath) => normalizeUploadPathToAbsoluteUrl(uploadPath))
-        .filter(Boolean);
-
-    if (!urls.length) return;
-
-    try {
-        await purgeUrls(urls, { reason });
-    } catch (error) {
-        console.warn(`[cache] purge fallita (${reason}):`, error.message);
-    }
-}
-
-function withDefaultPhotoVariants(photo) {
-    const photoId = String(photo?.id || '').trim();
-    const assets = photoId ? buildPhotoAssetPaths(photoId) : null;
-    const imagePath = assets ? normalizeUploadsPath(assets.imagePath) : '';
-    const thumbnail43Path = assets ? normalizeUploadsPath(assets.thumbnail43Path) : '';
-    const thumbnail11Path = assets ? normalizeUploadsPath(assets.thumbnail11Path) : '';
-    const socialImagePath = assets ? normalizeUploadsPath(assets.socialImagePath) : '';
-
-    return {
-        ...photo,
-        image: imagePath,
-        thumbnail43: thumbnail43Path,
-        thumbnail11: thumbnail11Path,
-        socialImage: socialImagePath,
-        url: imagePath
-    };
-}
-
-function presentPhoto(photo) {
-    const normalized = withDefaultPhotoVariants(photo);
-    const image = buildPublicAssetUrl(normalized.image);
-    const thumbnail43 = buildPublicAssetUrl(normalized.thumbnail43);
-    const thumbnail11 = buildPublicAssetUrl(normalized.thumbnail11);
-    const socialImage = buildPublicAssetUrl(normalized.socialImage);
-    const { sourcePath, sourceContentType, ...publicPhoto } = normalized;
-
-    return {
-        ...publicPhoto,
-        image,
-        thumbnail43,
-        thumbnail11,
-        socialImage,
-        url: buildPublicAssetUrl(normalized.url)
-    };
-}
-
-function parseAllowedUploadTypes() {
-    return DEFAULTS.uploadAllowedTypes;
-}
-
-function isAllowedMimeType(mimetype, allowedTypes) {
-    return allowedTypes.some((allowedType) => {
-        if (allowedType.endsWith('/*')) {
-            const prefix = allowedType.slice(0, -1);
-            return mimetype.startsWith(prefix);
-        }
-        return mimetype === allowedType;
-    });
-}
-
-function parseCoordinate(value, fieldName) {
-    if (value === undefined || value === null || value === '') return null;
-
-    const parsed = Number.parseFloat(String(value));
-    if (!Number.isFinite(parsed)) {
-        const error = new Error(`${fieldName} non valido`);
-        error.status = 400;
-        error.code = 'INVALID_COORDINATE';
-        throw error;
-    }
-    return parsed;
-}
-
-function parseUploadSize(value) {
-    const parsed = Number.parseInt(String(value || ''), 10);
-    if (!Number.isFinite(parsed) || parsed <= 0) return null;
-    return parsed;
-}
-
-function describeDeleteError(error) {
-    return {
-        message: error?.message || 'Errore sconosciuto',
-        code: error?.code || error?.name || 'UNKNOWN_ERROR',
-        statusCode: error?.$metadata?.httpStatusCode || null
-    };
-}
-
-function normalizeUploadId(value) {
-    const normalized = String(value || '')
-        .trim()
-        .replace(/[^a-zA-Z0-9_-]/g, '')
-        .slice(0, 48);
-    return normalized || null;
-}
-
-function buildUploadFilename(mimetype, uploadId) {
-    const safeUploadId = normalizeUploadId(uploadId) || `${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
-    const mimeExt = mimetype && mimetype.includes('/') ? `.${mimetype.split('/')[1]}` : '.bin';
-    const extension = mimeExt.toLowerCase();
-    return `photo_${safeUploadId}${extension}`;
-}
-
-function getImageExtensionFromMimeType(mimetype) {
-    const subtype = String(mimetype || '')
-        .split('/')
-        .slice(1)
-        .join('/')
-        .split(';')[0]
-        .trim()
-        .toLowerCase();
-
-    if (!subtype) return 'bin';
-    if (subtype === 'jpeg') return 'jpg';
-    return subtype.replace(/[^a-z0-9]/g, '') || 'bin';
-}
-
-async function writePublicObject(uploadPath, buffer, contentType) {
-    await putUploadObject(uploadPath, buffer, {
-        contentType,
-        cacheControl: PUBLIC_ASSET_CACHE_CONTROL
-    });
-}
-
-async function writePrivateObject(privatePath, buffer, contentType) {
-    await putPrivateObject(privatePath, buffer, {
-        contentType,
-        cacheControl: 'private, no-store'
-    });
-}
-
-async function readPrivateSourceBuffer(privatePath) {
-    const object = await getPrivateObject(privatePath);
-    if (!object || !object.stream) {
-        return null;
-    }
-    return readStreamToBuffer(object.stream);
-}
-
-// Utility per leggere/scrivere il database JSON
-const readPhotosDB = async () => {
-    const rawPhotos = await readMetadataFile('photos.json', []);
-    return Array.isArray(rawPhotos)
-        ? rawPhotos.map((photo) => toRuntimePhoto(photo))
-        : [];
-};
-
-const writePhotosDB = async (photos) => {
-    try {
-        const normalizedPhotos = Array.isArray(photos)
-            ? photos.map((photo) => toStoragePhoto(photo))
-            : [];
-        await writeMetadataFile('photos.json', normalizedPhotos);
-    } catch (error) {
-        console.error('Errore nella scrittura del database foto:', error);
-        throw error;
-    }
-};
-
-const readSeriesDB = async () => {
-    return readMetadataFile('series.json', []);
-};
-
-const writeSeriesDB = async (series) => {
-    try {
-        await writeMetadataFile('series.json', series);
-    } catch (error) {
-        console.error('Errore nella scrittura del database serie:', error);
-        throw error;
-    }
-};
 
 // Configurazione multer per upload immagini
 const storage = multer.memoryStorage();
@@ -260,48 +67,9 @@ const upload = multer({
 router.get('/', async (req, res) => {
     try {
         const rawPhotos = await readPhotosDB();
-        
-        // Normalizza le foto per assicurare che abbiano tutti i campi necessari
-        const photos = rawPhotos.map(photo => {
-            // Gestisci settings che potrebbero essere stringhe JSON
-            let settings = {};
-            if (typeof photo.settings === 'string') {
-                try {
-                    settings = JSON.parse(photo.settings);
-                } catch (e) {
-                    console.warn('Errore nel parsing settings per foto', photo.id, ':', e);
-                    settings = {};
-                }
-            } else {
-                settings = photo.settings || {};
-            }
-            
-            // Gestisci tags che potrebbero essere stringhe JSON
-            let tags = [];
-            if (typeof photo.tags === 'string') {
-                try {
-                    tags = JSON.parse(photo.tags);
-                } catch (e) {
-                    tags = [];
-                }
-            } else {
-                tags = Array.isArray(photo.tags) ? photo.tags : [];
-            }
-            
-            return {
-                ...photo,
-                title: photo.title || 'Foto senza titolo',
-                location: photo.location || 'Posizione sconosciuta',
-                description: photo.description || '',
-                camera: photo.camera || '',
-                lens: photo.lens || '',
-                lat: photo.lat || 0,
-                lng: photo.lng || 0,
-                derivativesVersion: photo.derivativesVersion || photo.updatedAt || photo.id || Date.now(),
-                settings,
-                tags
-            };
-        }).map(presentPhoto);
+        const photos = rawPhotos
+            .map((photo) => normalizePhotoForApiList(photo))
+            .map((photo) => presentPhoto(photo));
         
         res.json({
             success: true,
@@ -440,11 +208,11 @@ router.post('/', upload.single('image'), async (req, res) => {
             await writePublicObject(assets.thumbnail11Path, derivatives.thumbnail11, 'image/webp');
             await writePublicObject(assets.socialImagePath, derivatives.socialImage, 'image/jpeg');
         } else {
-            const providedSourcePath = normalizePrivatePath(req.body?.sourcePath);
+            const providedSourcePath = normalizePrivateSourcePathForPhotoId(req.body?.sourcePath, photoId);
             if (!providedSourcePath) {
                 return res.status(400).json({
                     success: false,
-                    message: 'sourcePath non valido: usa /private/... ottenuto da /api/photos/upload-url'
+                    message: `sourcePath non valido: atteso ${PRIVATE_SOURCE_PREFIX}/photo_${photoId}.[ext]`
                 });
             }
 
@@ -538,11 +306,11 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
         }
 
         const photo = photos[photoIndex];
-        const sourcePath = normalizePrivatePath(photo.sourcePath);
+        const sourcePath = normalizePrivateSourcePathForPhotoId(photo.sourcePath, photoId);
         if (!sourcePath) {
             return res.status(400).json({
                 success: false,
-                message: 'Source full-res non disponibile per questa foto.'
+                message: 'Source full-res non disponibile o non conforme al formato atteso.'
             });
         }
 
@@ -737,7 +505,7 @@ router.delete('/:id', async (req, res) => {
             }
         }
 
-        const privateSourcePath = normalizePrivatePath(deletedPhoto.sourcePath);
+        const privateSourcePath = normalizePrivateSourcePathForPhotoId(deletedPhoto.sourcePath, photoId);
         if (privateSourcePath) {
             try {
                 await deletePrivateObject(privateSourcePath);

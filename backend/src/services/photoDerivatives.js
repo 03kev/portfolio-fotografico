@@ -68,6 +68,24 @@ function normalizePrivatePath(value) {
     return key ? `${PRIVATE_PREFIX}/${key}` : '';
 }
 
+function normalizePrivateSourcePath(value) {
+    const normalized = normalizePrivatePath(value);
+    if (!normalized.startsWith(`${PRIVATE_SOURCE_PREFIX}/`)) return '';
+
+    const filename = normalized.slice(`${PRIVATE_SOURCE_PREFIX}/`.length);
+    if (!/^photo_[a-zA-Z0-9_-]+\.[a-z0-9]+$/.test(filename)) return '';
+    return normalized;
+}
+
+function normalizePrivateSourcePathForPhotoId(value, photoId) {
+    const normalized = normalizePrivateSourcePath(value);
+    if (!normalized) return '';
+
+    const expectedPrefix = `${PRIVATE_SOURCE_PREFIX}/photo_${photoId}.`;
+    if (!normalized.startsWith(expectedPrefix)) return '';
+    return normalized;
+}
+
 function buildPhotoAssetPaths(photoId, sourceExtension = 'bin') {
     const baseName = `photo_${photoId}`;
     const cleanSourceExtension = String(sourceExtension || 'bin').replace(/[^a-z0-9]/gi, '') || 'bin';
@@ -243,6 +261,8 @@ module.exports = {
     buildPhotoAssetPaths,
     generatePhotoDerivatives,
     getCropProfilesFromSettings,
+    normalizePrivateSourcePath,
+    normalizePrivateSourcePathForPhotoId,
     normalizePrivatePath,
     normalizeUploadsPath
 };

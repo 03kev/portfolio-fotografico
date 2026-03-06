@@ -21,6 +21,7 @@ const {
 } = require('./services/r2Storage');
 const { buildPhotoAssetPaths } = require('./services/photoDerivatives');
 const { toRuntimePhoto } = require('./services/photoRecord');
+const { buildPublicAssetUrl } = require('./services/publicAssetUrl');
 
 const app = express();
 validateEnv();
@@ -240,22 +241,6 @@ function escapeXml(value) {
 
 function getSiteBaseUrl() {
     return String(env.siteUrl).trim().replace(/\/+$/, '');
-}
-
-function buildPublicAssetUrl(uploadPath) {
-    const value = String(uploadPath || '').trim();
-    if (!value) return value;
-    if (/^https?:\/\//i.test(value)) return value;
-
-    const publicBaseUrl = env.r2PublicUrl;
-    if (!publicBaseUrl) return value;
-    if (!value.startsWith(`${PUBLIC_UPLOADS_PREFIX}/`)) return value;
-
-    const publicPrefix = PUBLIC_UPLOADS_PREFIX.replace(/^\/+/, '');
-    const objectKey = value
-        .replace(/^\/+/, '')
-        .replace(new RegExp(`^${publicPrefix}/+`), '');
-    return `${publicBaseUrl}/${objectKey}`;
 }
 
 function buildPhotoCaption(photo) {
