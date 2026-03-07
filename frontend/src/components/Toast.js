@@ -141,11 +141,17 @@ const Toast = ({ toast, onClose }) => {
 
   return (
     <ToastItem
+      layout
       type={toast.type}
       initial={{ opacity: 0, x: 300, scale: 0.8 }}
       animate={{ opacity: 1, x: 0, scale: 1 }}
-      exit={{ opacity: 0, x: 300, scale: 0.8 }}
-      transition={{ duration: 0.3, type: 'spring', stiffness: 100 }}
+      exit={{ opacity: 0, x: 220, scale: 0.9 }}
+      transition={{
+        layout: { duration: 0.18, ease: 'easeOut' },
+        opacity: { duration: 0.18, ease: 'easeOut' },
+        x: { duration: 0.18, ease: 'easeOut' },
+        scale: { duration: 0.18, ease: 'easeOut' }
+      }}
       onClick={() => onClose(toast.id)}
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
@@ -166,7 +172,7 @@ const Toast = ({ toast, onClose }) => {
 const ToastProvider = ({ toasts, onRemove }) => {
   return (
     <ToastContainer>
-      <AnimatePresence mode="popLayout">
+      <AnimatePresence initial={false}>
         {toasts.map(toast => (
           <Toast
             key={toast.id}

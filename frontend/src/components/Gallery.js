@@ -301,12 +301,32 @@ const ReplaceSourceButton = styled(motion.button)`
 
   &:disabled {
     cursor: wait;
-    opacity: 0.72;
+    opacity: 0.5;
   }
+`;
 
-  svg.spin {
-    animation: replace-source-spin 0.9s linear infinite;
-  }
+const ReuploadCardOverlay = styled.div`
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(8, 10, 16, 0.58);
+  backdrop-filter: blur(2px);
+  z-index: 12;
+  pointer-events: none;
+  color: rgba(255, 255, 255, 0.94);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.01em;
+`;
+
+const ReuploadCardSpinner = styled(Loader2)`
+  animation: replace-source-spin 0.9s linear infinite;
+  color: rgba(214, 179, 106, 0.98);
+  filter: drop-shadow(0 0 8px rgba(214, 179, 106, 0.35));
 
   @keyframes replace-source-spin {
     from { transform: rotate(0deg); }
@@ -673,13 +693,9 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                           whileHover={{ scale: 1.1 }}
                           whileTap={{ scale: 0.9 }}
                           title="Reupload source privata"
-                          disabled={Boolean(reuploadingSourceId)}
+                          disabled={reuploadingSourceId === photo.id}
                         >
-                          {reuploadingSourceId === photo.id ? (
-                            <Loader2 size={18} className="spin" />
-                          ) : (
-                            <Upload size={18} />
-                          )}
+                          <Upload size={18} />
                         </ReplaceSourceButton>
                         <CropButton
                           onClick={(e) => handleCrop(e, photo)}
@@ -716,6 +732,12 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                         e.currentTarget.src = LOCAL_IMAGE_FALLBACK;
                       }}
                     />
+                    {reuploadingSourceId === photo.id && (
+                      <ReuploadCardOverlay>
+                        <ReuploadCardSpinner size={26} />
+                        <span>Aggiornamento source...</span>
+                      </ReuploadCardOverlay>
+                    )}
                     <PhotoOverlay>
                       <OverlayContent>
                         <PhotoTitle>{photo.title}</PhotoTitle>
