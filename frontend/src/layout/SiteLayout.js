@@ -128,7 +128,18 @@ export default function SiteLayout() {
       />
 
       <main>
-        <Outlet context={{ isAdmin: canEdit, isAdminMode }} />
+        <Outlet
+          context={{
+            isAdmin: canEdit,
+            isAdminMode,
+            notify: {
+              success: toast.success,
+              error: toast.error,
+              warning: toast.warning,
+              info: toast.info
+            }
+          }}
+        />
       </main>
 
       <Footer />

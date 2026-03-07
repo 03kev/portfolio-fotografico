@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
+import { CheckCircle2, XCircle, AlertTriangle, Info } from 'lucide-react';
 
 const ToastContainer = styled.div`
   position: fixed;
-  top: 20px;
+  top: calc(var(--header-height) + 12px);
   right: 20px;
   z-index: 1002;
   display: flex;
@@ -13,7 +14,7 @@ const ToastContainer = styled.div`
   pointer-events: none;
 
   @media (max-width: 768px) {
-    top: 10px;
+    top: calc(var(--header-height) + 8px);
     right: 10px;
     left: 10px;
   }
@@ -53,7 +54,9 @@ const ToastItem = styled(motion.div)`
 `;
 
 const ToastIcon = styled.span`
-  font-size: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
 `;
 
@@ -128,11 +131,11 @@ export const useToast = () => {
 const Toast = ({ toast, onClose }) => {
   const getIcon = (type) => {
     switch (type) {
-      case 'success': return '✅';
-      case 'error': return '❌';
-      case 'warning': return '⚠️';
+      case 'success': return <CheckCircle2 size={18} />;
+      case 'error': return <XCircle size={18} />;
+      case 'warning': return <AlertTriangle size={18} />;
       case 'info':
-      default: return 'ℹ️';
+      default: return <Info size={18} />;
     }
   };
 

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Trash2, Edit3, Crop, Upload } from 'lucide-react';
+import { Search, Trash2, Edit3, Crop, Upload, Loader2 } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { LOCAL_IMAGE_FALLBACK, resolveAssetUrl } from '../utils/imageUrl';
 import { photoService } from '../utils/api';
@@ -303,6 +303,15 @@ const ReplaceSourceButton = styled(motion.button)`
     cursor: wait;
     opacity: 0.72;
   }
+
+  svg.spin {
+    animation: replace-source-spin 0.9s linear infinite;
+  }
+
+  @keyframes replace-source-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
 `;
 
 const OverlayContent = styled.div`
@@ -386,6 +395,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const { photos, filteredPhotos, loading, actions, filters, modalOpen } = usePhotos();
   const outletContext = useOutletContext();
   const isAdmin = Boolean(outletContext?.isAdmin);
+  const notify = outletContext?.notify || null;
   const [searchParams] = useSearchParams();
   const photoParam = searchParams.get('photo');
   const resolvedPhotoId = forcedPhotoId || photoParam;
@@ -531,6 +541,8 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
 
     setReuploadingSourceId(targetPhoto.id);
     try {
+      notify?.info?.(`Caricamento source in corso per "${targetPhoto.title || 'foto'}"...`, 2500);
+
       const signResponse = await photoService.getUploadUrl({
         uploadId: String(targetPhoto.id),
         variant: 'source',
@@ -560,9 +572,13 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       });
 
       await actions.fetchPhotos();
+      notify?.success?.(`Source aggiornata: "${targetPhoto.title || 'foto'}".`, 3500);
     } catch (error) {
       console.error('Errore reupload source privata:', error);
-      alert(error?.message || error?.error?.message || 'Errore durante il reupload della source privata.');
+      notify?.error?.(
+        error?.message || error?.error?.message || 'Errore durante il reupload della source privata.',
+        5000
+      );
     } finally {
       setReuploadSourcePhoto(null);
       setReuploadingSourceId(null);
@@ -659,7 +675,11 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                           title="Reupload source privata"
                           disabled={Boolean(reuploadingSourceId)}
                         >
-                          <Upload size={18} />
+                          {reuploadingSourceId === photo.id ? (
+                            <Loader2 size={18} className="spin" />
+                          ) : (
+                            <Upload size={18} />
+                          )}
                         </ReplaceSourceButton>
                         <CropButton
                           onClick={(e) => handleCrop(e, photo)}
