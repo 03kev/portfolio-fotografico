@@ -12,6 +12,75 @@ import PhotoCropModal from './PhotoCropModal';
 const DEBOUNCE_DELAY_FILTER = 200;
 const SOURCE_REUPLOAD_ACCEPT = 'image/jpeg,image/jpg,image/png,image/webp';
 
+const REUPLOAD_STEP_LABELS = {
+  sign: 'firma URL upload',
+  upload: 'upload source su R2',
+  replace: 'rigenerazione derivate',
+  refresh: 'sincronizzazione archivio'
+};
+
+const NETWORK_ERROR_PATTERNS = [
+  /networkerror/i,
+  /failed to fetch/i,
+  /load failed/i,
+  /network request failed/i
+];
+
+const TIMEOUT_ERROR_PATTERNS = [
+  /timeout/i,
+  /econnaborted/i
+];
+
+function compactRawMessage(value) {
+  const message = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!message) return '';
+  return message.length > 180 ? `${message.slice(0, 177)}...` : message;
+}
+
+function isMatchingPattern(message, patterns) {
+  return patterns.some((pattern) => pattern.test(message));
+}
+
+function getHttpStatusFromError(error) {
+  const status = Number(
+    error?.status
+    || error?.response?.status
+    || error?.error?.status
+    || error?.data?.status
+    || 0
+  );
+  return Number.isFinite(status) && status > 0 ? status : null;
+}
+
+function buildReuploadErrorMessage(error, step = 'replace') {
+  const stepLabel = REUPLOAD_STEP_LABELS[step] || 'operazione source';
+  const rawMessage = compactRawMessage(error?.message || error?.error?.message || error?.data?.message || '');
+  const status = getHttpStatusFromError(error);
+
+  if (status === 400) return `Errore (${stepLabel}): richiesta non valida. ${rawMessage || ''}`.trim();
+  if (status === 401) return `Errore (${stepLabel}): autenticazione richiesta. Riapri la sessione admin.`;
+  if (status === 403) return `Errore (${stepLabel}): accesso negato. Verifica token/API o permessi bucket.`;
+  if (status === 404) return `Errore (${stepLabel}): risorsa non trovata (foto o source privata).`;
+  if (status === 409) return `Errore (${stepLabel}): conflitto dati, aggiorna l’archivio e riprova.`;
+  if (status === 413) return `Errore (${stepLabel}): file troppo grande.`;
+  if (status === 415) return `Errore (${stepLabel}): formato file non supportato.`;
+  if (status >= 500) return `Errore server (${stepLabel}): riprova tra poco.`;
+
+  if (isMatchingPattern(rawMessage, TIMEOUT_ERROR_PATTERNS)) {
+    return `Timeout durante ${stepLabel}. Verifica connessione e riprova.`;
+  }
+
+  if (isMatchingPattern(rawMessage, NETWORK_ERROR_PATTERNS)) {
+    if (step === 'upload') {
+      return 'Upload source non riuscito: probabile blocco rete/CORS verso R2. Verifica CORS del bucket privato (AllowedOrigins include localhost:3000 e dominio produzione).';
+    }
+    return `Errore di rete durante ${stepLabel}.`;
+  }
+
+  if (rawMessage) return `Errore (${stepLabel}): ${rawMessage}`;
+  return `Errore durante ${stepLabel}.`;
+}
+
 function useDebounce(value, delay) {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {
@@ -560,9 +629,11 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     }
 
     setReuploadingSourceId(targetPhoto.id);
+    let currentStep = 'sign';
     try {
       notify?.info?.(`Caricamento source in corso per "${targetPhoto.title || 'foto'}"...`, 2500);
 
+      currentStep = 'sign';
       const signResponse = await photoService.getUploadUrl({
         uploadId: String(targetPhoto.id),
         variant: 'source',
@@ -574,6 +645,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
         throw new Error('URL di upload source non valida ricevuta dal server.');
       }
 
+      currentStep = 'upload';
       const uploadResponse = await fetch(signedData.uploadUrl, {
         method: 'PUT',
         headers: {
@@ -583,22 +655,35 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
         body: file
       });
       if (!uploadResponse.ok) {
-        throw new Error(`Upload source fallito (${uploadResponse.status}).`);
+        const status = uploadResponse.status;
+        let detail = '';
+        const responseType = String(uploadResponse.headers.get('content-type') || '').toLowerCase();
+        try {
+          if (responseType.includes('application/json')) {
+            const json = await uploadResponse.json();
+            detail = compactRawMessage(json?.message || json?.error || '');
+          } else {
+            const text = await uploadResponse.text();
+            detail = compactRawMessage(text.replace(/<[^>]+>/g, ' '));
+          }
+        } catch {
+          detail = '';
+        }
+        throw new Error(detail ? `Upload source fallito (${status}): ${detail}` : `Upload source fallito (${status}).`);
       }
 
+      currentStep = 'replace';
       await photoService.replaceSource(targetPhoto.id, {
         sourcePath: signedData.sourcePath,
         sourceContentType: file.type
       });
 
+      currentStep = 'refresh';
       await actions.fetchPhotos();
       notify?.success?.(`Source aggiornata: "${targetPhoto.title || 'foto'}".`, 3500);
     } catch (error) {
       console.error('Errore reupload source privata:', error);
-      notify?.error?.(
-        error?.message || error?.error?.message || 'Errore durante il reupload della source privata.',
-        5000
-      );
+      notify?.error?.(buildReuploadErrorMessage(error, currentStep), 6500);
     } finally {
       setReuploadSourcePhoto(null);
       setReuploadingSourceId(null);
@@ -688,15 +773,16 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                     </SeoImageLink>
                     {isAdmin && (
                       <>
-                        <ReplaceSourceButton
-                          onClick={(e) => handleReuploadSourceClick(e, photo)}
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                          title="Reupload source privata"
-                          disabled={reuploadingSourceId === photo.id}
-                        >
-                          <Upload size={18} />
-                        </ReplaceSourceButton>
+                        {reuploadingSourceId !== photo.id && (
+                          <ReplaceSourceButton
+                            onClick={(e) => handleReuploadSourceClick(e, photo)}
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            title="Reupload source privata"
+                          >
+                            <Upload size={18} />
+                          </ReplaceSourceButton>
+                        )}
                         <CropButton
                           onClick={(e) => handleCrop(e, photo)}
                           whileHover={{ scale: 1.1 }}
