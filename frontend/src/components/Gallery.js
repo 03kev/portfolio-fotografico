@@ -757,7 +757,9 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
         ) : (
           <GalleryGrid key="gallery-grid">
             <AnimatePresence mode="popLayout" initial={false}>
-              {filteredPhotos.map((photo, index) => (
+              {filteredPhotos.map((photo, index) => {
+                const isReuploadingCard = reuploadingSourceId === photo.id;
+                return (
                 <motion.div
                   key={photo.id}
                   layout
@@ -765,7 +767,10 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                   initial="hidden"
                   animate="visible"
                   exit="exit"
-                  onClick={() => handlePhotoClick(photo)}
+                  onClick={() => {
+                    if (isReuploadingCard) return;
+                    handlePhotoClick(photo);
+                  }}
                 >
                   <PhotoCard>
                     <SeoImageLink href={getPhotoCardUrl(photo)} aria-hidden="true" tabIndex={-1}>
@@ -773,7 +778,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                     </SeoImageLink>
                     {isAdmin && (
                       <>
-                        {reuploadingSourceId !== photo.id && (
+                        {!isReuploadingCard && (
                           <ReplaceSourceButton
                             onClick={(e) => handleReuploadSourceClick(e, photo)}
                             whileHover={{ scale: 1.1 }}
@@ -783,28 +788,32 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                             <Upload size={18} />
                           </ReplaceSourceButton>
                         )}
-                        <CropButton
-                          onClick={(e) => handleCrop(e, photo)}
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                          title="Modifica crop"
-                        >
-                          <Crop size={18} />
-                        </CropButton>
-                        <EditButton
-                          onClick={(e) => handleEdit(e, photo)}
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                        >
-                          <Edit3 size={18} />
-                        </EditButton>
-                        <DeleteButton
-                          onClick={(e) => handleDelete(e, photo.id)}
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                        >
-                          <Trash2 size={18} />
-                        </DeleteButton>
+                        {!isReuploadingCard && (
+                          <>
+                            <CropButton
+                              onClick={(e) => handleCrop(e, photo)}
+                              whileHover={{ scale: 1.1 }}
+                              whileTap={{ scale: 0.9 }}
+                              title="Modifica crop"
+                            >
+                              <Crop size={18} />
+                            </CropButton>
+                            <EditButton
+                              onClick={(e) => handleEdit(e, photo)}
+                              whileHover={{ scale: 1.1 }}
+                              whileTap={{ scale: 0.9 }}
+                            >
+                              <Edit3 size={18} />
+                            </EditButton>
+                            <DeleteButton
+                              onClick={(e) => handleDelete(e, photo.id)}
+                              whileHover={{ scale: 1.1 }}
+                              whileTap={{ scale: 0.9 }}
+                            >
+                              <Trash2 size={18} />
+                            </DeleteButton>
+                          </>
+                        )}
                       </>
                     )}
                     <PhotoImage
@@ -818,31 +827,34 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                         e.currentTarget.src = LOCAL_IMAGE_FALLBACK;
                       }}
                     />
-                    {reuploadingSourceId === photo.id && (
+                    {isReuploadingCard && (
                       <ReuploadCardOverlay>
                         <ReuploadCardSpinner size={26} />
                         <span>Aggiornamento source...</span>
                       </ReuploadCardOverlay>
                     )}
-                    <PhotoOverlay>
-                      <OverlayContent>
-                        <PhotoTitle>{photo.title}</PhotoTitle>
-                        <PhotoLocation>{photo.location}</PhotoLocation>
-                        {!hideCardDescriptions && (
-                          <PhotoDescription>{photo.description}</PhotoDescription>
-                        )}
-                        {Array.isArray(photo.tags) && photo.tags.length > 0 && (
-                          <PhotoTags>
-                            {photo.tags.slice(0, 3).map(tag => (
-                              <Tag key={tag}>{tag}</Tag>
-                            ))}
-                          </PhotoTags>
-                        )}
-                      </OverlayContent>
-                    </PhotoOverlay>
+                    {!isReuploadingCard && (
+                      <PhotoOverlay>
+                        <OverlayContent>
+                          <PhotoTitle>{photo.title}</PhotoTitle>
+                          <PhotoLocation>{photo.location}</PhotoLocation>
+                          {!hideCardDescriptions && (
+                            <PhotoDescription>{photo.description}</PhotoDescription>
+                          )}
+                          {Array.isArray(photo.tags) && photo.tags.length > 0 && (
+                            <PhotoTags>
+                              {photo.tags.slice(0, 3).map(tag => (
+                                <Tag key={tag}>{tag}</Tag>
+                              ))}
+                            </PhotoTags>
+                          )}
+                        </OverlayContent>
+                      </PhotoOverlay>
+                    )}
                   </PhotoCard>
                 </motion.div>
-              ))}
+                );
+              })}
             </AnimatePresence>
           </GalleryGrid>
         )}
