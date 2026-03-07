@@ -257,8 +257,32 @@ async function generatePhotoDerivatives(sourceBuffer, cropProfiles = null) {
     return { image, thumbnail43, thumbnail11, socialImage };
 }
 
+async function extractSourceResolution(sourceBuffer) {
+    const metadata = await sharp(sourceBuffer).metadata();
+    const orientation = Number(metadata.orientation || 1);
+    const rawWidth = Number(metadata.width || 0);
+    const rawHeight = Number(metadata.height || 0);
+
+    const width = [5, 6, 7, 8].includes(orientation) ? rawHeight : rawWidth;
+    const height = [5, 6, 7, 8].includes(orientation) ? rawWidth : rawHeight;
+
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+        throw new Error('Impossibile estrarre una risoluzione valida dal source originale.');
+    }
+
+    const normalizedWidth = Math.round(width);
+    const normalizedHeight = Math.round(height);
+
+    return {
+        width: normalizedWidth,
+        height: normalizedHeight,
+        resolution: `${normalizedWidth}x${normalizedHeight}`
+    };
+}
+
 module.exports = {
     buildPhotoAssetPaths,
+    extractSourceResolution,
     generatePhotoDerivatives,
     getCropProfilesFromSettings,
     normalizePrivateSourcePath,

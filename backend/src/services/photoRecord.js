@@ -77,6 +77,7 @@ function toRuntimePhoto(record) {
         lng: toFiniteNumberOr(locationObject.lng, 0),
         camera: pickFirstNonEmpty(exifObject.camera),
         lens: pickFirstNonEmpty(exifObject.lens),
+        resolution: pickFirstNonEmpty(exifObject.resolution),
         settings: normalizeSettings({}, exifObject, cropProfiles),
         tags: normalizeTags(record.tags),
         sourcePath: pickFirstNonEmpty(sourceObject.path),
@@ -117,6 +118,7 @@ function toStoragePhoto(runtimePhoto) {
         lng: toFiniteNumberOr(runtimePhoto.lng, 0),
         camera: toTrimmedString(runtimePhoto.camera),
         lens: toTrimmedString(runtimePhoto.lens),
+        resolution: toTrimmedString(runtimePhoto.resolution),
         settings,
         tags: normalizeTags(runtimePhoto.tags),
         sourcePath: toTrimmedString(runtimePhoto.sourcePath),
@@ -130,6 +132,7 @@ function toStoragePhoto(runtimePhoto) {
     const exif = compactObject({
         camera: toTrimmedString(photo.camera),
         lens: toTrimmedString(photo.lens),
+        resolution: toTrimmedString(photo.resolution),
         aperture: toTrimmedString(photo.settings?.aperture),
         shutter: toTrimmedString(photo.settings?.shutter),
         iso: toTrimmedString(photo.settings?.iso),

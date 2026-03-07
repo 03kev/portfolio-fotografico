@@ -8,6 +8,7 @@ const {
 } = require('../services/r2Storage');
 const {
     buildPhotoAssetPaths,
+    extractSourceResolution,
     generatePhotoDerivatives,
     getCropProfilesFromSettings,
     normalizePrivateSourcePathForPhotoId
@@ -205,15 +206,11 @@ router.post('/', upload.single('image'), async (req, res) => {
 
         let sourcePath = '';
         let sourceContentType = String(req.file?.mimetype || req.body?.sourceContentType || '').trim();
+        let sourceBuffer = null;
         if (req.file) {
             sourcePath = assets.sourcePath;
+            sourceBuffer = req.file.buffer;
             await writePrivateObject(sourcePath, req.file.buffer, sourceContentType || 'application/octet-stream');
-
-            const derivatives = await generatePhotoDerivatives(req.file.buffer, cropProfiles);
-            await writePublicObject(assets.imagePath, derivatives.image, 'image/webp');
-            await writePublicObject(assets.thumbnail43Path, derivatives.thumbnail43, 'image/webp');
-            await writePublicObject(assets.thumbnail11Path, derivatives.thumbnail11, 'image/webp');
-            await writePublicObject(assets.socialImagePath, derivatives.socialImage, 'image/jpeg');
         } else {
             const providedSourcePath = normalizePrivateSourcePathForPhotoId(req.body?.sourcePath, photoId);
             if (!providedSourcePath) {
@@ -224,7 +221,7 @@ router.post('/', upload.single('image'), async (req, res) => {
             }
 
             sourcePath = providedSourcePath;
-            const sourceBuffer = await readPrivateSourceBuffer(sourcePath);
+            sourceBuffer = await readPrivateSourceBuffer(sourcePath);
             if (!sourceBuffer) {
                 return res.status(400).json({
                     success: false,
@@ -232,12 +229,14 @@ router.post('/', upload.single('image'), async (req, res) => {
                 });
             }
 
-            const derivatives = await generatePhotoDerivatives(sourceBuffer, cropProfiles);
-            await writePublicObject(assets.imagePath, derivatives.image, 'image/webp');
-            await writePublicObject(assets.thumbnail43Path, derivatives.thumbnail43, 'image/webp');
-            await writePublicObject(assets.thumbnail11Path, derivatives.thumbnail11, 'image/webp');
-            await writePublicObject(assets.socialImagePath, derivatives.socialImage, 'image/jpeg');
         }
+
+        const derivatives = await generatePhotoDerivatives(sourceBuffer, cropProfiles);
+        const sourceResolution = await extractSourceResolution(sourceBuffer);
+        await writePublicObject(assets.imagePath, derivatives.image, 'image/webp');
+        await writePublicObject(assets.thumbnail43Path, derivatives.thumbnail43, 'image/webp');
+        await writePublicObject(assets.thumbnail11Path, derivatives.thumbnail11, 'image/webp');
+        await writePublicObject(assets.socialImagePath, derivatives.socialImage, 'image/jpeg');
 
         // Crea oggetto foto con valori di default
         const newPhoto = {
@@ -253,6 +252,7 @@ router.post('/', upload.single('image'), async (req, res) => {
             date: sanitized.date,
             camera: sanitized.camera,
             lens: sanitized.lens,
+            resolution: sourceResolution.resolution,
             settings: sanitized.settings,
             tags: sanitized.tags
         };
@@ -333,6 +333,7 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
 
         const cropProfiles = getCropProfilesFromSettings(photo.settings);
         const derivatives = await generatePhotoDerivatives(sourceBuffer, cropProfiles);
+        const sourceResolution = await extractSourceResolution(sourceBuffer);
         await writePublicObject(publicAssets.image, derivatives.image, 'image/webp');
         await writePublicObject(publicAssets.thumbnail43, derivatives.thumbnail43, 'image/webp');
         await writePublicObject(publicAssets.thumbnail11, derivatives.thumbnail11, 'image/webp');
@@ -340,6 +341,7 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
 
         const updatedPhoto = {
             ...photo,
+            resolution: sourceResolution.resolution,
             derivativesVersion: Date.now()
         };
 

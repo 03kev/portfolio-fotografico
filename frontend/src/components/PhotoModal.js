@@ -380,12 +380,30 @@ const PhotoModal = () => {
             day: 'numeric'
         });
     };
+
+    const formatResolution = (value) => {
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+        const match = raw.match(/^(\d+)\s*x\s*(\d+)$/i);
+        if (!match) return raw;
+        return `${match[1]} × ${match[2]} px`;
+    };
     
     if (!selectedPhoto) return null;
 
     const imageSrc = resolveAssetUrl(selectedPhoto.image);
     const downloadSrc = resolveAssetUrl(selectedPhoto.image, '');
     const canDownload = Boolean(downloadSrc);
+    const hasTechnicalData = Boolean(
+        selectedPhoto.camera ||
+        selectedPhoto.lens ||
+        selectedPhoto.resolution ||
+        selectedPhoto.settings?.aperture ||
+        selectedPhoto.settings?.shutter ||
+        selectedPhoto.settings?.iso ||
+        selectedPhoto.settings?.focal ||
+        selectedPhoto.date
+    );
     
     return (
         <AnimatePresence>
@@ -452,7 +470,7 @@ const PhotoModal = () => {
             {selectedPhoto.description}
             </PhotoDescription>
             
-            {selectedPhoto.camera && (
+            {hasTechnicalData && (
                 <MetadataSection
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -460,40 +478,58 @@ const PhotoModal = () => {
                 >
                 <MetadataTitle>Dati Tecnici</MetadataTitle>
                 <MetadataGrid>
-                <MetadataItem>
-                <div className="label">Camera</div>
-                <div className="value">{selectedPhoto.camera}</div>
-                </MetadataItem>
+                {selectedPhoto.camera && (
+                    <MetadataItem>
+                    <div className="label">Camera</div>
+                    <div className="value">{selectedPhoto.camera}</div>
+                    </MetadataItem>
+                )}
                 {selectedPhoto.lens && (
                     <MetadataItem>
                     <div className="label">Obiettivo</div>
                     <div className="value">{selectedPhoto.lens}</div>
                     </MetadataItem>
                 )}
+                {selectedPhoto.resolution && (
+                    <MetadataItem>
+                    <div className="label">Risoluzione</div>
+                    <div className="value">{formatResolution(selectedPhoto.resolution)}</div>
+                    </MetadataItem>
+                )}
                 {selectedPhoto.settings && (
                     <>
-                    <MetadataItem>
-                    <div className="label">Apertura</div>
-                    <div className="value">{selectedPhoto.settings.aperture}</div>
-                    </MetadataItem>
-                    <MetadataItem>
-                    <div className="label">Tempo</div>
-                    <div className="value">{selectedPhoto.settings.shutter}</div>
-                    </MetadataItem>
-                    <MetadataItem>
-                    <div className="label">ISO</div>
-                    <div className="value">{selectedPhoto.settings.iso}</div>
-                    </MetadataItem>
-                    <MetadataItem>
-                    <div className="label">Focale</div>
-                    <div className="value">{selectedPhoto.settings.focal}</div>
-                    </MetadataItem>
+                    {selectedPhoto.settings.aperture && (
+                        <MetadataItem>
+                        <div className="label">Apertura</div>
+                        <div className="value">{selectedPhoto.settings.aperture}</div>
+                        </MetadataItem>
+                    )}
+                    {selectedPhoto.settings.shutter && (
+                        <MetadataItem>
+                        <div className="label">Tempo</div>
+                        <div className="value">{selectedPhoto.settings.shutter}</div>
+                        </MetadataItem>
+                    )}
+                    {selectedPhoto.settings.iso && (
+                        <MetadataItem>
+                        <div className="label">ISO</div>
+                        <div className="value">{selectedPhoto.settings.iso}</div>
+                        </MetadataItem>
+                    )}
+                    {selectedPhoto.settings.focal && (
+                        <MetadataItem>
+                        <div className="label">Focale</div>
+                        <div className="value">{selectedPhoto.settings.focal}</div>
+                        </MetadataItem>
+                    )}
                     </>
                 )}
-                <MetadataItem>
-                <div className="label">Data</div>
-                <div className="value">{formatDate(selectedPhoto.date)}</div>
-                </MetadataItem>
+                {selectedPhoto.date && (
+                    <MetadataItem>
+                    <div className="label">Data</div>
+                    <div className="value">{formatDate(selectedPhoto.date)}</div>
+                    </MetadataItem>
+                )}
                 </MetadataGrid>
                 </MetadataSection>
             )}
