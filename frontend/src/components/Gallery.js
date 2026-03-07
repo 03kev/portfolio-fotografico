@@ -2,13 +2,15 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Trash2, Edit3, Crop } from 'lucide-react';
+import { Search, Trash2, Edit3, Crop, Upload } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { LOCAL_IMAGE_FALLBACK, resolveAssetUrl } from '../utils/imageUrl';
+import { photoService } from '../utils/api';
 import PhotoUpload from './PhotoUpload';
 import PhotoCropModal from './PhotoCropModal';
 
 const DEBOUNCE_DELAY_FILTER = 200;
+const SOURCE_REUPLOAD_ACCEPT = 'image/jpeg,image/jpg,image/png,image/webp';
 
 function useDebounce(value, delay) {
   const [debounced, setDebounced] = useState(value);
@@ -271,6 +273,38 @@ const CropButton = styled(motion.button)`
   }
 `;
 
+const ReplaceSourceButton = styled(motion.button)`
+  position: absolute;
+  top: var(--spacing-md);
+  right: calc(var(--spacing-md) + 144px);
+  background: rgba(123, 107, 255, 0.88);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: white;
+  padding: 8px;
+  border-radius: var(--border-radius-full);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity var(--transition-normal), background var(--transition-normal);
+  z-index: 10;
+
+  ${PhotoCard}:hover & {
+    opacity: 1;
+  }
+
+  &:hover {
+    background: rgba(103, 84, 255, 1);
+  }
+
+  &:disabled {
+    cursor: wait;
+    opacity: 0.72;
+  }
+`;
+
 const OverlayContent = styled.div`
   width: 100%;
 `;
@@ -356,6 +390,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const photoParam = searchParams.get('photo');
   const resolvedPhotoId = forcedPhotoId || photoParam;
   const autoOpenedPhotoRef = useRef(null);
+  const sourceFileInputRef = useRef(null);
 
   const [activeFilter, setActiveFilter] = useState(() => {
     return filters.tags && filters.tags.length > 0 ? filters.tags[0] : 'all';
@@ -365,6 +400,8 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   });
   const [editingPhoto, setEditingPhoto] = useState(null);
   const [croppingPhoto, setCroppingPhoto] = useState(null);
+  const [reuploadSourcePhoto, setReuploadSourcePhoto] = useState(null);
+  const [reuploadingSourceId, setReuploadingSourceId] = useState(null);
 
   const debouncedSearchTerm = useDebounce(searchTerm, DEBOUNCE_DELAY_FILTER);
 
@@ -473,6 +510,65 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     setCroppingPhoto(photo);
   };
 
+  const handleReuploadSourceClick = (e, photo) => {
+    e.stopPropagation();
+    if (reuploadingSourceId) return;
+    setReuploadSourcePhoto(photo);
+    if (sourceFileInputRef.current) {
+      sourceFileInputRef.current.value = '';
+      sourceFileInputRef.current.click();
+    }
+  };
+
+  const handleReuploadSourceSelected = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    const targetPhoto = reuploadSourcePhoto;
+    if (!file || !targetPhoto) {
+      setReuploadSourcePhoto(null);
+      return;
+    }
+
+    setReuploadingSourceId(targetPhoto.id);
+    try {
+      const signResponse = await photoService.getUploadUrl({
+        uploadId: String(targetPhoto.id),
+        variant: 'source',
+        mimetype: file.type,
+        fileSize: file.size
+      });
+      const signedData = signResponse?.data?.data || signResponse?.data;
+      if (!signedData?.uploadUrl || !signedData?.sourcePath) {
+        throw new Error('URL di upload source non valida ricevuta dal server.');
+      }
+
+      const uploadResponse = await fetch(signedData.uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+          'Cache-Control': 'private, no-store'
+        },
+        body: file
+      });
+      if (!uploadResponse.ok) {
+        throw new Error(`Upload source fallito (${uploadResponse.status}).`);
+      }
+
+      await photoService.replaceSource(targetPhoto.id, {
+        sourcePath: signedData.sourcePath,
+        sourceContentType: file.type
+      });
+
+      await actions.fetchPhotos();
+    } catch (error) {
+      console.error('Errore reupload source privata:', error);
+      alert(error?.message || error?.error?.message || 'Errore durante il reupload della source privata.');
+    } finally {
+      setReuploadSourcePhoto(null);
+      setReuploadingSourceId(null);
+    }
+  };
+
   if (loading || waitingForForcedModal) {
     return (
       <GallerySection>
@@ -488,6 +584,14 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   return (
     <GallerySection>
       <Container>
+        <input
+          ref={sourceFileInputRef}
+          type="file"
+          accept={SOURCE_REUPLOAD_ACCEPT}
+          style={{ display: 'none' }}
+          onChange={handleReuploadSourceSelected}
+        />
+
         <SectionHeader>
           <SectionTitle as={headingLevel} initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.45, ease: 'easeOut' }}>
             Archivio
@@ -548,6 +652,15 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                     </SeoImageLink>
                     {isAdmin && (
                       <>
+                        <ReplaceSourceButton
+                          onClick={(e) => handleReuploadSourceClick(e, photo)}
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                          title="Reupload source privata"
+                          disabled={Boolean(reuploadingSourceId)}
+                        >
+                          <Upload size={18} />
+                        </ReplaceSourceButton>
                         <CropButton
                           onClick={(e) => handleCrop(e, photo)}
                           whileHover={{ scale: 1.1 }}

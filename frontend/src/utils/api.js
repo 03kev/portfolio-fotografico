@@ -50,6 +50,9 @@ export const photoService = {
 
   // Rigenera derivate pubbliche da source full-res
   regenerateDerivatives: (id) => api.post(`/photos/${id}/regenerate-derivatives`),
+
+  // Sostituisce la source privata e rigenera tutte le derivate pubbliche
+  replaceSource: (id, data) => api.post(`/photos/${id}/replace-source`, data),
   
   // Elimina foto
   delete: (id) => api.delete(`/photos/${id}`),
