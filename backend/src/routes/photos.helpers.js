@@ -177,11 +177,20 @@ async function writePrivateObject(privatePath, buffer, contentType) {
 }
 
 async function readPrivateSourceBuffer(privatePath) {
+    const sourceObject = await readPrivateSourceObject(privatePath);
+    return sourceObject ? sourceObject.buffer : null;
+}
+
+async function readPrivateSourceObject(privatePath) {
     const object = await getPrivateObject(privatePath);
     if (!object || !object.stream) {
         return null;
     }
-    return readStreamToBuffer(object.stream);
+    const buffer = await readStreamToBuffer(object.stream);
+    return {
+        buffer,
+        contentType: String(object.contentType || '').trim()
+    };
 }
 
 async function purgePublicAssetsBestEffort(uploadPaths = [], reason = 'photos_update') {
@@ -210,6 +219,7 @@ module.exports = {
     presentPhoto,
     purgePublicAssetsBestEffort,
     readPrivateSourceBuffer,
+    readPrivateSourceObject,
     withDefaultPhotoVariants,
     writePrivateObject,
     writePublicObject

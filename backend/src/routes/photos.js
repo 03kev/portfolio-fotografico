@@ -35,6 +35,7 @@ const {
     presentPhoto,
     purgePublicAssetsBestEffort,
     readPrivateSourceBuffer,
+    readPrivateSourceObject,
     withDefaultPhotoVariants,
     writePrivateObject,
     writePublicObject
@@ -221,12 +222,16 @@ router.post('/', upload.single('image'), async (req, res) => {
             }
 
             sourcePath = providedSourcePath;
-            sourceBuffer = await readPrivateSourceBuffer(sourcePath);
-            if (!sourceBuffer) {
+            const sourceObject = await readPrivateSourceObject(sourcePath);
+            if (!sourceObject) {
                 return res.status(400).json({
                     success: false,
                     message: 'sourcePath non trovato: carica prima il file originale su /api/photos/upload-url'
                 });
+            }
+            sourceBuffer = sourceObject.buffer;
+            if (!sourceContentType && sourceObject.contentType) {
+                sourceContentType = sourceObject.contentType;
             }
 
         }
@@ -293,6 +298,101 @@ router.post('/', upload.single('image'), async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Errore nell\'upload della foto'
+        });
+    }
+});
+
+// POST - Reupload source privata esistente e rigenera derivate pubbliche (stessi path canonici)
+router.post('/:id/replace-source', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const photoId = parseNumericIdOrThrow(id, 'ID foto');
+        const photos = await readPhotosDB();
+        const photoIndex = photos.findIndex((p) => Number(p.id) === photoId);
+
+        if (photoIndex === -1) {
+            return res.status(404).json({
+                success: false,
+                message: 'Foto non trovata'
+            });
+        }
+
+        const nextSourcePath = normalizePrivateSourcePathForPhotoId(req.body?.sourcePath, photoId);
+        if (!nextSourcePath) {
+            return res.status(400).json({
+                success: false,
+                message: `sourcePath non valido: atteso ${PRIVATE_SOURCE_PREFIX}/photo_${photoId}.[ext]`
+            });
+        }
+
+        const sourceObject = await readPrivateSourceObject(nextSourcePath);
+        if (!sourceObject) {
+            return res.status(404).json({
+                success: false,
+                message: 'Source privata non trovata nello storage.'
+            });
+        }
+
+        const currentPhoto = photos[photoIndex];
+        const publicAssets = withDefaultPhotoVariants(currentPhoto);
+        const cropProfiles = getCropProfilesFromSettings(currentPhoto.settings);
+
+        const derivatives = await generatePhotoDerivatives(sourceObject.buffer, cropProfiles);
+        const sourceResolution = await extractSourceResolution(sourceObject.buffer);
+
+        await writePublicObject(publicAssets.image, derivatives.image, 'image/webp');
+        await writePublicObject(publicAssets.thumbnail43, derivatives.thumbnail43, 'image/webp');
+        await writePublicObject(publicAssets.thumbnail11, derivatives.thumbnail11, 'image/webp');
+        await writePublicObject(publicAssets.socialImage, derivatives.socialImage, 'image/jpeg');
+
+        const bodySourceContentType = String(req.body?.sourceContentType || '').trim();
+        const nextSourceContentType = sourceObject.contentType || bodySourceContentType || currentPhoto.sourceContentType || '';
+        const previousSourcePath = normalizePrivateSourcePathForPhotoId(currentPhoto.sourcePath, photoId);
+
+        const updatedPhoto = {
+            ...currentPhoto,
+            sourcePath: nextSourcePath,
+            sourceContentType: nextSourceContentType,
+            resolution: sourceResolution.resolution,
+            derivativesVersion: Date.now()
+        };
+
+        photos[photoIndex] = updatedPhoto;
+        await writePhotosDB(photos);
+
+        if (previousSourcePath && previousSourcePath !== nextSourcePath) {
+            try {
+                await deletePrivateObject(previousSourcePath);
+            } catch (error) {
+                console.warn('[photo_replace_source_cleanup_failed]', {
+                    photoId,
+                    path: previousSourcePath,
+                    message: error?.message || 'Errore sconosciuto'
+                });
+            }
+        }
+
+        await purgePublicAssetsBestEffort(
+            [publicAssets.image, publicAssets.thumbnail43, publicAssets.thumbnail11, publicAssets.socialImage],
+            'photo_replace_source'
+        );
+
+        return res.json({
+            success: true,
+            message: 'Source privata aggiornata e derivate rigenerate con successo',
+            data: presentPhoto(updatedPhoto)
+        });
+    } catch (error) {
+        console.error('Errore replace source privata:', error);
+        if (error.status === 400 || error.code === 'INVALID_ID') {
+            return res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+        return res.status(500).json({
+            success: false,
+            message: 'Errore durante il reupload della source privata'
         });
     }
 });
