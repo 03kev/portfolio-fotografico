@@ -391,8 +391,15 @@ const PhotoModal = () => {
     
     if (!selectedPhoto) return null;
 
-    const imageSrc = resolveAssetUrl(selectedPhoto.image);
-    const downloadSrc = resolveAssetUrl(selectedPhoto.image, '');
+    const version = selectedPhoto?.derivativesVersion || selectedPhoto?.updatedAt || selectedPhoto?.id;
+    const baseImageSrc = resolveAssetUrl(selectedPhoto.image);
+    const imageSrc = version
+        ? `${baseImageSrc}${baseImageSrc.includes('?') ? '&' : '?'}v=${encodeURIComponent(String(version))}`
+        : baseImageSrc;
+    const baseDownloadSrc = resolveAssetUrl(selectedPhoto.image, '');
+    const downloadSrc = version
+        ? `${baseDownloadSrc}${baseDownloadSrc.includes('?') ? '&' : '?'}v=${encodeURIComponent(String(version))}`
+        : baseDownloadSrc;
     const canDownload = Boolean(downloadSrc);
     const hasTechnicalData = Boolean(
         selectedPhoto.camera ||
