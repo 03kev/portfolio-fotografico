@@ -944,9 +944,9 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
           <PhotoUpload
             photoToEdit={editingPhoto}
             onClose={() => setEditingPhoto(null)}
-            onUploadSuccess={() => {
+            onUploadSuccess={(updatedPhoto) => {
+              actions.applyPhotoUpdate?.(updatedPhoto);
               setEditingPhoto(null);
-              actions.fetchPhotos({ force: true });
             }}
           />
         )}
@@ -955,9 +955,9 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
           photo={croppingPhoto}
           isOpen={isAdmin && Boolean(croppingPhoto)}
           onClose={() => setCroppingPhoto(null)}
-          onSaved={async () => {
+          onSaved={(updatedPhoto) => {
+            actions.applyPhotoUpdate?.(updatedPhoto);
             setCroppingPhoto(null);
-            await actions.fetchPhotos({ force: true });
           }}
         />
 

@@ -100,10 +100,17 @@ function photoReducer(state, action) {
         };
         
         case ACTIONS.ADD_PHOTO:
+        {
+        const newPhoto = action.payload;
+        const isSameId = (photo) => String(photo?.id) === String(newPhoto?.id);
         return {
             ...state,
-            photos: [action.payload, ...state.photos]
+            photos: [newPhoto, ...state.photos.filter((photo) => !isSameId(photo))],
+            selectedPhoto: isSameId(state.selectedPhoto) ? newPhoto : state.selectedPhoto,
+            galleryPhotos: [newPhoto, ...state.galleryPhotos.filter((photo) => !isSameId(photo))],
+            pendingMapFocus: isSameId(state.pendingMapFocus) ? newPhoto : state.pendingMapFocus
         };
+        }
         
         case ACTIONS.UPDATE_PHOTO:
         {
@@ -241,9 +248,9 @@ export function PhotoProvider({ children }) {
                     ? await photoService.upload(photoData)
                     : await photoService.create(photoData);
                 const newPhoto = response.data?.data || response.data;
-                
-                // Ricarica tutte le foto dal server per assicurare coerenza
-                await actions.fetchPhotos({ force: true });
+
+                dispatch({ type: ACTIONS.ADD_PHOTO, payload: newPhoto });
+                dispatch({ type: ACTIONS.SET_LOADING, payload: false });
                 
                 // Emetti evento per notificare altri contesti
                 window.dispatchEvent(new CustomEvent('photoAdded', { detail: { photo: newPhoto } }));

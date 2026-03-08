@@ -294,8 +294,9 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onSaved }) => {
       };
 
       await photoService.update(photo.id, { settings: JSON.stringify(nextSettings) });
-      await photoService.regenerateDerivatives(photo.id);
-      onSaved?.();
+      const regenerateResponse = await photoService.regenerateDerivatives(photo.id);
+      const updatedPhoto = regenerateResponse?.data?.data || regenerateResponse?.data;
+      onSaved?.(updatedPhoto);
       onClose?.();
     } catch (err) {
       setError(getErrorMessage(err));
