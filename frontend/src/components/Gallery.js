@@ -618,7 +618,7 @@ const DeleteInlineSpinner = styled(Loader2)`
 `;
 
 const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptions = false }) => {
-  const { photos, filteredPhotos, loading, actions, filters, modalOpen } = usePhotos();
+  const { photos, filteredPhotos, loading, actions, filters, modalOpen, reuploadByPhotoId } = usePhotos();
   const outletContext = useOutletContext();
   const isAdmin = Boolean(outletContext?.isAdmin);
   const notify = outletContext?.notify || null;
@@ -637,14 +637,12 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const [editingPhoto, setEditingPhoto] = useState(null);
   const [croppingPhoto, setCroppingPhoto] = useState(null);
   const [reuploadSourcePhoto, setReuploadSourcePhoto] = useState(null);
-  const [reuploadingSourceId, setReuploadingSourceId] = useState(null);
-  const [reuploadProgressPercent, setReuploadProgressPercent] = useState(0);
-  const [reuploadProgressLabel, setReuploadProgressLabel] = useState('');
-  const [reuploadStep, setReuploadStep] = useState('');
   const [photoPendingDelete, setPhotoPendingDelete] = useState(null);
   const [deletingPhoto, setDeletingPhoto] = useState(false);
   const softProgressTimerRef = useRef(null);
   const reuploadUploadAbortControllerRef = useRef(null);
+  const activeReuploadPhotoIdRef = useRef(null);
+  const isMountedRef = useRef(true);
 
   const debouncedSearchTerm = useDebounce(searchTerm, DEBOUNCE_DELAY_FILTER);
 
@@ -653,6 +651,10 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   [photos]);
 
   const filterOptions = useMemo(() => ['all', ...allTags], [allTags]);
+  const hasActiveReupload = useMemo(
+    () => Object.values(reuploadByPhotoId || {}).some((entry) => Boolean(entry?.active)),
+    [reuploadByPhotoId]
+  );
 
   useEffect(() => {
     if (debouncedSearchTerm.trim()) {
@@ -776,7 +778,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
 
   const handleReuploadSourceClick = (e, photo) => {
     e.stopPropagation();
-    if (reuploadingSourceId) return;
+    if (hasActiveReupload) return;
     setReuploadSourcePhoto(photo);
     if (sourceFileInputRef.current) {
       sourceFileInputRef.current.value = '';
@@ -791,33 +793,30 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     }
   }, []);
 
-  const startSoftProgress = useCallback((from = 74, to = 95, intervalMs = 240) => {
+  const startSoftProgress = useCallback((photoId, from = 74, to = 95, intervalMs = 240) => {
     stopSoftProgress();
     let current = Math.max(0, Math.min(100, from));
-    setReuploadProgressPercent(current);
+    actions.setReuploadStatus(photoId, { percent: current });
     softProgressTimerRef.current = setInterval(() => {
       current = Math.min(to, current + 1);
-      setReuploadProgressPercent(current);
+      actions.setReuploadStatus(photoId, { percent: current });
       if (current >= to) {
         stopSoftProgress();
       }
     }, intervalMs);
-  }, [stopSoftProgress]);
-
-  useEffect(() => {
-    return () => stopSoftProgress();
-  }, [stopSoftProgress]);
+  }, [actions, stopSoftProgress]);
 
   useEffect(() => {
     return () => {
-      reuploadUploadAbortControllerRef.current?.abort();
-      reuploadUploadAbortControllerRef.current = null;
+      isMountedRef.current = false;
+      stopSoftProgress();
     };
-  }, []);
+  }, [stopSoftProgress]);
 
-  const handleAbortReuploadUpload = (event) => {
+  const handleAbortReuploadUpload = (event, photoId, step) => {
     event.stopPropagation();
-    if (reuploadStep !== 'upload') return;
+    if (step !== 'upload') return;
+    if (activeReuploadPhotoIdRef.current !== photoId) return;
     reuploadUploadAbortControllerRef.current?.abort();
   };
 
@@ -826,30 +825,39 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     event.target.value = '';
     const targetPhoto = reuploadSourcePhoto;
     if (!file || !targetPhoto) {
-      setReuploadSourcePhoto(null);
+      if (isMountedRef.current) setReuploadSourcePhoto(null);
       return;
     }
 
-    setReuploadingSourceId(targetPhoto.id);
-    setReuploadProgressPercent(3);
-    setReuploadProgressLabel('Preparazione upload');
-    setReuploadStep('sign');
+    const targetPhotoId = targetPhoto.id;
+    activeReuploadPhotoIdRef.current = targetPhotoId;
+    actions.setReuploadStatus(targetPhotoId, {
+      active: true,
+      percent: 3,
+      label: 'Preparazione upload',
+      step: 'sign'
+    });
     let currentStep = 'sign';
     try {
       notify?.info?.(`Caricamento source in corso per "${targetPhoto.title || 'foto'}"...`, 2500);
 
       currentStep = 'sign';
-      setReuploadProgressPercent(8);
-      setReuploadProgressLabel('Firma URL upload');
+      actions.setReuploadStatus(targetPhotoId, {
+        percent: 8,
+        label: 'Firma URL upload',
+        step: 'sign'
+      });
       const signedData = await signSourceUpload({
         uploadId: String(targetPhoto.id),
         file
       });
 
       currentStep = 'upload';
-      setReuploadStep('upload');
-      setReuploadProgressPercent(12);
-      setReuploadProgressLabel('Upload source su R2');
+      actions.setReuploadStatus(targetPhotoId, {
+        percent: 12,
+        label: 'Upload source su R2',
+        step: 'upload'
+      });
       const uploadAbortController = new AbortController();
       reuploadUploadAbortControllerRef.current = uploadAbortController;
       await uploadSourceToSignedUrl({
@@ -859,26 +867,31 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
         onProgress: ({ ratio }) => {
           const normalized = Math.max(0, Math.min(1, Number(ratio) || 0));
           const mapped = Math.round(12 + normalized * 58); // 12% -> 70%
-          setReuploadProgressPercent(mapped);
+          actions.setReuploadStatus(targetPhotoId, { percent: mapped });
         }
       });
       reuploadUploadAbortControllerRef.current = null;
 
       currentStep = 'replace';
-      setReuploadStep('replace');
-      setReuploadProgressLabel('Rigenerazione derivate');
-      setReuploadProgressPercent(74);
-      startSoftProgress(74, 95);
+      actions.setReuploadStatus(targetPhotoId, {
+        label: 'Rigenerazione derivate',
+        percent: 74,
+        step: 'replace'
+      });
+      startSoftProgress(targetPhotoId, 74, 95);
       const replaceResponse = await photoService.replaceSource(targetPhoto.id, {
         sourcePath: signedData.sourcePath,
-        sourceContentType: file.type
+        sourceContentType: file.type,
+        replaceToken: signedData.replaceToken || ''
       });
       stopSoftProgress();
       const updatedPhoto = replaceResponse?.data?.data || replaceResponse?.data;
       actions.applyPhotoUpdate?.(updatedPhoto);
-      setReuploadProgressPercent(100);
-      setReuploadProgressLabel('Completato');
-      setReuploadStep('done');
+      actions.setReuploadStatus(targetPhotoId, {
+        percent: 100,
+        label: 'Completato',
+        step: 'done'
+      });
       notify?.success?.(`Source aggiornata: "${targetPhoto.title || 'foto'}".`, 3500);
     } catch (error) {
       stopSoftProgress();
@@ -890,13 +903,11 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       }
     } finally {
       reuploadUploadAbortControllerRef.current = null;
+      activeReuploadPhotoIdRef.current = null;
       setTimeout(() => {
-        setReuploadProgressPercent(0);
-        setReuploadProgressLabel('');
-        setReuploadStep('');
+        actions.clearReuploadStatus(targetPhotoId);
       }, 250);
-      setReuploadSourcePhoto(null);
-      setReuploadingSourceId(null);
+      if (isMountedRef.current) setReuploadSourcePhoto(null);
     }
   };
 
@@ -968,7 +979,8 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
           <GalleryGrid key="gallery-grid">
             <AnimatePresence mode="popLayout" initial={false}>
               {filteredPhotos.map((photo, index) => {
-                const isReuploadingCard = reuploadingSourceId === photo.id;
+                const reuploadStatus = reuploadByPhotoId?.[String(photo.id)];
+                const isReuploadingCard = Boolean(reuploadStatus?.active);
                 return (
                 <motion.div
                   key={photo.id}
@@ -1040,18 +1052,18 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                     {isReuploadingCard && (
                       <ReuploadCardOverlay>
                         <ReuploadCardSpinner size={26} />
-                        <span>{reuploadProgressLabel || 'Aggiornamento source'}</span>
+                        <span>{reuploadStatus?.label || 'Aggiornamento source'}</span>
                         <ReuploadProgressMeta>
                           <span>Stato upload</span>
-                          <span>{Math.round(reuploadProgressPercent)}%</span>
+                          <span>{Math.round(reuploadStatus?.percent || 0)}%</span>
                         </ReuploadProgressMeta>
                         <ReuploadProgressTrack>
-                          <ReuploadProgressFill $percent={Math.max(0, Math.min(100, reuploadProgressPercent))} />
+                          <ReuploadProgressFill $percent={Math.max(0, Math.min(100, reuploadStatus?.percent || 0))} />
                         </ReuploadProgressTrack>
-                        {reuploadStep === 'upload' && (
+                        {reuploadStatus?.step === 'upload' && (
                           <ReuploadAbortButton
                             type="button"
-                            onClick={handleAbortReuploadUpload}
+                            onClick={(event) => handleAbortReuploadUpload(event, photo.id, reuploadStatus?.step)}
                           >
                             <X size={14} />
                             Annulla upload

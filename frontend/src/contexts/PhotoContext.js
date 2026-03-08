@@ -18,7 +18,9 @@ const ACTIONS = {
     DELETE_PHOTO: 'DELETE_PHOTO',
     SET_MAP_CENTER: 'SET_MAP_CENTER',
     SET_FILTER: 'SET_FILTER',
-    SET_PENDING_MAP_FOCUS: 'SET_PENDING_MAP_FOCUS'
+    SET_PENDING_MAP_FOCUS: 'SET_PENDING_MAP_FOCUS',
+    SET_REUPLOAD_STATUS: 'SET_REUPLOAD_STATUS',
+    CLEAR_REUPLOAD_STATUS: 'CLEAR_REUPLOAD_STATUS'
 };
 
 // Initial State
@@ -38,7 +40,8 @@ const initialState = {
         tags: [],
         location: ''
     },
-    pendingMapFocus: null
+    pendingMapFocus: null,
+    reuploadByPhotoId: {}
 };
 
 // Reducer
@@ -154,6 +157,36 @@ function photoReducer(state, action) {
             ...state,
             pendingMapFocus: action.payload
         };
+
+        case ACTIONS.SET_REUPLOAD_STATUS:
+        {
+        const { photoId, patch } = action.payload || {};
+        const key = String(photoId || '').trim();
+        if (!key) return state;
+
+        return {
+            ...state,
+            reuploadByPhotoId: {
+                ...state.reuploadByPhotoId,
+                [key]: {
+                    ...(state.reuploadByPhotoId[key] || {}),
+                    ...(patch || {})
+                }
+            }
+        };
+        }
+
+        case ACTIONS.CLEAR_REUPLOAD_STATUS:
+        {
+        const key = String(action.payload || '').trim();
+        if (!key || !state.reuploadByPhotoId[key]) return state;
+        const nextReuploadByPhotoId = { ...state.reuploadByPhotoId };
+        delete nextReuploadByPhotoId[key];
+        return {
+            ...state,
+            reuploadByPhotoId: nextReuploadByPhotoId
+        };
+        }
         
         default:
         return state;
@@ -319,6 +352,23 @@ export function PhotoProvider({ children }) {
         // Clear pending map focus
         clearPendingMapFocus: () => {
             dispatch({ type: ACTIONS.SET_PENDING_MAP_FOCUS, payload: null });
+        },
+
+        // Track source reupload progress per photo globally (survives route changes)
+        setReuploadStatus: (photoId, patch) => {
+            if (photoId === undefined || photoId === null) return;
+            dispatch({
+                type: ACTIONS.SET_REUPLOAD_STATUS,
+                payload: { photoId, patch }
+            });
+        },
+
+        clearReuploadStatus: (photoId) => {
+            if (photoId === undefined || photoId === null) return;
+            dispatch({
+                type: ACTIONS.CLEAR_REUPLOAD_STATUS,
+                payload: photoId
+            });
         }
     };
     
