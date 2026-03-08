@@ -33,6 +33,7 @@ const {
     purgePublicAssetsBestEffort,
     readPrivateSourceBuffer,
     readPrivateSourceObject,
+    sendRouteError,
     withDefaultPhotoVariants,
     writePrivateObject,
     writePublicObject
@@ -130,9 +131,8 @@ router.get('/', async (req, res) => {
         });
     } catch (error) {
         console.error('Errore nel recupero foto:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Errore nel recupero delle foto'
+        return sendRouteError(res, error, {
+            fallbackMessage: 'Errore nel recupero delle foto'
         });
     }
 });
@@ -158,15 +158,8 @@ router.get('/:id', async (req, res) => {
         });
     } catch (error) {
         console.error('Errore nel recupero foto:', error);
-        if (error.status === 400 || error.code === 'INVALID_ID') {
-            return res.status(400).json({
-                success: false,
-                message: error.message
-            });
-        }
-        res.status(500).json({
-            success: false,
-            message: 'Errore nel recupero della foto'
+        return sendRouteError(res, error, {
+            fallbackMessage: 'Errore nel recupero della foto'
         });
     }
 });
@@ -217,9 +210,8 @@ router.post('/upload-url', async (req, res) => {
         });
     } catch (error) {
         console.error('Errore generazione URL upload diretto:', error);
-        return res.status(500).json({
-            success: false,
-            message: 'Errore nella generazione URL upload'
+        return sendRouteError(res, error, {
+            fallbackMessage: 'Errore nella generazione URL upload'
         });
     }
 });
@@ -331,16 +323,8 @@ router.post('/', upload.single('image'), async (req, res) => {
             });
         }
 
-        if (error.code === 'INVALID_FILE_TYPE' || error.code === 'INVALID_COORDINATE' || error.status === 400) {
-            return res.status(400).json({
-                success: false,
-                message: error.message
-            });
-        }
-
-        res.status(500).json({
-            success: false,
-            message: 'Errore nell\'upload della foto'
+        return sendRouteError(res, error, {
+            fallbackMessage: 'Errore nell\'upload della foto'
         });
     }
 });
@@ -456,15 +440,8 @@ router.post('/:id/replace-source', async (req, res) => {
             message: error?.message || 'Errore sconosciuto'
         });
         console.error('Errore replace source privata:', error);
-        if (error.status === 400 || error.code === 'INVALID_ID') {
-            return res.status(400).json({
-                success: false,
-                message: error.message
-            });
-        }
-        return res.status(500).json({
-            success: false,
-            message: 'Errore durante il reupload della source privata'
+        return sendRouteError(res, error, {
+            fallbackMessage: 'Errore durante il reupload della source privata'
         });
     } finally {
         if (photoId && lockToken) {
@@ -564,15 +541,8 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
             message: error?.message || 'Errore sconosciuto'
         });
         console.error('Errore rigenerazione derivate:', error);
-        if (error.status === 400 || error.code === 'INVALID_ID') {
-            return res.status(400).json({
-                success: false,
-                message: error.message
-            });
-        }
-        return res.status(500).json({
-            success: false,
-            message: 'Errore durante la rigenerazione derivate'
+        return sendRouteError(res, error, {
+            fallbackMessage: 'Errore durante la rigenerazione derivate'
         });
     } finally {
         if (photoId && lockToken) {
@@ -620,15 +590,8 @@ router.put('/:id', async (req, res) => {
         });
     } catch (error) {
         console.error('Errore nell\'aggiornamento:', error);
-        if (error.status === 400 || error.code === 'INVALID_COORDINATE' || error.code === 'INVALID_ID') {
-            return res.status(400).json({
-                success: false,
-                message: error.message
-            });
-        }
-        res.status(500).json({
-            success: false,
-            message: 'Errore nell\'aggiornamento della foto'
+        return sendRouteError(res, error, {
+            fallbackMessage: 'Errore nell\'aggiornamento della foto'
         });
     }
 });
@@ -730,15 +693,8 @@ router.delete('/:id', async (req, res) => {
         });
     } catch (error) {
         console.error('Errore nell\'eliminazione:', error);
-        if (error.status === 400 || error.code === 'INVALID_ID') {
-            return res.status(400).json({
-                success: false,
-                message: error.message
-            });
-        }
-        res.status(500).json({
-            success: false,
-            message: 'Errore nell\'eliminazione della foto'
+        return sendRouteError(res, error, {
+            fallbackMessage: 'Errore nell\'eliminazione della foto'
         });
     }
 });
