@@ -7,7 +7,6 @@ const {
 } = require('../services/r2Storage');
 const {
     buildPhotoAssetPaths,
-    extractSourceResolution,
     generatePhotoDerivatives,
     getCropProfilesFromSettings,
     normalizePrivateSourcePathForPhotoId
@@ -227,11 +226,12 @@ router.post('/', upload.single('image'), async (req, res) => {
         }
 
         const derivatives = await generatePhotoDerivatives(sourceBuffer, cropProfiles);
-        const sourceResolution = await extractSourceResolution(sourceBuffer);
-        await writePublicObject(assets.imagePath, derivatives.image, 'image/webp');
-        await writePublicObject(assets.thumbnail43Path, derivatives.thumbnail43, 'image/webp');
-        await writePublicObject(assets.thumbnail11Path, derivatives.thumbnail11, 'image/webp');
-        await writePublicObject(assets.socialImagePath, derivatives.socialImage, 'image/jpeg');
+        await Promise.all([
+            writePublicObject(assets.imagePath, derivatives.image, 'image/webp'),
+            writePublicObject(assets.thumbnail43Path, derivatives.thumbnail43, 'image/webp'),
+            writePublicObject(assets.thumbnail11Path, derivatives.thumbnail11, 'image/webp'),
+            writePublicObject(assets.socialImagePath, derivatives.socialImage, 'image/jpeg')
+        ]);
 
         // Crea oggetto foto con valori di default
         const newPhoto = {
@@ -247,7 +247,7 @@ router.post('/', upload.single('image'), async (req, res) => {
             date: sanitized.date,
             camera: sanitized.camera,
             lens: sanitized.lens,
-            resolution: sourceResolution.resolution,
+            resolution: derivatives.resolution,
             settings: sanitized.settings,
             tags: sanitized.tags
         };
@@ -328,12 +328,13 @@ router.post('/:id/replace-source', async (req, res) => {
         const cropProfiles = getCropProfilesFromSettings(currentPhoto.settings);
 
         const derivatives = await generatePhotoDerivatives(sourceObject.buffer, cropProfiles);
-        const sourceResolution = await extractSourceResolution(sourceObject.buffer);
 
-        await writePublicObject(publicAssets.image, derivatives.image, 'image/webp');
-        await writePublicObject(publicAssets.thumbnail43, derivatives.thumbnail43, 'image/webp');
-        await writePublicObject(publicAssets.thumbnail11, derivatives.thumbnail11, 'image/webp');
-        await writePublicObject(publicAssets.socialImage, derivatives.socialImage, 'image/jpeg');
+        await Promise.all([
+            writePublicObject(publicAssets.image, derivatives.image, 'image/webp'),
+            writePublicObject(publicAssets.thumbnail43, derivatives.thumbnail43, 'image/webp'),
+            writePublicObject(publicAssets.thumbnail11, derivatives.thumbnail11, 'image/webp'),
+            writePublicObject(publicAssets.socialImage, derivatives.socialImage, 'image/jpeg')
+        ]);
 
         const bodySourceContentType = String(req.body?.sourceContentType || '').trim();
         const nextSourceContentType = sourceObject.contentType || bodySourceContentType || currentPhoto.sourceContentType || '';
@@ -343,7 +344,7 @@ router.post('/:id/replace-source', async (req, res) => {
             ...currentPhoto,
             sourcePath: nextSourcePath,
             sourceContentType: nextSourceContentType,
-            resolution: sourceResolution.resolution,
+            resolution: derivatives.resolution,
             derivativesVersion: Date.now()
         };
 
@@ -423,15 +424,16 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
 
         const cropProfiles = getCropProfilesFromSettings(photo.settings);
         const derivatives = await generatePhotoDerivatives(sourceBuffer, cropProfiles);
-        const sourceResolution = await extractSourceResolution(sourceBuffer);
-        await writePublicObject(publicAssets.image, derivatives.image, 'image/webp');
-        await writePublicObject(publicAssets.thumbnail43, derivatives.thumbnail43, 'image/webp');
-        await writePublicObject(publicAssets.thumbnail11, derivatives.thumbnail11, 'image/webp');
-        await writePublicObject(publicAssets.socialImage, derivatives.socialImage, 'image/jpeg');
+        await Promise.all([
+            writePublicObject(publicAssets.image, derivatives.image, 'image/webp'),
+            writePublicObject(publicAssets.thumbnail43, derivatives.thumbnail43, 'image/webp'),
+            writePublicObject(publicAssets.thumbnail11, derivatives.thumbnail11, 'image/webp'),
+            writePublicObject(publicAssets.socialImage, derivatives.socialImage, 'image/jpeg')
+        ]);
 
         const updatedPhoto = {
             ...photo,
-            resolution: sourceResolution.resolution,
+            resolution: derivatives.resolution,
             derivativesVersion: Date.now()
         };
 
