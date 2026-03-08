@@ -18,7 +18,6 @@ const ACTIONS = {
     DELETE_PHOTO: 'DELETE_PHOTO',
     SET_MAP_CENTER: 'SET_MAP_CENTER',
     SET_FILTER: 'SET_FILTER',
-    FORCE_GALLERY_SYNC: 'FORCE_GALLERY_SYNC',
     SET_PENDING_MAP_FOCUS: 'SET_PENDING_MAP_FOCUS'
 };
 
@@ -39,8 +38,7 @@ const initialState = {
         tags: [],
         location: ''
     },
-    gallerySyncTrigger: 0, // Contatore per forzare re-render della gallery
-    pendingMapFocus: null // Foto da focalizzare quando si arriva alla mappa
+    pendingMapFocus: null
 };
 
 // Reducer
@@ -149,12 +147,6 @@ function photoReducer(state, action) {
                 ...state.filters,
                 ...action.payload
             }
-        };
-        
-        case ACTIONS.FORCE_GALLERY_SYNC:
-        return {
-            ...state,
-            gallerySyncTrigger: state.gallerySyncTrigger + 1
         };
         
         case ACTIONS.SET_PENDING_MAP_FOCUS:
@@ -304,12 +296,6 @@ export function PhotoProvider({ children }) {
         // Set filters
         setFilter: (filterData) => {
             dispatch({ type: ACTIONS.SET_FILTER, payload: filterData });
-        },
-        
-        // Set filters and force gallery sync (for PhotoModal)
-        setFilterAndSync: (filterData) => {
-            dispatch({ type: ACTIONS.SET_FILTER, payload: filterData });
-            dispatch({ type: ACTIONS.FORCE_GALLERY_SYNC });
         },
         
         // Clear filters

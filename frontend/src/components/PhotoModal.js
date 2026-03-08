@@ -363,7 +363,7 @@ const PhotoModal = () => {
 
         // Resettiamo tutti i filtri e impostiamo solo il tag selezionato
         if (galleryModalOpen) actions.closeGalleryModal();
-        actions.setFilterAndSync({ search: '', tags: [tag], location: '' });
+        actions.setFilter({ search: '', tags: [tag], location: '' });
         actions.closePhotoModal();
         
         // Naviga alla pagina della galleria
