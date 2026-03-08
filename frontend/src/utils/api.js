@@ -158,10 +158,33 @@ export async function uploadSourceToSignedUrl({
   uploadUrl,
   file,
   timeoutMs = NETWORK_TIMEOUTS.signedUploadMs,
-  onProgress
+  onProgress,
+  signal
 }) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
+    let settled = false;
+    let abortListener = null;
+
+    const cleanup = () => {
+      if (signal && abortListener) {
+        signal.removeEventListener('abort', abortListener);
+      }
+    };
+
+    const safeResolve = (value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(value);
+    };
+
+    const safeReject = (error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
 
     xhr.open('PUT', uploadUrl, true);
     xhr.timeout = timeoutMs;
@@ -188,7 +211,7 @@ export async function uploadSourceToSignedUrl({
         if (typeof onProgress === 'function') {
           onProgress({ loaded: file?.size || 1, total: file?.size || 1, ratio: 1 });
         }
-        resolve();
+        safeResolve();
         return;
       }
 
@@ -200,26 +223,37 @@ export async function uploadSourceToSignedUrl({
       );
       error.status = xhr.status;
       error.code = 'SIGNED_UPLOAD_FAILED';
-      reject(error);
+      safeReject(error);
     };
 
     xhr.onerror = () => {
       const error = new Error('NetworkError durante upload source.');
       error.code = 'UPLOAD_NETWORK_ERROR';
-      reject(error);
+      safeReject(error);
     };
 
     xhr.ontimeout = () => {
       const timeoutError = new Error(`Timeout upload source dopo ${Math.round(timeoutMs / 1000)}s.`);
       timeoutError.code = 'UPLOAD_TIMEOUT';
-      reject(timeoutError);
+      safeReject(timeoutError);
     };
 
     xhr.onabort = () => {
       const abortError = new Error('Upload source annullato.');
       abortError.code = 'UPLOAD_ABORTED';
-      reject(abortError);
+      safeReject(abortError);
     };
+
+    if (signal) {
+      if (signal.aborted) {
+        const abortError = new Error('Upload source annullato.');
+        abortError.code = 'UPLOAD_ABORTED';
+        safeReject(abortError);
+        return;
+      }
+      abortListener = () => xhr.abort();
+      signal.addEventListener('abort', abortListener, { once: true });
+    }
 
     xhr.send(file);
   });

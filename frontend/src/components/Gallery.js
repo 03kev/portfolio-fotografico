@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Trash2, Edit3, Crop, Upload, Loader2 } from 'lucide-react';
+import { Search, Trash2, Edit3, Crop, Upload, Loader2, X } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { LOCAL_IMAGE_FALLBACK, resolveAssetUrl } from '../utils/imageUrl';
 import { photoService, signSourceUpload, uploadSourceToSignedUrl } from '../utils/api';
@@ -384,7 +384,7 @@ const ReuploadCardOverlay = styled.div`
   background: rgba(8, 10, 16, 0.58);
   backdrop-filter: blur(2px);
   z-index: 12;
-  pointer-events: none;
+  pointer-events: auto;
   color: rgba(255, 255, 255, 0.94);
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
@@ -429,6 +429,28 @@ const ReuploadProgressFill = styled.div`
   border-radius: inherit;
   background: linear-gradient(90deg, rgba(214, 179, 106, 0.92), rgba(255, 230, 168, 0.94));
   transition: width 220ms ease-out;
+`;
+
+const ReuploadAbortButton = styled.button`
+  margin-top: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: var(--border-radius-full);
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 0.76rem;
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  transition: var(--transition-normal);
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.34);
+    transform: translateY(-1px);
+  }
 `;
 
 const OverlayContent = styled.div`
@@ -618,9 +640,11 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const [reuploadingSourceId, setReuploadingSourceId] = useState(null);
   const [reuploadProgressPercent, setReuploadProgressPercent] = useState(0);
   const [reuploadProgressLabel, setReuploadProgressLabel] = useState('');
+  const [reuploadStep, setReuploadStep] = useState('');
   const [photoPendingDelete, setPhotoPendingDelete] = useState(null);
   const [deletingPhoto, setDeletingPhoto] = useState(false);
   const softProgressTimerRef = useRef(null);
+  const reuploadUploadAbortControllerRef = useRef(null);
 
   const debouncedSearchTerm = useDebounce(searchTerm, DEBOUNCE_DELAY_FILTER);
 
@@ -784,6 +808,19 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     return () => stopSoftProgress();
   }, [stopSoftProgress]);
 
+  useEffect(() => {
+    return () => {
+      reuploadUploadAbortControllerRef.current?.abort();
+      reuploadUploadAbortControllerRef.current = null;
+    };
+  }, []);
+
+  const handleAbortReuploadUpload = (event) => {
+    event.stopPropagation();
+    if (reuploadStep !== 'upload') return;
+    reuploadUploadAbortControllerRef.current?.abort();
+  };
+
   const handleReuploadSourceSelected = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -796,6 +833,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     setReuploadingSourceId(targetPhoto.id);
     setReuploadProgressPercent(3);
     setReuploadProgressLabel('Preparazione upload');
+    setReuploadStep('sign');
     let currentStep = 'sign';
     try {
       notify?.info?.(`Caricamento source in corso per "${targetPhoto.title || 'foto'}"...`, 2500);
@@ -809,19 +847,25 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       });
 
       currentStep = 'upload';
+      setReuploadStep('upload');
       setReuploadProgressPercent(12);
       setReuploadProgressLabel('Upload source su R2');
+      const uploadAbortController = new AbortController();
+      reuploadUploadAbortControllerRef.current = uploadAbortController;
       await uploadSourceToSignedUrl({
         uploadUrl: signedData.uploadUrl,
         file,
+        signal: uploadAbortController.signal,
         onProgress: ({ ratio }) => {
           const normalized = Math.max(0, Math.min(1, Number(ratio) || 0));
           const mapped = Math.round(12 + normalized * 58); // 12% -> 70%
           setReuploadProgressPercent(mapped);
         }
       });
+      reuploadUploadAbortControllerRef.current = null;
 
       currentStep = 'replace';
+      setReuploadStep('replace');
       setReuploadProgressLabel('Rigenerazione derivate');
       setReuploadProgressPercent(74);
       startSoftProgress(74, 95);
@@ -834,15 +878,22 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       actions.applyPhotoUpdate?.(updatedPhoto);
       setReuploadProgressPercent(100);
       setReuploadProgressLabel('Completato');
+      setReuploadStep('done');
       notify?.success?.(`Source aggiornata: "${targetPhoto.title || 'foto'}".`, 3500);
     } catch (error) {
       stopSoftProgress();
       console.error('Errore reupload source privata:', error);
-      notify?.error?.(buildReuploadErrorMessage(error, currentStep), 6500);
+      if (error?.code === 'UPLOAD_ABORTED') {
+        notify?.info?.('Upload source annullato.', 3500);
+      } else {
+        notify?.error?.(buildReuploadErrorMessage(error, currentStep), 6500);
+      }
     } finally {
+      reuploadUploadAbortControllerRef.current = null;
       setTimeout(() => {
         setReuploadProgressPercent(0);
         setReuploadProgressLabel('');
+        setReuploadStep('');
       }, 250);
       setReuploadSourcePhoto(null);
       setReuploadingSourceId(null);
@@ -997,6 +1048,15 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                         <ReuploadProgressTrack>
                           <ReuploadProgressFill $percent={Math.max(0, Math.min(100, reuploadProgressPercent))} />
                         </ReuploadProgressTrack>
+                        {reuploadStep === 'upload' && (
+                          <ReuploadAbortButton
+                            type="button"
+                            onClick={handleAbortReuploadUpload}
+                          >
+                            <X size={14} />
+                            Annulla upload
+                          </ReuploadAbortButton>
+                        )}
                       </ReuploadCardOverlay>
                     )}
                     {!isReuploadingCard && (

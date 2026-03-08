@@ -40,6 +40,59 @@ const {
 
 const router = express.Router();
 router.use(protectWriteMethods);
+const photoMutationLocks = new Map();
+
+function acquirePhotoMutationLock(photoId, operation) {
+    if (photoMutationLocks.has(photoId)) return null;
+    const token = Symbol(`${operation}:${photoId}:${Date.now()}`);
+    photoMutationLocks.set(photoId, {
+        token,
+        operation,
+        startedAtMs: Date.now()
+    });
+    return token;
+}
+
+function releasePhotoMutationLock(photoId, token) {
+    const active = photoMutationLocks.get(photoId);
+    if (!active) return;
+    if (active.token !== token) return;
+    photoMutationLocks.delete(photoId);
+}
+
+function getActivePhotoMutationLock(photoId) {
+    return photoMutationLocks.get(photoId) || null;
+}
+
+function createPhotoOperationTimer(operation, photoId) {
+    const startNs = process.hrtime.bigint();
+    let prevNs = startNs;
+    const stages = [];
+
+    const toMs = (nsDelta) => Number(nsDelta) / 1_000_000;
+
+    return {
+        mark(stage) {
+            const nowNs = process.hrtime.bigint();
+            stages.push({
+                stage,
+                ms: Number(toMs(nowNs - prevNs).toFixed(2))
+            });
+            prevNs = nowNs;
+        },
+        flush(status, extra = {}) {
+            const totalMs = Number(toMs(process.hrtime.bigint() - startNs).toFixed(2));
+            console.info('[photo_operation_timing]', {
+                operation,
+                photoId,
+                status,
+                totalMs,
+                stages,
+                ...extra
+            });
+        }
+    };
+}
 
 // Configurazione multer per upload immagini
 const storage = multer.memoryStorage();
@@ -294,10 +347,25 @@ router.post('/', upload.single('image'), async (req, res) => {
 
 // POST - Reupload source privata esistente e rigenera derivate pubbliche (stessi path canonici)
 router.post('/:id/replace-source', async (req, res) => {
+    let photoId = null;
+    let lockToken = null;
+    let timer = null;
     try {
         const { id } = req.params;
-        const photoId = parseNumericIdOrThrow(id, 'ID foto');
+        photoId = parseNumericIdOrThrow(id, 'ID foto');
+        lockToken = acquirePhotoMutationLock(photoId, 'replace-source');
+        if (!lockToken) {
+            const activeLock = getActivePhotoMutationLock(photoId);
+            return res.status(409).json({
+                success: false,
+                code: 'PHOTO_MUTATION_IN_PROGRESS',
+                message: `Operazione già in corso su questa foto${activeLock?.operation ? ` (${activeLock.operation})` : ''}.`
+            });
+        }
+        timer = createPhotoOperationTimer('replace-source', photoId);
+
         const photos = await readPhotosDB();
+        timer.mark('read_photos_db');
         const photoIndex = photos.findIndex((p) => Number(p.id) === photoId);
 
         if (photoIndex === -1) {
@@ -316,6 +384,7 @@ router.post('/:id/replace-source', async (req, res) => {
         }
 
         const sourceObject = await readPrivateSourceObject(nextSourcePath);
+        timer.mark('read_private_source');
         if (!sourceObject) {
             return res.status(404).json({
                 success: false,
@@ -328,6 +397,7 @@ router.post('/:id/replace-source', async (req, res) => {
         const cropProfiles = getCropProfilesFromSettings(currentPhoto.settings);
 
         const derivatives = await generatePhotoDerivatives(sourceObject.buffer, cropProfiles);
+        timer.mark('generate_derivatives');
 
         await Promise.all([
             writePublicObject(publicAssets.image, derivatives.image, 'image/webp'),
@@ -335,6 +405,7 @@ router.post('/:id/replace-source', async (req, res) => {
             writePublicObject(publicAssets.thumbnail11, derivatives.thumbnail11, 'image/webp'),
             writePublicObject(publicAssets.socialImage, derivatives.socialImage, 'image/jpeg')
         ]);
+        timer.mark('write_public_derivatives');
 
         const bodySourceContentType = String(req.body?.sourceContentType || '').trim();
         const nextSourceContentType = sourceObject.contentType || bodySourceContentType || currentPhoto.sourceContentType || '';
@@ -350,10 +421,12 @@ router.post('/:id/replace-source', async (req, res) => {
 
         photos[photoIndex] = updatedPhoto;
         await writePhotosDB(photos);
+        timer.mark('write_photo_metadata');
 
         if (previousSourcePath && previousSourcePath !== nextSourcePath) {
             try {
                 await deletePrivateObject(previousSourcePath);
+                timer.mark('delete_previous_private_source');
             } catch (error) {
                 console.warn('[photo_replace_source_cleanup_failed]', {
                     photoId,
@@ -367,6 +440,10 @@ router.post('/:id/replace-source', async (req, res) => {
             [publicAssets.image, publicAssets.thumbnail43, publicAssets.thumbnail11, publicAssets.socialImage],
             'photo_replace_source'
         );
+        timer.mark('purge_public_cache');
+        timer.flush('success', {
+            derivativesVersion: updatedPhoto.derivativesVersion
+        });
 
         return res.json({
             success: true,
@@ -374,6 +451,10 @@ router.post('/:id/replace-source', async (req, res) => {
             data: presentPhoto(updatedPhoto)
         });
     } catch (error) {
+        timer?.flush('error', {
+            code: error?.code || null,
+            message: error?.message || 'Errore sconosciuto'
+        });
         console.error('Errore replace source privata:', error);
         if (error.status === 400 || error.code === 'INVALID_ID') {
             return res.status(400).json({
@@ -385,15 +466,34 @@ router.post('/:id/replace-source', async (req, res) => {
             success: false,
             message: 'Errore durante il reupload della source privata'
         });
+    } finally {
+        if (photoId && lockToken) {
+            releasePhotoMutationLock(photoId, lockToken);
+        }
     }
 });
 
 // POST - Rigenera derivate da source full-res (stessi path, overwrite su R2)
 router.post('/:id/regenerate-derivatives', async (req, res) => {
+    let photoId = null;
+    let lockToken = null;
+    let timer = null;
     try {
         const { id } = req.params;
-        const photoId = parseNumericIdOrThrow(id, 'ID foto');
+        photoId = parseNumericIdOrThrow(id, 'ID foto');
+        lockToken = acquirePhotoMutationLock(photoId, 'regenerate-derivatives');
+        if (!lockToken) {
+            const activeLock = getActivePhotoMutationLock(photoId);
+            return res.status(409).json({
+                success: false,
+                code: 'PHOTO_MUTATION_IN_PROGRESS',
+                message: `Operazione già in corso su questa foto${activeLock?.operation ? ` (${activeLock.operation})` : ''}.`
+            });
+        }
+        timer = createPhotoOperationTimer('regenerate-derivatives', photoId);
+
         const photos = await readPhotosDB();
+        timer.mark('read_photos_db');
         const photoIndex = photos.findIndex((p) => Number(p.id) === photoId);
 
         if (photoIndex === -1) {
@@ -413,6 +513,7 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
         }
 
         const sourceBuffer = await readPrivateSourceBuffer(sourcePath);
+        timer.mark('read_private_source');
         if (!sourceBuffer) {
             return res.status(404).json({
                 success: false,
@@ -424,12 +525,14 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
 
         const cropProfiles = getCropProfilesFromSettings(photo.settings);
         const derivatives = await generatePhotoDerivatives(sourceBuffer, cropProfiles);
+        timer.mark('generate_derivatives');
         await Promise.all([
             writePublicObject(publicAssets.image, derivatives.image, 'image/webp'),
             writePublicObject(publicAssets.thumbnail43, derivatives.thumbnail43, 'image/webp'),
             writePublicObject(publicAssets.thumbnail11, derivatives.thumbnail11, 'image/webp'),
             writePublicObject(publicAssets.socialImage, derivatives.socialImage, 'image/jpeg')
         ]);
+        timer.mark('write_public_derivatives');
 
         const updatedPhoto = {
             ...photo,
@@ -439,11 +542,16 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
 
         photos[photoIndex] = updatedPhoto;
         await writePhotosDB(photos);
+        timer.mark('write_photo_metadata');
 
         await purgePublicAssetsBestEffort(
             [publicAssets.image, publicAssets.thumbnail43, publicAssets.thumbnail11, publicAssets.socialImage],
             'photo_regenerate_derivatives'
         );
+        timer.mark('purge_public_cache');
+        timer.flush('success', {
+            derivativesVersion: updatedPhoto.derivativesVersion
+        });
 
         return res.json({
             success: true,
@@ -451,6 +559,10 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
             data: presentPhoto(updatedPhoto)
         });
     } catch (error) {
+        timer?.flush('error', {
+            code: error?.code || null,
+            message: error?.message || 'Errore sconosciuto'
+        });
         console.error('Errore rigenerazione derivate:', error);
         if (error.status === 400 || error.code === 'INVALID_ID') {
             return res.status(400).json({
@@ -462,6 +574,10 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
             success: false,
             message: 'Errore durante la rigenerazione derivate'
         });
+    } finally {
+        if (photoId && lockToken) {
+            releasePhotoMutationLock(photoId, lockToken);
+        }
     }
 });
 
