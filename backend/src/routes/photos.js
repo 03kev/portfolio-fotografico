@@ -2,7 +2,6 @@ const express = require('express');
 const multer = require('multer');
 const {
     createPrivateUploadPresignedPutUrl,
-    createUploadPresignedPutUrl,
     deletePrivateObject,
     deleteUploadObject
 } = require('../services/r2Storage');
@@ -14,8 +13,7 @@ const {
     normalizePrivateSourcePathForPhotoId
 } = require('../services/photoDerivatives');
 const {
-    PRIVATE_SOURCE_PREFIX,
-    PUBLIC_UPLOADS_PREFIX
+    PRIVATE_SOURCE_PREFIX
 } = require('../config/assetPaths');
 const DEFAULTS = require('../config/defaults');
 const { parseNumericIdOrThrow } = require('../utils/ids');
@@ -43,7 +41,6 @@ const {
 
 const router = express.Router();
 router.use(protectWriteMethods);
-const PUBLIC_ASSET_CACHE_CONTROL = DEFAULTS.publicAssetCacheControl;
 
 // Configurazione multer per upload immagini
 const storage = multer.memoryStorage();
@@ -127,7 +124,12 @@ router.post('/upload-url', async (req, res) => {
     try {
         const { uploadId, mimetype, contentType, fileSize, variant } = req.body || {};
         const rawVariant = String(variant || 'source').trim().toLowerCase();
-        const uploadVariant = ['source', 'image'].includes(rawVariant) ? rawVariant : 'source';
+        if (rawVariant !== 'source') {
+            return res.status(400).json({
+                success: false,
+                message: 'variant non valido: usare solo "source".'
+            });
+        }
         const effectiveMimeType = String(mimetype || contentType || '').trim();
         if (!effectiveMimeType || !isAllowedMimeType(effectiveMimeType, allowedUploadTypes)) {
             return res.status(400).json({
@@ -146,30 +148,18 @@ router.post('/upload-url', async (req, res) => {
         }
 
         const uploadFilename = buildUploadFilename(effectiveMimeType, uploadId);
-        const uploadPath = uploadVariant === 'source'
-            ? `${PRIVATE_SOURCE_PREFIX}/${uploadFilename}`
-            : `${PUBLIC_UPLOADS_PREFIX}/${uploadFilename}`;
-
-        const signed = uploadVariant === 'source'
-            ? await createPrivateUploadPresignedPutUrl(uploadPath, {
-                contentType: effectiveMimeType,
-                cacheControl: 'private, no-store',
-                expiresInSeconds: 300
-            })
-            : await createUploadPresignedPutUrl(uploadPath, {
-                contentType: effectiveMimeType,
-                cacheControl: PUBLIC_ASSET_CACHE_CONTROL,
-                expiresInSeconds: 300
-            });
+        const uploadPath = `${PRIVATE_SOURCE_PREFIX}/${uploadFilename}`;
+        const signed = await createPrivateUploadPresignedPutUrl(uploadPath, {
+            contentType: effectiveMimeType,
+            cacheControl: 'private, no-store',
+            expiresInSeconds: 300
+        });
 
         return res.json({
             success: true,
             data: {
                 uploadUrl: signed.uploadUrl,
-                imagePath: signed.uploadPath,
-                sourcePath: uploadVariant === 'source' ? signed.uploadPath : '',
-                variant: uploadVariant,
-                publicUrl: signed.publicUrl,
+                sourcePath: signed.uploadPath,
                 expiresInSeconds: signed.expiresInSeconds
             }
         });

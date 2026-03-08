@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Trash2, Edit3, Crop, Upload, Loader2 } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { LOCAL_IMAGE_FALLBACK, resolveAssetUrl } from '../utils/imageUrl';
-import { photoService } from '../utils/api';
+import { photoService, signSourceUpload, uploadSourceToSignedUrl } from '../utils/api';
 import PhotoUpload from './PhotoUpload';
 import PhotoCropModal from './PhotoCropModal';
 
@@ -634,43 +634,16 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       notify?.info?.(`Caricamento source in corso per "${targetPhoto.title || 'foto'}"...`, 2500);
 
       currentStep = 'sign';
-      const signResponse = await photoService.getUploadUrl({
+      const signedData = await signSourceUpload({
         uploadId: String(targetPhoto.id),
-        variant: 'source',
-        mimetype: file.type,
-        fileSize: file.size
+        file
       });
-      const signedData = signResponse?.data?.data || signResponse?.data;
-      if (!signedData?.uploadUrl || !signedData?.sourcePath) {
-        throw new Error('URL di upload source non valida ricevuta dal server.');
-      }
 
       currentStep = 'upload';
-      const uploadResponse = await fetch(signedData.uploadUrl, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': file.type || 'application/octet-stream',
-          'Cache-Control': 'private, no-store'
-        },
-        body: file
+      await uploadSourceToSignedUrl({
+        uploadUrl: signedData.uploadUrl,
+        file
       });
-      if (!uploadResponse.ok) {
-        const status = uploadResponse.status;
-        let detail = '';
-        const responseType = String(uploadResponse.headers.get('content-type') || '').toLowerCase();
-        try {
-          if (responseType.includes('application/json')) {
-            const json = await uploadResponse.json();
-            detail = compactRawMessage(json?.message || json?.error || '');
-          } else {
-            const text = await uploadResponse.text();
-            detail = compactRawMessage(text.replace(/<[^>]+>/g, ' '));
-          }
-        } catch {
-          detail = '';
-        }
-        throw new Error(detail ? `Upload source fallito (${status}): ${detail}` : `Upload source fallito (${status}).`);
-      }
 
       currentStep = 'replace';
       await photoService.replaceSource(targetPhoto.id, {
@@ -679,7 +652,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       });
 
       currentStep = 'refresh';
-      await actions.fetchPhotos();
+      await actions.fetchPhotos({ force: true });
       notify?.success?.(`Source aggiornata: "${targetPhoto.title || 'foto'}".`, 3500);
     } catch (error) {
       console.error('Errore reupload source privata:', error);
@@ -865,7 +838,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
             onClose={() => setEditingPhoto(null)}
             onUploadSuccess={() => {
               setEditingPhoto(null);
-              actions.fetchPhotos();
+              actions.fetchPhotos({ force: true });
             }}
           />
         )}
@@ -876,7 +849,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
           onClose={() => setCroppingPhoto(null)}
           onSaved={async () => {
             setCroppingPhoto(null);
-            await actions.fetchPhotos();
+            await actions.fetchPhotos({ force: true });
           }}
         />
       </Container>

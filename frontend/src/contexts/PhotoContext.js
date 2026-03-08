@@ -156,16 +156,15 @@ function photoReducer(state, action) {
 export function PhotoProvider({ children }) {
     const [state, dispatch] = useReducer(photoReducer, initialState);
     const focusHandlerRef = useRef(null);
-    const fetchTimeoutRef = useRef(null);
     const lastFetchTimeRef = useRef(0);
     
     // Actions
     const actions = {
         // Fetch photos from API with debouncing
-        fetchPhotos: async () => {
+        fetchPhotos: async ({ force = false } = {}) => {
             // Evita fetch multipli troppo ravvicinati
             const now = Date.now();
-            if (now - lastFetchTimeRef.current < 500) {
+            if (!force && now - lastFetchTimeRef.current < 500) {
                 console.log('Fetch troppo ravvicinato, ignorato');
                 return;
             }
@@ -235,7 +234,7 @@ export function PhotoProvider({ children }) {
                 const newPhoto = response.data?.data || response.data;
                 
                 // Ricarica tutte le foto dal server per assicurare coerenza
-                await actions.fetchPhotos();
+                await actions.fetchPhotos({ force: true });
                 
                 // Emetti evento per notificare altri contesti
                 window.dispatchEvent(new CustomEvent('photoAdded', { detail: { photo: newPhoto } }));
@@ -317,7 +316,8 @@ export function PhotoProvider({ children }) {
     
     // Load photos on mount
     useEffect(() => {
-        actions.fetchPhotos();
+        actions.fetchPhotos({ force: true });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
     
     // Filtered photos based on current filters

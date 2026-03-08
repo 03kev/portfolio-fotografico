@@ -1,6 +1,8 @@
 import axios from 'axios';
 import { API_BASE_URL } from './constants';
 
+const DEFAULT_SIGNED_UPLOAD_TIMEOUT_MS = 30000;
+
 const api = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
@@ -10,6 +12,45 @@ const api = axios.create({
   },
 });
 
+function compactText(value, maxLength = 240) {
+  const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, maxLength - 3)}...`;
+}
+
+function normalizeApiError(error) {
+  const responseData = error?.response?.data;
+  const status = Number(error?.response?.status || 0) || null;
+  const base = responseData && typeof responseData === 'object' ? responseData : {};
+  const fallbackMessage = compactText(
+    typeof responseData === 'string' ? responseData : (error?.message || '')
+  );
+
+  return {
+    ...base,
+    status,
+    code: base?.code || error?.code || null,
+    message: compactText(base?.message || base?.error || fallbackMessage || 'Si è verificato un errore imprevisto'),
+    isAxiosError: Boolean(error?.isAxiosError)
+  };
+}
+
+async function extractUploadFailureDetail(response) {
+  const responseType = String(response?.headers?.get('content-type') || '').toLowerCase();
+
+  try {
+    if (responseType.includes('application/json')) {
+      const payload = await response.json();
+      return compactText(payload?.message || payload?.error || '');
+    }
+    const text = await response.text();
+    return compactText(text.replace(/<[^>]+>/g, ' '));
+  } catch {
+    return '';
+  }
+}
+
 // Interceptor per le risposte
 api.interceptors.response.use(
   (response) => {
@@ -18,7 +59,7 @@ api.interceptors.response.use(
   (error) => {
     console.error('API Error:', error);
 
-    return Promise.reject(error.response?.data || error.message);
+    return Promise.reject(normalizeApiError(error));
   }
 );
 
@@ -104,6 +145,66 @@ export const authService = {
   logout: () => api.delete('/auth/session'),
 };
 
+export async function signSourceUpload({ uploadId, file }) {
+  const response = await photoService.getUploadUrl({
+    uploadId: String(uploadId),
+    variant: 'source',
+    mimetype: file?.type,
+    fileSize: file?.size
+  });
+  const signedData = response?.data?.data || response?.data;
+
+  if (!signedData?.uploadUrl || !signedData?.sourcePath) {
+    const error = new Error('URL di upload source non valida ricevuta dal server.');
+    error.code = 'UPLOAD_SIGN_INVALID_RESPONSE';
+    throw error;
+  }
+
+  return signedData;
+}
+
+export async function uploadSourceToSignedUrl({
+  uploadUrl,
+  file,
+  timeoutMs = DEFAULT_SIGNED_UPLOAD_TIMEOUT_MS
+}) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': file?.type || 'application/octet-stream',
+        'Cache-Control': 'private, no-store'
+      },
+      body: file,
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      const detail = await extractUploadFailureDetail(response);
+      const error = new Error(
+        detail
+          ? `Upload source fallito (${response.status}): ${detail}`
+          : `Upload source fallito (${response.status}).`
+      );
+      error.status = response.status;
+      error.code = 'SIGNED_UPLOAD_FAILED';
+      throw error;
+    }
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      const timeoutError = new Error(`Timeout upload source dopo ${Math.round(timeoutMs / 1000)}s.`);
+      timeoutError.code = 'UPLOAD_TIMEOUT';
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // Utility functions
 export const uploadUtils = {
   // Valida file immagine
@@ -120,55 +221,6 @@ export const uploadUtils = {
     }
     
     return true;
-  },
-  
-  // Crea FormData per upload
-  createFormData: (photoData) => {
-    const formData = new FormData();
-    
-    Object.keys(photoData).forEach(key => {
-      if (photoData[key] !== undefined && photoData[key] !== null) {
-        if (key === 'settings' || key === 'tags') {
-          formData.append(key, JSON.stringify(photoData[key]));
-        } else {
-          formData.append(key, photoData[key]);
-        }
-      }
-    });
-    
-    return formData;
-  },
-  
-  // Comprimi immagine lato client (opzionale)
-  compressImage: (file, quality = 0.8) => {
-    return new Promise((resolve) => {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      const img = new Image();
-      
-      img.onload = () => {
-        const maxWidth = 1920;
-        const maxHeight = 1080;
-        
-        let { width, height } = img;
-        
-        // Calcola nuove dimensioni mantenendo aspect ratio
-        if (width > maxWidth || height > maxHeight) {
-          const ratio = Math.min(maxWidth / width, maxHeight / height);
-          width *= ratio;
-          height *= ratio;
-        }
-        
-        canvas.width = width;
-        canvas.height = height;
-        
-        ctx.drawImage(img, 0, 0, width, height);
-        
-        canvas.toBlob(resolve, 'image/jpeg', quality);
-      };
-      
-      img.src = URL.createObjectURL(file);
-    });
   }
 };
 
@@ -182,15 +234,18 @@ export const errorUtils = {
   },
   
   isNetworkError: (error) => {
-    return !error?.response && error?.request;
+    if (error?.code === 'UPLOAD_TIMEOUT') return true;
+    return !error?.status && !error?.response && error?.request;
   },
   
   isServerError: (error) => {
-    return error?.response?.status >= 500;
+    const status = Number(error?.status || error?.response?.status || 0);
+    return status >= 500;
   },
   
   isClientError: (error) => {
-    return error?.response?.status >= 400 && error?.response?.status < 500;
+    const status = Number(error?.status || error?.response?.status || 0);
+    return status >= 400 && status < 500;
   }
 };
 

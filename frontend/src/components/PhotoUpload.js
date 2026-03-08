@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { AlertTriangle, FolderOpen, Globe, Loader2, MapPin, PencilLine, Save, Upload } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
-import { photoService, uploadUtils } from '../utils/api';
+import { signSourceUpload, uploadSourceToSignedUrl, uploadUtils } from '../utils/api';
 import MapSelector from './MapSelector';
 import { AnimatePresence } from 'framer-motion';
 import exifr from 'exifr';
@@ -400,60 +400,25 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                 const result = await actions.updatePhoto(photoToEdit.id, updateData);
                 if (onUploadSuccess) onUploadSuccess(result);
             } else {
-                let result;
-                try {
-                    const photoId = Date.now();
-                    const uploadId = String(photoId);
-                    const signResponse = await photoService.getUploadUrl({
-                        uploadId,
-                        variant: 'source',
-                        mimetype: selectedFile.type,
-                        fileSize: selectedFile.size
-                    });
-                    const signedData = signResponse?.data?.data || signResponse?.data;
+                const photoId = Date.now();
+                const signedData = await signSourceUpload({
+                    uploadId: String(photoId),
+                    file: selectedFile
+                });
+                await uploadSourceToSignedUrl({
+                    uploadUrl: signedData.uploadUrl,
+                    file: selectedFile
+                });
 
-                    if (!signedData?.uploadUrl || !signedData?.sourcePath) {
-                        throw new Error('URL di upload non valida ricevuta dal server');
-                    }
-
-                    const uploadResponse = await fetch(signedData.uploadUrl, {
-                        method: 'PUT',
-                        headers: {
-                            'Content-Type': selectedFile.type || 'application/octet-stream',
-                            'Cache-Control': 'private, no-store'
-                        },
-                        body: selectedFile
-                    });
-
-                    if (!uploadResponse.ok) {
-                        throw new Error(`Upload su storage fallito (${uploadResponse.status})`);
-                    }
-
-                    const uploadData = {
-                        ...formData,
-                        photoId,
-                        sourcePath: signedData.sourcePath,
-                        sourceContentType: selectedFile.type,
-                        settings: nextSettings,
-                        tags: formData.tags
-                    };
-                    result = await actions.addPhoto(uploadData);
-                } catch (directUploadError) {
-                    const directUploadMessage = directUploadError?.message || directUploadError?.error?.message || '';
-                    const shouldFallbackToMultipart = directUploadMessage.includes('Upload diretto disponibile solo con R2 configurato');
-
-                    if (!shouldFallbackToMultipart) {
-                        throw directUploadError;
-                    }
-
-                    const multipartPayload = uploadUtils.createFormData({
-                        ...formData,
-                        image: selectedFile,
-                        settings: JSON.stringify(nextSettings),
-                        tags: formData.tags
-                    });
-                    result = await actions.addPhoto(multipartPayload);
-                }
+                const uploadData = {
+                    ...formData,
+                    photoId,
+                    sourcePath: signedData.sourcePath,
+                    sourceContentType: selectedFile.type,
+                    settings: nextSettings,
+                    tags: formData.tags
+                };
+                const result = await actions.addPhoto(uploadData);
 
                 if (onUploadSuccess) onUploadSuccess(result);
             }

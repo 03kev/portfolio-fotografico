@@ -77,6 +77,10 @@ function normalizePhotoForApiList(photo) {
         tags = Array.isArray(photo.tags) ? photo.tags : [];
     }
 
+    const derivativesVersion = Number.isFinite(Number(photo.derivativesVersion))
+        ? Number(photo.derivativesVersion)
+        : (Number.isFinite(Number(photo.id)) ? Number(photo.id) : 0);
+
     return {
         ...photo,
         title: photo.title || 'Foto senza titolo',
@@ -86,7 +90,7 @@ function normalizePhotoForApiList(photo) {
         lens: photo.lens || '',
         lat: photo.lat || 0,
         lng: photo.lng || 0,
-        derivativesVersion: photo.derivativesVersion || photo.updatedAt || photo.id || Date.now(),
+        derivativesVersion,
         settings,
         tags
     };
