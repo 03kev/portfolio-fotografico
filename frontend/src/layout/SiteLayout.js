@@ -6,6 +6,7 @@ import Footer from '../components/Footer';
 import PhotoModal from '../components/PhotoModal';
 import GalleryModal from '../components/GalleryModal';
 import PhotoUpload from '../components/PhotoUpload';
+import AdminTokenModal from '../components/AdminTokenModal';
 import ToastProvider, { useToast } from '../components/Toast';
 import useAdminMode from '../hooks/useAdminMode';
 import { authService } from '../utils/api';
@@ -17,6 +18,9 @@ export default function SiteLayout() {
   const [showUpload, setShowUpload] = useState(false);
   const [apiTokenConfigured, setApiTokenConfigured] = useState(false);
   const [authFeedback, setAuthFeedback] = useState('idle');
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authModalLoading, setAuthModalLoading] = useState(false);
+  const [authModalError, setAuthModalError] = useState('');
   const canEdit = isAdminMode && apiTokenConfigured;
 
   // Classic multi-page behavior: always start at top when changing route.
@@ -88,6 +92,7 @@ export default function SiteLayout() {
         await authService.logout();
         setApiTokenConfigured(false);
         setAuthFeedback('idle');
+        toast.info('Sessione admin disattivata.');
       } catch (error) {
         setApiTokenConfigured(false);
         setAuthFeedback('idle');
@@ -95,25 +100,37 @@ export default function SiteLayout() {
       return;
     }
 
-    const value = window.prompt(
-      'Inserisci API token per aprire la sessione admin:'
-    );
+    setAuthModalError('');
+    setShowAuthModal(true);
+  };
 
-    if (value === null) return;
+  const handleCloseAuthModal = () => {
+    if (authModalLoading) return;
+    setShowAuthModal(false);
+    setAuthModalError('');
+  };
 
-    const trimmed = value.trim();
+  const handleSubmitAuthModal = async (token) => {
+    const trimmed = String(token || '').trim();
     if (!trimmed) {
-      setApiTokenConfigured(false);
+      setAuthModalError('Inserisci un token valido.');
       return;
     }
 
+    setAuthModalLoading(true);
+    setAuthModalError('');
     try {
       await authService.login(trimmed);
       setApiTokenConfigured(true);
       setAuthFeedback('success');
+      setShowAuthModal(false);
+      toast.success('Sessione admin attiva.');
     } catch (error) {
       setApiTokenConfigured(false);
       setAuthFeedback('error');
+      setAuthModalError('Token non valido o sessione non autorizzata.');
+    } finally {
+      setAuthModalLoading(false);
     }
   };
 
@@ -154,6 +171,14 @@ export default function SiteLayout() {
           onClose={() => setShowUpload(false)}
         />
       )}
+
+      <AdminTokenModal
+        isOpen={isAdminMode && showAuthModal}
+        loading={authModalLoading}
+        error={authModalError}
+        onClose={handleCloseAuthModal}
+        onSubmit={handleSubmitAuthModal}
+      />
 
       <ToastProvider toasts={toast.toasts} onRemove={toast.removeToast} />
     </>
