@@ -152,7 +152,7 @@ router.post('/upload-url', async (req, res) => {
         const signed = await createPrivateUploadPresignedPutUrl(uploadPath, {
             contentType: effectiveMimeType,
             cacheControl: 'private, no-store',
-            expiresInSeconds: 300
+            expiresInSeconds: DEFAULTS.r2SignedUploadUrlExpiresSeconds
         });
 
         return res.json({

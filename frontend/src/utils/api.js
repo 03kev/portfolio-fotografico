@@ -1,12 +1,10 @@
 import axios from 'axios';
-import { API_BASE_URL } from './constants';
-
-const DEFAULT_SIGNED_UPLOAD_TIMEOUT_MS = 30000;
+import { API_BASE_URL, NETWORK_TIMEOUTS } from './constants';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
-  timeout: 10000,
+  timeout: NETWORK_TIMEOUTS.apiDefaultMs,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -90,10 +88,18 @@ export const photoService = {
   update: (id, data) => api.put(`/photos/${id}`, data),
 
   // Rigenera derivate pubbliche da source full-res
-  regenerateDerivatives: (id) => api.post(`/photos/${id}/regenerate-derivatives`),
+  regenerateDerivatives: (id) => api.post(
+    `/photos/${id}/regenerate-derivatives`,
+    {},
+    { timeout: NETWORK_TIMEOUTS.regenerateDerivativesMs }
+  ),
 
   // Sostituisce la source privata e rigenera tutte le derivate pubbliche
-  replaceSource: (id, data) => api.post(`/photos/${id}/replace-source`, data),
+  replaceSource: (id, data) => api.post(
+    `/photos/${id}/replace-source`,
+    data,
+    { timeout: NETWORK_TIMEOUTS.replaceSourceMs }
+  ),
   
   // Elimina foto
   delete: (id) => api.delete(`/photos/${id}`),
@@ -166,7 +172,7 @@ export async function signSourceUpload({ uploadId, file }) {
 export async function uploadSourceToSignedUrl({
   uploadUrl,
   file,
-  timeoutMs = DEFAULT_SIGNED_UPLOAD_TIMEOUT_MS
+  timeoutMs = NETWORK_TIMEOUTS.signedUploadMs
 }) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
