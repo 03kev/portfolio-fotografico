@@ -3,8 +3,7 @@ import { AlertTriangle, FolderOpen, Globe, Loader2, MapPin, PencilLine, Save, Up
 import { usePhotos } from '../contexts/PhotoContext';
 import { signSourceUpload, uploadSourceToSignedUrl, uploadUtils } from '../utils/api';
 import {
-    buildOperationErrorMessage,
-    buildSignedUploadErrorMessage
+    buildOperationErrorMessage
 } from '../utils/operationErrors';
 import MapSelector from './MapSelector';
 import { AnimatePresence } from 'framer-motion';
@@ -24,9 +23,6 @@ const getCreateUploadStepLabel = (step = 'create') => CREATE_UPLOAD_STEP_LABELS[
 
 const buildCreateUploadErrorMessage = (error, step = 'create') => {
     const stepLabel = getCreateUploadStepLabel(step);
-    if (step === 'upload') {
-        return buildSignedUploadErrorMessage(error, stepLabel);
-    }
     return buildOperationErrorMessage(error, stepLabel);
 };
 

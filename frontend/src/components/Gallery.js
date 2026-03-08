@@ -7,8 +7,7 @@ import { usePhotos } from '../contexts/PhotoContext';
 import { LOCAL_IMAGE_FALLBACK, resolveAssetUrl } from '../utils/imageUrl';
 import { photoService, signSourceUpload, uploadSourceToSignedUrl } from '../utils/api';
 import {
-  buildOperationErrorMessage,
-  buildSignedUploadErrorMessage
+  buildOperationErrorMessage
 } from '../utils/operationErrors';
 import PhotoUpload from './PhotoUpload';
 import PhotoCropModal from './PhotoCropModal';
@@ -690,7 +689,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
 
   const handleDelete = (e, photo) => {
     e.stopPropagation();
-    if (deletingPhoto) return;
+    if (deletingPhoto || hasActivePhotoOp) return;
     setPhotoPendingDelete(photo);
   };
 
@@ -721,6 +720,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
 
   const handleEdit = (e, photo) => {
     e.stopPropagation();
+    if (hasActivePhotoOp) return;
     setEditingPhoto(photo);
   };
 
@@ -855,12 +855,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
         notify?.info?.('Upload source annullato.', 3500);
       } else {
         const stepLabel = REUPLOAD_STEP_LABELS[currentStep] || 'operazione source';
-        notify?.error?.(
-          currentStep === 'upload'
-            ? buildSignedUploadErrorMessage(error, stepLabel)
-            : buildOperationErrorMessage(error, stepLabel),
-          6500
-        );
+        notify?.error?.(buildOperationErrorMessage(error, stepLabel), 6500);
       }
     } finally {
       reuploadUploadAbortControllerRef.current = null;
@@ -1014,7 +1009,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                     )}
                     {isAdmin && !isPendingCard && (
                       <>
-                        {!isCardOpActive && (
+                        {!hasActivePhotoOp && !isCardOpActive && (
                           <ReplaceSourceButton
                             onClick={(e) => handleReuploadSourceClick(e, photo)}
                             whileHover={{ scale: 1.1 }}
@@ -1024,7 +1019,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                             <Upload size={18} />
                           </ReplaceSourceButton>
                         )}
-                        {!isCardOpActive && (
+                        {!hasActivePhotoOp && !isCardOpActive && (
                           <>
                             <CropButton
                               onClick={(e) => handleCrop(e, photo)}
