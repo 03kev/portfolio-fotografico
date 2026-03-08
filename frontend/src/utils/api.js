@@ -21,15 +21,27 @@ function normalizeApiError(error) {
   const responseData = error?.response?.data;
   const status = Number(error?.response?.status || 0) || null;
   const base = responseData && typeof responseData === 'object' ? responseData : {};
+  const baseError = base?.error && typeof base.error === 'object' ? base.error : {};
   const fallbackMessage = compactText(
     typeof responseData === 'string' ? responseData : (error?.message || '')
   );
+  const message = compactText(
+    base?.message
+    || base?.detail
+    || baseError?.message
+    || baseError?.detail
+    || (typeof base?.error === 'string' ? base.error : '')
+    || fallbackMessage
+    || 'Si è verificato un errore imprevisto'
+  );
+  const details = base?.details || baseError?.details || null;
 
   return {
     ...base,
     status,
-    code: base?.code || error?.code || null,
-    message: compactText(base?.message || base?.error || fallbackMessage || 'Si è verificato un errore imprevisto'),
+    code: base?.code || baseError?.code || error?.code || null,
+    details,
+    message,
     isAxiosError: Boolean(error?.isAxiosError)
   };
 }
@@ -161,6 +173,31 @@ export async function uploadSourceToSignedUrl({
   onProgress,
   signal
 }) {
+  const probeNetworkReachability = async (urlToProbe) => {
+    if (typeof fetch === 'undefined') return null;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+
+    const probeController = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeoutId = probeController
+      ? setTimeout(() => probeController.abort(), 2500)
+      : null;
+
+    try {
+      // no-cors probe: resolves if endpoint is reachable at network level.
+      await fetch(urlToProbe, {
+        method: 'GET',
+        mode: 'no-cors',
+        cache: 'no-store',
+        signal: probeController?.signal
+      });
+      return true;
+    } catch {
+      return false;
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  };
+
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     let settled = false;
@@ -226,9 +263,21 @@ export async function uploadSourceToSignedUrl({
       safeReject(error);
     };
 
-    xhr.onerror = () => {
+    xhr.onerror = async () => {
       const error = new Error('NetworkError durante upload source.');
       error.code = 'UPLOAD_NETWORK_ERROR';
+      error.offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+
+      // Best-effort classification: if browser is online and endpoint is reachable,
+      // this upload failure is likely caused by CORS/policy/preflight.
+      if (!error.offline) {
+        const reachable = await probeNetworkReachability(uploadUrl);
+        error.endpointReachable = reachable;
+        error.likelyCors = reachable === true;
+      } else {
+        error.endpointReachable = false;
+        error.likelyCors = false;
+      }
       safeReject(error);
     };
 

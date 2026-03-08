@@ -2,6 +2,10 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { AlertTriangle, FolderOpen, Globe, Loader2, MapPin, PencilLine, Save, Upload } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { signSourceUpload, uploadSourceToSignedUrl, uploadUtils } from '../utils/api';
+import {
+    buildOperationErrorMessage,
+    buildSignedUploadErrorMessage
+} from '../utils/operationErrors';
 import MapSelector from './MapSelector';
 import { AnimatePresence } from 'framer-motion';
 import exifr from 'exifr';
@@ -16,63 +20,14 @@ const CREATE_UPLOAD_STEP_LABELS = {
     create: 'creazione foto'
 };
 
-const NETWORK_ERROR_PATTERNS = [
-    /networkerror/i,
-    /failed to fetch/i,
-    /load failed/i,
-    /network request failed/i
-];
-
-const TIMEOUT_ERROR_PATTERNS = [
-    /timeout/i,
-    /econnaborted/i
-];
-
-const compactRawMessage = (value) => {
-    const message = String(value || '').replace(/\s+/g, ' ').trim();
-    if (!message) return '';
-    return message.length > 180 ? `${message.slice(0, 177)}...` : message;
-};
-
-const isMatchingPattern = (message, patterns) => patterns.some((pattern) => pattern.test(message));
-
-const getHttpStatusFromError = (error) => {
-    const status = Number(
-        error?.status
-        || error?.response?.status
-        || error?.error?.status
-        || error?.data?.status
-        || 0
-    );
-    return Number.isFinite(status) && status > 0 ? status : null;
-};
+const getCreateUploadStepLabel = (step = 'create') => CREATE_UPLOAD_STEP_LABELS[step] || 'creazione foto';
 
 const buildCreateUploadErrorMessage = (error, step = 'create') => {
-    const stepLabel = CREATE_UPLOAD_STEP_LABELS[step] || 'creazione foto';
-    const rawMessage = compactRawMessage(error?.message || error?.error?.message || error?.data?.message || '');
-    const status = getHttpStatusFromError(error);
-
-    if (status === 400) return `Errore (${stepLabel}): richiesta non valida. ${rawMessage || ''}`.trim();
-    if (status === 401) return `Errore (${stepLabel}): autenticazione richiesta. Riapri la sessione admin.`;
-    if (status === 403) return `Errore (${stepLabel}): accesso negato. Verifica token/API o permessi bucket.`;
-    if (status === 404) return `Errore (${stepLabel}): risorsa non trovata.`;
-    if (status === 409) return `Errore (${stepLabel}): conflitto dati, riprova.`;
-    if (status === 413) return 'File troppo grande per l\'upload. Riduci la dimensione.';
-    if (status === 415) return 'Formato file non supportato.';
-    if (status >= 500) return `Errore server (${stepLabel}): riprova tra poco.`;
-
-    if (step === 'upload' && isMatchingPattern(rawMessage, NETWORK_ERROR_PATTERNS)) {
-        return 'Upload file non riuscito: probabile blocco rete/CORS verso R2.';
+    const stepLabel = getCreateUploadStepLabel(step);
+    if (step === 'upload') {
+        return buildSignedUploadErrorMessage(error, stepLabel);
     }
-    if (isMatchingPattern(rawMessage, TIMEOUT_ERROR_PATTERNS)) {
-        return `Timeout durante ${stepLabel}. Verifica connessione e riprova.`;
-    }
-    if (isMatchingPattern(rawMessage, NETWORK_ERROR_PATTERNS)) {
-        return `Errore di rete durante ${stepLabel}.`;
-    }
-
-    if (rawMessage) return `Errore (${stepLabel}): ${rawMessage}`;
-    return `Errore durante ${stepLabel}.`;
+    return buildOperationErrorMessage(error, stepLabel);
 };
 
 const getPhotoSettings = (photo) => {
@@ -457,8 +412,27 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         delete nextSettings.cropFocus;
 
         if (isEditMode) {
-            setLoading(true);
             setError('');
+            const targetPhotoId = photoToEdit?.id;
+
+            if (!targetPhotoId) {
+                const errorMessage = 'ID foto non valido per aggiornamento.';
+                if (onUploadError) onUploadError({ message: errorMessage });
+                return;
+            }
+
+            actions.setPhotoOpStatus(targetPhotoId, {
+                active: true,
+                type: 'edit',
+                percent: 18,
+                label: 'Salvataggio dettagli',
+                step: 'update'
+            });
+
+            if (onClose) {
+                onClose();
+            }
+
             try {
                 const updateData = {
                     ...formData,
@@ -467,35 +441,21 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                 };
 
                 const result = await actions.updatePhotoInBackground(photoToEdit.id, updateData);
-                if (onUploadSuccess) onUploadSuccess(result);
-                setFormData({
-                    title: '',
-                    description: '',
-                    date: new Date().toISOString().split('T')[0],
-                    location: '',
-                    lat: '',
-                    lng: '',
-                    camera: '',
-                    lens: '',
-                    settings: { aperture: '', shutter: '', iso: '', focal: '' },
-                    tags: []
+                actions.setPhotoOpStatus(targetPhotoId, {
+                    percent: 100,
+                    label: 'Dettagli aggiornati',
+                    step: 'done'
                 });
-                setSelectedFile(null);
-                setPreview(null);
-                setTagInput('');
-                setCurrentStep(firstStep);
-                if (onClose) onClose();
+                if (onUploadSuccess) onUploadSuccess(result);
+
+                setTimeout(() => {
+                    actions.clearPhotoOpStatus(targetPhotoId);
+                }, 300);
             } catch (err) {
                 console.error('Errore upload foto:', err);
-                const statusCode = err?.status || err?.code || err?.response?.status || err?.error?.code;
-                const isPayloadTooLarge = String(statusCode) === '413';
-                const errorMessage = isPayloadTooLarge
-                    ? 'File troppo grande per l\'upload. Usa upload diretto R2 o riduci la dimensione.'
-                    : (err?.message || err?.error?.message || 'Errore durante il caricamento');
-                setError(errorMessage);
-                if (onUploadError) onUploadError(err);
-            } finally {
-                setLoading(false);
+                const errorMessage = buildOperationErrorMessage(err, 'aggiornamento foto');
+                actions.clearPhotoOpStatus(targetPhotoId);
+                if (onUploadError) onUploadError({ ...err, message: errorMessage });
             }
             return;
         }
@@ -621,9 +581,10 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             console.error('Errore upload foto:', err);
             actions.removePendingUpload(pendingId);
             actions.clearPhotoOpStatus(pendingId);
+            const errorMessage = buildCreateUploadErrorMessage(err, currentStep);
             if (onUploadError) onUploadError({
                 ...err,
-                message: buildCreateUploadErrorMessage(err, currentStep)
+                message: errorMessage
             });
         }
     }, [
@@ -636,7 +597,6 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         hasActivePhotoOp,
         onUploadSuccess,
         onUploadError,
-        firstStep,
         onClose
     ]);
 

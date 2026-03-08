@@ -7,7 +7,7 @@ const ToastContainer = styled.div`
   position: fixed;
   top: calc(var(--header-height) + 12px);
   right: 20px;
-  z-index: 1002;
+  z-index: 2000;
   display: flex;
   flex-direction: column;
   gap: 10px;

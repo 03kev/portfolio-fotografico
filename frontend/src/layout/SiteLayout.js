@@ -52,7 +52,7 @@ export default function SiteLayout() {
   };
 
   const handleUploadError = (error) => {
-    toast.error(`Errore durante il caricamento: ${error?.message || error}`);
+    toast.error(error?.message || 'Caricamento non riuscito.');
   };
 
   useEffect(() => {

@@ -6,6 +6,10 @@ import { Search, Trash2, Edit3, Crop, Upload, Loader2, X } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { LOCAL_IMAGE_FALLBACK, resolveAssetUrl } from '../utils/imageUrl';
 import { photoService, signSourceUpload, uploadSourceToSignedUrl } from '../utils/api';
+import {
+  buildOperationErrorMessage,
+  buildSignedUploadErrorMessage
+} from '../utils/operationErrors';
 import PhotoUpload from './PhotoUpload';
 import PhotoCropModal from './PhotoCropModal';
 
@@ -22,78 +26,6 @@ const CROP_STEP_LABELS = {
   update: 'salvataggio crop',
   regenerate: 'rigenerazione derivate'
 };
-
-const NETWORK_ERROR_PATTERNS = [
-  /networkerror/i,
-  /failed to fetch/i,
-  /load failed/i,
-  /network request failed/i
-];
-
-const TIMEOUT_ERROR_PATTERNS = [
-  /timeout/i,
-  /econnaborted/i
-];
-
-function compactRawMessage(value) {
-  const message = String(value || '').replace(/\s+/g, ' ').trim();
-  if (!message) return '';
-  return message.length > 180 ? `${message.slice(0, 177)}...` : message;
-}
-
-function isMatchingPattern(message, patterns) {
-  return patterns.some((pattern) => pattern.test(message));
-}
-
-function getHttpStatusFromError(error) {
-  const status = Number(
-    error?.status
-    || error?.response?.status
-    || error?.error?.status
-    || error?.data?.status
-    || 0
-  );
-  return Number.isFinite(status) && status > 0 ? status : null;
-}
-
-function buildOperationErrorMessage(error, stepLabel = 'operazione') {
-  const rawMessage = compactRawMessage(error?.message || error?.error?.message || error?.data?.message || '');
-  const status = getHttpStatusFromError(error);
-
-  if (status === 400) return `Errore (${stepLabel}): richiesta non valida. ${rawMessage || ''}`.trim();
-  if (status === 401) return `Errore (${stepLabel}): autenticazione richiesta. Riapri la sessione admin.`;
-  if (status === 403) return `Errore (${stepLabel}): accesso negato. Verifica token/API o permessi bucket.`;
-  if (status === 404) return `Errore (${stepLabel}): risorsa non trovata (foto o source privata).`;
-  if (status === 409) return `Errore (${stepLabel}): conflitto dati, aggiorna l’archivio e riprova.`;
-  if (status === 413) return `Errore (${stepLabel}): file troppo grande.`;
-  if (status === 415) return `Errore (${stepLabel}): formato file non supportato.`;
-  if (status >= 500) return `Errore server (${stepLabel}): riprova tra poco.`;
-
-  if (isMatchingPattern(rawMessage, TIMEOUT_ERROR_PATTERNS)) {
-    return `Timeout durante ${stepLabel}. Verifica connessione e riprova.`;
-  }
-
-  if (isMatchingPattern(rawMessage, NETWORK_ERROR_PATTERNS)) {
-    return `Errore di rete durante ${stepLabel}.`;
-  }
-
-  if (rawMessage) return `Errore (${stepLabel}): ${rawMessage}`;
-  return `Errore durante ${stepLabel}.`;
-}
-
-function buildReuploadErrorMessage(error, step = 'replace') {
-  const stepLabel = REUPLOAD_STEP_LABELS[step] || 'operazione source';
-  const rawMessage = compactRawMessage(error?.message || error?.error?.message || error?.data?.message || '');
-  if (step === 'upload' && isMatchingPattern(rawMessage, NETWORK_ERROR_PATTERNS)) {
-    return 'Upload source non riuscito: probabile blocco rete/CORS verso R2. Verifica CORS del bucket privato (AllowedOrigins include localhost:3000 e dominio produzione).';
-  }
-  return buildOperationErrorMessage(error, stepLabel);
-}
-
-function buildCropErrorMessage(error, step = 'regenerate') {
-  const stepLabel = CROP_STEP_LABELS[step] || 'applicazione crop';
-  return buildOperationErrorMessage(error, stepLabel);
-}
 
 function useDebounce(value, delay) {
   const [debounced, setDebounced] = useState(value);
@@ -777,11 +709,9 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       setPhotoPendingDelete(null);
     } catch (error) {
       console.error('Errore nell\'eliminazione della foto:', error);
-      const detail = compactRawMessage(error?.message || error?.error?.message || '');
+      setPhotoPendingDelete(null);
       notify?.error?.(
-        detail
-          ? `Eliminazione non riuscita: ${detail}`
-          : 'Eliminazione non riuscita. Riprova.',
+        buildOperationErrorMessage(error, 'eliminazione foto'),
         5200
       );
     } finally {
@@ -924,7 +854,13 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       if (error?.code === 'UPLOAD_ABORTED') {
         notify?.info?.('Upload source annullato.', 3500);
       } else {
-        notify?.error?.(buildReuploadErrorMessage(error, currentStep), 6500);
+        const stepLabel = REUPLOAD_STEP_LABELS[currentStep] || 'operazione source';
+        notify?.error?.(
+          currentStep === 'upload'
+            ? buildSignedUploadErrorMessage(error, stepLabel)
+            : buildOperationErrorMessage(error, stepLabel),
+          6500
+        );
       }
     } finally {
       reuploadUploadAbortControllerRef.current = null;
@@ -975,7 +911,8 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     } catch (error) {
       stopSoftProgress();
       console.error('Errore applicazione crop:', error);
-      notify?.error?.(buildCropErrorMessage(error, currentStep), 6000);
+      const stepLabel = CROP_STEP_LABELS[currentStep] || 'applicazione crop';
+      notify?.error?.(buildOperationErrorMessage(error, stepLabel), 6000);
     } finally {
       setTimeout(() => {
         actions.clearPhotoOpStatus(photoId);
@@ -1181,6 +1118,12 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
             onUploadSuccess={(updatedPhoto) => {
               actions.applyPhotoUpdate?.(updatedPhoto);
               setEditingPhoto(null);
+            }}
+            onUploadError={(error) => {
+              notify?.error?.(
+                error?.message || buildOperationErrorMessage(error, 'aggiornamento foto'),
+                6000
+              );
             }}
           />
         )}
