@@ -633,7 +633,7 @@ const DeleteInlineSpinner = styled(Loader2)`
 `;
 
 const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptions = false }) => {
-  const { photos, filteredPhotos, loading, actions, filters, modalOpen, photoOpsByPhotoId } = usePhotos();
+  const { photos, filteredPhotos, loading, actions, filters, modalOpen, photoOpsByPhotoId, pendingUploads } = usePhotos();
   const outletContext = useOutletContext();
   const isAdmin = Boolean(outletContext?.isAdmin);
   const notify = outletContext?.notify || null;
@@ -670,6 +670,14 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     () => Object.values(photoOpsByPhotoId || {}).some((entry) => Boolean(entry?.active)),
     [photoOpsByPhotoId]
   );
+
+  const galleryCards = useMemo(() => {
+    const pendingCards = (pendingUploads || []).map((entry) => ({
+      ...entry,
+      __pending: true
+    }));
+    return [...pendingCards, ...filteredPhotos];
+  }, [pendingUploads, filteredPhotos]);
 
   useEffect(() => {
     if (debouncedSearchTerm.trim()) {
@@ -1034,7 +1042,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
           </FilterContainer>
         </ControlsRow>
 
-        {filteredPhotos.length === 0 ? (
+        {galleryCards.length === 0 ? (
           <NoResults initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <h3>Nessuna foto trovata</h3>
             <p>Prova a cambiare filtri o ricerca.</p>
@@ -1042,9 +1050,12 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
         ) : (
           <GalleryGrid key="gallery-grid">
             <AnimatePresence mode="popLayout" initial={false}>
-              {filteredPhotos.map((photo, index) => {
+              {galleryCards.map((photo, index) => {
                 const photoOpStatus = photoOpsByPhotoId?.[String(photo.id)];
                 const isCardOpActive = Boolean(photoOpStatus?.active);
+                const isPendingCard = Boolean(photo?.__pending);
+                const canOpenCard = !isCardOpActive && !isPendingCard;
+                const cardImageSrc = isPendingCard ? String(photo.previewUrl || '') : getThumbImageUrl(photo);
                 return (
                 <motion.div
                   key={photo.id}
@@ -1054,15 +1065,17 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                   animate="visible"
                   exit="exit"
                   onClick={() => {
-                    if (isCardOpActive) return;
+                    if (!canOpenCard) return;
                     handlePhotoClick(photo);
                   }}
                 >
                   <PhotoCard>
-                    <SeoImageLink href={getPhotoCardUrl(photo)} aria-hidden="true" tabIndex={-1}>
-                      {photo.title || 'Foto'}
-                    </SeoImageLink>
-                    {isAdmin && (
+                    {!isPendingCard && (
+                      <SeoImageLink href={getPhotoCardUrl(photo)} aria-hidden="true" tabIndex={-1}>
+                        {photo.title || 'Foto'}
+                      </SeoImageLink>
+                    )}
+                    {isAdmin && !isPendingCard && (
                       <>
                         {!isCardOpActive && (
                           <ReplaceSourceButton
@@ -1103,7 +1116,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                       </>
                     )}
                     <PhotoImage
-                      src={getThumbImageUrl(photo)}
+                      src={cardImageSrc}
                       alt={getPhotoAltText(photo)}
                       loading={index < 3 ? 'eager' : 'lazy'}
                       fetchPriority={index < 3 ? 'high' : 'auto'}
@@ -1118,7 +1131,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                         <ReuploadCardSpinner size={26} />
                         <span>{photoOpStatus?.label || 'Operazione in corso'}</span>
                         <ReuploadProgressMeta>
-                          <span>{photoOpStatus?.type === 'source-reupload' ? 'Stato upload' : 'Stato operazione'}</span>
+                          <span>{photoOpStatus?.type === 'source-reupload' || photoOpStatus?.type === 'new-upload' ? 'Stato upload' : 'Stato operazione'}</span>
                           <span>{Math.round(photoOpStatus?.percent || 0)}%</span>
                         </ReuploadProgressMeta>
                         <ReuploadProgressTrack>

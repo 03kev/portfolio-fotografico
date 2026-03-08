@@ -20,7 +20,10 @@ const ACTIONS = {
     SET_FILTER: 'SET_FILTER',
     SET_PENDING_MAP_FOCUS: 'SET_PENDING_MAP_FOCUS',
     SET_PHOTO_OP_STATUS: 'SET_PHOTO_OP_STATUS',
-    CLEAR_PHOTO_OP_STATUS: 'CLEAR_PHOTO_OP_STATUS'
+    CLEAR_PHOTO_OP_STATUS: 'CLEAR_PHOTO_OP_STATUS',
+    ADD_PENDING_UPLOAD: 'ADD_PENDING_UPLOAD',
+    UPDATE_PENDING_UPLOAD: 'UPDATE_PENDING_UPLOAD',
+    REMOVE_PENDING_UPLOAD: 'REMOVE_PENDING_UPLOAD'
 };
 
 // Initial State
@@ -41,7 +44,8 @@ const initialState = {
         location: ''
     },
     pendingMapFocus: null,
-    photoOpsByPhotoId: {}
+    photoOpsByPhotoId: {},
+    pendingUploads: []
 };
 
 // Reducer
@@ -187,6 +191,48 @@ function photoReducer(state, action) {
             photoOpsByPhotoId: nextPhotoOpsByPhotoId
         };
         }
+
+        case ACTIONS.ADD_PENDING_UPLOAD:
+        {
+        const payload = action.payload || {};
+        const key = String(payload.id || '').trim();
+        if (!key) return state;
+        const nextPending = [
+            payload,
+            ...state.pendingUploads.filter((entry) => String(entry?.id || '') !== key)
+        ];
+        return {
+            ...state,
+            pendingUploads: nextPending
+        };
+        }
+
+        case ACTIONS.UPDATE_PENDING_UPLOAD:
+        {
+        const payload = action.payload || {};
+        const key = String(payload.id || '').trim();
+        if (!key) return state;
+        const hasExisting = state.pendingUploads.some((entry) => String(entry?.id || '') === key);
+        if (!hasExisting) return state;
+        return {
+            ...state,
+            pendingUploads: state.pendingUploads.map((entry) => (
+                String(entry?.id || '') === key
+                    ? { ...entry, ...(payload.patch || {}) }
+                    : entry
+            ))
+        };
+        }
+
+        case ACTIONS.REMOVE_PENDING_UPLOAD:
+        {
+        const key = String(action.payload || '').trim();
+        if (!key) return state;
+        return {
+            ...state,
+            pendingUploads: state.pendingUploads.filter((entry) => String(entry?.id || '') !== key)
+        };
+        }
         
         default:
         return state;
@@ -287,6 +333,25 @@ export function PhotoProvider({ children }) {
                 throw error;
             }
         },
+
+        // Create a photo without toggling global loading (for background flows)
+        createPhotoInBackground: async (photoData) => {
+            try {
+                const isFormData = typeof FormData !== 'undefined' && photoData instanceof FormData;
+                const response = isFormData
+                    ? await photoService.upload(photoData)
+                    : await photoService.create(photoData);
+                const newPhoto = response.data?.data || response.data;
+
+                dispatch({ type: ACTIONS.ADD_PHOTO, payload: newPhoto });
+                window.dispatchEvent(new CustomEvent('photoAdded', { detail: { photo: newPhoto } }));
+
+                return newPhoto;
+            } catch (error) {
+                console.error('Error creating photo in background:', error);
+                throw error;
+            }
+        },
         
         // Update photo
         updatePhoto: async (photoId, photoData) => {
@@ -368,6 +433,27 @@ export function PhotoProvider({ children }) {
             dispatch({
                 type: ACTIONS.CLEAR_PHOTO_OP_STATUS,
                 payload: photoId
+            });
+        },
+
+        addPendingUpload: (payload) => {
+            dispatch({
+                type: ACTIONS.ADD_PENDING_UPLOAD,
+                payload
+            });
+        },
+
+        updatePendingUpload: (id, patch) => {
+            dispatch({
+                type: ACTIONS.UPDATE_PENDING_UPLOAD,
+                payload: { id, patch }
+            });
+        },
+
+        removePendingUpload: (id) => {
+            dispatch({
+                type: ACTIONS.REMOVE_PENDING_UPLOAD,
+                payload: id
             });
         }
     };

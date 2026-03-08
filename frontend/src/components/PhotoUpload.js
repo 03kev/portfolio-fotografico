@@ -8,6 +8,72 @@ import exifr from 'exifr';
 import './PhotoUpload.css';
 
 const METADATA_FILE_ACCEPT = 'image/*,.nef,.nrw,.cr2,.cr3,.arw,.dng,.rw2,.orf,.raf,.pef,.srw,.raw,.tif,.tiff';
+const CREATE_UPLOAD_PENDING_PREFIX = 'pending-upload-';
+
+const CREATE_UPLOAD_STEP_LABELS = {
+    sign: 'firma URL upload',
+    upload: 'upload file su R2',
+    create: 'creazione foto'
+};
+
+const NETWORK_ERROR_PATTERNS = [
+    /networkerror/i,
+    /failed to fetch/i,
+    /load failed/i,
+    /network request failed/i
+];
+
+const TIMEOUT_ERROR_PATTERNS = [
+    /timeout/i,
+    /econnaborted/i
+];
+
+const compactRawMessage = (value) => {
+    const message = String(value || '').replace(/\s+/g, ' ').trim();
+    if (!message) return '';
+    return message.length > 180 ? `${message.slice(0, 177)}...` : message;
+};
+
+const isMatchingPattern = (message, patterns) => patterns.some((pattern) => pattern.test(message));
+
+const getHttpStatusFromError = (error) => {
+    const status = Number(
+        error?.status
+        || error?.response?.status
+        || error?.error?.status
+        || error?.data?.status
+        || 0
+    );
+    return Number.isFinite(status) && status > 0 ? status : null;
+};
+
+const buildCreateUploadErrorMessage = (error, step = 'create') => {
+    const stepLabel = CREATE_UPLOAD_STEP_LABELS[step] || 'creazione foto';
+    const rawMessage = compactRawMessage(error?.message || error?.error?.message || error?.data?.message || '');
+    const status = getHttpStatusFromError(error);
+
+    if (status === 400) return `Errore (${stepLabel}): richiesta non valida. ${rawMessage || ''}`.trim();
+    if (status === 401) return `Errore (${stepLabel}): autenticazione richiesta. Riapri la sessione admin.`;
+    if (status === 403) return `Errore (${stepLabel}): accesso negato. Verifica token/API o permessi bucket.`;
+    if (status === 404) return `Errore (${stepLabel}): risorsa non trovata.`;
+    if (status === 409) return `Errore (${stepLabel}): conflitto dati, riprova.`;
+    if (status === 413) return 'File troppo grande per l\'upload. Riduci la dimensione.';
+    if (status === 415) return 'Formato file non supportato.';
+    if (status >= 500) return `Errore server (${stepLabel}): riprova tra poco.`;
+
+    if (step === 'upload' && isMatchingPattern(rawMessage, NETWORK_ERROR_PATTERNS)) {
+        return 'Upload file non riuscito: probabile blocco rete/CORS verso R2.';
+    }
+    if (isMatchingPattern(rawMessage, TIMEOUT_ERROR_PATTERNS)) {
+        return `Timeout durante ${stepLabel}. Verifica connessione e riprova.`;
+    }
+    if (isMatchingPattern(rawMessage, NETWORK_ERROR_PATTERNS)) {
+        return `Errore di rete durante ${stepLabel}.`;
+    }
+
+    if (rawMessage) return `Errore (${stepLabel}): ${rawMessage}`;
+    return `Errore durante ${stepLabel}.`;
+};
 
 const getPhotoSettings = (photo) => {
     if (!photo) return {};
@@ -36,7 +102,7 @@ const getSteps = (isEditMode) => (
 );
 
 const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) => {
-    const { actions } = usePhotos();
+    const { actions, photoOpsByPhotoId } = usePhotos();
     const isEditMode = Boolean(photoToEdit);
     const steps = useMemo(() => getSteps(isEditMode), [isEditMode]);
     const firstStep = steps[0].id;
@@ -94,6 +160,10 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
     const fileInputRef = useRef(null);
     const metadataFileInputRef = useRef(null);
     const tagInputRef = useRef(null);
+    const hasActivePhotoOp = useMemo(
+        () => Object.values(photoOpsByPhotoId || {}).some((entry) => Boolean(entry?.active)),
+        [photoOpsByPhotoId]
+    );
 
     useEffect(() => {
         const originalOverflow = document.body.style.overflow;
@@ -383,14 +453,13 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             return;
         }
 
-        setLoading(true);
-        setError('');
+        const nextSettings = { ...(formData.settings || {}) };
+        delete nextSettings.cropFocus;
 
-        try {
-            const nextSettings = { ...(formData.settings || {}) };
-            delete nextSettings.cropFocus;
-
-            if (isEditMode) {
+        if (isEditMode) {
+            setLoading(true);
+            setError('');
+            try {
                 const updateData = {
                     ...formData,
                     settings: JSON.stringify(nextSettings),
@@ -399,65 +468,172 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
 
                 const result = await actions.updatePhoto(photoToEdit.id, updateData);
                 if (onUploadSuccess) onUploadSuccess(result);
-            } else {
-                const photoId = Date.now();
-                const signedData = await signSourceUpload({
-                    uploadId: String(photoId),
-                    file: selectedFile
+                setFormData({
+                    title: '',
+                    description: '',
+                    date: new Date().toISOString().split('T')[0],
+                    location: '',
+                    lat: '',
+                    lng: '',
+                    camera: '',
+                    lens: '',
+                    settings: { aperture: '', shutter: '', iso: '', focal: '' },
+                    tags: []
                 });
-                await uploadSourceToSignedUrl({
-                    uploadUrl: signedData.uploadUrl,
-                    file: selectedFile
-                });
-
-                const uploadData = {
-                    ...formData,
-                    photoId,
-                    sourcePath: signedData.sourcePath,
-                    sourceContentType: selectedFile.type,
-                    settings: nextSettings,
-                    tags: formData.tags
-                };
-                const result = await actions.addPhoto(uploadData);
-
-                if (onUploadSuccess) onUploadSuccess(result);
+                setSelectedFile(null);
+                setPreview(null);
+                setTagInput('');
+                setCurrentStep(firstStep);
+                if (onClose) onClose();
+            } catch (err) {
+                console.error('Errore upload foto:', err);
+                const statusCode = err?.status || err?.code || err?.response?.status || err?.error?.code;
+                const isPayloadTooLarge = String(statusCode) === '413';
+                const errorMessage = isPayloadTooLarge
+                    ? 'File troppo grande per l\'upload. Usa upload diretto R2 o riduci la dimensione.'
+                    : (err?.message || err?.error?.message || 'Errore durante il caricamento');
+                setError(errorMessage);
+                if (onUploadError) onUploadError(err);
+            } finally {
+                setLoading(false);
             }
+            return;
+        }
 
-            setFormData({
-                title: '',
-                description: '',
-                date: new Date().toISOString().split('T')[0],
-                location: '',
-                lat: '',
-                lng: '',
-                camera: '',
-                lens: '',
-                settings: { aperture: '', shutter: '', iso: '', focal: '' },
-                tags: []
-            });
-            setSelectedFile(null);
-            setPreview(null);
-            setTagInput('');
-            setCurrentStep(firstStep);
-            if (onClose) onClose();
-        } catch (err) {
-            console.error('Errore upload foto:', err);
-            const statusCode = err?.status || err?.code || err?.response?.status || err?.error?.code;
-            const isPayloadTooLarge = String(statusCode) === '413';
-            const errorMessage = isPayloadTooLarge
-                ? 'File troppo grande per l\'upload. Usa upload diretto R2 o riduci la dimensione.'
-                : (err?.message || err?.error?.message || 'Errore durante il caricamento');
-            setError(errorMessage);
-            if (onUploadError) onUploadError(err);
-        } finally {
+        if (hasActivePhotoOp) {
+            setError('È già in corso un\'altra operazione. Attendi il completamento.');
+            return;
+        }
+
+        setError('');
+
+        const selectedFileSnapshot = selectedFile;
+        const formDataSnapshot = {
+            ...formData,
+            tags: Array.isArray(formData.tags) ? [...formData.tags] : []
+        };
+        const pendingPreviewUrl = preview || '';
+        const photoId = Date.now();
+        const pendingId = `${CREATE_UPLOAD_PENDING_PREFIX}${photoId}`;
+
+        actions.addPendingUpload({
+            id: pendingId,
+            title: formDataSnapshot.title || 'Nuova foto',
+            location: formDataSnapshot.location || 'Caricamento in corso',
+            description: formDataSnapshot.description || '',
+            tags: formDataSnapshot.tags,
+            previewUrl: pendingPreviewUrl
+        });
+        actions.setPhotoOpStatus(pendingId, {
+            active: true,
+            type: 'new-upload',
+            percent: 3,
+            label: 'Preparazione upload',
+            step: 'sign'
+        });
+
+        setLoading(true);
+        if (onClose) {
+            onClose();
+        } else {
             setLoading(false);
+        }
+
+        let currentStep = 'sign';
+        let softTimer = null;
+        const startSoftProgress = (from = 84, to = 95, intervalMs = 260) => {
+            let current = Math.max(0, Math.min(100, from));
+            actions.setPhotoOpStatus(pendingId, { percent: current });
+            softTimer = setInterval(() => {
+                current = Math.min(to, current + 1);
+                actions.setPhotoOpStatus(pendingId, { percent: current });
+                if (current >= to && softTimer) {
+                    clearInterval(softTimer);
+                    softTimer = null;
+                }
+            }, intervalMs);
+        };
+        const stopSoftProgress = () => {
+            if (!softTimer) return;
+            clearInterval(softTimer);
+            softTimer = null;
+        };
+
+        try {
+            currentStep = 'sign';
+            actions.setPhotoOpStatus(pendingId, {
+                percent: 8,
+                label: 'Firma URL upload',
+                step: 'sign'
+            });
+            const signedData = await signSourceUpload({
+                uploadId: String(photoId),
+                file: selectedFileSnapshot
+            });
+
+            currentStep = 'upload';
+            actions.setPhotoOpStatus(pendingId, {
+                percent: 12,
+                label: 'Upload file su R2',
+                step: 'upload'
+            });
+            await uploadSourceToSignedUrl({
+                uploadUrl: signedData.uploadUrl,
+                file: selectedFileSnapshot,
+                onProgress: ({ ratio }) => {
+                    const normalized = Math.max(0, Math.min(1, Number(ratio) || 0));
+                    const mapped = Math.round(12 + normalized * 66); // 12% -> 78%
+                    actions.setPhotoOpStatus(pendingId, { percent: mapped });
+                }
+            });
+
+            currentStep = 'create';
+            actions.setPhotoOpStatus(pendingId, {
+                percent: 84,
+                label: 'Creazione foto',
+                step: 'create'
+            });
+            startSoftProgress(84, 95);
+
+            const uploadData = {
+                ...formDataSnapshot,
+                photoId,
+                sourcePath: signedData.sourcePath,
+                sourceContentType: selectedFileSnapshot.type,
+                settings: nextSettings,
+                tags: formDataSnapshot.tags
+            };
+            const result = await actions.createPhotoInBackground(uploadData);
+            stopSoftProgress();
+
+            actions.setPhotoOpStatus(pendingId, {
+                percent: 100,
+                label: 'Foto caricata',
+                step: 'done'
+            });
+            actions.removePendingUpload(pendingId);
+            setTimeout(() => {
+                actions.clearPhotoOpStatus(pendingId);
+            }, 250);
+            if (onUploadSuccess) onUploadSuccess(result);
+        } catch (err) {
+            stopSoftProgress();
+            console.error('Errore upload foto:', err);
+            actions.removePendingUpload(pendingId);
+            actions.clearPhotoOpStatus(pendingId);
+            if (onUploadError) onUploadError({
+                ...err,
+                message: buildCreateUploadErrorMessage(err, currentStep)
+            });
         }
     }, [
         isEditMode,
         selectedFile,
+        preview,
         formData,
         actions,
         photoToEdit,
+        hasActivePhotoOp,
         onUploadSuccess,
         onUploadError,
         firstStep,
