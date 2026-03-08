@@ -466,7 +466,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                     tags: formData.tags
                 };
 
-                const result = await actions.updatePhoto(photoToEdit.id, updateData);
+                const result = await actions.updatePhotoInBackground(photoToEdit.id, updateData);
                 if (onUploadSuccess) onUploadSuccess(result);
                 setFormData({
                     title: '',

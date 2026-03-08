@@ -371,6 +371,19 @@ export function PhotoProvider({ children }) {
             }
         },
 
+        // Update photo without toggling global loading (for modal/background flows)
+        updatePhotoInBackground: async (photoId, photoData) => {
+            try {
+                const response = await photoService.update(photoId, photoData);
+                const updatedPhoto = response.data?.data || response.data;
+                dispatch({ type: ACTIONS.UPDATE_PHOTO, payload: updatedPhoto });
+                return updatedPhoto;
+            } catch (error) {
+                console.error('Error updating photo in background:', error);
+                throw error;
+            }
+        },
+
         // Apply a photo update already returned by an API call
         applyPhotoUpdate: (updatedPhoto) => {
             if (!updatedPhoto || updatedPhoto.id === undefined || updatedPhoto.id === null) return;
