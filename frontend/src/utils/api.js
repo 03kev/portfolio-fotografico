@@ -34,21 +34,6 @@ function normalizeApiError(error) {
   };
 }
 
-async function extractUploadFailureDetail(response) {
-  const responseType = String(response?.headers?.get('content-type') || '').toLowerCase();
-
-  try {
-    if (responseType.includes('application/json')) {
-      const payload = await response.json();
-      return compactText(payload?.message || payload?.error || '');
-    }
-    const text = await response.text();
-    return compactText(text.replace(/<[^>]+>/g, ' '));
-  } catch {
-    return '';
-  }
-}
-
 // Interceptor per le risposte
 api.interceptors.response.use(
   (response) => {
@@ -172,43 +157,72 @@ export async function signSourceUpload({ uploadId, file }) {
 export async function uploadSourceToSignedUrl({
   uploadUrl,
   file,
-  timeoutMs = NETWORK_TIMEOUTS.signedUploadMs
+  timeoutMs = NETWORK_TIMEOUTS.signedUploadMs,
+  onProgress
 }) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
 
-  try {
-    const response = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': file?.type || 'application/octet-stream',
-        'Cache-Control': 'private, no-store'
-      },
-      body: file,
-      signal: controller.signal
-    });
+    xhr.open('PUT', uploadUrl, true);
+    xhr.timeout = timeoutMs;
 
-    if (!response.ok) {
-      const detail = await extractUploadFailureDetail(response);
+    try {
+      xhr.setRequestHeader('Content-Type', file?.type || 'application/octet-stream');
+      xhr.setRequestHeader('Cache-Control', 'private, no-store');
+    } catch {
+      // Non blocchiamo l'upload se il browser rifiuta un header non essenziale.
+    }
+
+    xhr.upload.onprogress = (event) => {
+      if (typeof onProgress !== 'function' || !event.lengthComputable || event.total <= 0) return;
+      const ratio = Math.max(0, Math.min(1, event.loaded / event.total));
+      onProgress({
+        loaded: event.loaded,
+        total: event.total,
+        ratio
+      });
+    };
+
+    xhr.onload = async () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        if (typeof onProgress === 'function') {
+          onProgress({ loaded: file?.size || 1, total: file?.size || 1, ratio: 1 });
+        }
+        resolve();
+        return;
+      }
+
+      const detail = compactText(String(xhr.responseText || '').replace(/<[^>]+>/g, ' '));
       const error = new Error(
         detail
-          ? `Upload source fallito (${response.status}): ${detail}`
-          : `Upload source fallito (${response.status}).`
+          ? `Upload source fallito (${xhr.status}): ${detail}`
+          : `Upload source fallito (${xhr.status}).`
       );
-      error.status = response.status;
+      error.status = xhr.status;
       error.code = 'SIGNED_UPLOAD_FAILED';
-      throw error;
-    }
-  } catch (error) {
-    if (error?.name === 'AbortError') {
+      reject(error);
+    };
+
+    xhr.onerror = () => {
+      const error = new Error('NetworkError durante upload source.');
+      error.code = 'UPLOAD_NETWORK_ERROR';
+      reject(error);
+    };
+
+    xhr.ontimeout = () => {
       const timeoutError = new Error(`Timeout upload source dopo ${Math.round(timeoutMs / 1000)}s.`);
       timeoutError.code = 'UPLOAD_TIMEOUT';
-      throw timeoutError;
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
-  }
+      reject(timeoutError);
+    };
+
+    xhr.onabort = () => {
+      const abortError = new Error('Upload source annullato.');
+      abortError.code = 'UPLOAD_ABORTED';
+      reject(abortError);
+    };
+
+    xhr.send(file);
+  });
 }
 
 // Utility functions

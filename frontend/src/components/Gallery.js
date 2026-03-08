@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -402,6 +402,35 @@ const ReuploadCardSpinner = styled(Loader2)`
   }
 `;
 
+const ReuploadProgressMeta = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: min(240px, 72%);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.78rem;
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.01em;
+  gap: 10px;
+`;
+
+const ReuploadProgressTrack = styled.div`
+  width: min(240px, 72%);
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+`;
+
+const ReuploadProgressFill = styled.div`
+  width: ${({ $percent }) => `${$percent}%`};
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(214, 179, 106, 0.92), rgba(255, 230, 168, 0.94));
+  transition: width 220ms ease-out;
+`;
+
 const OverlayContent = styled.div`
   width: 100%;
 `;
@@ -587,8 +616,11 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const [croppingPhoto, setCroppingPhoto] = useState(null);
   const [reuploadSourcePhoto, setReuploadSourcePhoto] = useState(null);
   const [reuploadingSourceId, setReuploadingSourceId] = useState(null);
+  const [reuploadProgressPercent, setReuploadProgressPercent] = useState(0);
+  const [reuploadProgressLabel, setReuploadProgressLabel] = useState('');
   const [photoPendingDelete, setPhotoPendingDelete] = useState(null);
   const [deletingPhoto, setDeletingPhoto] = useState(false);
+  const softProgressTimerRef = useRef(null);
 
   const debouncedSearchTerm = useDebounce(searchTerm, DEBOUNCE_DELAY_FILTER);
 
@@ -728,6 +760,30 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     }
   };
 
+  const stopSoftProgress = useCallback(() => {
+    if (softProgressTimerRef.current) {
+      clearInterval(softProgressTimerRef.current);
+      softProgressTimerRef.current = null;
+    }
+  }, []);
+
+  const startSoftProgress = useCallback((from = 74, to = 95, intervalMs = 240) => {
+    stopSoftProgress();
+    let current = Math.max(0, Math.min(100, from));
+    setReuploadProgressPercent(current);
+    softProgressTimerRef.current = setInterval(() => {
+      current = Math.min(to, current + 1);
+      setReuploadProgressPercent(current);
+      if (current >= to) {
+        stopSoftProgress();
+      }
+    }, intervalMs);
+  }, [stopSoftProgress]);
+
+  useEffect(() => {
+    return () => stopSoftProgress();
+  }, [stopSoftProgress]);
+
   const handleReuploadSourceSelected = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -738,34 +794,56 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     }
 
     setReuploadingSourceId(targetPhoto.id);
+    setReuploadProgressPercent(3);
+    setReuploadProgressLabel('Preparazione upload');
     let currentStep = 'sign';
     try {
       notify?.info?.(`Caricamento source in corso per "${targetPhoto.title || 'foto'}"...`, 2500);
 
       currentStep = 'sign';
+      setReuploadProgressPercent(8);
+      setReuploadProgressLabel('Firma URL upload');
       const signedData = await signSourceUpload({
         uploadId: String(targetPhoto.id),
         file
       });
 
       currentStep = 'upload';
+      setReuploadProgressPercent(12);
+      setReuploadProgressLabel('Upload source su R2');
       await uploadSourceToSignedUrl({
         uploadUrl: signedData.uploadUrl,
-        file
+        file,
+        onProgress: ({ ratio }) => {
+          const normalized = Math.max(0, Math.min(1, Number(ratio) || 0));
+          const mapped = Math.round(12 + normalized * 58); // 12% -> 70%
+          setReuploadProgressPercent(mapped);
+        }
       });
 
       currentStep = 'replace';
+      setReuploadProgressLabel('Rigenerazione derivate');
+      setReuploadProgressPercent(74);
+      startSoftProgress(74, 95);
       const replaceResponse = await photoService.replaceSource(targetPhoto.id, {
         sourcePath: signedData.sourcePath,
         sourceContentType: file.type
       });
+      stopSoftProgress();
       const updatedPhoto = replaceResponse?.data?.data || replaceResponse?.data;
       actions.applyPhotoUpdate?.(updatedPhoto);
+      setReuploadProgressPercent(100);
+      setReuploadProgressLabel('Completato');
       notify?.success?.(`Source aggiornata: "${targetPhoto.title || 'foto'}".`, 3500);
     } catch (error) {
+      stopSoftProgress();
       console.error('Errore reupload source privata:', error);
       notify?.error?.(buildReuploadErrorMessage(error, currentStep), 6500);
     } finally {
+      setTimeout(() => {
+        setReuploadProgressPercent(0);
+        setReuploadProgressLabel('');
+      }, 250);
       setReuploadSourcePhoto(null);
       setReuploadingSourceId(null);
     }
@@ -911,7 +989,14 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                     {isReuploadingCard && (
                       <ReuploadCardOverlay>
                         <ReuploadCardSpinner size={26} />
-                        <span>Aggiornamento source...</span>
+                        <span>{reuploadProgressLabel || 'Aggiornamento source'}</span>
+                        <ReuploadProgressMeta>
+                          <span>Stato upload</span>
+                          <span>{Math.round(reuploadProgressPercent)}%</span>
+                        </ReuploadProgressMeta>
+                        <ReuploadProgressTrack>
+                          <ReuploadProgressFill $percent={Math.max(0, Math.min(100, reuploadProgressPercent))} />
+                        </ReuploadProgressTrack>
                       </ReuploadCardOverlay>
                     )}
                     {!isReuploadingCard && (
