@@ -480,6 +480,93 @@ const NoResults = styled(motion.div)`
   }
 `;
 
+const DeleteModalBackdrop = styled(motion.div)`
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 6, 12, 0.74);
+  backdrop-filter: blur(6px);
+  z-index: 1300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+`;
+
+const DeleteModalCard = styled(motion.div)`
+  width: min(460px, 100%);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(180deg, rgba(12, 17, 28, 0.96), rgba(8, 12, 22, 0.98));
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+  padding: 22px;
+`;
+
+const DeleteModalTitle = styled.h3`
+  margin: 0 0 8px 0;
+  font-size: 1.12rem;
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+`;
+
+const DeleteModalText = styled.p`
+  margin: 0;
+  color: var(--color-muted);
+  line-height: 1.5;
+  font-size: var(--font-size-sm);
+`;
+
+const DeleteModalActions = styled.div`
+  margin-top: 18px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+`;
+
+const DeleteModalButton = styled.button`
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--border-radius-lg);
+  padding: 9px 14px;
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: var(--transition-normal);
+  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.04);
+
+  &:hover:enabled {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.24);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+  }
+`;
+
+const DeleteConfirmButton = styled(DeleteModalButton)`
+  background: rgba(214, 56, 56, 0.92);
+  border-color: rgba(255, 255, 255, 0.2);
+
+  &:hover:enabled {
+    background: rgba(194, 39, 39, 0.96);
+    border-color: rgba(255, 255, 255, 0.28);
+  }
+`;
+
+const DeleteInlineSpinner = styled(Loader2)`
+  animation: delete-photo-spin 0.9s linear infinite;
+
+  @keyframes delete-photo-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+`;
+
 const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptions = false }) => {
   const { photos, filteredPhotos, loading, actions, filters, modalOpen } = usePhotos();
   const outletContext = useOutletContext();
@@ -501,6 +588,8 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const [croppingPhoto, setCroppingPhoto] = useState(null);
   const [reuploadSourcePhoto, setReuploadSourcePhoto] = useState(null);
   const [reuploadingSourceId, setReuploadingSourceId] = useState(null);
+  const [photoPendingDelete, setPhotoPendingDelete] = useState(null);
+  const [deletingPhoto, setDeletingPhoto] = useState(false);
 
   const debouncedSearchTerm = useDebounce(searchTerm, DEBOUNCE_DELAY_FILTER);
 
@@ -587,15 +676,36 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     return title;
   };
 
-  const handleDelete = async (e, photoId) => {
+  const handleDelete = (e, photo) => {
     e.stopPropagation();
-    if (window.confirm('Sei sicuro di voler eliminare questa foto?')) {
-      try {
-        await actions.deletePhoto(photoId);
-      } catch (error) {
-        console.error('Errore nell\'eliminazione della foto:', error);
-        alert('Errore nell\'eliminazione della foto');
-      }
+    if (deletingPhoto) return;
+    setPhotoPendingDelete(photo);
+  };
+
+  const handleCancelDelete = () => {
+    if (deletingPhoto) return;
+    setPhotoPendingDelete(null);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!photoPendingDelete || deletingPhoto) return;
+
+    setDeletingPhoto(true);
+    try {
+      await actions.deletePhoto(photoPendingDelete.id);
+      notify?.success?.(`Foto eliminata: "${photoPendingDelete.title || 'foto'}".`, 3200);
+      setPhotoPendingDelete(null);
+    } catch (error) {
+      console.error('Errore nell\'eliminazione della foto:', error);
+      const detail = compactRawMessage(error?.message || error?.error?.message || '');
+      notify?.error?.(
+        detail
+          ? `Eliminazione non riuscita: ${detail}`
+          : 'Eliminazione non riuscita. Riprova.',
+        5200
+      );
+    } finally {
+      setDeletingPhoto(false);
     }
   };
 
@@ -779,7 +889,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                               <Edit3 size={18} />
                             </EditButton>
                             <DeleteButton
-                              onClick={(e) => handleDelete(e, photo.id)}
+                              onClick={(e) => handleDelete(e, photo)}
                               whileHover={{ scale: 1.1 }}
                               whileTap={{ scale: 0.9 }}
                             >
@@ -852,6 +962,56 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
             await actions.fetchPhotos({ force: true });
           }}
         />
+
+        <AnimatePresence>
+          {photoPendingDelete && (
+            <DeleteModalBackdrop
+              key="delete-modal-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={handleCancelDelete}
+            >
+              <DeleteModalCard
+                key="delete-modal-card"
+                initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 8, scale: 0.98 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <DeleteModalTitle>Elimina foto</DeleteModalTitle>
+                <DeleteModalText>
+                  Stai per eliminare <strong>{photoPendingDelete.title || 'questa foto'}</strong>.
+                  L&apos;operazione rimuove anche source privata e derivate pubbliche.
+                </DeleteModalText>
+                <DeleteModalActions>
+                  <DeleteModalButton
+                    type="button"
+                    onClick={handleCancelDelete}
+                    disabled={deletingPhoto}
+                  >
+                    Annulla
+                  </DeleteModalButton>
+                  <DeleteConfirmButton
+                    type="button"
+                    onClick={handleConfirmDelete}
+                    disabled={deletingPhoto}
+                  >
+                    {deletingPhoto ? (
+                      <>
+                        <DeleteInlineSpinner size={16} />
+                        Eliminazione...
+                      </>
+                    ) : (
+                      'Elimina'
+                    )}
+                  </DeleteConfirmButton>
+                </DeleteModalActions>
+              </DeleteModalCard>
+            </DeleteModalBackdrop>
+          )}
+        </AnimatePresence>
       </Container>
     </GallerySection>
   );
