@@ -18,6 +18,11 @@ const REUPLOAD_STEP_LABELS = {
   replace: 'rigenerazione derivate'
 };
 
+const CROP_STEP_LABELS = {
+  update: 'salvataggio crop',
+  regenerate: 'rigenerazione derivate'
+};
+
 const NETWORK_ERROR_PATTERNS = [
   /networkerror/i,
   /failed to fetch/i,
@@ -51,8 +56,7 @@ function getHttpStatusFromError(error) {
   return Number.isFinite(status) && status > 0 ? status : null;
 }
 
-function buildReuploadErrorMessage(error, step = 'replace') {
-  const stepLabel = REUPLOAD_STEP_LABELS[step] || 'operazione source';
+function buildOperationErrorMessage(error, stepLabel = 'operazione') {
   const rawMessage = compactRawMessage(error?.message || error?.error?.message || error?.data?.message || '');
   const status = getHttpStatusFromError(error);
 
@@ -70,14 +74,25 @@ function buildReuploadErrorMessage(error, step = 'replace') {
   }
 
   if (isMatchingPattern(rawMessage, NETWORK_ERROR_PATTERNS)) {
-    if (step === 'upload') {
-      return 'Upload source non riuscito: probabile blocco rete/CORS verso R2. Verifica CORS del bucket privato (AllowedOrigins include localhost:3000 e dominio produzione).';
-    }
     return `Errore di rete durante ${stepLabel}.`;
   }
 
   if (rawMessage) return `Errore (${stepLabel}): ${rawMessage}`;
   return `Errore durante ${stepLabel}.`;
+}
+
+function buildReuploadErrorMessage(error, step = 'replace') {
+  const stepLabel = REUPLOAD_STEP_LABELS[step] || 'operazione source';
+  const rawMessage = compactRawMessage(error?.message || error?.error?.message || error?.data?.message || '');
+  if (step === 'upload' && isMatchingPattern(rawMessage, NETWORK_ERROR_PATTERNS)) {
+    return 'Upload source non riuscito: probabile blocco rete/CORS verso R2. Verifica CORS del bucket privato (AllowedOrigins include localhost:3000 e dominio produzione).';
+  }
+  return buildOperationErrorMessage(error, stepLabel);
+}
+
+function buildCropErrorMessage(error, step = 'regenerate') {
+  const stepLabel = CROP_STEP_LABELS[step] || 'applicazione crop';
+  return buildOperationErrorMessage(error, stepLabel);
 }
 
 function useDebounce(value, delay) {
@@ -618,7 +633,7 @@ const DeleteInlineSpinner = styled(Loader2)`
 `;
 
 const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptions = false }) => {
-  const { photos, filteredPhotos, loading, actions, filters, modalOpen, reuploadByPhotoId } = usePhotos();
+  const { photos, filteredPhotos, loading, actions, filters, modalOpen, photoOpsByPhotoId } = usePhotos();
   const outletContext = useOutletContext();
   const isAdmin = Boolean(outletContext?.isAdmin);
   const notify = outletContext?.notify || null;
@@ -651,9 +666,9 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   [photos]);
 
   const filterOptions = useMemo(() => ['all', ...allTags], [allTags]);
-  const hasActiveReupload = useMemo(
-    () => Object.values(reuploadByPhotoId || {}).some((entry) => Boolean(entry?.active)),
-    [reuploadByPhotoId]
+  const hasActivePhotoOp = useMemo(
+    () => Object.values(photoOpsByPhotoId || {}).some((entry) => Boolean(entry?.active)),
+    [photoOpsByPhotoId]
   );
 
   useEffect(() => {
@@ -773,12 +788,13 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
 
   const handleCrop = (e, photo) => {
     e.stopPropagation();
+    if (hasActivePhotoOp) return;
     setCroppingPhoto(photo);
   };
 
   const handleReuploadSourceClick = (e, photo) => {
     e.stopPropagation();
-    if (hasActiveReupload) return;
+    if (hasActivePhotoOp) return;
     setReuploadSourcePhoto(photo);
     if (sourceFileInputRef.current) {
       sourceFileInputRef.current.value = '';
@@ -796,10 +812,10 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const startSoftProgress = useCallback((photoId, from = 74, to = 95, intervalMs = 240) => {
     stopSoftProgress();
     let current = Math.max(0, Math.min(100, from));
-    actions.setReuploadStatus(photoId, { percent: current });
+    actions.setPhotoOpStatus(photoId, { percent: current });
     softProgressTimerRef.current = setInterval(() => {
       current = Math.min(to, current + 1);
-      actions.setReuploadStatus(photoId, { percent: current });
+      actions.setPhotoOpStatus(photoId, { percent: current });
       if (current >= to) {
         stopSoftProgress();
       }
@@ -831,8 +847,9 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
 
     const targetPhotoId = targetPhoto.id;
     activeReuploadPhotoIdRef.current = targetPhotoId;
-    actions.setReuploadStatus(targetPhotoId, {
+    actions.setPhotoOpStatus(targetPhotoId, {
       active: true,
+      type: 'source-reupload',
       percent: 3,
       label: 'Preparazione upload',
       step: 'sign'
@@ -842,7 +859,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       notify?.info?.(`Caricamento source in corso per "${targetPhoto.title || 'foto'}"...`, 2500);
 
       currentStep = 'sign';
-      actions.setReuploadStatus(targetPhotoId, {
+      actions.setPhotoOpStatus(targetPhotoId, {
         percent: 8,
         label: 'Firma URL upload',
         step: 'sign'
@@ -853,7 +870,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       });
 
       currentStep = 'upload';
-      actions.setReuploadStatus(targetPhotoId, {
+      actions.setPhotoOpStatus(targetPhotoId, {
         percent: 12,
         label: 'Upload source su R2',
         step: 'upload'
@@ -867,13 +884,13 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
         onProgress: ({ ratio }) => {
           const normalized = Math.max(0, Math.min(1, Number(ratio) || 0));
           const mapped = Math.round(12 + normalized * 58); // 12% -> 70%
-          actions.setReuploadStatus(targetPhotoId, { percent: mapped });
+          actions.setPhotoOpStatus(targetPhotoId, { percent: mapped });
         }
       });
       reuploadUploadAbortControllerRef.current = null;
 
       currentStep = 'replace';
-      actions.setReuploadStatus(targetPhotoId, {
+      actions.setPhotoOpStatus(targetPhotoId, {
         label: 'Rigenerazione derivate',
         percent: 74,
         step: 'replace'
@@ -887,7 +904,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       stopSoftProgress();
       const updatedPhoto = replaceResponse?.data?.data || replaceResponse?.data;
       actions.applyPhotoUpdate?.(updatedPhoto);
-      actions.setReuploadStatus(targetPhotoId, {
+      actions.setPhotoOpStatus(targetPhotoId, {
         percent: 100,
         label: 'Completato',
         step: 'done'
@@ -905,9 +922,56 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       reuploadUploadAbortControllerRef.current = null;
       activeReuploadPhotoIdRef.current = null;
       setTimeout(() => {
-        actions.clearReuploadStatus(targetPhotoId);
+        actions.clearPhotoOpStatus(targetPhotoId);
       }, 250);
       if (isMountedRef.current) setReuploadSourcePhoto(null);
+    }
+  };
+
+  const handleApplyCropInBackground = async ({ photoId, photoTitle, nextSettings }) => {
+    if (!photoId || !nextSettings) return;
+
+    const title = photoTitle || 'foto';
+    actions.setPhotoOpStatus(photoId, {
+      active: true,
+      type: 'crop',
+      percent: 12,
+      label: 'Salvataggio crop',
+      step: 'update'
+    });
+
+    let currentStep = 'update';
+    try {
+      notify?.info?.(`Applicazione crop in corso per "${title}"...`, 2200);
+      await photoService.update(photoId, { settings: JSON.stringify(nextSettings) });
+
+      currentStep = 'regenerate';
+      actions.setPhotoOpStatus(photoId, {
+        percent: 38,
+        label: 'Rigenerazione derivate',
+        step: 'regenerate'
+      });
+      startSoftProgress(photoId, 38, 95);
+
+      const regenerateResponse = await photoService.regenerateDerivatives(photoId);
+      stopSoftProgress();
+
+      const updatedPhoto = regenerateResponse?.data?.data || regenerateResponse?.data;
+      actions.applyPhotoUpdate?.(updatedPhoto);
+      actions.setPhotoOpStatus(photoId, {
+        percent: 100,
+        label: 'Crop applicato',
+        step: 'done'
+      });
+      notify?.success?.(`Crop applicato: "${title}".`, 3200);
+    } catch (error) {
+      stopSoftProgress();
+      console.error('Errore applicazione crop:', error);
+      notify?.error?.(buildCropErrorMessage(error, currentStep), 6000);
+    } finally {
+      setTimeout(() => {
+        actions.clearPhotoOpStatus(photoId);
+      }, 250);
     }
   };
 
@@ -979,8 +1043,8 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
           <GalleryGrid key="gallery-grid">
             <AnimatePresence mode="popLayout" initial={false}>
               {filteredPhotos.map((photo, index) => {
-                const reuploadStatus = reuploadByPhotoId?.[String(photo.id)];
-                const isReuploadingCard = Boolean(reuploadStatus?.active);
+                const photoOpStatus = photoOpsByPhotoId?.[String(photo.id)];
+                const isCardOpActive = Boolean(photoOpStatus?.active);
                 return (
                 <motion.div
                   key={photo.id}
@@ -990,7 +1054,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                   animate="visible"
                   exit="exit"
                   onClick={() => {
-                    if (isReuploadingCard) return;
+                    if (isCardOpActive) return;
                     handlePhotoClick(photo);
                   }}
                 >
@@ -1000,7 +1064,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                     </SeoImageLink>
                     {isAdmin && (
                       <>
-                        {!isReuploadingCard && (
+                        {!isCardOpActive && (
                           <ReplaceSourceButton
                             onClick={(e) => handleReuploadSourceClick(e, photo)}
                             whileHover={{ scale: 1.1 }}
@@ -1010,7 +1074,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                             <Upload size={18} />
                           </ReplaceSourceButton>
                         )}
-                        {!isReuploadingCard && (
+                        {!isCardOpActive && (
                           <>
                             <CropButton
                               onClick={(e) => handleCrop(e, photo)}
@@ -1049,21 +1113,21 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                         e.currentTarget.src = LOCAL_IMAGE_FALLBACK;
                       }}
                     />
-                    {isReuploadingCard && (
+                    {isCardOpActive && (
                       <ReuploadCardOverlay>
                         <ReuploadCardSpinner size={26} />
-                        <span>{reuploadStatus?.label || 'Aggiornamento source'}</span>
+                        <span>{photoOpStatus?.label || 'Operazione in corso'}</span>
                         <ReuploadProgressMeta>
-                          <span>Stato upload</span>
-                          <span>{Math.round(reuploadStatus?.percent || 0)}%</span>
+                          <span>{photoOpStatus?.type === 'source-reupload' ? 'Stato upload' : 'Stato operazione'}</span>
+                          <span>{Math.round(photoOpStatus?.percent || 0)}%</span>
                         </ReuploadProgressMeta>
                         <ReuploadProgressTrack>
-                          <ReuploadProgressFill $percent={Math.max(0, Math.min(100, reuploadStatus?.percent || 0))} />
+                          <ReuploadProgressFill $percent={Math.max(0, Math.min(100, photoOpStatus?.percent || 0))} />
                         </ReuploadProgressTrack>
-                        {reuploadStatus?.step === 'upload' && (
+                        {photoOpStatus?.type === 'source-reupload' && photoOpStatus?.step === 'upload' && (
                           <ReuploadAbortButton
                             type="button"
-                            onClick={(event) => handleAbortReuploadUpload(event, photo.id, reuploadStatus?.step)}
+                            onClick={(event) => handleAbortReuploadUpload(event, photo.id, photoOpStatus?.step)}
                           >
                             <X size={14} />
                             Annulla upload
@@ -1071,7 +1135,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                         )}
                       </ReuploadCardOverlay>
                     )}
-                    {!isReuploadingCard && (
+                    {!isCardOpActive && (
                       <PhotoOverlay>
                         <OverlayContent>
                           <PhotoTitle>{photo.title}</PhotoTitle>
@@ -1112,9 +1176,9 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
           photo={croppingPhoto}
           isOpen={isAdmin && Boolean(croppingPhoto)}
           onClose={() => setCroppingPhoto(null)}
-          onSaved={(updatedPhoto) => {
-            actions.applyPhotoUpdate?.(updatedPhoto);
+          onApply={({ photoId, photoTitle, nextSettings }) => {
             setCroppingPhoto(null);
+            handleApplyCropInBackground({ photoId, photoTitle, nextSettings });
           }}
         />
 

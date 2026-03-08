@@ -19,8 +19,8 @@ const ACTIONS = {
     SET_MAP_CENTER: 'SET_MAP_CENTER',
     SET_FILTER: 'SET_FILTER',
     SET_PENDING_MAP_FOCUS: 'SET_PENDING_MAP_FOCUS',
-    SET_REUPLOAD_STATUS: 'SET_REUPLOAD_STATUS',
-    CLEAR_REUPLOAD_STATUS: 'CLEAR_REUPLOAD_STATUS'
+    SET_PHOTO_OP_STATUS: 'SET_PHOTO_OP_STATUS',
+    CLEAR_PHOTO_OP_STATUS: 'CLEAR_PHOTO_OP_STATUS'
 };
 
 // Initial State
@@ -41,7 +41,7 @@ const initialState = {
         location: ''
     },
     pendingMapFocus: null,
-    reuploadByPhotoId: {}
+    photoOpsByPhotoId: {}
 };
 
 // Reducer
@@ -158,7 +158,7 @@ function photoReducer(state, action) {
             pendingMapFocus: action.payload
         };
 
-        case ACTIONS.SET_REUPLOAD_STATUS:
+        case ACTIONS.SET_PHOTO_OP_STATUS:
         {
         const { photoId, patch } = action.payload || {};
         const key = String(photoId || '').trim();
@@ -166,25 +166,25 @@ function photoReducer(state, action) {
 
         return {
             ...state,
-            reuploadByPhotoId: {
-                ...state.reuploadByPhotoId,
+            photoOpsByPhotoId: {
+                ...state.photoOpsByPhotoId,
                 [key]: {
-                    ...(state.reuploadByPhotoId[key] || {}),
+                    ...(state.photoOpsByPhotoId[key] || {}),
                     ...(patch || {})
                 }
             }
         };
         }
 
-        case ACTIONS.CLEAR_REUPLOAD_STATUS:
+        case ACTIONS.CLEAR_PHOTO_OP_STATUS:
         {
         const key = String(action.payload || '').trim();
-        if (!key || !state.reuploadByPhotoId[key]) return state;
-        const nextReuploadByPhotoId = { ...state.reuploadByPhotoId };
-        delete nextReuploadByPhotoId[key];
+        if (!key || !state.photoOpsByPhotoId[key]) return state;
+        const nextPhotoOpsByPhotoId = { ...state.photoOpsByPhotoId };
+        delete nextPhotoOpsByPhotoId[key];
         return {
             ...state,
-            reuploadByPhotoId: nextReuploadByPhotoId
+            photoOpsByPhotoId: nextPhotoOpsByPhotoId
         };
         }
         
@@ -354,19 +354,19 @@ export function PhotoProvider({ children }) {
             dispatch({ type: ACTIONS.SET_PENDING_MAP_FOCUS, payload: null });
         },
 
-        // Track source reupload progress per photo globally (survives route changes)
-        setReuploadStatus: (photoId, patch) => {
+        // Track long-running card operations (source reupload, crop regenerate) globally
+        setPhotoOpStatus: (photoId, patch) => {
             if (photoId === undefined || photoId === null) return;
             dispatch({
-                type: ACTIONS.SET_REUPLOAD_STATUS,
+                type: ACTIONS.SET_PHOTO_OP_STATUS,
                 payload: { photoId, patch }
             });
         },
 
-        clearReuploadStatus: (photoId) => {
+        clearPhotoOpStatus: (photoId) => {
             if (photoId === undefined || photoId === null) return;
             dispatch({
-                type: ACTIONS.CLEAR_REUPLOAD_STATUS,
+                type: ACTIONS.CLEAR_PHOTO_OP_STATUS,
                 payload: photoId
             });
         }

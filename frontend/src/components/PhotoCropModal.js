@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Crop as CropIcon, Loader2, X } from 'lucide-react';
-import { photoService } from '../utils/api';
+import { Check, Crop as CropIcon, X } from 'lucide-react';
 import { resolveAssetUrl } from '../utils/imageUrl';
 import {
   CROP_HANDLES,
@@ -36,22 +35,13 @@ const getPhotoSettings = (photo) => {
   return photo.settings && typeof photo.settings === 'object' ? photo.settings : {};
 };
 
-const getErrorMessage = (error) => {
-  if (typeof error === 'string') return error;
-  if (error?.message) return error.message;
-  if (error?.error?.message) return error.error.message;
-  return 'Errore durante l\'aggiornamento del crop';
-};
-
-const PhotoCropModal = ({ photo, isOpen, onClose, onSaved }) => {
+const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
   const [activePreset, setActivePreset] = useState('r43');
   const [cropProfiles, setCropProfiles] = useState(() => normalizeCropProfiles());
   const [initialCropProfiles, setInitialCropProfiles] = useState(() => normalizeCropProfiles());
   const [cropViewport, setCropViewport] = useState(null);
   const [cropRect, setCropRect] = useState(null);
   const [isInteracting, setIsInteracting] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
 
   const workspaceRef = useRef(null);
   const imageRef = useRef(null);
@@ -122,7 +112,6 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onSaved }) => {
     setCropRect(null);
     setIsInteracting(false);
     pointerStateRef.current = null;
-    setError('');
   }, [isOpen, photo]);
 
   useEffect(() => {
@@ -280,29 +269,19 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onSaved }) => {
     setCropProfiles((prev) => ({ ...prev, [activePreset]: { ...sourceProfile } }));
   };
 
-  const handleApply = async () => {
+  const handleApply = () => {
     if (!photo?.id) return;
-
-    setSaving(true);
-    setError('');
-
-    try {
-      const existingSettings = getPhotoSettings(photo);
-      const nextSettings = {
-        ...existingSettings,
-        cropProfiles: normalizeCropProfiles(cropProfiles)
-      };
-
-      await photoService.update(photo.id, { settings: JSON.stringify(nextSettings) });
-      const regenerateResponse = await photoService.regenerateDerivatives(photo.id);
-      const updatedPhoto = regenerateResponse?.data?.data || regenerateResponse?.data;
-      onSaved?.(updatedPhoto);
-      onClose?.();
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setSaving(false);
-    }
+    const existingSettings = getPhotoSettings(photo);
+    const nextSettings = {
+      ...existingSettings,
+      cropProfiles: normalizeCropProfiles(cropProfiles)
+    };
+    onApply?.({
+      photoId: photo.id,
+      photoTitle: photo.title || 'foto',
+      nextSettings
+    });
+    onClose?.();
   };
 
   if (!isOpen || !photo) return null;
@@ -356,14 +335,14 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onSaved }) => {
   const activePreviewStyle = buildPreviewStyleFromViewportRect(cropRect, imageBounds);
 
   return (
-    <div className="crop-modal-backdrop" onClick={() => !saving && onClose?.()}>
+    <div className="crop-modal-backdrop" onClick={() => onClose?.()}>
       <div className="crop-modal-card" onClick={(event) => event.stopPropagation()}>
         <div className="crop-modal-header">
           <div className="crop-modal-title">
             <span className="crop-modal-badge"><CropIcon size={14} /> Crop</span>
             <h3>{photo.title || 'Composizione immagine'}</h3>
           </div>
-          <button type="button" className="crop-modal-close" onClick={() => !saving && onClose?.()} disabled={saving}>
+          <button type="button" className="crop-modal-close" onClick={() => onClose?.()}>
             <X size={18} />
           </button>
         </div>
@@ -379,12 +358,11 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onSaved }) => {
               type="button"
               className={`crop-modal-preset ${activePreset === preset.key ? 'active' : ''}`}
               onClick={() => setActivePreset(preset.key)}
-              disabled={saving}
             >
               {preset.label}
             </button>
           ))}
-          <button type="button" className="crop-modal-reset" onClick={handleResetPreset} disabled={saving}>
+          <button type="button" className="crop-modal-reset" onClick={handleResetPreset}>
             Reset preset
           </button>
         </div>
@@ -446,15 +424,13 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onSaved }) => {
           </aside>
         </div>
 
-        {error && <div className="crop-modal-error">{error}</div>}
-
         <div className="crop-modal-actions">
-          <button type="button" className="crop-modal-btn secondary" onClick={() => onClose?.()} disabled={saving}>
+          <button type="button" className="crop-modal-btn secondary" onClick={() => onClose?.()}>
             Annulla
           </button>
-          <button type="button" className="crop-modal-btn primary" onClick={handleApply} disabled={saving}>
-            {saving ? <Loader2 size={16} className="spin" /> : <Check size={16} />}
-            {saving ? 'Applico...' : 'Applica crop'}
+          <button type="button" className="crop-modal-btn primary" onClick={handleApply}>
+            <Check size={16} />
+            Applica crop
           </button>
         </div>
       </div>
