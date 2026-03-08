@@ -106,12 +106,21 @@ function photoReducer(state, action) {
         };
         
         case ACTIONS.UPDATE_PHOTO:
+        {
+        const updatedPhoto = action.payload;
+        const sameId = (photo) => String(photo?.id) === String(updatedPhoto?.id);
         return {
             ...state,
             photos: state.photos.map(photo => 
-                photo.id === action.payload.id ? action.payload : photo
-            )
+                sameId(photo) ? updatedPhoto : photo
+            ),
+            selectedPhoto: sameId(state.selectedPhoto) ? updatedPhoto : state.selectedPhoto,
+            galleryPhotos: state.galleryPhotos.map(photo =>
+                sameId(photo) ? updatedPhoto : photo
+            ),
+            pendingMapFocus: sameId(state.pendingMapFocus) ? updatedPhoto : state.pendingMapFocus
         };
+        }
         
         case ACTIONS.DELETE_PHOTO:
         return {
@@ -263,6 +272,12 @@ export function PhotoProvider({ children }) {
                 dispatch({ type: ACTIONS.SET_ERROR, payload: 'Errore durante l\'aggiornamento della foto' });
                 throw error;
             }
+        },
+
+        // Apply a photo update already returned by an API call
+        applyPhotoUpdate: (updatedPhoto) => {
+            if (!updatedPhoto || updatedPhoto.id === undefined || updatedPhoto.id === null) return;
+            dispatch({ type: ACTIONS.UPDATE_PHOTO, payload: updatedPhoto });
         },
         
         // Delete photo

@@ -15,8 +15,7 @@ const SOURCE_REUPLOAD_ACCEPT = 'image/jpeg,image/jpg,image/png,image/webp';
 const REUPLOAD_STEP_LABELS = {
   sign: 'firma URL upload',
   upload: 'upload source su R2',
-  replace: 'rigenerazione derivate',
-  refresh: 'sincronizzazione archivio'
+  replace: 'rigenerazione derivate'
 };
 
 const NETWORK_ERROR_PATTERNS = [
@@ -756,13 +755,12 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       });
 
       currentStep = 'replace';
-      await photoService.replaceSource(targetPhoto.id, {
+      const replaceResponse = await photoService.replaceSource(targetPhoto.id, {
         sourcePath: signedData.sourcePath,
         sourceContentType: file.type
       });
-
-      currentStep = 'refresh';
-      await actions.fetchPhotos({ force: true });
+      const updatedPhoto = replaceResponse?.data?.data || replaceResponse?.data;
+      actions.applyPhotoUpdate?.(updatedPhoto);
       notify?.success?.(`Source aggiornata: "${targetPhoto.title || 'foto'}".`, 3500);
     } catch (error) {
       console.error('Errore reupload source privata:', error);
