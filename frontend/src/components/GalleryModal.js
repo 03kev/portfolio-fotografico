@@ -302,7 +302,12 @@ const GalleryModal = () => {
     actions.openPhotoModal(photo);
   };
 
-  const getPhotoSrc = (photo) => resolveAssetUrl(photo.image);
+  const getPhotoSrc = (photo) => {
+    const baseUrl = resolveAssetUrl(photo.image);
+    const version = photo?.derivativesVersion || photo?.updatedAt || photo?.id;
+    if (!version) return baseUrl;
+    return `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}v=${encodeURIComponent(String(version))}`;
+  };
 
   if (!galleryPhotos || galleryPhotos.length === 0) {
     return null;

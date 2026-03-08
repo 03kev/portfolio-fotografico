@@ -145,8 +145,9 @@ const UploadButton = styled(motion.button)`
 const TokenButton = styled(motion.button)`
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
   border-radius: var(--border-radius-full);
   border: 1px solid ${(props) => {
     if (props.$feedback === 'success') return 'rgba(52, 211, 153, 0.75)';
@@ -159,8 +160,6 @@ const TokenButton = styled(motion.button)`
     return props.$active ? 'rgba(52, 211, 153, 0.12)' : 'rgba(255, 255, 255, 0.04)';
   }};
   color: var(--color-text);
-  font-weight: var(--font-weight-medium);
-  font-size: var(--font-size-xs);
   transition: background 0.2s ease, border-color 0.2s ease;
 
   &:hover {
@@ -293,9 +292,9 @@ const Header = ({
               $active={hasAuthToken}
               $feedback={authFeedback}
               title={hasAuthToken ? 'Token API configurato' : 'Configura token API'}
+              aria-label={hasAuthToken ? 'Sessione admin attiva (clicca per disattivare)' : 'Configura token admin'}
             >
-              <KeyRound size={14} />
-              {hasAuthToken ? 'API: ON' : 'API: OFF'}
+              <KeyRound size={16} />
             </TokenButton>
           )}
 

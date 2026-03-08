@@ -9,6 +9,14 @@ function requireEnv(name) {
 export const API_BASE_URL = requireEnv('REACT_APP_API_BASE_URL');
 export const IMAGES_BASE_URL = requireEnv('REACT_APP_IMAGES_BASE_URL');
 
+// Network/timeout configuration (ms)
+export const NETWORK_TIMEOUTS = Object.freeze({
+  apiDefaultMs: 30000, // 30s
+  signedUploadMs: 60000,
+  replaceSourceMs: 120000,
+  regenerateDerivativesMs: 60000
+});
+
 // Image settings
 export const IMAGE_SETTINGS = {
   maxFileSize: 50 * 1024 * 1024, // 50MB
