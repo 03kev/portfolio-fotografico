@@ -58,6 +58,48 @@ const ImageContainer = styled.div`
   }
 `;
 
+const ImagePreview = styled.img`
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(22px) saturate(1.08);
+  transform: scale(1.08);
+  opacity: ${({ $loaded }) => ($loaded ? 0 : 0.72)};
+  transition: opacity 0.32s ease;
+  pointer-events: none;
+`;
+
+const LoadingBackdrop = styled(motion.div)`
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(
+    180deg,
+    rgba(7, 10, 18, 0.2) 0%,
+    rgba(7, 10, 18, 0.35) 100%
+  );
+  pointer-events: none;
+`;
+
+const LoadingSpinner = styled(motion.div)`
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--color-accent);
+  animation: photo-modal-spin 0.85s linear infinite;
+
+  @keyframes photo-modal-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+`;
+
 const ModalImage = styled(motion.img)`
   max-width: 100%;
   max-height: 90vh;
@@ -65,6 +107,9 @@ const ModalImage = styled(motion.img)`
   height: auto;
   object-fit: contain;
   display: block;
+  opacity: ${({ $loaded }) => ($loaded ? 1 : 0)};
+  transition: opacity 0.28s ease, filter 0.28s ease;
+  filter: ${({ $loaded }) => ($loaded ? 'none' : 'blur(6px)')};
 
   @media (max-width: 1024px) {
     max-height: 60vh;
@@ -285,6 +330,9 @@ const PhotoModal = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const originalBodyOverflowRef = React.useRef(null);
+    const [isFullImageLoaded, setIsFullImageLoaded] = React.useState(false);
+    const selectedPhotoId = selectedPhoto?.id;
+    const selectedPhotoDerivativesVersion = selectedPhoto?.derivativesVersion;
 
     const closeModalWithRouteHandling = React.useCallback(() => {
         actions.closePhotoModal();
@@ -388,6 +436,11 @@ const PhotoModal = () => {
         if (!match) return raw;
         return `${match[1]} × ${match[2]} px`;
     };
+
+    useEffect(() => {
+        if (!modalOpen || !selectedPhotoId) return;
+        setIsFullImageLoaded(false);
+    }, [modalOpen, selectedPhotoId, selectedPhotoDerivativesVersion]);
     
     if (!selectedPhoto) return null;
 
@@ -400,6 +453,7 @@ const PhotoModal = () => {
     const downloadSrc = version
         ? `${baseDownloadSrc}${baseDownloadSrc.includes('?') ? '&' : '?'}v=${encodeURIComponent(String(version))}`
         : baseDownloadSrc;
+    const previewSrc = resolveAssetUrl(selectedPhoto?.thumbnail43 || selectedPhoto?.thumbnail11 || '');
     const canDownload = Boolean(downloadSrc);
     const hasTechnicalData = Boolean(
         selectedPhoto.camera ||
@@ -437,15 +491,39 @@ const PhotoModal = () => {
             </CloseButton>
             
             <ImageContainer>
+            {previewSrc && (
+              <ImagePreview
+                src={previewSrc}
+                alt=""
+                aria-hidden="true"
+                $loaded={isFullImageLoaded}
+              />
+            )}
+            <LoadingBackdrop
+              initial={{ opacity: 0 }}
+              animate={{ opacity: isFullImageLoaded ? 0 : 1 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+            >
+              <LoadingSpinner
+                animate={{ opacity: isFullImageLoaded ? 0 : 1, scale: isFullImageLoaded ? 0.96 : 1 }}
+                transition={{ duration: 0.18, ease: 'easeOut' }}
+              />
+            </LoadingBackdrop>
             <ModalImage
+            key={imageSrc}
+            $loaded={isFullImageLoaded}
             src={imageSrc}
             alt={selectedPhoto.title}
             initial={{ scale: 1.1 }}
             animate={{ scale: 1 }}
             transition={{ duration: 0.4 }}
+            onLoad={() => {
+                setIsFullImageLoaded(true);
+            }}
             onError={(e) => {
                 e.currentTarget.onerror = null;
                 e.currentTarget.src = LOCAL_IMAGE_FALLBACK;
+                setIsFullImageLoaded(true);
             }}
             />
             </ImageContainer>
