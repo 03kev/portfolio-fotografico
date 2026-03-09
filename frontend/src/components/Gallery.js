@@ -26,6 +26,11 @@ const CROP_STEP_LABELS = {
   regenerate: 'rigenerazione derivate'
 };
 
+const SKELETON_CARD_COUNT = 9;
+const INITIAL_VISIBLE_CARDS = 18;
+const VISIBLE_CARDS_BATCH = 12;
+const VISIBLE_CARDS_INTERVAL_MS = 110;
+
 function useDebounce(value, delay) {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {
@@ -459,6 +464,71 @@ const LoadingSpinner = styled.div`
   }
 `;
 
+const SkeletonBase = styled.div`
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.08) 45%,
+      rgba(255, 255, 255, 0.15) 50%,
+      rgba(255, 255, 255, 0.08) 55%,
+      transparent 100%
+    );
+    animation: gallery-skeleton-shimmer 1.3s ease-in-out infinite;
+  }
+
+  @keyframes gallery-skeleton-shimmer {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+`;
+
+const SkeletonSearch = styled(SkeletonBase)`
+  width: min(560px, 100%);
+  height: 46px;
+  border-radius: var(--border-radius-xl);
+  margin: 0 auto;
+`;
+
+const SkeletonFilterRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+`;
+
+const SkeletonFilterChip = styled(SkeletonBase)`
+  width: ${({ $w }) => $w || 84}px;
+  height: 34px;
+  border-radius: var(--border-radius-full);
+`;
+
+const SkeletonGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--spacing-xl);
+
+  @media (max-width: 768px) {
+    grid-template-columns: 1fr;
+    gap: var(--spacing-lg);
+  }
+`;
+
+const SkeletonCard = styled(SkeletonBase)`
+  border-radius: var(--border-radius-2xl);
+  aspect-ratio: 4 / 3;
+`;
+
 const NoResults = styled(motion.div)`
   text-align: center;
   padding: var(--spacing-3xl) var(--spacing-lg);
@@ -571,6 +641,10 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const [searchParams] = useSearchParams();
   const photoParam = searchParams.get('photo');
   const resolvedPhotoId = forcedPhotoId || photoParam;
+  const hasForcedPhotoId = Boolean(forcedPhotoId);
+  const forcedPhotoExists = !hasForcedPhotoId
+    || photos.some((photo) => String(photo.id) === String(forcedPhotoId));
+  const waitingForForcedModal = hasForcedPhotoId && forcedPhotoExists && !modalOpen;
   const autoOpenedPhotoRef = useRef(null);
   const sourceFileInputRef = useRef(null);
 
@@ -589,6 +663,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const reuploadUploadAbortControllerRef = useRef(null);
   const activeReuploadPhotoIdRef = useRef(null);
   const isMountedRef = useRef(true);
+  const [visibleCardsCount, setVisibleCardsCount] = useState(INITIAL_VISIBLE_CARDS);
 
   const debouncedSearchTerm = useDebounce(searchTerm, DEBOUNCE_DELAY_FILTER);
 
@@ -609,6 +684,11 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     }));
     return [...pendingCards, ...filteredPhotos];
   }, [pendingUploads, filteredPhotos]);
+
+  const visibleGalleryCards = useMemo(
+    () => galleryCards.slice(0, Math.max(0, visibleCardsCount)),
+    [galleryCards, visibleCardsCount]
+  );
 
   useEffect(() => {
     if (debouncedSearchTerm.trim()) {
@@ -637,6 +717,21 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   }, [filters.tags?.join(','), filters.search]);
 
   useEffect(() => {
+    setVisibleCardsCount(Math.min(galleryCards.length, INITIAL_VISIBLE_CARDS));
+  }, [galleryCards.length, activeFilter, debouncedSearchTerm]);
+
+  useEffect(() => {
+    if (loading || waitingForForcedModal) return;
+    if (visibleCardsCount >= galleryCards.length) return;
+
+    const timer = setTimeout(() => {
+      setVisibleCardsCount((prev) => Math.min(galleryCards.length, prev + VISIBLE_CARDS_BATCH));
+    }, VISIBLE_CARDS_INTERVAL_MS);
+
+    return () => clearTimeout(timer);
+  }, [loading, waitingForForcedModal, visibleCardsCount, galleryCards.length]);
+
+  useEffect(() => {
     if (!resolvedPhotoId) {
       autoOpenedPhotoRef.current = null;
       return;
@@ -651,11 +746,6 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     actions.openPhotoModal(targetPhoto);
     autoOpenedPhotoRef.current = resolvedPhotoId;
   }, [resolvedPhotoId, loading, photos, actions]);
-
-  const hasForcedPhotoId = Boolean(forcedPhotoId);
-  const forcedPhotoExists = !hasForcedPhotoId
-    || photos.some((photo) => String(photo.id) === String(forcedPhotoId));
-  const waitingForForcedModal = hasForcedPhotoId && forcedPhotoExists && !modalOpen;
 
   const handleFilterClick = (filter) => {
     setActiveFilter(filter);
@@ -919,6 +1009,27 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     return (
       <GallerySection>
         <Container>
+          <SectionHeader>
+            <SectionTitle as={headingLevel}>Archivio</SectionTitle>
+            <SectionSubtitle>
+              Filtra per tag o cerca per titolo, luogo e descrizione.
+            </SectionSubtitle>
+          </SectionHeader>
+          <ControlsRow>
+            <SkeletonSearch />
+            <SkeletonFilterRow>
+              <SkeletonFilterChip $w={62} />
+              <SkeletonFilterChip $w={94} />
+              <SkeletonFilterChip $w={86} />
+              <SkeletonFilterChip $w={78} />
+              <SkeletonFilterChip $w={90} />
+            </SkeletonFilterRow>
+          </ControlsRow>
+          <SkeletonGrid>
+            {Array.from({ length: SKELETON_CARD_COUNT }).map((_, idx) => (
+              <SkeletonCard key={`gallery-skeleton-${idx}`} />
+            ))}
+          </SkeletonGrid>
           <LoadingContainer>
             <LoadingSpinner />
           </LoadingContainer>
@@ -980,9 +1091,10 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
             <p>Prova a cambiare filtri o ricerca.</p>
           </NoResults>
         ) : (
-          <GalleryGrid key="gallery-grid">
-            <AnimatePresence mode="popLayout" initial={false}>
-              {galleryCards.map((photo, index) => {
+          <>
+            <GalleryGrid key="gallery-grid">
+              <AnimatePresence mode="popLayout" initial={false}>
+                {visibleGalleryCards.map((photo, index) => {
                 const photoOpStatus = photoOpsByPhotoId?.[String(photo.id)];
                 const isCardOpActive = Boolean(photoOpStatus?.active);
                 const isPendingCard = Boolean(photo?.__pending);
@@ -1101,9 +1213,10 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                   </PhotoCard>
                 </motion.div>
                 );
-              })}
-            </AnimatePresence>
-          </GalleryGrid>
+                })}
+              </AnimatePresence>
+            </GalleryGrid>
+          </>
         )}
 
         {isAdmin && editingPhoto && (
