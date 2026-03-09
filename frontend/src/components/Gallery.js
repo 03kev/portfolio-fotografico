@@ -189,10 +189,40 @@ const PhotoImage = styled(motion.img)`
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.45s ease;
+  opacity: ${({ $loaded }) => ($loaded ? 1 : 0)};
+  transition: transform 0.45s ease, opacity 0.22s ease;
 
   ${PhotoCard}:hover & {
     transform: scale(1.03);
+  }
+`;
+
+const CardImageSkeleton = styled.div`
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.08) 45%,
+      rgba(255, 255, 255, 0.15) 50%,
+      rgba(255, 255, 255, 0.08) 55%,
+      transparent 100%
+    );
+    animation: gallery-card-skeleton-shimmer 1.3s ease-in-out infinite;
+  }
+
+  @keyframes gallery-card-skeleton-shimmer {
+    100% {
+      transform: translateX(100%);
+    }
   }
 `;
 
@@ -664,6 +694,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const activeReuploadPhotoIdRef = useRef(null);
   const isMountedRef = useRef(true);
   const [visibleCardsCount, setVisibleCardsCount] = useState(INITIAL_VISIBLE_CARDS);
+  const [loadedCardImages, setLoadedCardImages] = useState({});
 
   const debouncedSearchTerm = useDebounce(searchTerm, DEBOUNCE_DELAY_FILTER);
 
@@ -758,6 +789,17 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const handlePhotoClick = (photo) => {
     actions.openPhotoModal(photo);
   };
+
+  const handleCardImageLoaded = useCallback((loadKey) => {
+    if (!loadKey) return;
+    setLoadedCardImages((prev) => {
+      if (prev[loadKey]) return prev;
+      return {
+        ...prev,
+        [loadKey]: true
+      };
+    });
+  }, []);
 
   const getThumbImageUrl = (photo) => {
     const baseUrl = resolveAssetUrl(photo.thumbnail43);
@@ -1100,6 +1142,8 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                 const isPendingCard = Boolean(photo?.__pending);
                 const canOpenCard = !isCardOpActive && !isPendingCard;
                 const cardImageSrc = isPendingCard ? String(photo.previewUrl || '') : getThumbImageUrl(photo);
+                const cardImageLoadKey = `${String(photo.id)}::${cardImageSrc}`;
+                const isCardImageLoaded = Boolean(loadedCardImages[cardImageLoadKey]);
                 return (
                 <motion.div
                   key={photo.id}
@@ -1114,6 +1158,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                   }}
                 >
                   <PhotoCard>
+                    {!isCardImageLoaded && <CardImageSkeleton aria-hidden="true" />}
                     {!isPendingCard && (
                       <SeoImageLink href={getPhotoCardUrl(photo)} aria-hidden="true" tabIndex={-1}>
                         {photo.title || 'Foto'}
@@ -1160,13 +1205,18 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                       </>
                     )}
                     <PhotoImage
+                      $loaded={isCardImageLoaded}
                       src={cardImageSrc}
                       alt={getPhotoAltText(photo)}
                       loading={index < 3 ? 'eager' : 'lazy'}
                       fetchPriority={index < 3 ? 'high' : 'auto'}
                       decoding="async"
+                      onLoad={() => {
+                        handleCardImageLoaded(cardImageLoadKey);
+                      }}
                       onError={(e) => {
                         e.currentTarget.onerror = null;
+                        handleCardImageLoaded(cardImageLoadKey);
                         e.currentTarget.src = LOCAL_IMAGE_FALLBACK;
                       }}
                     />
