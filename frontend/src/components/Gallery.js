@@ -27,9 +27,9 @@ const CROP_STEP_LABELS = {
 };
 
 const SKELETON_CARD_COUNT = 9;
-const INITIAL_VISIBLE_CARDS = 18;
-const VISIBLE_CARDS_BATCH = 12;
-const VISIBLE_CARDS_INTERVAL_MS = 110;
+const INITIAL_VISIBLE_CARDS = 24;
+const VISIBLE_CARDS_BATCH = 24;
+const VISIBLE_CARDS_INTERVAL_MS = 180;
 
 function useDebounce(value, delay) {
   const [debounced, setDebounced] = useState(value);
@@ -189,40 +189,12 @@ const PhotoImage = styled(motion.img)`
   width: 100%;
   height: 100%;
   object-fit: cover;
-  opacity: ${({ $loaded }) => ($loaded ? 1 : 0)};
-  transition: transform 0.45s ease, opacity 0.22s ease;
+  color: transparent;
+  font-size: 0;
+  transition: transform 0.45s ease;
 
   ${PhotoCard}:hover & {
     transform: scale(1.03);
-  }
-`;
-
-const CardImageSkeleton = styled.div`
-  position: absolute;
-  inset: 0;
-  background: rgba(255, 255, 255, 0.05);
-  overflow: hidden;
-
-  &::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    transform: translateX(-100%);
-    background: linear-gradient(
-      90deg,
-      transparent 0%,
-      rgba(255, 255, 255, 0.08) 45%,
-      rgba(255, 255, 255, 0.15) 50%,
-      rgba(255, 255, 255, 0.08) 55%,
-      transparent 100%
-    );
-    animation: gallery-card-skeleton-shimmer 1.3s ease-in-out infinite;
-  }
-
-  @keyframes gallery-card-skeleton-shimmer {
-    100% {
-      transform: translateX(100%);
-    }
   }
 `;
 
@@ -694,7 +666,8 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const activeReuploadPhotoIdRef = useRef(null);
   const isMountedRef = useRef(true);
   const [visibleCardsCount, setVisibleCardsCount] = useState(INITIAL_VISIBLE_CARDS);
-  const [loadedCardImages, setLoadedCardImages] = useState({});
+  const lastRevealKeyRef = useRef(null);
+  const previousGalleryLengthRef = useRef(0);
 
   const debouncedSearchTerm = useDebounce(searchTerm, DEBOUNCE_DELAY_FILTER);
 
@@ -748,15 +721,31 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   }, [filters.tags?.join(','), filters.search]);
 
   useEffect(() => {
-    setVisibleCardsCount(Math.min(galleryCards.length, INITIAL_VISIBLE_CARDS));
-  }, [galleryCards.length, activeFilter, debouncedSearchTerm]);
+    const revealKey = `${activeFilter}::${debouncedSearchTerm.trim()}`;
+    const previousLength = previousGalleryLengthRef.current;
+    const nextLength = galleryCards.length;
+    const allCardsWereVisible = visibleCardsCount >= previousLength;
+
+    if (lastRevealKeyRef.current !== revealKey) {
+      lastRevealKeyRef.current = revealKey;
+      setVisibleCardsCount(Math.min(nextLength, INITIAL_VISIBLE_CARDS));
+    } else if (allCardsWereVisible) {
+      // Keep live updates snappy: if the grid was already fully visible,
+      // show newly inserted cards immediately instead of re-running the reveal.
+      setVisibleCardsCount(nextLength);
+    } else if (visibleCardsCount > nextLength) {
+      setVisibleCardsCount(nextLength);
+    }
+
+    previousGalleryLengthRef.current = nextLength;
+  }, [galleryCards.length, activeFilter, debouncedSearchTerm, visibleCardsCount]);
 
   useEffect(() => {
     if (loading || waitingForForcedModal) return;
     if (visibleCardsCount >= galleryCards.length) return;
 
     const timer = setTimeout(() => {
-      setVisibleCardsCount((prev) => Math.min(galleryCards.length, prev + VISIBLE_CARDS_BATCH));
+      setVisibleCardsCount((previous) => Math.min(galleryCards.length, previous + VISIBLE_CARDS_BATCH));
     }, VISIBLE_CARDS_INTERVAL_MS);
 
     return () => clearTimeout(timer);
@@ -789,17 +778,6 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const handlePhotoClick = (photo) => {
     actions.openPhotoModal(photo);
   };
-
-  const handleCardImageLoaded = useCallback((loadKey) => {
-    if (!loadKey) return;
-    setLoadedCardImages((prev) => {
-      if (prev[loadKey]) return prev;
-      return {
-        ...prev,
-        [loadKey]: true
-      };
-    });
-  }, []);
 
   const getThumbImageUrl = (photo) => {
     const baseUrl = resolveAssetUrl(photo.thumbnail43);
@@ -1142,8 +1120,6 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                 const isPendingCard = Boolean(photo?.__pending);
                 const canOpenCard = !isCardOpActive && !isPendingCard;
                 const cardImageSrc = isPendingCard ? String(photo.previewUrl || '') : getThumbImageUrl(photo);
-                const cardImageLoadKey = `${String(photo.id)}::${cardImageSrc}`;
-                const isCardImageLoaded = Boolean(loadedCardImages[cardImageLoadKey]);
                 return (
                 <motion.div
                   key={photo.id}
@@ -1158,7 +1134,6 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                   }}
                 >
                   <PhotoCard>
-                    {!isCardImageLoaded && <CardImageSkeleton aria-hidden="true" />}
                     {!isPendingCard && (
                       <SeoImageLink href={getPhotoCardUrl(photo)} aria-hidden="true" tabIndex={-1}>
                         {photo.title || 'Foto'}
@@ -1205,18 +1180,13 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                       </>
                     )}
                     <PhotoImage
-                      $loaded={isCardImageLoaded}
                       src={cardImageSrc}
                       alt={getPhotoAltText(photo)}
                       loading={index < 3 ? 'eager' : 'lazy'}
                       fetchPriority={index < 3 ? 'high' : 'auto'}
                       decoding="async"
-                      onLoad={() => {
-                        handleCardImageLoaded(cardImageLoadKey);
-                      }}
                       onError={(e) => {
                         e.currentTarget.onerror = null;
-                        handleCardImageLoaded(cardImageLoadKey);
                         e.currentTarget.src = LOCAL_IMAGE_FALLBACK;
                       }}
                     />
