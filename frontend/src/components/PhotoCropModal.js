@@ -142,6 +142,20 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
     return () => observer.disconnect();
   }, [refreshViewport]);
 
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const handleEscape = (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      onClose?.();
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isOpen, onClose]);
+
   const saveRectToProfile = useCallback((rect, presetKey, viewportOverride = null) => {
     const viewport = viewportOverride || cropViewport;
     if (!viewport) return;

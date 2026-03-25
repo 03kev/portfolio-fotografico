@@ -175,6 +175,21 @@ function AdminTokenModal({
     return () => cancelAnimationFrame(raf);
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const handleEscape = (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (loading) return;
+      onClose?.();
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isOpen, loading, onClose]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (loading) return;

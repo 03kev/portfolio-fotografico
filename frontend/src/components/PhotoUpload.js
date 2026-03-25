@@ -360,11 +360,11 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         }
     };
 
-    const initClose = () => {
+    const initClose = useCallback(() => {
         if (loading) return;
         setIsClosing(true);
         setTimeout(() => onClose?.(), 75);
-    };
+    }, [loading, onClose]);
 
     const nextStep = useCallback(() => {
         if (loading) return;
@@ -598,6 +598,14 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
 
     useEffect(() => {
         const onKeyDown = (e) => {
+            if (e.key === 'Escape') {
+                if (!onClose || loading) return;
+                e.preventDefault();
+                e.stopPropagation();
+                initClose();
+                return;
+            }
+
             if (e.key !== 'Enter' || loading) return;
 
             if (tagInputRef.current === document.activeElement) {
@@ -631,7 +639,9 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         formData.title,
         addTag,
         nextStep,
-        handleUpload
+        handleUpload,
+        initClose,
+        onClose
     ]);
 
     const isFirstStep = currentStep === firstStep;

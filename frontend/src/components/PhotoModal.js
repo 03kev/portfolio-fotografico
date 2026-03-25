@@ -362,6 +362,8 @@ const PhotoModal = () => {
     useEffect(() => {
         const handleEscape = (e) => {
             if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
                 closeModalWithRouteHandling();
             }
         };

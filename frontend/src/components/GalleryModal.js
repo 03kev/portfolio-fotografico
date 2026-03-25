@@ -278,6 +278,8 @@ const GalleryModal = () => {
   useEffect(() => {
     const handleEscape = (e) => {
       if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
         actions.closeGalleryModal();
       }
     };

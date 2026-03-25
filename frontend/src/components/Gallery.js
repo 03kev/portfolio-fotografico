@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { useOutletContext, useSearchParams } from 'react-router-dom';
+import { useOutletContext } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Trash2, Edit3, Crop, Upload, Loader2, X } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { LOCAL_IMAGE_FALLBACK, resolveAssetUrl } from '../utils/imageUrl';
 import { photoService, signSourceUpload, uploadSourceToSignedUrl } from '../utils/api';
+import { useGalleryQueryState } from '../hooks/useGalleryQueryState';
 import {
   buildOperationErrorMessage
 } from '../utils/operationErrors';
@@ -30,15 +31,6 @@ const SKELETON_CARD_COUNT = 9;
 const INITIAL_VISIBLE_CARDS = 24;
 const VISIBLE_CARDS_BATCH = 24;
 const LOAD_MORE_ROOT_MARGIN = '900px 0px';
-
-function useDebounce(value, delay) {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const handler = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(handler);
-  }, [value, delay]);
-  return debounced;
-}
 
 const cardVariants = {
   hidden: { opacity: 0, scale: 0.98, y: 8 },
@@ -781,11 +773,15 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const outletContext = useOutletContext();
   const isAdmin = Boolean(outletContext?.isAdmin);
   const notify = outletContext?.notify || null;
-  const [searchParams, setSearchParams] = useSearchParams();
-  const searchParamsKey = searchParams.toString();
-  const photoParam = searchParams.get('photo');
-  const urlActiveFilter = searchParams.get('tag') || 'all';
-  const urlSearchTerm = searchParams.get('search') || '';
+  const {
+    activeFilter,
+    searchTerm,
+    debouncedSearchTerm,
+    photoParam,
+    handleFilterClick,
+    handleSearchChange,
+    clearSearch
+  } = useGalleryQueryState({ debounceMs: DEBOUNCE_DELAY_FILTER });
   const resolvedPhotoId = forcedPhotoId || photoParam;
   const hasForcedPhotoId = Boolean(forcedPhotoId);
   const forcedPhotoExists = !hasForcedPhotoId
@@ -793,7 +789,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const waitingForForcedModal = hasForcedPhotoId && forcedPhotoExists && !modalOpen;
   const autoOpenedPhotoRef = useRef(null);
   const sourceFileInputRef = useRef(null);
-  const [searchTerm, setSearchTerm] = useState(() => urlSearchTerm);
+  const searchInputRef = useRef(null);
   const [editingPhoto, setEditingPhoto] = useState(null);
   const [croppingPhoto, setCroppingPhoto] = useState(null);
   const [reuploadSourcePhoto, setReuploadSourcePhoto] = useState(null);
@@ -807,8 +803,6 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const [visibleCardsCount, setVisibleCardsCount] = useState(INITIAL_VISIBLE_CARDS);
   const lastRevealKeyRef = useRef(null);
   const previousGalleryLengthRef = useRef(0);
-
-  const debouncedSearchTerm = useDebounce(searchTerm, DEBOUNCE_DELAY_FILTER);
 
   const allTags = useMemo(() =>
     [...new Set(photos.flatMap(photo => Array.isArray(photo.tags) ? photo.tags : []))],
@@ -836,27 +830,23 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   useEffect(() => {
     const nextSearch = debouncedSearchTerm.trim();
     if (nextSearch) {
-      if (urlActiveFilter !== 'all') {
-        actions.setFilter({ search: nextSearch, tags: [urlActiveFilter] });
+      if (activeFilter !== 'all') {
+        actions.setFilter({ search: nextSearch, tags: [activeFilter] });
       } else {
         actions.setFilter({ search: nextSearch, tags: [] });
       }
     } else {
-      if (urlActiveFilter !== 'all') {
-        actions.setFilter({ search: '', tags: [urlActiveFilter] });
+      if (activeFilter !== 'all') {
+        actions.setFilter({ search: '', tags: [activeFilter] });
       } else {
         actions.clearFilters();
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearchTerm, urlActiveFilter]);
+  }, [debouncedSearchTerm, activeFilter]);
 
   useEffect(() => {
-    setSearchTerm((current) => (current === urlSearchTerm ? current : urlSearchTerm));
-  }, [searchParamsKey, urlSearchTerm]);
-
-  useEffect(() => {
-    const revealKey = `${urlActiveFilter}::${debouncedSearchTerm.trim()}`;
+    const revealKey = `${activeFilter}::${debouncedSearchTerm.trim()}`;
     const previousLength = previousGalleryLengthRef.current;
     const nextLength = galleryCards.length;
     const allCardsWereVisible = visibleCardsCount >= previousLength;
@@ -873,7 +863,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     }
 
     previousGalleryLengthRef.current = nextLength;
-  }, [galleryCards.length, urlActiveFilter, debouncedSearchTerm, visibleCardsCount]);
+  }, [galleryCards.length, activeFilter, debouncedSearchTerm, visibleCardsCount]);
 
   useEffect(() => {
     if (loading || waitingForForcedModal) return;
@@ -914,31 +904,40 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     autoOpenedPhotoRef.current = resolvedPhotoId;
   }, [resolvedPhotoId, loading, photos, actions]);
 
-  const handleFilterClick = useCallback((filter) => {
-    const nextParams = new URLSearchParams(searchParams);
-    if (filter === 'all') {
-      nextParams.delete('tag');
-    } else {
-      nextParams.set('tag', filter);
-    }
-    setSearchParams(nextParams, { replace: true });
-  }, [searchParams, setSearchParams]);
+  useEffect(() => {
+    const isTextEditingElement = (element) => {
+      if (!(element instanceof HTMLElement)) return false;
+      const tagName = element.tagName;
+      return element.isContentEditable || tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT';
+    };
 
-  const handleSearchChange = useCallback((event) => {
-    const nextValue = event.target.value;
-    setSearchTerm(nextValue);
+    const handleKeyDown = (event) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
 
-    const nextParams = new URLSearchParams(searchParams);
-    const normalizedSearch = nextValue.trim();
+      const activeElement = document.activeElement;
+      const isSearchFocused = activeElement === searchInputRef.current;
 
-    if (normalizedSearch) {
-      nextParams.set('search', normalizedSearch);
-    } else {
-      nextParams.delete('search');
-    }
+      if (event.key === '/') {
+        if (isTextEditingElement(activeElement) && !isSearchFocused) return;
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+        return;
+      }
 
-    setSearchParams(nextParams, { replace: true });
-  }, [searchParams, setSearchParams]);
+      if (event.key === 'Escape' && isSearchFocused) {
+        event.preventDefault();
+        if (searchTerm.trim()) {
+          clearSearch();
+        } else {
+          searchInputRef.current?.blur();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [searchTerm, clearSearch]);
 
   const handlePhotoClick = useCallback((photo) => {
     actions.openPhotoModal(photo);
@@ -968,10 +967,10 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     setPhotoPendingDelete(photo);
   }, [deletingPhoto, hasActivePhotoOp]);
 
-  const handleCancelDelete = () => {
+  const handleCancelDelete = useCallback(() => {
     if (deletingPhoto) return;
     setPhotoPendingDelete(null);
-  };
+  }, [deletingPhoto]);
 
   const handleConfirmDelete = async () => {
     if (!photoPendingDelete || deletingPhoto) return;
@@ -992,6 +991,20 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       setDeletingPhoto(false);
     }
   };
+
+  useEffect(() => {
+    if (!photoPendingDelete) return undefined;
+
+    const handleEscape = (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      handleCancelDelete();
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [photoPendingDelete, deletingPhoto, handleCancelDelete]);
 
   const handleEdit = useCallback((e, photo) => {
     e.stopPropagation();
@@ -1246,6 +1259,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
         <ControlsRow>
           <SearchContainer initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.35 }}>
             <SearchInput
+              ref={searchInputRef}
               type="text"
               placeholder="Cerca…"
               value={searchTerm}
@@ -1260,7 +1274,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
             {filterOptions.map((filter) => (
               <FilterButton
                 key={filter}
-                active={urlActiveFilter === filter}
+                active={activeFilter === filter}
                 onClick={() => handleFilterClick(filter)}
                 whileTap={{ scale: 0.98 }}
               >
