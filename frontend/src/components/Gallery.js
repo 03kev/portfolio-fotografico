@@ -820,7 +820,14 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       ...entry,
       __pending: true
     }));
-    return [...pendingCards, ...filteredPhotos];
+    const pendingPhotoIds = new Set(
+      pendingCards
+        .map((entry) => String(entry?.id || '').trim())
+        .filter(Boolean)
+    );
+
+    const stablePhotos = filteredPhotos.filter((photo) => !pendingPhotoIds.has(String(photo?.id || '').trim()));
+    return [...pendingCards, ...stablePhotos];
   }, [pendingUploads, filteredPhotos]);
 
   const visibleGalleryCards = useMemo(
