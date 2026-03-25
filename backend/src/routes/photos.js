@@ -7,6 +7,7 @@ const {
 } = require('../services/r2Storage');
 const {
     buildPhotoAssetPaths,
+    buildDefaultCropProfiles,
     generatePhotoDerivatives,
     getCropProfilesFromSettings,
     normalizePrivateSourcePathForPhotoId
@@ -228,7 +229,11 @@ router.post('/', upload.single('image'), async (req, res) => {
             ? requestedPhotoId
             : Date.now();
         const sourceExtension = getImageExtensionFromMimeType(req.file?.mimetype || req.body?.sourceContentType);
-        const cropProfiles = getCropProfilesFromSettings(sanitized.settings);
+        const cropProfiles = getCropProfilesFromSettings(sanitized.settings) || buildDefaultCropProfiles();
+        const normalizedSettings = {
+            ...(sanitized.settings && typeof sanitized.settings === 'object' ? sanitized.settings : {}),
+            cropProfiles
+        };
         const assets = buildPhotoAssetPaths(photoId, sourceExtension);
         const photos = await readPhotosDB();
 
@@ -293,7 +298,7 @@ router.post('/', upload.single('image'), async (req, res) => {
             camera: sanitized.camera,
             lens: sanitized.lens,
             resolution: derivatives.resolution,
-            settings: sanitized.settings,
+            settings: normalizedSettings,
             tags: sanitized.tags
         };
         

@@ -120,6 +120,20 @@ function normalizeCropProfile(rawProfile) {
     return { x, y, scale };
 }
 
+const DEFAULT_CROP_PROFILE = Object.freeze({
+    x: 0.5,
+    y: 0.5,
+    scale: 1
+});
+
+function buildDefaultCropProfiles() {
+    return {
+        r43: { ...DEFAULT_CROP_PROFILE },
+        r11: { ...DEFAULT_CROP_PROFILE },
+        social: { ...DEFAULT_CROP_PROFILE }
+    };
+}
+
 function getCropProfilesFromSettings(settings) {
     if (typeof settings === 'string') {
         try {
@@ -212,22 +226,16 @@ async function generatePhotoDerivatives(sourceBuffer, cropProfiles = null) {
     const normalizedProfiles = cropProfiles && typeof cropProfiles === 'object' ? cropProfiles : null;
 
     const createCoverDerivative = async (targetWidth, targetHeight, profile, outputBuilder) => {
-        if (!profile) {
-            return outputBuilder(
-                base.clone().resize(targetWidth, targetHeight, { fit: 'cover', position: sharp.strategy.attention })
-            );
-        }
-
         const cropRegion = computeCoverCropRegion(
             sourceWidth,
             sourceHeight,
             targetWidth,
             targetHeight,
-            profile
+            profile || DEFAULT_CROP_PROFILE
         );
         if (!cropRegion) {
             return outputBuilder(
-                base.clone().resize(targetWidth, targetHeight, { fit: 'cover', position: sharp.strategy.attention })
+                base.clone().resize(targetWidth, targetHeight, { fit: 'cover', position: 'centre' })
             );
         }
 
@@ -245,15 +253,27 @@ async function generatePhotoDerivatives(sourceBuffer, cropProfiles = null) {
         .webp({ quality: 92, effort: 6 })
         .toBuffer();
 
-    const thumbnail43Promise = createCoverDerivative(400, 300, normalizeCropProfile(normalizedProfiles?.r43), (pipeline) => (
+    const thumbnail43Promise = createCoverDerivative(
+        400,
+        300,
+        normalizeCropProfile(normalizedProfiles?.r43) || DEFAULT_CROP_PROFILE,
+        (pipeline) => (
         pipeline.webp({ quality: 84, effort: 5 }).toBuffer()
     ));
 
-    const thumbnail11Promise = createCoverDerivative(400, 400, normalizeCropProfile(normalizedProfiles?.r11), (pipeline) => (
+    const thumbnail11Promise = createCoverDerivative(
+        400,
+        400,
+        normalizeCropProfile(normalizedProfiles?.r11) || DEFAULT_CROP_PROFILE,
+        (pipeline) => (
         pipeline.webp({ quality: 84, effort: 5 }).toBuffer()
     ));
 
-    const socialImagePromise = createCoverDerivative(1200, 630, normalizeCropProfile(normalizedProfiles?.social), (pipeline) => (
+    const socialImagePromise = createCoverDerivative(
+        1200,
+        630,
+        normalizeCropProfile(normalizedProfiles?.social) || DEFAULT_CROP_PROFILE,
+        (pipeline) => (
         pipeline.jpeg({ quality: 84, mozjpeg: true, progressive: true }).toBuffer()
     ));
 
@@ -280,6 +300,7 @@ async function generatePhotoDerivatives(sourceBuffer, cropProfiles = null) {
 
 module.exports = {
     buildPhotoAssetPaths,
+    buildDefaultCropProfiles,
     generatePhotoDerivatives,
     getCropProfilesFromSettings,
     normalizePrivateSourcePath,
