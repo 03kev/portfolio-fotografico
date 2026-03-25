@@ -29,7 +29,7 @@ const CROP_STEP_LABELS = {
 const SKELETON_CARD_COUNT = 9;
 const INITIAL_VISIBLE_CARDS = 24;
 const VISIBLE_CARDS_BATCH = 24;
-const VISIBLE_CARDS_INTERVAL_MS = 180;
+const LOAD_MORE_ROOT_MARGIN = '900px 0px';
 
 function useDebounce(value, delay) {
   const [debounced, setDebounced] = useState(value);
@@ -531,6 +531,11 @@ const SkeletonCard = styled(SkeletonBase)`
   aspect-ratio: 4 / 3;
 `;
 
+const LoadMoreSentinel = styled.div`
+  width: 100%;
+  height: 1px;
+`;
+
 const NoResults = styled(motion.div)`
   text-align: center;
   padding: var(--spacing-3xl) var(--spacing-lg);
@@ -665,6 +670,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const reuploadUploadAbortControllerRef = useRef(null);
   const activeReuploadPhotoIdRef = useRef(null);
   const isMountedRef = useRef(true);
+  const loadMoreTriggerRef = useRef(null);
   const [visibleCardsCount, setVisibleCardsCount] = useState(INITIAL_VISIBLE_CARDS);
   const lastRevealKeyRef = useRef(null);
   const previousGalleryLengthRef = useRef(0);
@@ -743,12 +749,24 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   useEffect(() => {
     if (loading || waitingForForcedModal) return;
     if (visibleCardsCount >= galleryCards.length) return;
+    if (!loadMoreTriggerRef.current) return;
 
-    const timer = setTimeout(() => {
-      setVisibleCardsCount((previous) => Math.min(galleryCards.length, previous + VISIBLE_CARDS_BATCH));
-    }, VISIBLE_CARDS_INTERVAL_MS);
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry?.isIntersecting) return;
+        setVisibleCardsCount((previous) => Math.min(galleryCards.length, previous + VISIBLE_CARDS_BATCH));
+      },
+      {
+        root: null,
+        rootMargin: LOAD_MORE_ROOT_MARGIN,
+        threshold: 0
+      }
+    );
 
-    return () => clearTimeout(timer);
+    observer.observe(loadMoreTriggerRef.current);
+
+    return () => observer.disconnect();
   }, [loading, waitingForForcedModal, visibleCardsCount, galleryCards.length]);
 
   useEffect(() => {
@@ -1236,6 +1254,9 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                 })}
               </AnimatePresence>
             </GalleryGrid>
+            {visibleCardsCount < galleryCards.length && (
+              <LoadMoreSentinel ref={loadMoreTriggerRef} aria-hidden="true" />
+            )}
           </>
         )}
 
