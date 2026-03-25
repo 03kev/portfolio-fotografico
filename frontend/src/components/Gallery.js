@@ -777,12 +777,15 @@ const GalleryCard = React.memo(function GalleryCard({
 });
 
 const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptions = false }) => {
-  const { photos, filteredPhotos, loading, actions, filters, modalOpen, photoOpsByPhotoId, pendingUploads } = usePhotos();
+  const { photos, filteredPhotos, loading, actions, modalOpen, photoOpsByPhotoId, pendingUploads } = usePhotos();
   const outletContext = useOutletContext();
   const isAdmin = Boolean(outletContext?.isAdmin);
   const notify = outletContext?.notify || null;
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const searchParamsKey = searchParams.toString();
   const photoParam = searchParams.get('photo');
+  const urlActiveFilter = searchParams.get('tag') || 'all';
+  const urlSearchTerm = searchParams.get('search') || '';
   const resolvedPhotoId = forcedPhotoId || photoParam;
   const hasForcedPhotoId = Boolean(forcedPhotoId);
   const forcedPhotoExists = !hasForcedPhotoId
@@ -790,13 +793,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const waitingForForcedModal = hasForcedPhotoId && forcedPhotoExists && !modalOpen;
   const autoOpenedPhotoRef = useRef(null);
   const sourceFileInputRef = useRef(null);
-
-  const [activeFilter, setActiveFilter] = useState(() => {
-    return filters.tags && filters.tags.length > 0 ? filters.tags[0] : 'all';
-  });
-  const [searchTerm, setSearchTerm] = useState(() => {
-    return filters.search || '';
-  });
+  const [searchTerm, setSearchTerm] = useState(() => urlSearchTerm);
   const [editingPhoto, setEditingPhoto] = useState(null);
   const [croppingPhoto, setCroppingPhoto] = useState(null);
   const [reuploadSourcePhoto, setReuploadSourcePhoto] = useState(null);
@@ -837,33 +834,29 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   );
 
   useEffect(() => {
-    if (debouncedSearchTerm.trim()) {
-      if (activeFilter !== 'all') {
-        actions.setFilter({ search: debouncedSearchTerm, tags: [activeFilter] });
+    const nextSearch = debouncedSearchTerm.trim();
+    if (nextSearch) {
+      if (urlActiveFilter !== 'all') {
+        actions.setFilter({ search: nextSearch, tags: [urlActiveFilter] });
       } else {
-        actions.setFilter({ search: debouncedSearchTerm, tags: [] });
+        actions.setFilter({ search: nextSearch, tags: [] });
       }
     } else {
-      if (activeFilter !== 'all') {
-        actions.setFilter({ search: '', tags: [activeFilter] });
+      if (urlActiveFilter !== 'all') {
+        actions.setFilter({ search: '', tags: [urlActiveFilter] });
       } else {
         actions.clearFilters();
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearchTerm, activeFilter]);
+  }, [debouncedSearchTerm, urlActiveFilter]);
 
   useEffect(() => {
-    const currentTag = filters.tags && filters.tags.length > 0 ? filters.tags[0] : 'all';
-    const currentSearch = filters.search || '';
-
-    if (currentTag !== activeFilter) setActiveFilter(currentTag);
-    if (currentSearch !== searchTerm) setSearchTerm(currentSearch);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.tags?.join(','), filters.search]);
+    setSearchTerm((current) => (current === urlSearchTerm ? current : urlSearchTerm));
+  }, [searchParamsKey, urlSearchTerm]);
 
   useEffect(() => {
-    const revealKey = `${activeFilter}::${debouncedSearchTerm.trim()}`;
+    const revealKey = `${urlActiveFilter}::${debouncedSearchTerm.trim()}`;
     const previousLength = previousGalleryLengthRef.current;
     const nextLength = galleryCards.length;
     const allCardsWereVisible = visibleCardsCount >= previousLength;
@@ -880,7 +873,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     }
 
     previousGalleryLengthRef.current = nextLength;
-  }, [galleryCards.length, activeFilter, debouncedSearchTerm, visibleCardsCount]);
+  }, [galleryCards.length, urlActiveFilter, debouncedSearchTerm, visibleCardsCount]);
 
   useEffect(() => {
     if (loading || waitingForForcedModal) return;
@@ -922,12 +915,30 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   }, [resolvedPhotoId, loading, photos, actions]);
 
   const handleFilterClick = useCallback((filter) => {
-    setActiveFilter(filter);
+    const nextParams = new URLSearchParams(searchParams);
     if (filter === 'all') {
-      actions.clearFilters();
-      setSearchTerm('');
+      nextParams.delete('tag');
+    } else {
+      nextParams.set('tag', filter);
     }
-  }, [actions]);
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  const handleSearchChange = useCallback((event) => {
+    const nextValue = event.target.value;
+    setSearchTerm(nextValue);
+
+    const nextParams = new URLSearchParams(searchParams);
+    const normalizedSearch = nextValue.trim();
+
+    if (normalizedSearch) {
+      nextParams.set('search', normalizedSearch);
+    } else {
+      nextParams.delete('search');
+    }
+
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const handlePhotoClick = useCallback((photo) => {
     actions.openPhotoModal(photo);
@@ -1238,7 +1249,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
               type="text"
               placeholder="Cerca…"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={handleSearchChange}
             />
             <SearchIcon>
               <Search size={18} />
@@ -1249,7 +1260,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
             {filterOptions.map((filter) => (
               <FilterButton
                 key={filter}
-                active={activeFilter === filter}
+                active={urlActiveFilter === filter}
                 onClick={() => handleFilterClick(filter)}
                 whileTap={{ scale: 0.98 }}
               >
