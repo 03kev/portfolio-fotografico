@@ -640,6 +640,142 @@ const DeleteInlineSpinner = styled(Loader2)`
   }
 `;
 
+const GalleryCard = React.memo(function GalleryCard({
+  photo,
+  index,
+  isAdmin,
+  hideCardDescriptions,
+  hasActivePhotoOp,
+  photoOpStatus,
+  getPhotoCardUrl,
+  getPhotoAltText,
+  getThumbImageUrl,
+  onOpen,
+  onDelete,
+  onEdit,
+  onCrop,
+  onReuploadSource,
+  onAbortReuploadUpload
+}) {
+  const isCardOpActive = Boolean(photoOpStatus?.active);
+  const isPendingCard = Boolean(photo?.__pending);
+  const canOpenCard = !isCardOpActive && !isPendingCard;
+  const cardImageSrc = isPendingCard ? String(photo.previewUrl || '') : getThumbImageUrl(photo);
+
+  return (
+    <motion.div
+      layout
+      variants={cardVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+      onClick={() => {
+        if (!canOpenCard) return;
+        onOpen(photo);
+      }}
+    >
+      <PhotoCard>
+        {!isPendingCard && (
+          <SeoImageLink href={getPhotoCardUrl(photo)} aria-hidden="true" tabIndex={-1}>
+            {photo.title || 'Foto'}
+          </SeoImageLink>
+        )}
+        {isAdmin && !isPendingCard && (
+          <>
+            {!hasActivePhotoOp && !isCardOpActive && (
+              <ReplaceSourceButton
+                onClick={(event) => onReuploadSource(event, photo)}
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                title="Reupload source privata"
+              >
+                <Upload size={18} />
+              </ReplaceSourceButton>
+            )}
+            {!hasActivePhotoOp && !isCardOpActive && (
+              <>
+                <CropButton
+                  onClick={(event) => onCrop(event, photo)}
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  title="Modifica crop"
+                >
+                  <Crop size={18} />
+                </CropButton>
+                <EditButton
+                  onClick={(event) => onEdit(event, photo)}
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                >
+                  <Edit3 size={18} />
+                </EditButton>
+                <DeleteButton
+                  onClick={(event) => onDelete(event, photo)}
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                >
+                  <Trash2 size={18} />
+                </DeleteButton>
+              </>
+            )}
+          </>
+        )}
+        <PhotoImage
+          src={cardImageSrc}
+          alt={getPhotoAltText(photo)}
+          loading={index < 3 ? 'eager' : 'lazy'}
+          fetchPriority={index < 3 ? 'high' : 'auto'}
+          decoding="async"
+          onError={(event) => {
+            event.currentTarget.onerror = null;
+            event.currentTarget.src = LOCAL_IMAGE_FALLBACK;
+          }}
+        />
+        {isCardOpActive && (
+          <ReuploadCardOverlay>
+            <ReuploadCardSpinner size={26} />
+            <span>{photoOpStatus?.label || 'Operazione in corso'}</span>
+            <ReuploadProgressMeta>
+              <span>{photoOpStatus?.type === 'source-reupload' || photoOpStatus?.type === 'new-upload' ? 'Stato upload' : 'Stato operazione'}</span>
+              <span>{Math.round(photoOpStatus?.percent || 0)}%</span>
+            </ReuploadProgressMeta>
+            <ReuploadProgressTrack>
+              <ReuploadProgressFill $percent={Math.max(0, Math.min(100, photoOpStatus?.percent || 0))} />
+            </ReuploadProgressTrack>
+            {photoOpStatus?.type === 'source-reupload' && photoOpStatus?.step === 'upload' && (
+              <ReuploadAbortButton
+                type="button"
+                onClick={(event) => onAbortReuploadUpload(event, photo.id, photoOpStatus?.step)}
+              >
+                <X size={14} />
+                Annulla upload
+              </ReuploadAbortButton>
+            )}
+          </ReuploadCardOverlay>
+        )}
+        {!isCardOpActive && (
+          <PhotoOverlay>
+            <OverlayContent>
+              <PhotoTitle>{photo.title}</PhotoTitle>
+              <PhotoLocation>{photo.location}</PhotoLocation>
+              {!hideCardDescriptions && (
+                <PhotoDescription>{photo.description}</PhotoDescription>
+              )}
+              {Array.isArray(photo.tags) && photo.tags.length > 0 && (
+                <PhotoTags>
+                  {photo.tags.slice(0, 3).map((tag) => (
+                    <Tag key={tag}>{tag}</Tag>
+                  ))}
+                </PhotoTags>
+              )}
+            </OverlayContent>
+          </PhotoOverlay>
+        )}
+      </PhotoCard>
+    </motion.div>
+  );
+});
+
 const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptions = false }) => {
   const { photos, filteredPhotos, loading, actions, filters, modalOpen, photoOpsByPhotoId, pendingUploads } = usePhotos();
   const outletContext = useOutletContext();
@@ -785,17 +921,17 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     autoOpenedPhotoRef.current = resolvedPhotoId;
   }, [resolvedPhotoId, loading, photos, actions]);
 
-  const handleFilterClick = (filter) => {
+  const handleFilterClick = useCallback((filter) => {
     setActiveFilter(filter);
     if (filter === 'all') {
       actions.clearFilters();
       setSearchTerm('');
     }
-  };
+  }, [actions]);
 
-  const handlePhotoClick = (photo) => {
+  const handlePhotoClick = useCallback((photo) => {
     actions.openPhotoModal(photo);
-  };
+  }, [actions]);
 
   const getThumbImageUrl = (photo) => {
     const baseUrl = resolveAssetUrl(photo.thumbnail43);
@@ -815,11 +951,11 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     return title;
   };
 
-  const handleDelete = (e, photo) => {
+  const handleDelete = useCallback((e, photo) => {
     e.stopPropagation();
     if (deletingPhoto || hasActivePhotoOp) return;
     setPhotoPendingDelete(photo);
-  };
+  }, [deletingPhoto, hasActivePhotoOp]);
 
   const handleCancelDelete = () => {
     if (deletingPhoto) return;
@@ -846,19 +982,19 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     }
   };
 
-  const handleEdit = (e, photo) => {
+  const handleEdit = useCallback((e, photo) => {
     e.stopPropagation();
     if (hasActivePhotoOp) return;
     setEditingPhoto(photo);
-  };
+  }, [hasActivePhotoOp]);
 
-  const handleCrop = (e, photo) => {
+  const handleCrop = useCallback((e, photo) => {
     e.stopPropagation();
     if (hasActivePhotoOp) return;
     setCroppingPhoto(photo);
-  };
+  }, [hasActivePhotoOp]);
 
-  const handleReuploadSourceClick = (e, photo) => {
+  const handleReuploadSourceClick = useCallback((e, photo) => {
     e.stopPropagation();
     if (hasActivePhotoOp) return;
     setReuploadSourcePhoto(photo);
@@ -866,7 +1002,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       sourceFileInputRef.current.value = '';
       sourceFileInputRef.current.click();
     }
-  };
+  }, [hasActivePhotoOp]);
 
   const stopSoftProgress = useCallback(() => {
     if (softProgressTimerRef.current) {
@@ -1133,124 +1269,26 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
             <GalleryGrid key="gallery-grid">
               <AnimatePresence mode="popLayout" initial={false}>
                 {visibleGalleryCards.map((photo, index) => {
-                const photoOpStatus = photoOpsByPhotoId?.[String(photo.id)];
-                const isCardOpActive = Boolean(photoOpStatus?.active);
-                const isPendingCard = Boolean(photo?.__pending);
-                const canOpenCard = !isCardOpActive && !isPendingCard;
-                const cardImageSrc = isPendingCard ? String(photo.previewUrl || '') : getThumbImageUrl(photo);
-                return (
-                <motion.div
-                  key={photo.id}
-                  layout
-                  variants={cardVariants}
-                  initial="hidden"
-                  animate="visible"
-                  exit="exit"
-                  onClick={() => {
-                    if (!canOpenCard) return;
-                    handlePhotoClick(photo);
-                  }}
-                >
-                  <PhotoCard>
-                    {!isPendingCard && (
-                      <SeoImageLink href={getPhotoCardUrl(photo)} aria-hidden="true" tabIndex={-1}>
-                        {photo.title || 'Foto'}
-                      </SeoImageLink>
-                    )}
-                    {isAdmin && !isPendingCard && (
-                      <>
-                        {!hasActivePhotoOp && !isCardOpActive && (
-                          <ReplaceSourceButton
-                            onClick={(e) => handleReuploadSourceClick(e, photo)}
-                            whileHover={{ scale: 1.1 }}
-                            whileTap={{ scale: 0.9 }}
-                            title="Reupload source privata"
-                          >
-                            <Upload size={18} />
-                          </ReplaceSourceButton>
-                        )}
-                        {!hasActivePhotoOp && !isCardOpActive && (
-                          <>
-                            <CropButton
-                              onClick={(e) => handleCrop(e, photo)}
-                              whileHover={{ scale: 1.1 }}
-                              whileTap={{ scale: 0.9 }}
-                              title="Modifica crop"
-                            >
-                              <Crop size={18} />
-                            </CropButton>
-                            <EditButton
-                              onClick={(e) => handleEdit(e, photo)}
-                              whileHover={{ scale: 1.1 }}
-                              whileTap={{ scale: 0.9 }}
-                            >
-                              <Edit3 size={18} />
-                            </EditButton>
-                            <DeleteButton
-                              onClick={(e) => handleDelete(e, photo)}
-                              whileHover={{ scale: 1.1 }}
-                              whileTap={{ scale: 0.9 }}
-                            >
-                              <Trash2 size={18} />
-                            </DeleteButton>
-                          </>
-                        )}
-                      </>
-                    )}
-                    <PhotoImage
-                      src={cardImageSrc}
-                      alt={getPhotoAltText(photo)}
-                      loading={index < 3 ? 'eager' : 'lazy'}
-                      fetchPriority={index < 3 ? 'high' : 'auto'}
-                      decoding="async"
-                      onError={(e) => {
-                        e.currentTarget.onerror = null;
-                        e.currentTarget.src = LOCAL_IMAGE_FALLBACK;
-                      }}
+                  return (
+                    <GalleryCard
+                      key={photo.id}
+                      photo={photo}
+                      index={index}
+                      isAdmin={isAdmin}
+                      hideCardDescriptions={hideCardDescriptions}
+                      hasActivePhotoOp={hasActivePhotoOp}
+                      photoOpStatus={photoOpsByPhotoId?.[String(photo.id)]}
+                      getPhotoCardUrl={getPhotoCardUrl}
+                      getPhotoAltText={getPhotoAltText}
+                      getThumbImageUrl={getThumbImageUrl}
+                      onOpen={handlePhotoClick}
+                      onDelete={handleDelete}
+                      onEdit={handleEdit}
+                      onCrop={handleCrop}
+                      onReuploadSource={handleReuploadSourceClick}
+                      onAbortReuploadUpload={handleAbortReuploadUpload}
                     />
-                    {isCardOpActive && (
-                      <ReuploadCardOverlay>
-                        <ReuploadCardSpinner size={26} />
-                        <span>{photoOpStatus?.label || 'Operazione in corso'}</span>
-                        <ReuploadProgressMeta>
-                          <span>{photoOpStatus?.type === 'source-reupload' || photoOpStatus?.type === 'new-upload' ? 'Stato upload' : 'Stato operazione'}</span>
-                          <span>{Math.round(photoOpStatus?.percent || 0)}%</span>
-                        </ReuploadProgressMeta>
-                        <ReuploadProgressTrack>
-                          <ReuploadProgressFill $percent={Math.max(0, Math.min(100, photoOpStatus?.percent || 0))} />
-                        </ReuploadProgressTrack>
-                        {photoOpStatus?.type === 'source-reupload' && photoOpStatus?.step === 'upload' && (
-                          <ReuploadAbortButton
-                            type="button"
-                            onClick={(event) => handleAbortReuploadUpload(event, photo.id, photoOpStatus?.step)}
-                          >
-                            <X size={14} />
-                            Annulla upload
-                          </ReuploadAbortButton>
-                        )}
-                      </ReuploadCardOverlay>
-                    )}
-                    {!isCardOpActive && (
-                      <PhotoOverlay>
-                        <OverlayContent>
-                          <PhotoTitle>{photo.title}</PhotoTitle>
-                          <PhotoLocation>{photo.location}</PhotoLocation>
-                          {!hideCardDescriptions && (
-                            <PhotoDescription>{photo.description}</PhotoDescription>
-                          )}
-                          {Array.isArray(photo.tags) && photo.tags.length > 0 && (
-                            <PhotoTags>
-                              {photo.tags.slice(0, 3).map(tag => (
-                                <Tag key={tag}>{tag}</Tag>
-                              ))}
-                            </PhotoTags>
-                          )}
-                        </OverlayContent>
-                      </PhotoOverlay>
-                    )}
-                  </PhotoCard>
-                </motion.div>
-                );
+                  );
                 })}
               </AnimatePresence>
             </GalleryGrid>
