@@ -5,6 +5,7 @@ import { signSourceUpload, uploadSourceToSignedUrl, uploadUtils } from '../utils
 import {
     buildOperationErrorMessage
 } from '../utils/operationErrors';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import MapSelector from './MapSelector';
 import { AnimatePresence } from 'framer-motion';
 import exifr from 'exifr';
@@ -366,6 +367,12 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         setTimeout(() => onClose?.(), 75);
     }, [loading, onClose]);
 
+    useEscapeToClose({
+        enabled: Boolean(onClose),
+        onClose: initClose,
+        canClose: !loading
+    });
+
     const nextStep = useCallback(() => {
         if (loading) return;
 
@@ -598,14 +605,6 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
 
     useEffect(() => {
         const onKeyDown = (e) => {
-            if (e.key === 'Escape') {
-                if (!onClose || loading) return;
-                e.preventDefault();
-                e.stopPropagation();
-                initClose();
-                return;
-            }
-
             if (e.key !== 'Enter' || loading) return;
 
             if (tagInputRef.current === document.activeElement) {

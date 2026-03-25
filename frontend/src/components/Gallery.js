@@ -7,6 +7,7 @@ import { usePhotos } from '../contexts/PhotoContext';
 import { LOCAL_IMAGE_FALLBACK, resolveAssetUrl } from '../utils/imageUrl';
 import { photoService, signSourceUpload, uploadSourceToSignedUrl } from '../utils/api';
 import { useGalleryQueryState } from '../hooks/useGalleryQueryState';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import {
   buildOperationErrorMessage
 } from '../utils/operationErrors';
@@ -992,19 +993,11 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     }
   };
 
-  useEffect(() => {
-    if (!photoPendingDelete) return undefined;
-
-    const handleEscape = (event) => {
-      if (event.key !== 'Escape') return;
-      event.preventDefault();
-      event.stopPropagation();
-      handleCancelDelete();
-    };
-
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
-  }, [photoPendingDelete, deletingPhoto, handleCancelDelete]);
+  useEscapeToClose({
+    enabled: Boolean(photoPendingDelete),
+    onClose: handleCancelDelete,
+    canClose: !deletingPhoto
+  });
 
   const handleEdit = useCallback((e, photo) => {
     e.stopPropagation();

@@ -5,6 +5,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Download, Map, MapPin } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { LOCAL_IMAGE_FALLBACK, resolveAssetUrl } from '../utils/imageUrl';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 const ModalOverlay = styled(motion.div)`
   position: fixed;
@@ -359,23 +360,10 @@ const PhotoModal = () => {
         };
     }, [modalOpen]);
     
-    useEffect(() => {
-        const handleEscape = (e) => {
-            if (e.key === 'Escape') {
-                e.preventDefault();
-                e.stopPropagation();
-                closeModalWithRouteHandling();
-            }
-        };
-        
-        if (modalOpen) {
-            document.addEventListener('keydown', handleEscape);
-        }
-        
-        return () => {
-            document.removeEventListener('keydown', handleEscape);
-        };
-    }, [modalOpen, closeModalWithRouteHandling]);
+    useEscapeToClose({
+        enabled: modalOpen,
+        onClose: closeModalWithRouteHandling
+    });
     
     const handleOverlayClick = (e) => {
         if (e.target === e.currentTarget) {
