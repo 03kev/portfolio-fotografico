@@ -961,45 +961,46 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                         </div>
                     )}
 
-                    <div className="upload-actions">
-                        <div className="upload-actions-meta">
-                            <span className="upload-actions-step">Step {currentStepIndex + 1} / {steps.length}</span>
-                            <span className="upload-actions-caption">{currentStepLabel}</span>
-                        </div>
-                        <div className={`upload-actions-buttons${actionsLayoutClass}`}>
-                            {!isFirstStep && (
-                                <button type="button" className="cancel-btn" onClick={prevStep} disabled={loading}>
-                                    Indietro
-                                </button>
-                            )}
+                </div>
 
-                            {!isLastStep ? (
-                                <button type="button" className="upload-btn" onClick={nextStep} disabled={isNextDisabled}>
-                                    Avanti
+                <div className="upload-actions">
+                    <div className="upload-actions-meta">
+                        <span className="upload-actions-step">Step {currentStepIndex + 1} / {steps.length}</span>
+                        <span className="upload-actions-caption">{currentStepLabel}</span>
+                    </div>
+                    <div className={`upload-actions-buttons${actionsLayoutClass}`}>
+                        {!isFirstStep && (
+                            <button type="button" className="cancel-btn" onClick={prevStep} disabled={loading}>
+                                Indietro
+                            </button>
+                        )}
+
+                        {!isLastStep ? (
+                            <button type="button" className="upload-btn" onClick={nextStep} disabled={isNextDisabled}>
+                                Avanti
+                            </button>
+                        ) : (
+                            <>
+                                <button
+                                    type="button"
+                                    className="upload-btn"
+                                    onClick={handleUpload}
+                                    disabled={loading || (!selectedFile && !isEditMode)}
+                                >
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                        {loading ? <Loader2 size={16} /> : isEditMode ? <Save size={16} /> : <Upload size={16} />}
+                                        {loading
+                                            ? (isEditMode ? 'Salvataggio...' : 'Caricamento...')
+                                            : (isEditMode ? 'Salva Modifiche' : 'Carica Foto')}
+                                    </span>
                                 </button>
-                            ) : (
-                                <>
-                                    <button
-                                        type="button"
-                                        className="upload-btn"
-                                        onClick={handleUpload}
-                                        disabled={loading || (!selectedFile && !isEditMode)}
-                                    >
-                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                                            {loading ? <Loader2 size={16} /> : isEditMode ? <Save size={16} /> : <Upload size={16} />}
-                                            {loading
-                                                ? (isEditMode ? 'Salvataggio...' : 'Caricamento...')
-                                                : (isEditMode ? 'Salva Modifiche' : 'Carica Foto')}
-                                        </span>
+                                {onClose && (
+                                    <button type="button" className="cancel-btn" onClick={onClose} disabled={loading}>
+                                        Annulla
                                     </button>
-                                    {onClose && (
-                                        <button type="button" className="cancel-btn" onClick={onClose} disabled={loading}>
-                                            Annulla
-                                        </button>
-                                    )}
-                                </>
-                            )}
-                        </div>
+                                )}
+                            </>
+                        )}
                     </div>
                 </div>
 
