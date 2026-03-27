@@ -622,7 +622,27 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
 
     useEffect(() => {
         const onKeyDown = (e) => {
-            if (e.key !== 'Enter' || loading) return;
+            if (loading || e.metaKey || e.ctrlKey || e.altKey) return;
+
+            const activeElement = document.activeElement;
+            const isTypingTarget = activeElement && (
+                activeElement.tagName === 'INPUT' ||
+                activeElement.tagName === 'TEXTAREA' ||
+                activeElement.tagName === 'SELECT' ||
+                activeElement.isContentEditable
+            );
+
+            if (!isTypingTarget && ['1', '2', '3'].includes(e.key)) {
+                const targetStep = Number(e.key);
+                if (steps.some((step) => step.id === targetStep) && targetStep !== currentStep) {
+                    e.preventDefault();
+                    setError('');
+                    setCurrentStep(targetStep);
+                }
+                return;
+            }
+
+            if (e.key !== 'Enter') return;
 
             if (tagInputRef.current === document.activeElement) {
                 e.preventDefault();
@@ -656,6 +676,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         addTag,
         nextStep,
         handleUpload,
+        steps,
         initClose,
         onClose
     ]);
