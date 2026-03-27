@@ -48,6 +48,22 @@ const initialState = {
     pendingUploads: []
 };
 
+function samePhotoId(a, b) {
+    return String(a?.id ?? '') === String(b?.id ?? '');
+}
+
+function reconcilePhotoReference(nextPhotos, currentPhoto) {
+    if (!currentPhoto) return null;
+    return nextPhotos.find((photo) => samePhotoId(photo, currentPhoto)) || null;
+}
+
+function reconcilePhotoCollection(nextPhotos, currentCollection) {
+    if (!Array.isArray(currentCollection) || currentCollection.length === 0) return [];
+    return currentCollection
+        .map((item) => reconcilePhotoReference(nextPhotos, item))
+        .filter(Boolean);
+}
+
 // Reducer
 function photoReducer(state, action) {
     switch (action.type) {
@@ -58,12 +74,23 @@ function photoReducer(state, action) {
         };
         
         case ACTIONS.SET_PHOTOS:
+        {
+        const nextPhotos = Array.isArray(action.payload) ? action.payload : [];
+        const nextSelectedPhoto = reconcilePhotoReference(nextPhotos, state.selectedPhoto);
+        const nextGalleryPhotos = reconcilePhotoCollection(nextPhotos, state.galleryPhotos);
+        const nextPendingMapFocus = reconcilePhotoReference(nextPhotos, state.pendingMapFocus);
         return {
             ...state,
-            photos: action.payload,
+            photos: nextPhotos,
             loading: false,
-            error: null
+            error: null,
+            selectedPhoto: nextSelectedPhoto,
+            modalOpen: nextSelectedPhoto ? state.modalOpen : false,
+            galleryPhotos: nextGalleryPhotos,
+            galleryModalOpen: nextGalleryPhotos.length > 0 ? state.galleryModalOpen : false,
+            pendingMapFocus: nextPendingMapFocus
         };
+        }
         
         case ACTIONS.SET_ERROR:
         return {
@@ -107,37 +134,47 @@ function photoReducer(state, action) {
         case ACTIONS.ADD_PHOTO:
         {
         const newPhoto = action.payload;
-        const isSameId = (photo) => String(photo?.id) === String(newPhoto?.id);
         return {
             ...state,
-            photos: [newPhoto, ...state.photos.filter((photo) => !isSameId(photo))],
-            selectedPhoto: isSameId(state.selectedPhoto) ? newPhoto : state.selectedPhoto,
-            galleryPhotos: [newPhoto, ...state.galleryPhotos.filter((photo) => !isSameId(photo))],
-            pendingMapFocus: isSameId(state.pendingMapFocus) ? newPhoto : state.pendingMapFocus
+            photos: [newPhoto, ...state.photos.filter((photo) => !samePhotoId(photo, newPhoto))],
+            selectedPhoto: samePhotoId(state.selectedPhoto, newPhoto) ? newPhoto : state.selectedPhoto,
+            galleryPhotos: [newPhoto, ...state.galleryPhotos.filter((photo) => !samePhotoId(photo, newPhoto))],
+            pendingMapFocus: samePhotoId(state.pendingMapFocus, newPhoto) ? newPhoto : state.pendingMapFocus
         };
         }
         
         case ACTIONS.UPDATE_PHOTO:
         {
         const updatedPhoto = action.payload;
-        const sameId = (photo) => String(photo?.id) === String(updatedPhoto?.id);
         return {
             ...state,
             photos: state.photos.map(photo => 
-                sameId(photo) ? updatedPhoto : photo
+                samePhotoId(photo, updatedPhoto) ? updatedPhoto : photo
             ),
-            selectedPhoto: sameId(state.selectedPhoto) ? updatedPhoto : state.selectedPhoto,
+            selectedPhoto: samePhotoId(state.selectedPhoto, updatedPhoto) ? updatedPhoto : state.selectedPhoto,
             galleryPhotos: state.galleryPhotos.map(photo =>
-                sameId(photo) ? updatedPhoto : photo
+                samePhotoId(photo, updatedPhoto) ? updatedPhoto : photo
             ),
-            pendingMapFocus: sameId(state.pendingMapFocus) ? updatedPhoto : state.pendingMapFocus
+            pendingMapFocus: samePhotoId(state.pendingMapFocus, updatedPhoto) ? updatedPhoto : state.pendingMapFocus
         };
         }
         
         case ACTIONS.DELETE_PHOTO:
+        {
+        const deletedPhotoId = action.payload;
+        const nextPhotos = state.photos.filter((photo) => !samePhotoId(photo, { id: deletedPhotoId }));
+        const nextGalleryPhotos = state.galleryPhotos.filter((photo) => !samePhotoId(photo, { id: deletedPhotoId }));
+        const nextSelectedPhoto = samePhotoId(state.selectedPhoto, { id: deletedPhotoId }) ? null : state.selectedPhoto;
+        const nextPendingMapFocus = samePhotoId(state.pendingMapFocus, { id: deletedPhotoId }) ? null : state.pendingMapFocus;
         return {
             ...state,
-            photos: state.photos.filter(photo => photo.id !== action.payload)
+            photos: nextPhotos,
+            selectedPhoto: nextSelectedPhoto,
+            modalOpen: nextSelectedPhoto ? state.modalOpen : false,
+            galleryPhotos: nextGalleryPhotos,
+            galleryModalOpen: nextGalleryPhotos.length > 0 ? state.galleryModalOpen : false,
+            pendingMapFocus: nextPendingMapFocus
+        };
         };
         
         case ACTIONS.SET_MAP_CENTER:
