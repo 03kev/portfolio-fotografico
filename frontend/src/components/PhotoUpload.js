@@ -52,6 +52,12 @@ const getSteps = (isEditMode) => (
         ]
 );
 
+const STEP_DESCRIPTIONS = {
+    1: 'Seleziona il file iniziale da cui generare tutte le derivate pubbliche.',
+    2: 'Compila i dati descrittivi e posiziona correttamente lo scatto.',
+    3: 'Completa metadati tecnici e organizzazione dei tag.'
+};
+
 const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) => {
     const { actions, photoOpsByPhotoId } = usePhotos();
     const isEditMode = Boolean(photoToEdit);
@@ -644,6 +650,9 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
 
     const isFirstStep = currentStep === firstStep;
     const isLastStep = currentStep === lastStep;
+    const currentStepIndex = Math.max(0, steps.findIndex((step) => step.id === currentStep));
+    const currentStepLabel = steps[currentStepIndex]?.label || '';
+    const currentStepDescription = STEP_DESCRIPTIONS[currentStep] || '';
 
     const isNextDisabled =
         loading ||
@@ -654,12 +663,22 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         <div className="photo-upload-modal" onClick={() => !loading && initClose()}>
             <div className={`photo-upload-container${isClosing ? ' closing' : ''}`} onClick={(e) => e.stopPropagation()}>
                 <div className="upload-header">
-                    <h2>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                            {isEditMode ? <PencilLine size={18} /> : <Upload size={18} />}
-                            {isEditMode ? 'Modifica Foto' : 'Carica Nuova Foto'}
-                        </span>
-                    </h2>
+                    <div className="upload-header-copy">
+                        <div className="upload-header-topline">
+                            <span className="upload-eyebrow">{isEditMode ? 'Editor foto' : 'Nuovo upload'}</span>
+                            <span className="upload-progress-pill">Step {currentStepIndex + 1}/{steps.length}</span>
+                        </div>
+                        <h2>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                {isEditMode ? <PencilLine size={18} /> : <Upload size={18} />}
+                                {isEditMode ? 'Modifica Foto' : 'Carica Nuova Foto'}
+                            </span>
+                        </h2>
+                        <p className="upload-header-subtitle">
+                            <strong>{currentStepLabel}</strong>
+                            {currentStepDescription ? ` · ${currentStepDescription}` : ''}
+                        </p>
+                    </div>
                     {onClose && (
                         <button className="close-btn" onClick={() => !loading && initClose()} title="Chiudi">
                             ×
@@ -668,10 +687,10 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                 </div>
 
                 <nav className="step-navbar">
-                    {steps.map((step) => (
+                    {steps.map((step, index) => (
                         <button
                             key={step.id}
-                            className={currentStep === step.id ? 'active' : ''}
+                            className={`${currentStep === step.id ? 'active' : ''}${currentStep > step.id ? ' completed' : ''}`}
                             onClick={() => {
                                 if (!loading) {
                                     setError('');
@@ -679,8 +698,10 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                                 }
                             }}
                             disabled={loading}
+                            aria-current={currentStep === step.id ? 'step' : undefined}
                         >
-                            {step.label}
+                            <span className="step-index">{index + 1}</span>
+                            <span className="step-text">{step.label}</span>
                         </button>
                     ))}
                 </nav>
@@ -696,26 +717,33 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
 
                     {!isEditMode && currentStep === 1 && (
                         <div className="step-content">
-                            <div
-                                className={`upload-area ${selectedFile ? 'has-file' : ''}`}
-                                onClick={() => !loading && fileInputRef.current?.click()}
-                            >
-                                {preview ? (
-                                    <div className="preview-container">
-                                        <img src={preview} alt="Preview" className="preview-image" />
-                                        <div className="preview-overlay">
-                                            <button className="change-image-btn">Cambia immagine</button>
+                            <div className="upload-stage-card">
+                                <div className="step-section-intro">
+                                    <span className="step-section-kicker">Source privata</span>
+                                    <h3>Carica il file di partenza</h3>
+                                    <p>Il file originale resta nel bucket privato. Da qui vengono generate full-res, thumbnail e social image.</p>
+                                </div>
+                                <div
+                                    className={`upload-area ${selectedFile ? 'has-file' : ''}`}
+                                    onClick={() => !loading && fileInputRef.current?.click()}
+                                >
+                                    {preview ? (
+                                        <div className="preview-container">
+                                            <img src={preview} alt="Preview" className="preview-image" />
+                                            <div className="preview-overlay">
+                                                <button className="change-image-btn">Cambia immagine</button>
+                                            </div>
                                         </div>
-                                    </div>
-                                ) : (
-                                    <div className="upload-placeholder">
-                                        <div className="upload-icon">
-                                            <FolderOpen size={28} />
+                                    ) : (
+                                        <div className="upload-placeholder">
+                                            <div className="upload-icon">
+                                                <FolderOpen size={28} />
+                                            </div>
+                                            <p>Clicca per selezionare un'immagine</p>
+                                            <p className="upload-hint">Formati JPG, PNG, WebP · Max 50MB</p>
                                         </div>
-                                        <p>Clicca per selezionare un'immagine</p>
-                                        <p className="upload-hint">Formati JPG, PNG, WebP - Max 50MB</p>
-                                    </div>
-                                )}
+                                    )}
+                                </div>
                             </div>
                             <input
                                 ref={fileInputRef}
@@ -729,6 +757,10 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
 
                     {currentStep === 2 && (
                         <div className="step-content">
+                            <div className="step-section-intro">
+                                <span className="step-section-kicker">Contesto</span>
+                                <h3>Info e posizione</h3>
+                            </div>
                             <div className="form-group">
                                 <label>Titolo<span style={{ color: '#999', marginLeft: '2px' }}>*</span></label>
                                 <input
@@ -801,6 +833,10 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
 
                     {currentStep === 3 && (
                         <div className="step-content">
+                            <div className="step-section-intro">
+                                <span className="step-section-kicker">Metadata</span>
+                                <h3>Dati tecnici e tag</h3>
+                            </div>
                             <div className="tech-details">
                                 <div className="tech-header-actions">
                                     <h3>Dettagli Tecnici</h3>
@@ -811,7 +847,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                                         disabled={loading || metadataLoading}
                                     >
                                         {metadataLoading ? <Loader2 size={16} /> : <FolderOpen size={16} />}
-                                        {metadataLoading ? 'Importing...' : 'Import metadata'}
+                                        {metadataLoading ? 'Importazione...' : 'Importa metadata'}
                                     </button>
                                 </div>
                                 {metadataStatus.message && (
@@ -923,38 +959,44 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                     )}
 
                     <div className="upload-actions">
-                        {!isFirstStep && (
-                            <button type="button" className="cancel-btn" onClick={prevStep} disabled={loading}>
-                                Indietro
-                            </button>
-                        )}
-
-                        {!isLastStep ? (
-                            <button type="button" className="upload-btn" onClick={nextStep} disabled={isNextDisabled}>
-                                Avanti
-                            </button>
-                        ) : (
-                            <>
-                                <button
-                                    type="button"
-                                    className="upload-btn"
-                                    onClick={handleUpload}
-                                    disabled={loading || (!selectedFile && !isEditMode)}
-                                >
-                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                                        {loading ? <Loader2 size={16} /> : isEditMode ? <Save size={16} /> : <Upload size={16} />}
-                                        {loading
-                                            ? (isEditMode ? 'Salvataggio...' : 'Caricamento...')
-                                            : (isEditMode ? 'Salva Modifiche' : 'Carica Foto')}
-                                    </span>
+                        <div className="upload-actions-meta">
+                            <span className="upload-actions-step">Step {currentStepIndex + 1} / {steps.length}</span>
+                            <span className="upload-actions-caption">{currentStepLabel}</span>
+                        </div>
+                        <div className="upload-actions-buttons">
+                            {!isFirstStep && (
+                                <button type="button" className="cancel-btn" onClick={prevStep} disabled={loading}>
+                                    Indietro
                                 </button>
-                                {onClose && (
-                                    <button type="button" className="cancel-btn" onClick={onClose} disabled={loading}>
-                                        Annulla
+                            )}
+
+                            {!isLastStep ? (
+                                <button type="button" className="upload-btn" onClick={nextStep} disabled={isNextDisabled}>
+                                    Avanti
+                                </button>
+                            ) : (
+                                <>
+                                    <button
+                                        type="button"
+                                        className="upload-btn"
+                                        onClick={handleUpload}
+                                        disabled={loading || (!selectedFile && !isEditMode)}
+                                    >
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                            {loading ? <Loader2 size={16} /> : isEditMode ? <Save size={16} /> : <Upload size={16} />}
+                                            {loading
+                                                ? (isEditMode ? 'Salvataggio...' : 'Caricamento...')
+                                                : (isEditMode ? 'Salva Modifiche' : 'Carica Foto')}
+                                        </span>
                                     </button>
-                                )}
-                            </>
-                        )}
+                                    {onClose && (
+                                        <button type="button" className="cancel-btn" onClick={onClose} disabled={loading}>
+                                            Annulla
+                                        </button>
+                                    )}
+                                </>
+                            )}
+                        </div>
                     </div>
                 </div>
 
