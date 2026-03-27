@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { AlertTriangle, FolderOpen, Globe, Loader2, MapPin, PencilLine, Save, Upload, X } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronUp, FolderOpen, Globe, Loader2, MapPin, PencilLine, Save, Upload, X } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { signSourceUpload, uploadSourceToSignedUrl, uploadUtils } from '../utils/api';
 import {
@@ -57,6 +57,8 @@ const STEP_DESCRIPTIONS = {
     2: 'Compila i dati descrittivi e posiziona correttamente lo scatto.',
     3: 'Completa metadati tecnici e organizzazione dei tag.'
 };
+
+const COORDINATE_STEP = 0.0001;
 
 const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) => {
     const { actions, photoOpsByPhotoId } = usePhotos();
@@ -342,6 +344,16 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         });
         if (error) setError('');
     };
+
+    const adjustCoordinate = useCallback((field, delta) => {
+        setFormData((prev) => {
+            const currentValue = Number.parseFloat(prev[field]);
+            const safeCurrent = Number.isFinite(currentValue) ? currentValue : 0;
+            const nextValue = (safeCurrent + delta).toFixed(6);
+            return { ...prev, [field]: nextValue };
+        });
+        if (error) setError('');
+    }, [error]);
 
     const addTag = useCallback((tag) => {
         const newTag = tag.trim();
@@ -811,21 +823,65 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                                 <div className="coordinates-group">
                                     <div className="form-group">
                                         <label>Latitudine</label>
-                                        <input
-                                            type="number"
-                                            step="any"
-                                            value={formData.lat}
-                                            onChange={(e) => handleInputChange('lat', e.target.value)}
-                                        />
+                                        <div className="number-input-wrapper">
+                                            <input
+                                                type="number"
+                                                step="any"
+                                                value={formData.lat}
+                                                onChange={(e) => handleInputChange('lat', e.target.value)}
+                                            />
+                                            <div className="number-input-controls">
+                                                <button
+                                                    type="button"
+                                                    className="number-input-btn"
+                                                    onClick={() => adjustCoordinate('lat', COORDINATE_STEP)}
+                                                    disabled={loading}
+                                                    aria-label="Aumenta latitudine"
+                                                >
+                                                    <ChevronUp size={14} />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="number-input-btn"
+                                                    onClick={() => adjustCoordinate('lat', -COORDINATE_STEP)}
+                                                    disabled={loading}
+                                                    aria-label="Diminuisci latitudine"
+                                                >
+                                                    <ChevronDown size={14} />
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
                                     <div className="form-group">
                                         <label>Longitudine</label>
-                                        <input
-                                            type="number"
-                                            step="any"
-                                            value={formData.lng}
-                                            onChange={(e) => handleInputChange('lng', e.target.value)}
-                                        />
+                                        <div className="number-input-wrapper">
+                                            <input
+                                                type="number"
+                                                step="any"
+                                                value={formData.lng}
+                                                onChange={(e) => handleInputChange('lng', e.target.value)}
+                                            />
+                                            <div className="number-input-controls">
+                                                <button
+                                                    type="button"
+                                                    className="number-input-btn"
+                                                    onClick={() => adjustCoordinate('lng', COORDINATE_STEP)}
+                                                    disabled={loading}
+                                                    aria-label="Aumenta longitudine"
+                                                >
+                                                    <ChevronUp size={14} />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="number-input-btn"
+                                                    onClick={() => adjustCoordinate('lng', -COORDINATE_STEP)}
+                                                    disabled={loading}
+                                                    aria-label="Diminuisci longitudine"
+                                                >
+                                                    <ChevronDown size={14} />
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
