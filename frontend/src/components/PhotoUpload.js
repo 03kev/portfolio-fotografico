@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { AlertTriangle, FolderOpen, Globe, Loader2, MapPin, PencilLine, Save, Upload } from 'lucide-react';
+import { AlertTriangle, FolderOpen, Globe, Loader2, MapPin, PencilLine, Save, Upload, X } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { signSourceUpload, uploadSourceToSignedUrl, uploadUtils } from '../utils/api';
 import {
@@ -653,6 +653,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
     const currentStepIndex = Math.max(0, steps.findIndex((step) => step.id === currentStep));
     const currentStepLabel = steps[currentStepIndex]?.label || '';
     const currentStepDescription = STEP_DESCRIPTIONS[currentStep] || '';
+    const actionsLayoutClass = isLastStep ? ' final-step' : (isFirstStep ? ' single-action' : ' dual-action');
 
     const isNextDisabled =
         loading ||
@@ -680,8 +681,8 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                         </p>
                     </div>
                     {onClose && (
-                        <button className="close-btn" onClick={() => !loading && initClose()} title="Chiudi">
-                            ×
+                        <button className="close-btn" onClick={() => !loading && initClose()} title="Chiudi" aria-label="Chiudi modal">
+                            <X size={20} strokeWidth={2.2} />
                         </button>
                     )}
                 </div>
@@ -836,88 +837,90 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                             <div className="step-section-intro">
                                 <span className="step-section-kicker">Metadata</span>
                                 <h3>Dati tecnici e tag</h3>
+                                <p>Definisci metadati tecnici e organizzazione dell'immagine senza cambiare il file caricato.</p>
                             </div>
-                            <div className="tech-details">
-                                <div className="tech-header-actions">
-                                    <h3>Dettagli Tecnici</h3>
-                                    <button
-                                        type="button"
-                                        className="metadata-btn"
-                                        onClick={() => metadataFileInputRef.current?.click()}
-                                        disabled={loading || metadataLoading}
-                                    >
-                                        {metadataLoading ? <Loader2 size={16} /> : <FolderOpen size={16} />}
-                                        {metadataLoading ? 'Importazione...' : 'Importa metadata'}
-                                    </button>
+                            <div className="metadata-import-row">
+                                <div className="metadata-import-copy">
+                                    <span className="metadata-import-label">Import opzionale</span>
+                                    <p>Se il file finale non contiene EXIF, puoi recuperare i dati da un altro scatto o dal RAW originale.</p>
                                 </div>
-                                {metadataStatus.message && (
-                                    <p className={`metadata-status ${metadataStatus.type}`}>
-                                        {metadataStatus.message}
-                                    </p>
-                                )}
+                                <button
+                                    type="button"
+                                    className="metadata-btn"
+                                    onClick={() => metadataFileInputRef.current?.click()}
+                                    disabled={loading || metadataLoading}
+                                >
+                                    {metadataLoading ? <Loader2 size={16} /> : <FolderOpen size={16} />}
+                                    {metadataLoading ? 'Importazione...' : 'Importa metadata'}
+                                </button>
+                            </div>
+                            {metadataStatus.message && (
+                                <p className={`metadata-status ${metadataStatus.type}`}>
+                                    {metadataStatus.message}
+                                </p>
+                            )}
+                            <div className="form-group">
+                                <label>Data</label>
+                                <input
+                                    type="date"
+                                    value={formData.date}
+                                    onChange={(e) => handleInputChange('date', e.target.value)}
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label>Fotocamera</label>
+                                <input
+                                    type="text"
+                                    value={formData.camera}
+                                    placeholder="Es: Canon EOS R5"
+                                    onChange={(e) => handleInputChange('camera', e.target.value)}
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label>Obiettivo</label>
+                                <input
+                                    type="text"
+                                    value={formData.lens}
+                                    placeholder="Es: RF 24-70mm f/2.8L IS"
+                                    onChange={(e) => handleInputChange('lens', e.target.value)}
+                                />
+                            </div>
+                            <div className="settings-row">
                                 <div className="form-group">
-                                    <label>Data</label>
-                                    <input
-                                        type="date"
-                                        value={formData.date}
-                                        onChange={(e) => handleInputChange('date', e.target.value)}
-                                    />
-                                </div>
-                                <div className="form-group">
-                                    <label>Fotocamera</label>
+                                    <label>Apertura</label>
                                     <input
                                         type="text"
-                                        value={formData.camera}
-                                        placeholder="Es: Canon EOS R5"
-                                        onChange={(e) => handleInputChange('camera', e.target.value)}
+                                        value={formData.settings.aperture}
+                                        placeholder="es. f/8"
+                                        onChange={(e) => handleInputChange('settings.aperture', e.target.value)}
                                     />
                                 </div>
                                 <div className="form-group">
-                                    <label>Obiettivo</label>
+                                    <label>Tempo</label>
                                     <input
                                         type="text"
-                                        value={formData.lens}
-                                        placeholder="Es: RF 24-70mm f/2.8L IS"
-                                        onChange={(e) => handleInputChange('lens', e.target.value)}
+                                        value={formData.settings.shutter}
+                                        placeholder="es. 1/125s"
+                                        onChange={(e) => handleInputChange('settings.shutter', e.target.value)}
                                     />
                                 </div>
-                                <div className="settings-row">
-                                    <div className="form-group">
-                                        <label>Apertura</label>
-                                        <input
-                                            type="text"
-                                            value={formData.settings.aperture}
-                                            placeholder="es. f/8"
-                                            onChange={(e) => handleInputChange('settings.aperture', e.target.value)}
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label>Tempo</label>
-                                        <input
-                                            type="text"
-                                            value={formData.settings.shutter}
-                                            placeholder="es. 1/125s"
-                                            onChange={(e) => handleInputChange('settings.shutter', e.target.value)}
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label>ISO</label>
-                                        <input
-                                            type="text"
-                                            value={formData.settings.iso}
-                                            placeholder="es. 100"
-                                            onChange={(e) => handleInputChange('settings.iso', e.target.value)}
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label>Focale</label>
-                                        <input
-                                            type="text"
-                                            value={formData.settings.focal}
-                                            placeholder="es. 35mm"
-                                            onChange={(e) => handleInputChange('settings.focal', e.target.value)}
-                                        />
-                                    </div>
+                                <div className="form-group">
+                                    <label>ISO</label>
+                                    <input
+                                        type="text"
+                                        value={formData.settings.iso}
+                                        placeholder="es. 100"
+                                        onChange={(e) => handleInputChange('settings.iso', e.target.value)}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label>Focale</label>
+                                    <input
+                                        type="text"
+                                        value={formData.settings.focal}
+                                        placeholder="es. 35mm"
+                                        onChange={(e) => handleInputChange('settings.focal', e.target.value)}
+                                    />
                                 </div>
                             </div>
 
@@ -963,7 +966,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                             <span className="upload-actions-step">Step {currentStepIndex + 1} / {steps.length}</span>
                             <span className="upload-actions-caption">{currentStepLabel}</span>
                         </div>
-                        <div className="upload-actions-buttons">
+                        <div className={`upload-actions-buttons${actionsLayoutClass}`}>
                             {!isFirstStep && (
                                 <button type="button" className="cancel-btn" onClick={prevStep} disabled={loading}>
                                     Indietro
