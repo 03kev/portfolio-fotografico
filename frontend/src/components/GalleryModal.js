@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { MapPin, Camera } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { resolveAssetUrl } from '../utils/imageUrl';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 const ModalOverlay = styled(motion.div)`
   position: fixed;
@@ -275,21 +276,10 @@ const GalleryModal = () => {
     };
   }, [galleryModalOpen]);
 
-  useEffect(() => {
-    const handleEscape = (e) => {
-      if (e.key === 'Escape') {
-        actions.closeGalleryModal();
-      }
-    };
-
-    if (galleryModalOpen) {
-      document.addEventListener('keydown', handleEscape);
-    }
-
-    return () => {
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, [galleryModalOpen, actions]);
+  useEscapeToClose({
+    enabled: galleryModalOpen,
+    onClose: actions.closeGalleryModal
+  });
 
   const handleOverlayClick = (e) => {
     if (e.target === e.currentTarget) {

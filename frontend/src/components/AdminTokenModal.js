@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { AnimatePresence, motion } from 'framer-motion';
 import { KeyRound, Loader2, X } from 'lucide-react';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 const Backdrop = styled(motion.div)`
   position: fixed;
@@ -174,6 +175,12 @@ function AdminTokenModal({
     const raf = requestAnimationFrame(() => inputRef.current?.focus());
     return () => cancelAnimationFrame(raf);
   }, [isOpen]);
+
+  useEscapeToClose({
+    enabled: isOpen,
+    onClose,
+    canClose: !loading
+  });
 
   const handleSubmit = async (e) => {
     e.preventDefault();

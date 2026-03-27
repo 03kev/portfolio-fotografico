@@ -18,6 +18,7 @@ import {
   viewportRectToSourceRect,
   clampBetween
 } from '../utils/cropEditor';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import './PhotoCropModal.css';
 
 const getPhotoSettings = (photo) => {
@@ -141,6 +142,11 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
 
     return () => observer.disconnect();
   }, [refreshViewport]);
+
+  useEscapeToClose({
+    enabled: isOpen,
+    onClose
+  });
 
   const saveRectToProfile = useCallback((rect, presetKey, viewportOverride = null) => {
     const viewport = viewportOverride || cropViewport;

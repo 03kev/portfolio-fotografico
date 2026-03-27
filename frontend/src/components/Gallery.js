@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { useOutletContext, useSearchParams } from 'react-router-dom';
+import { useOutletContext } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Trash2, Edit3, Crop, Upload, Loader2, X } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { LOCAL_IMAGE_FALLBACK, resolveAssetUrl } from '../utils/imageUrl';
 import { photoService, signSourceUpload, uploadSourceToSignedUrl } from '../utils/api';
+import { useGalleryQueryState } from '../hooks/useGalleryQueryState';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import {
   buildOperationErrorMessage
 } from '../utils/operationErrors';
@@ -26,14 +28,10 @@ const CROP_STEP_LABELS = {
   regenerate: 'rigenerazione derivate'
 };
 
-function useDebounce(value, delay) {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const handler = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(handler);
-  }, [value, delay]);
-  return debounced;
-}
+const SKELETON_CARD_COUNT = 9;
+const INITIAL_VISIBLE_CARDS = 24;
+const VISIBLE_CARDS_BATCH = 24;
+const LOAD_MORE_ROOT_MARGIN = '900px 0px';
 
 const cardVariants = {
   hidden: { opacity: 0, scale: 0.98, y: 8 },
@@ -184,6 +182,8 @@ const PhotoImage = styled(motion.img)`
   width: 100%;
   height: 100%;
   object-fit: cover;
+  color: transparent;
+  font-size: 0;
   transition: transform 0.45s ease;
 
   ${PhotoCard}:hover & {
@@ -459,6 +459,76 @@ const LoadingSpinner = styled.div`
   }
 `;
 
+const SkeletonBase = styled.div`
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.08) 45%,
+      rgba(255, 255, 255, 0.15) 50%,
+      rgba(255, 255, 255, 0.08) 55%,
+      transparent 100%
+    );
+    animation: gallery-skeleton-shimmer 1.3s ease-in-out infinite;
+  }
+
+  @keyframes gallery-skeleton-shimmer {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+`;
+
+const SkeletonSearch = styled(SkeletonBase)`
+  width: min(560px, 100%);
+  height: 46px;
+  border-radius: var(--border-radius-xl);
+  margin: 0 auto;
+`;
+
+const SkeletonFilterRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+`;
+
+const SkeletonFilterChip = styled(SkeletonBase)`
+  width: ${({ $w }) => $w || 84}px;
+  height: 34px;
+  border-radius: var(--border-radius-full);
+`;
+
+const SkeletonGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--spacing-xl);
+
+  @media (max-width: 768px) {
+    grid-template-columns: 1fr;
+    gap: var(--spacing-lg);
+  }
+`;
+
+const SkeletonCard = styled(SkeletonBase)`
+  border-radius: var(--border-radius-2xl);
+  aspect-ratio: 4 / 3;
+`;
+
+const LoadMoreSentinel = styled.div`
+  width: 100%;
+  height: 1px;
+`;
+
 const NoResults = styled(motion.div)`
   text-align: center;
   padding: var(--spacing-3xl) var(--spacing-lg);
@@ -563,23 +633,164 @@ const DeleteInlineSpinner = styled(Loader2)`
   }
 `;
 
+const GalleryCard = React.memo(function GalleryCard({
+  photo,
+  index,
+  isAdmin,
+  hideCardDescriptions,
+  hasActivePhotoOp,
+  photoOpStatus,
+  getPhotoCardUrl,
+  getPhotoAltText,
+  getThumbImageUrl,
+  onOpen,
+  onDelete,
+  onEdit,
+  onCrop,
+  onReuploadSource,
+  onAbortReuploadUpload
+}) {
+  const isCardOpActive = Boolean(photoOpStatus?.active);
+  const isPendingCard = Boolean(photo?.__pending);
+  const canOpenCard = !isCardOpActive && !isPendingCard;
+  const cardImageSrc = isPendingCard ? String(photo.previewUrl || '') : getThumbImageUrl(photo);
+
+  return (
+    <motion.div
+      layout
+      variants={cardVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+      onClick={() => {
+        if (!canOpenCard) return;
+        onOpen(photo);
+      }}
+    >
+      <PhotoCard>
+        {!isPendingCard && (
+          <SeoImageLink href={getPhotoCardUrl(photo)} aria-hidden="true" tabIndex={-1}>
+            {photo.title || 'Foto'}
+          </SeoImageLink>
+        )}
+        {isAdmin && !isPendingCard && (
+          <>
+            {!hasActivePhotoOp && !isCardOpActive && (
+              <ReplaceSourceButton
+                onClick={(event) => onReuploadSource(event, photo)}
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                title="Reupload source privata"
+              >
+                <Upload size={18} />
+              </ReplaceSourceButton>
+            )}
+            {!hasActivePhotoOp && !isCardOpActive && (
+              <>
+                <CropButton
+                  onClick={(event) => onCrop(event, photo)}
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  title="Modifica crop"
+                >
+                  <Crop size={18} />
+                </CropButton>
+                <EditButton
+                  onClick={(event) => onEdit(event, photo)}
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                >
+                  <Edit3 size={18} />
+                </EditButton>
+                <DeleteButton
+                  onClick={(event) => onDelete(event, photo)}
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                >
+                  <Trash2 size={18} />
+                </DeleteButton>
+              </>
+            )}
+          </>
+        )}
+        <PhotoImage
+          src={cardImageSrc}
+          alt={getPhotoAltText(photo)}
+          loading={index < 3 ? 'eager' : 'lazy'}
+          fetchPriority={index < 3 ? 'high' : 'auto'}
+          decoding="async"
+          onError={(event) => {
+            event.currentTarget.onerror = null;
+            event.currentTarget.src = LOCAL_IMAGE_FALLBACK;
+          }}
+        />
+        {isCardOpActive && (
+          <ReuploadCardOverlay>
+            <ReuploadCardSpinner size={26} />
+            <span>{photoOpStatus?.label || 'Operazione in corso'}</span>
+            <ReuploadProgressMeta>
+              <span>{photoOpStatus?.type === 'source-reupload' || photoOpStatus?.type === 'new-upload' ? 'Stato upload' : 'Stato operazione'}</span>
+              <span>{Math.round(photoOpStatus?.percent || 0)}%</span>
+            </ReuploadProgressMeta>
+            <ReuploadProgressTrack>
+              <ReuploadProgressFill $percent={Math.max(0, Math.min(100, photoOpStatus?.percent || 0))} />
+            </ReuploadProgressTrack>
+            {photoOpStatus?.type === 'source-reupload' && photoOpStatus?.step === 'upload' && (
+              <ReuploadAbortButton
+                type="button"
+                onClick={(event) => onAbortReuploadUpload(event, photo.id, photoOpStatus?.step)}
+              >
+                <X size={14} />
+                Annulla upload
+              </ReuploadAbortButton>
+            )}
+          </ReuploadCardOverlay>
+        )}
+        {!isCardOpActive && (
+          <PhotoOverlay>
+            <OverlayContent>
+              <PhotoTitle>{photo.title}</PhotoTitle>
+              <PhotoLocation>{photo.location}</PhotoLocation>
+              {!hideCardDescriptions && (
+                <PhotoDescription>{photo.description}</PhotoDescription>
+              )}
+              {Array.isArray(photo.tags) && photo.tags.length > 0 && (
+                <PhotoTags>
+                  {photo.tags.slice(0, 3).map((tag) => (
+                    <Tag key={tag}>{tag}</Tag>
+                  ))}
+                </PhotoTags>
+              )}
+            </OverlayContent>
+          </PhotoOverlay>
+        )}
+      </PhotoCard>
+    </motion.div>
+  );
+});
+
 const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptions = false }) => {
-  const { photos, filteredPhotos, loading, actions, filters, modalOpen, photoOpsByPhotoId, pendingUploads } = usePhotos();
+  const { photos, filteredPhotos, loading, actions, modalOpen, photoOpsByPhotoId, pendingUploads } = usePhotos();
   const outletContext = useOutletContext();
   const isAdmin = Boolean(outletContext?.isAdmin);
   const notify = outletContext?.notify || null;
-  const [searchParams] = useSearchParams();
-  const photoParam = searchParams.get('photo');
+  const {
+    activeFilter,
+    searchTerm,
+    debouncedSearchTerm,
+    photoParam,
+    handleFilterClick,
+    handleSearchChange,
+    clearSearch
+  } = useGalleryQueryState({ debounceMs: DEBOUNCE_DELAY_FILTER });
   const resolvedPhotoId = forcedPhotoId || photoParam;
+  const hasForcedPhotoId = Boolean(forcedPhotoId);
+  const forcedPhotoExists = !hasForcedPhotoId
+    || photos.some((photo) => String(photo.id) === String(forcedPhotoId));
+  const waitingForForcedModal = hasForcedPhotoId && forcedPhotoExists && !modalOpen;
   const autoOpenedPhotoRef = useRef(null);
   const sourceFileInputRef = useRef(null);
-
-  const [activeFilter, setActiveFilter] = useState(() => {
-    return filters.tags && filters.tags.length > 0 ? filters.tags[0] : 'all';
-  });
-  const [searchTerm, setSearchTerm] = useState(() => {
-    return filters.search || '';
-  });
+  const searchInputRef = useRef(null);
   const [editingPhoto, setEditingPhoto] = useState(null);
   const [croppingPhoto, setCroppingPhoto] = useState(null);
   const [reuploadSourcePhoto, setReuploadSourcePhoto] = useState(null);
@@ -589,8 +800,10 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const reuploadUploadAbortControllerRef = useRef(null);
   const activeReuploadPhotoIdRef = useRef(null);
   const isMountedRef = useRef(true);
-
-  const debouncedSearchTerm = useDebounce(searchTerm, DEBOUNCE_DELAY_FILTER);
+  const loadMoreTriggerRef = useRef(null);
+  const [visibleCardsCount, setVisibleCardsCount] = useState(INITIAL_VISIBLE_CARDS);
+  const lastRevealKeyRef = useRef(null);
+  const previousGalleryLengthRef = useRef(0);
 
   const allTags = useMemo(() =>
     [...new Set(photos.flatMap(photo => Array.isArray(photo.tags) ? photo.tags : []))],
@@ -607,15 +820,28 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       ...entry,
       __pending: true
     }));
-    return [...pendingCards, ...filteredPhotos];
+    const pendingPhotoIds = new Set(
+      pendingCards
+        .map((entry) => String(entry?.id || '').trim())
+        .filter(Boolean)
+    );
+
+    const stablePhotos = filteredPhotos.filter((photo) => !pendingPhotoIds.has(String(photo?.id || '').trim()));
+    return [...pendingCards, ...stablePhotos];
   }, [pendingUploads, filteredPhotos]);
 
+  const visibleGalleryCards = useMemo(
+    () => galleryCards.slice(0, Math.max(0, visibleCardsCount)),
+    [galleryCards, visibleCardsCount]
+  );
+
   useEffect(() => {
-    if (debouncedSearchTerm.trim()) {
+    const nextSearch = debouncedSearchTerm.trim();
+    if (nextSearch) {
       if (activeFilter !== 'all') {
-        actions.setFilter({ search: debouncedSearchTerm, tags: [activeFilter] });
+        actions.setFilter({ search: nextSearch, tags: [activeFilter] });
       } else {
-        actions.setFilter({ search: debouncedSearchTerm, tags: [] });
+        actions.setFilter({ search: nextSearch, tags: [] });
       }
     } else {
       if (activeFilter !== 'all') {
@@ -628,13 +854,47 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   }, [debouncedSearchTerm, activeFilter]);
 
   useEffect(() => {
-    const currentTag = filters.tags && filters.tags.length > 0 ? filters.tags[0] : 'all';
-    const currentSearch = filters.search || '';
+    const revealKey = `${activeFilter}::${debouncedSearchTerm.trim()}`;
+    const previousLength = previousGalleryLengthRef.current;
+    const nextLength = galleryCards.length;
+    const allCardsWereVisible = visibleCardsCount >= previousLength;
 
-    if (currentTag !== activeFilter) setActiveFilter(currentTag);
-    if (currentSearch !== searchTerm) setSearchTerm(currentSearch);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.tags?.join(','), filters.search]);
+    if (lastRevealKeyRef.current !== revealKey) {
+      lastRevealKeyRef.current = revealKey;
+      setVisibleCardsCount(Math.min(nextLength, INITIAL_VISIBLE_CARDS));
+    } else if (allCardsWereVisible) {
+      // Keep live updates snappy: if the grid was already fully visible,
+      // show newly inserted cards immediately instead of re-running the reveal.
+      setVisibleCardsCount(nextLength);
+    } else if (visibleCardsCount > nextLength) {
+      setVisibleCardsCount(nextLength);
+    }
+
+    previousGalleryLengthRef.current = nextLength;
+  }, [galleryCards.length, activeFilter, debouncedSearchTerm, visibleCardsCount]);
+
+  useEffect(() => {
+    if (loading || waitingForForcedModal) return;
+    if (visibleCardsCount >= galleryCards.length) return;
+    if (!loadMoreTriggerRef.current) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry?.isIntersecting) return;
+        setVisibleCardsCount((previous) => Math.min(galleryCards.length, previous + VISIBLE_CARDS_BATCH));
+      },
+      {
+        root: null,
+        rootMargin: LOAD_MORE_ROOT_MARGIN,
+        threshold: 0
+      }
+    );
+
+    observer.observe(loadMoreTriggerRef.current);
+
+    return () => observer.disconnect();
+  }, [loading, waitingForForcedModal, visibleCardsCount, galleryCards.length]);
 
   useEffect(() => {
     if (!resolvedPhotoId) {
@@ -652,22 +912,44 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     autoOpenedPhotoRef.current = resolvedPhotoId;
   }, [resolvedPhotoId, loading, photos, actions]);
 
-  const hasForcedPhotoId = Boolean(forcedPhotoId);
-  const forcedPhotoExists = !hasForcedPhotoId
-    || photos.some((photo) => String(photo.id) === String(forcedPhotoId));
-  const waitingForForcedModal = hasForcedPhotoId && forcedPhotoExists && !modalOpen;
+  useEffect(() => {
+    const isTextEditingElement = (element) => {
+      if (!(element instanceof HTMLElement)) return false;
+      const tagName = element.tagName;
+      return element.isContentEditable || tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT';
+    };
 
-  const handleFilterClick = (filter) => {
-    setActiveFilter(filter);
-    if (filter === 'all') {
-      actions.clearFilters();
-      setSearchTerm('');
-    }
-  };
+    const handleKeyDown = (event) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
 
-  const handlePhotoClick = (photo) => {
+      const activeElement = document.activeElement;
+      const isSearchFocused = activeElement === searchInputRef.current;
+
+      if (event.key === '/') {
+        if (isTextEditingElement(activeElement) && !isSearchFocused) return;
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+        return;
+      }
+
+      if (event.key === 'Escape' && isSearchFocused) {
+        event.preventDefault();
+        if (searchTerm.trim()) {
+          clearSearch();
+        } else {
+          searchInputRef.current?.blur();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [searchTerm, clearSearch]);
+
+  const handlePhotoClick = useCallback((photo) => {
     actions.openPhotoModal(photo);
-  };
+  }, [actions]);
 
   const getThumbImageUrl = (photo) => {
     const baseUrl = resolveAssetUrl(photo.thumbnail43);
@@ -687,16 +969,16 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     return title;
   };
 
-  const handleDelete = (e, photo) => {
+  const handleDelete = useCallback((e, photo) => {
     e.stopPropagation();
     if (deletingPhoto || hasActivePhotoOp) return;
     setPhotoPendingDelete(photo);
-  };
+  }, [deletingPhoto, hasActivePhotoOp]);
 
-  const handleCancelDelete = () => {
+  const handleCancelDelete = useCallback(() => {
     if (deletingPhoto) return;
     setPhotoPendingDelete(null);
-  };
+  }, [deletingPhoto]);
 
   const handleConfirmDelete = async () => {
     if (!photoPendingDelete || deletingPhoto) return;
@@ -718,19 +1000,25 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     }
   };
 
-  const handleEdit = (e, photo) => {
+  useEscapeToClose({
+    enabled: Boolean(photoPendingDelete),
+    onClose: handleCancelDelete,
+    canClose: !deletingPhoto
+  });
+
+  const handleEdit = useCallback((e, photo) => {
     e.stopPropagation();
     if (hasActivePhotoOp) return;
     setEditingPhoto(photo);
-  };
+  }, [hasActivePhotoOp]);
 
-  const handleCrop = (e, photo) => {
+  const handleCrop = useCallback((e, photo) => {
     e.stopPropagation();
     if (hasActivePhotoOp) return;
     setCroppingPhoto(photo);
-  };
+  }, [hasActivePhotoOp]);
 
-  const handleReuploadSourceClick = (e, photo) => {
+  const handleReuploadSourceClick = useCallback((e, photo) => {
     e.stopPropagation();
     if (hasActivePhotoOp) return;
     setReuploadSourcePhoto(photo);
@@ -738,7 +1026,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       sourceFileInputRef.current.value = '';
       sourceFileInputRef.current.click();
     }
-  };
+  }, [hasActivePhotoOp]);
 
   const stopSoftProgress = useCallback(() => {
     if (softProgressTimerRef.current) {
@@ -919,6 +1207,27 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     return (
       <GallerySection>
         <Container>
+          <SectionHeader>
+            <SectionTitle as={headingLevel}>Archivio</SectionTitle>
+            <SectionSubtitle>
+              Filtra per tag o cerca per titolo, luogo e descrizione.
+            </SectionSubtitle>
+          </SectionHeader>
+          <ControlsRow>
+            <SkeletonSearch />
+            <SkeletonFilterRow>
+              <SkeletonFilterChip $w={62} />
+              <SkeletonFilterChip $w={94} />
+              <SkeletonFilterChip $w={86} />
+              <SkeletonFilterChip $w={78} />
+              <SkeletonFilterChip $w={90} />
+            </SkeletonFilterRow>
+          </ControlsRow>
+          <SkeletonGrid>
+            {Array.from({ length: SKELETON_CARD_COUNT }).map((_, idx) => (
+              <SkeletonCard key={`gallery-skeleton-${idx}`} />
+            ))}
+          </SkeletonGrid>
           <LoadingContainer>
             <LoadingSpinner />
           </LoadingContainer>
@@ -950,10 +1259,11 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
         <ControlsRow>
           <SearchContainer initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.35 }}>
             <SearchInput
+              ref={searchInputRef}
               type="text"
               placeholder="Cerca…"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={handleSearchChange}
             />
             <SearchIcon>
               <Search size={18} />
@@ -980,130 +1290,37 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
             <p>Prova a cambiare filtri o ricerca.</p>
           </NoResults>
         ) : (
-          <GalleryGrid key="gallery-grid">
-            <AnimatePresence mode="popLayout" initial={false}>
-              {galleryCards.map((photo, index) => {
-                const photoOpStatus = photoOpsByPhotoId?.[String(photo.id)];
-                const isCardOpActive = Boolean(photoOpStatus?.active);
-                const isPendingCard = Boolean(photo?.__pending);
-                const canOpenCard = !isCardOpActive && !isPendingCard;
-                const cardImageSrc = isPendingCard ? String(photo.previewUrl || '') : getThumbImageUrl(photo);
-                return (
-                <motion.div
-                  key={photo.id}
-                  layout
-                  variants={cardVariants}
-                  initial="hidden"
-                  animate="visible"
-                  exit="exit"
-                  onClick={() => {
-                    if (!canOpenCard) return;
-                    handlePhotoClick(photo);
-                  }}
-                >
-                  <PhotoCard>
-                    {!isPendingCard && (
-                      <SeoImageLink href={getPhotoCardUrl(photo)} aria-hidden="true" tabIndex={-1}>
-                        {photo.title || 'Foto'}
-                      </SeoImageLink>
-                    )}
-                    {isAdmin && !isPendingCard && (
-                      <>
-                        {!hasActivePhotoOp && !isCardOpActive && (
-                          <ReplaceSourceButton
-                            onClick={(e) => handleReuploadSourceClick(e, photo)}
-                            whileHover={{ scale: 1.1 }}
-                            whileTap={{ scale: 0.9 }}
-                            title="Reupload source privata"
-                          >
-                            <Upload size={18} />
-                          </ReplaceSourceButton>
-                        )}
-                        {!hasActivePhotoOp && !isCardOpActive && (
-                          <>
-                            <CropButton
-                              onClick={(e) => handleCrop(e, photo)}
-                              whileHover={{ scale: 1.1 }}
-                              whileTap={{ scale: 0.9 }}
-                              title="Modifica crop"
-                            >
-                              <Crop size={18} />
-                            </CropButton>
-                            <EditButton
-                              onClick={(e) => handleEdit(e, photo)}
-                              whileHover={{ scale: 1.1 }}
-                              whileTap={{ scale: 0.9 }}
-                            >
-                              <Edit3 size={18} />
-                            </EditButton>
-                            <DeleteButton
-                              onClick={(e) => handleDelete(e, photo)}
-                              whileHover={{ scale: 1.1 }}
-                              whileTap={{ scale: 0.9 }}
-                            >
-                              <Trash2 size={18} />
-                            </DeleteButton>
-                          </>
-                        )}
-                      </>
-                    )}
-                    <PhotoImage
-                      src={cardImageSrc}
-                      alt={getPhotoAltText(photo)}
-                      loading={index < 3 ? 'eager' : 'lazy'}
-                      fetchPriority={index < 3 ? 'high' : 'auto'}
-                      decoding="async"
-                      onError={(e) => {
-                        e.currentTarget.onerror = null;
-                        e.currentTarget.src = LOCAL_IMAGE_FALLBACK;
-                      }}
+          <>
+            <GalleryGrid key="gallery-grid">
+              <AnimatePresence mode="popLayout" initial={false}>
+                {visibleGalleryCards.map((photo, index) => {
+                  return (
+                    <GalleryCard
+                      key={photo.id}
+                      photo={photo}
+                      index={index}
+                      isAdmin={isAdmin}
+                      hideCardDescriptions={hideCardDescriptions}
+                      hasActivePhotoOp={hasActivePhotoOp}
+                      photoOpStatus={photoOpsByPhotoId?.[String(photo.id)]}
+                      getPhotoCardUrl={getPhotoCardUrl}
+                      getPhotoAltText={getPhotoAltText}
+                      getThumbImageUrl={getThumbImageUrl}
+                      onOpen={handlePhotoClick}
+                      onDelete={handleDelete}
+                      onEdit={handleEdit}
+                      onCrop={handleCrop}
+                      onReuploadSource={handleReuploadSourceClick}
+                      onAbortReuploadUpload={handleAbortReuploadUpload}
                     />
-                    {isCardOpActive && (
-                      <ReuploadCardOverlay>
-                        <ReuploadCardSpinner size={26} />
-                        <span>{photoOpStatus?.label || 'Operazione in corso'}</span>
-                        <ReuploadProgressMeta>
-                          <span>{photoOpStatus?.type === 'source-reupload' || photoOpStatus?.type === 'new-upload' ? 'Stato upload' : 'Stato operazione'}</span>
-                          <span>{Math.round(photoOpStatus?.percent || 0)}%</span>
-                        </ReuploadProgressMeta>
-                        <ReuploadProgressTrack>
-                          <ReuploadProgressFill $percent={Math.max(0, Math.min(100, photoOpStatus?.percent || 0))} />
-                        </ReuploadProgressTrack>
-                        {photoOpStatus?.type === 'source-reupload' && photoOpStatus?.step === 'upload' && (
-                          <ReuploadAbortButton
-                            type="button"
-                            onClick={(event) => handleAbortReuploadUpload(event, photo.id, photoOpStatus?.step)}
-                          >
-                            <X size={14} />
-                            Annulla upload
-                          </ReuploadAbortButton>
-                        )}
-                      </ReuploadCardOverlay>
-                    )}
-                    {!isCardOpActive && (
-                      <PhotoOverlay>
-                        <OverlayContent>
-                          <PhotoTitle>{photo.title}</PhotoTitle>
-                          <PhotoLocation>{photo.location}</PhotoLocation>
-                          {!hideCardDescriptions && (
-                            <PhotoDescription>{photo.description}</PhotoDescription>
-                          )}
-                          {Array.isArray(photo.tags) && photo.tags.length > 0 && (
-                            <PhotoTags>
-                              {photo.tags.slice(0, 3).map(tag => (
-                                <Tag key={tag}>{tag}</Tag>
-                              ))}
-                            </PhotoTags>
-                          )}
-                        </OverlayContent>
-                      </PhotoOverlay>
-                    )}
-                  </PhotoCard>
-                </motion.div>
-                );
-              })}
-            </AnimatePresence>
-          </GalleryGrid>
+                  );
+                })}
+              </AnimatePresence>
+            </GalleryGrid>
+            {visibleCardsCount < galleryCards.length && (
+              <LoadMoreSentinel ref={loadMoreTriggerRef} aria-hidden="true" />
+            )}
+          </>
         )}
 
         {isAdmin && editingPhoto && (

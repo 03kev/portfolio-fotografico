@@ -5,13 +5,13 @@ import { signSourceUpload, uploadSourceToSignedUrl, uploadUtils } from '../utils
 import {
     buildOperationErrorMessage
 } from '../utils/operationErrors';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import MapSelector from './MapSelector';
 import { AnimatePresence } from 'framer-motion';
 import exifr from 'exifr';
 import './PhotoUpload.css';
 
 const METADATA_FILE_ACCEPT = 'image/*,.nef,.nrw,.cr2,.cr3,.arw,.dng,.rw2,.orf,.raf,.pef,.srw,.raw,.tif,.tiff';
-const CREATE_UPLOAD_PENDING_PREFIX = 'pending-upload-';
 
 const CREATE_UPLOAD_STEP_LABELS = {
     sign: 'firma URL upload',
@@ -360,11 +360,17 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         }
     };
 
-    const initClose = () => {
+    const initClose = useCallback(() => {
         if (loading) return;
         setIsClosing(true);
         setTimeout(() => onClose?.(), 75);
-    };
+    }, [loading, onClose]);
+
+    useEscapeToClose({
+        enabled: Boolean(onClose),
+        onClose: initClose,
+        canClose: !loading
+    });
 
     const nextStep = useCallback(() => {
         if (loading) return;
@@ -470,7 +476,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         };
         const pendingPreviewUrl = preview || '';
         const photoId = Date.now();
-        const pendingId = `${CREATE_UPLOAD_PENDING_PREFIX}${photoId}`;
+        const pendingId = photoId;
 
         actions.addPendingUpload({
             id: pendingId,
@@ -631,7 +637,9 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         formData.title,
         addTag,
         nextStep,
-        handleUpload
+        handleUpload,
+        initClose,
+        onClose
     ]);
 
     const isFirstStep = currentStep === firstStep;

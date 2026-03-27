@@ -5,6 +5,7 @@ import 'leaflet/dist/leaflet.css';
 import './MapSelector.css';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -281,6 +282,11 @@ const MapSelector = ({ isOpen, onClose, onLocationSelect, initialLocation = null
         document.addEventListener('keydown', onKeyDown);
         return () => document.removeEventListener('keydown', onKeyDown);
     }, [selectedPosition, handleConfirm]);
+
+    useEscapeToClose({
+        enabled: isOpen,
+        onClose
+    });
     
     if (!isOpen) return null;
     
