@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Check, Crop as CropIcon, RotateCcw, X } from 'lucide-react';
 import { resolveAssetUrl } from '../utils/imageUrl';
 import {
@@ -47,6 +47,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
   const workspaceRef = useRef(null);
   const imageRef = useRef(null);
   const pointerStateRef = useRef(null);
+  const refreshRafRef = useRef(null);
 
   const cropImageSrc = useMemo(
     () => resolveAssetUrl(photo?.image),
@@ -91,6 +92,20 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
     setCropViewport({ left, top, width, height, naturalWidth, naturalHeight });
   }, []);
 
+  const scheduleViewportRefresh = useCallback(() => {
+    if (refreshRafRef.current) {
+      cancelAnimationFrame(refreshRafRef.current);
+    }
+
+    refreshRafRef.current = requestAnimationFrame(() => {
+      refreshViewport();
+      refreshRafRef.current = requestAnimationFrame(() => {
+        refreshViewport();
+        refreshRafRef.current = null;
+      });
+    });
+  }, [refreshViewport]);
+
   useEffect(() => {
     if (!isOpen) return;
     const originalOverflow = document.body.style.overflow;
@@ -121,7 +136,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
     const syncViewport = () => {
       const image = imageRef.current;
       if (image && image.complete && image.naturalWidth && image.naturalHeight) {
-        refreshViewport();
+        scheduleViewportRefresh();
       }
     };
 
@@ -132,16 +147,35 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
       cancelAnimationFrame(rafId);
       clearTimeout(timeoutId);
     };
-  }, [cropImageSrc, isOpen, refreshViewport]);
+  }, [cropImageSrc, isOpen, scheduleViewportRefresh]);
 
   useEffect(() => {
     if (!workspaceRef.current || typeof ResizeObserver === 'undefined') return undefined;
 
-    const observer = new ResizeObserver(() => refreshViewport());
+    const observer = new ResizeObserver(() => scheduleViewportRefresh());
     observer.observe(workspaceRef.current);
 
     return () => observer.disconnect();
-  }, [refreshViewport]);
+  }, [scheduleViewportRefresh]);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const handleWindowResize = () => scheduleViewportRefresh();
+    window.addEventListener('resize', handleWindowResize);
+
+    return () => {
+      window.removeEventListener('resize', handleWindowResize);
+    };
+  }, [isOpen, scheduleViewportRefresh]);
+
+  useEffect(() => (
+    () => {
+      if (refreshRafRef.current) {
+        cancelAnimationFrame(refreshRafRef.current);
+      }
+    }
+  ), []);
 
   useEscapeToClose({
     enabled: isOpen,
@@ -204,7 +238,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
     setIsInteracting(true);
   }, [activePreset, cropRect, cropViewport]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!cropViewport || isInteracting) return;
 
     const sourceRect = profileToSourceRect(
@@ -458,10 +492,6 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
         </div>
 
         <footer className="crop-modal-actions">
-          <div className="crop-modal-actions-meta">
-            <span className="crop-modal-actions-kicker">Preset attivo</span>
-            <span className="crop-modal-actions-value">{activePresetConfig.label}</span>
-          </div>
           <div className="crop-modal-actions-buttons">
             <button type="button" className="crop-modal-btn secondary crop-modal-btn-reset-mobile" onClick={handleResetPreset}>
               <RotateCcw size={15} />
