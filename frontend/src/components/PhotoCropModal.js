@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Crop as CropIcon, X } from 'lucide-react';
+import { Check, Crop as CropIcon, RotateCcw, X } from 'lucide-react';
 import { resolveAssetUrl } from '../utils/imageUrl';
 import {
   CROP_HANDLES,
@@ -374,10 +374,11 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
                 {preset.label}
               </button>
             ))}
-            <button type="button" className="crop-modal-reset" onClick={handleResetPreset}>
-              Reset preset
-            </button>
           </div>
+          <button type="button" className="crop-modal-reset" onClick={handleResetPreset}>
+            <RotateCcw size={14} />
+            Ripristina preset
+          </button>
         </div>
 
         <div className="crop-modal-content">
@@ -448,12 +449,16 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
             <span className="crop-modal-actions-value">{activePresetConfig.label}</span>
           </div>
           <div className="crop-modal-actions-buttons">
+            <button type="button" className="crop-modal-btn secondary crop-modal-btn-reset-mobile" onClick={handleResetPreset}>
+              <RotateCcw size={15} />
+              Ripristina
+            </button>
             <button type="button" className="crop-modal-btn secondary" onClick={() => onClose?.()}>
               Annulla
             </button>
             <button type="button" className="crop-modal-btn primary" onClick={handleApply}>
               <Check size={16} />
-              Applica crop
+              Applica
             </button>
           </div>
         </footer>
