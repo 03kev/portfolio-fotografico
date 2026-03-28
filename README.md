@@ -1,63 +1,24 @@
 # Kevin Muka | Portfolio Fotografico
 
-Portfolio fotografico full-stack con frontend React, API Express su Vercel e storage Cloudflare R2 per immagini e metadati.
+Portfolio fotografico full-stack con:
 
-## Panoramica
+- frontend React SPA
+- backend Express condiviso tra locale e Vercel
+- storage Cloudflare R2 per immagini e metadati
+- source originali in bucket privata
 
-- Frontend SPA: React (`frontend/`)
-- Backend API: Express (`backend/`)
-- Deploy: Vercel (frontend statico + funzioni serverless)
-- Storage immagini/metadati: Cloudflare R2 (`uploads` + metadati JSON), in locale e produzione
+Il progetto e' pensato per usare R2 in tutti gli ambienti, incluso lo sviluppo locale. Non esiste piu' un fallback su storage locale.
 
-## Funzionalita principali
+## Quick Start
 
-- Gestione foto (upload, modifica, eliminazione)
-- Gestione serie (layout, ordine, pubblicazione)
-- Mappa interattiva e archivio filtrabile
-- Modalita admin con sessione cookie HttpOnly
-- SEO base: canonical, OpenGraph, JSON-LD, sitemap immagini API
+Requisiti:
 
-## Struttura progetto
-
-```text
-.
-├── api/
-│   └── index.js                       # Entrypoint Vercel -> backend/src/app.js
-├── backend/
-│   ├── scripts/
-│   │   └── hash-write-token.js
-│   ├── src/
-│   │   ├── app.js                     # App Express condivisa (locale + serverless)
-│   │   ├── server.js                  # Avvio backend locale
-│   │   ├── config/
-│   │   │   ├── defaults.js
-│   │   │   ├── assetPaths.js
-│   │   │   └── env.js
-│   │   ├── middleware/
-│   │   │   └── auth.js
-│   │   ├── routes/
-│   │   │   ├── auth.js
-│   │   │   ├── photos.js
-│   │   │   └── series.js
-│   │   ├── services/
-│   │   │   ├── metadataStorage.js
-│   │   │   └── r2Storage.js
-│   │   └── utils/
-├── frontend/
-│   ├── public/
-│   └── src/
-├── vercel.json
-└── package.json
-```
-
-## Requisiti
-
-- Node.js 18+
+- Node.js 18+ consigliato
 - npm 8+
 
-## Avvio locale
+Nota: il root `package.json` consente ancora `node >=16`, ma il target pratico consigliato e' Node 18+.
 
-1. Installa dipendenze:
+1. Installa le dipendenze:
 
 ```bash
 npm run setup
@@ -70,7 +31,9 @@ cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
 ```
 
-3. Avvia backend + frontend:
+3. Configura R2 e variabili ambiente.
+
+4. Avvia il progetto:
 
 ```bash
 npm start
@@ -78,8 +41,65 @@ npm start
 
 Servizi locali:
 
-- Frontend: `http://localhost:3000`
-- Backend API: `http://localhost:5001`
+- frontend: `http://localhost:3000`
+- backend API: `http://localhost:5001`
+
+## Architettura
+
+- `frontend/`: SPA React, routing client-side, modal pubblici/admin, archivio, mappa, serie
+- `backend/`: API Express, logica immagini, auth admin, SEO runtime, accesso R2
+- `api/index.js`: entrypoint Vercel che monta il backend Express
+- `vercel.json`: rewrites SPA/API/SEO e header statici
+- Cloudflare R2:
+  - bucket pubblica per derivate e metadati JSON
+  - bucket privata per source full-res
+
+Flusso immagini:
+
+1. il frontend chiede una signed URL al backend
+2. il browser carica la source direttamente nella bucket privata
+3. il backend crea il record foto
+4. il backend genera le derivate pubbliche partendo sempre dalla source privata
+5. il frontend legge URL pubblici derivati a runtime da `photo.id`
+
+## Struttura progetto
+
+```text
+.
+├── api/
+│   └── index.js
+├── backend/
+│   ├── scripts/
+│   │   └── hash-write-token.js
+│   ├── src/
+│   │   ├── app.js
+│   │   ├── server.js
+│   │   ├── config/
+│   │   │   ├── assetPaths.js
+│   │   │   ├── defaults.js
+│   │   │   └── env.js
+│   │   ├── middleware/
+│   │   ├── routes/
+│   │   ├── services/
+│   │   └── utils/
+├── frontend/
+│   ├── branding/
+│   ├── public/
+│   └── src/
+│       ├── components/
+│       ├── components/photoUpload/
+│       ├── contexts/
+│       ├── hooks/
+│       ├── layout/
+│       ├── pages/
+│       ├── seo/
+│       ├── styles/
+│       ├── ui/
+│       └── utils/
+├── vercel.json
+├── package.json
+└── README.md
+```
 
 ## Configurazione ambiente
 
@@ -88,7 +108,7 @@ Servizi locali:
 Variabili principali:
 
 ```env
-# Runtime locale
+# Runtime
 PORT=5001
 NODE_ENV=development
 SITE_URL=http://localhost:3000
@@ -109,31 +129,30 @@ API_AUTH_RATE_LIMIT_MAX_ATTEMPTS=10
 R2_ACCOUNT_ID=your_account_id
 R2_ACCESS_KEY_ID=your_access_key
 R2_SECRET_ACCESS_KEY=your_secret_key
-R2_BUCKET=portfolio-fotografico
-R2_PRIVATE_BUCKET=portfolio-fotografico-private
+R2_BUCKET=portfolio-images
+R2_PRIVATE_BUCKET=portfolio-images-private
 R2_PUBLIC_URL=https://uploads.yourdomain.com
 R2_ENDPOINT=
 R2_METADATA_PREFIX=data
 
-# Cloudflare cache purge (opzionale, consigliato)
+# Cloudflare cache purge (opzionale)
 CLOUDFLARE_ZONE_ID=
 CLOUDFLARE_API_TOKEN=
 ```
 
-Note:
+Note importanti:
 
-- `PORT` è obbligatoria in sviluppo locale.
-- `CORS_ORIGINS` è obbligatoria in sviluppo; in produzione è raccomandata (se assente verrà consentito solo `VERCEL_URL`).
-- Il backend è **R2-only** in tutti gli ambienti (locale incluso).
-- In produzione è obbligatoria `API_WRITE_TOKEN_HASH` (token non in chiaro).
-- `API_WRITE_TOKEN` è solo fallback in sviluppo.
-- Le derivate pubbliche vengono esposte su `R2_PUBLIC_URL` in produzione (`/thumbnails/*`, `/social/*`, `/photo_*.webp`).
-- Gli asset pubblici immagini usano cache revalidabile (no `immutable`) per supportare overwrite sugli stessi URL.
-- Configura lato Cloudflare `X-Robots-Tag: noindex, noimageindex` su `/thumbnails/*` e `/social/*`.
-- `R2_PRIVATE_BUCKET` è consigliata per i source full-res: il backend genera sempre le derivate partendo da source privata.
-- Se imposti `CLOUDFLARE_ZONE_ID` + `CLOUDFLARE_API_TOKEN`, il backend esegue purge automatico su upload/regenerate/delete.
+- `SITE_URL` e' obbligatoria in tutti gli ambienti.
+- `PORT` e `CORS_ORIGINS` sono obbligatorie in sviluppo locale.
+- Il backend e' R2-only in tutti gli ambienti.
+- In produzione sono obbligatorie:
+  - `API_WRITE_TOKEN_HASH`
+  - `API_SESSION_SECRET`
+- `API_WRITE_TOKEN` e' solo fallback locale.
+- `R2_PRIVATE_BUCKET` e' fortemente consigliata: la source full-res parte sempre da li'.
+- Se configuri `CLOUDFLARE_ZONE_ID` e `CLOUDFLARE_API_TOKEN`, il backend esegue purge automatico su create / replace-source / regenerate / delete.
 
-Genera hash del token:
+Generazione hash token admin:
 
 ```bash
 cd backend
@@ -150,45 +169,156 @@ REACT_APP_IMAGES_BASE_URL=http://localhost:5001
 
 Note:
 
-- Non inserire segreti in variabili `REACT_APP_*`.
-- Queste variabili sono validate prima di `npm start` e `npm run build`.
-- `REACT_APP_IMAGES_BASE_URL` può essere stringa vuota se immagini/API sono servite dallo stesso dominio.
+- non mettere segreti in `REACT_APP_*`
+- il frontend valida queste variabili prima di `npm start` e `npm run build`
+- `REACT_APP_IMAGES_BASE_URL` puo' essere vuota se immagini e frontend sono serviti dallo stesso host
 
-## Modalità admin
+## Cloudflare R2: bucket, domini e CORS
 
-- Accesso: `https://tuodominio/admin`
-- Logout rapido: `https://tuodominio/admin/logout`
-- Le operazioni di write API richiedono sessione admin valida.
+Questa e' la parte da configurare una volta bene. Dopo, il backend lavora in modo coerente senza fallback.
+
+### 1. Crea due bucket
+
+Configurazione consigliata:
+
+- `R2_BUCKET`
+  - bucket pubblica
+  - contiene:
+    - derivate pubbliche (`/uploads/...`)
+    - metadati JSON (`/data/photos.json`, `/data/series.json`)
+- `R2_PRIVATE_BUCKET`
+  - bucket privata
+  - contiene le source originali full-res (`/private/source/...`)
+
+Se vuoi una separazione corretta tra pubblico e privato, mantieni due bucket distinte.
+
+### 2. Collega un custom domain solo alla bucket pubblica
+
+Esempio:
+
+- custom domain pubblico: `uploads.kevinmuka.dev`
+- env corrispondente:
+
+```env
+R2_PUBLIC_URL=https://uploads.kevinmuka.dev
+```
+
+Il backend deriva i path pubblici in modo fisso da `photo.id`, usando questi prefissi:
+
+- immagine principale: `/uploads/photo_<id>.webp`
+- thumbnail 4:3: `/uploads/thumbnails/4x3/photo_<id>.webp`
+- thumbnail 1:1: `/uploads/thumbnails/1x1/photo_<id>.webp`
+- social: `/uploads/social/photo_<id>.jpg`
+
+La bucket privata non deve avere un dominio pubblico.
+
+### 3. Configura CORS sulla bucket privata
+
+Serve per l'upload diretto da browser verso R2 tramite signed URL del backend.
+
+Origins da includere:
+
+- `http://localhost:3000`
+- dominio produzione
+- eventuale `www`
+- eventuale dominio preview/develop se usato per testare upload admin
+
+Configurazione minima consigliata:
+
+```json
+[
+  {
+    "AllowedOrigins": [
+      "http://localhost:3000",
+      "https://kevinmuka.dev",
+      "https://www.kevinmuka.dev"
+    ],
+    "AllowedMethods": ["GET", "HEAD", "PUT"],
+    "AllowedHeaders": ["*"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3000
+  }
+]
+```
+
+Se usi un dominio preview dedicato, aggiungilo esplicitamente.
+
+### 4. Cache e indicizzazione sul dominio pubblico
+
+Le derivate pubbliche usano URL stabili. Il backend fa overwrite sugli stessi path e aggiorna `derivativesVersion` per il cache busting lato app.
+
+Per questo:
+
+- non usare `immutable` sugli asset immagine pubblici
+- se possibile, configura `X-Robots-Tag: noindex, noimageindex` su:
+  - `/uploads/thumbnails/*`
+  - `/uploads/social/*`
+
+Questo evita che thumbnail e social image finiscano indicizzate come asset separati.
+
+### 5. Purge cache Cloudflare opzionale ma utile
+
+Se vuoi invalidazione immediata dopo overwrite delle immagini:
+
+```env
+CLOUDFLARE_ZONE_ID=...
+CLOUDFLARE_API_TOKEN=...
+```
+
+Il backend fara' purge sugli asset pubblici quando necessario.
+
+## Modalita admin
+
+Route principali:
+
+- login/admin UI: `https://tuodominio/admin`
+- logout rapido: `https://tuodominio/admin/logout`
+
+Le write API richiedono sessione admin valida. In sviluppo, se non configuri credenziali admin, il backend segnala la cosa e le write possono restare aperte: non e' un setup consigliato, ma e' previsto come fallback locale.
 
 ## Sicurezza API
 
-- Helmet attivo con CSP base
-- CORS allowlist sempre attiva (`CORS_ORIGINS`; in produzione viene aggiunto anche `VERCEL_URL` se presente)
-- Cookie admin `HttpOnly`, `Secure` in produzione, `SameSite=strict`
-- CSRF origin-check su metodi state-changing in produzione
-- Rate limit globale + rate limit su login admin
-- Auth header (`Authorization` / `x-api-key`) disabilitata in produzione
+- `helmet` attivo con CSP base
+- allowlist CORS sempre attiva
+- cookie admin `HttpOnly`
+- `Secure` in produzione
+- `SameSite=strict`
+- origin check sui metodi state-changing in produzione
+- rate limit globale
+- rate limit specifico sul login admin
+- auth via header disabilitata in produzione
 
 ## Deploy su Vercel
 
+Vercel usa:
+
+- `buildCommand`: `CI=false npm run vercel-build`
+- output frontend: `frontend/build`
+- API serverless via `api/index.js`
+
 ### Variabili consigliate in Production
 
-- `SITE_URL` (es. `https://kevinmuka.dev`)
+- `SITE_URL`
 - `API_WRITE_TOKEN_HASH`
 - `API_SESSION_SECRET`
-- `CORS_ORIGINS` (es. `https://kevinmuka.dev,https://www.kevinmuka.dev`)
+- `CORS_ORIGINS`
 - `R2_ACCOUNT_ID`
 - `R2_ACCESS_KEY_ID`
 - `R2_SECRET_ACCESS_KEY`
 - `R2_BUCKET`
-- `R2_PRIVATE_BUCKET` (consigliata, bucket privata source)
-- `R2_PUBLIC_URL` (es. `https://uploads.kevinmuka.dev`)
-- `CLOUDFLARE_ZONE_ID` (consigliata per purge automatico cache immagini)
-- `CLOUDFLARE_API_TOKEN` (token Cloudflare con permesso Cache Purge)
-- opzionali: `R2_ENDPOINT`, `R2_METADATA_PREFIX`, `API_SESSION_TTL_MS`, `API_AUTH_RATE_LIMIT_*`
-- `REACT_APP_SITE_URL` (es. `https://kevinmuka.dev`)
-- `REACT_APP_API_BASE_URL` (tipicamente `/api`)
-- `REACT_APP_IMAGES_BASE_URL` (tipicamente stringa vuota o path assoluto)
+- `R2_PRIVATE_BUCKET`
+- `R2_PUBLIC_URL`
+- opzionali:
+  - `R2_ENDPOINT`
+  - `R2_METADATA_PREFIX`
+  - `CLOUDFLARE_ZONE_ID`
+  - `CLOUDFLARE_API_TOKEN`
+  - `API_SESSION_TTL_MS`
+  - `API_AUTH_RATE_LIMIT_*`
+- frontend:
+  - `REACT_APP_SITE_URL`
+  - `REACT_APP_API_BASE_URL`
+  - `REACT_APP_IMAGES_BASE_URL`
 
 Non necessari su Vercel:
 
@@ -197,17 +327,150 @@ Non necessari su Vercel:
 
 Ogni modifica env richiede redeploy.
 
-### Build/deploy
+### Rewrites rilevanti
 
-Vercel usa:
+In `vercel.json`:
 
-- `buildCommand`: `CI=false npm run vercel-build`
-- output frontend: `frontend/build`
-- API via `api/index.js`
+- `/api/:path*` -> backend
+- `/uploads/:path*` -> backend
+- `/robots.txt`, `/sitemap.xml`, `/sitemap-images.xml` -> backend
+- `/photo/:id` per bot social -> backend SEO page
+- tutto il resto -> `index.html`
 
-### Post-Deploy Check
+## Dati su R2
 
-Esegui questa checklist dopo ogni deploy in produzione.
+I metadati vengono salvati in R2 sotto `R2_METADATA_PREFIX` (default: `data`):
+
+- `data/photos.json`
+- `data/series.json`
+
+### Schema canonico storage di una foto
+
+Il backend salva su R2 uno schema canonico annidato. A runtime, l'API lo normalizza in un formato piu' semplice per il frontend.
+
+Esempio storage:
+
+```json
+{
+  "id": 1772709771525,
+  "title": "Cascata",
+  "description": "",
+  "date": "2023-07-28",
+  "location": {
+    "name": "Fiè allo Sciliar, Italia",
+    "lat": 46.511847,
+    "lng": 11.582267
+  },
+  "exif": {
+    "camera": "Nikon D750",
+    "lens": "Tamron SP 15-30mm F2.8 Di VC USD",
+    "resolution": "6016x4016",
+    "aperture": "f/22",
+    "shutter": "1/5s",
+    "iso": "50",
+    "focal": "15mm"
+  },
+  "composition": {
+    "cropProfiles": {
+      "r43": {},
+      "r11": {},
+      "social": {}
+    }
+  },
+  "tags": ["Alpe di Siusi"],
+  "source": {
+    "path": "/private/source/photo_1772709771525.jpeg",
+    "contentType": "image/jpeg"
+  },
+  "derivativesVersion": 1772709835199
+}
+```
+
+### Cosa viene derivato a runtime
+
+Nel JSON di storage non vengono salvati i path pubblici finali come campi canonici. L'API li costruisce a runtime a partire da `photo.id`:
+
+- `image`
+- `thumbnail43`
+- `thumbnail11`
+- `socialImage`
+- `url`
+
+Questo evita ridondanza e rende stabile il naming pubblico.
+
+### Source e derivate
+
+- la source originale vive nel bucket privato
+- le derivate pubbliche vengono sempre generate partendo da quella source
+- `derivativesVersion` viene aggiornata quando:
+  - carichi una nuova foto
+  - fai replace della source privata
+  - rigeneri le derivate
+
+## Endpoint API principali
+
+Auth:
+
+- `GET /api/auth/session`
+- `POST /api/auth/session`
+- `DELETE /api/auth/session`
+
+Health e SEO:
+
+- `GET /api/health`
+- `GET /robots.txt`
+- `GET /sitemap.xml`
+- `GET /sitemap-images.xml`
+
+Foto:
+
+- `GET /api/photos`
+- `GET /api/photos/:id`
+- `POST /api/photos/upload-url`
+- `POST /api/photos`
+- `POST /api/photos/:id/replace-source`
+- `POST /api/photos/:id/regenerate-derivatives`
+- `PUT /api/photos/:id`
+- `DELETE /api/photos/:id`
+
+Serie:
+
+- `GET /api/series?all=false`
+- `GET /api/series/:identifier`
+- `POST /api/series`
+- `PUT /api/series/:id`
+- `DELETE /api/series/:id`
+- `POST /api/series/:id/photos/:photoId`
+- `DELETE /api/series/:id/photos/:photoId`
+
+## Script utili
+
+### Root
+
+- `npm run setup` installa backend + frontend
+- `npm run setup:backend`
+- `npm run setup:frontend`
+- `npm start` avvio locale completo
+- `npm run build` build frontend
+- `npm run vercel-build` build usata da Vercel
+- `npm run lint`
+- `npm run test`
+- `npm run branding`
+- `npm run clean`
+
+### Backend
+
+- `npm run dev`
+- `npm run start`
+- `npm run token:hash -- "<token>"`
+
+### Frontend
+
+- `npm start`
+- `npm run build`
+- `npm test`
+
+## Post-Deploy Check
 
 1. Health API:
 
@@ -231,102 +494,63 @@ curl -fsS "https://kevinmuka.dev/api/series?all=false" | head
 
 4. Admin mode:
 
-- apri `https://kevinmuka.dev/admin`
-- verifica login sessione e una write operation (es. modifica titolo foto o serie)
-- verifica logout su `https://kevinmuka.dev/admin/logout`
+- login su `/admin`
+- una write operation reale
+- logout su `/admin/logout`
 
 5. Asset R2:
 
-- controlla che immagini e derivate (`thumbnail43`, `thumbnail11`, `socialImage`) carichino senza 403/404
-- verifica almeno un URL asset dal JSON `/api/photos` (campo `image`/`thumbnail43`)
-
-## Dati su R2
-
-I path pubblici (`image`, `thumbnail43`, `thumbnail11`, `socialImage`) vengono derivati a runtime da `photo.id`; in `data/photos.json` su R2 vengono salvati solo i campi canonici (metadati, source private, crop/settings, versioning).
-
-Schema canonico (storage) per ogni foto:
-
-```json
-{
-  "id": 1772709771525,
-  "title": "Cascata",
-  "description": "",
-  "date": "2023-07-28",
-  "location": { "name": "Fiè allo Sciliar, Italia", "lat": 46.511847, "lng": 11.582267 },
-  "exif": {
-    "camera": "Nikon D750",
-    "lens": "Tamron SP 15-30mm F2.8 Di VC USD",
-    "aperture": "f/22",
-    "shutter": "1/5s",
-    "iso": "50",
-    "focal": "15mm"
-  },
-  "composition": { "cropProfiles": { "r43": {}, "r11": {}, "social": {} } },
-  "tags": ["Alpe di Siusi"],
-  "source": { "path": "/private/source/photo_1772709771525.jpeg", "contentType": "image/jpeg" },
-  "derivativesVersion": 1772709835199
-}
-```
-
-## Endpoint API principali
-
-- `GET /api/health`
-- `GET /api/auth/session`
-- `POST /api/auth/session`
-- `DELETE /api/auth/session`
-- `GET /api/photos`
-- `GET /api/photos/:id`
-- `POST /api/photos/upload-url`
-- `POST /api/photos`
-- `POST /api/photos/:id/regenerate-derivatives`
-- `PUT /api/photos/:id`
-- `DELETE /api/photos/:id`
-- `GET /api/series?all=false`
-- `GET /api/series/:identifier`
-- `POST /api/series`
-- `PUT /api/series/:id`
-- `DELETE /api/series/:id`
-- `GET /robots.txt`
-- `GET /sitemap.xml`
-- `GET /sitemap-images.xml`
-
-## Script utili
-
-### Root
-
-- `npm run setup` install dipendenze backend/frontend
-- `npm start` avvio locale completo
-- `npm run build` build frontend
-- `npm run vercel-build` build usata da Vercel
-- `npm run clean` pulizia `node_modules`
-
-### Backend
-
-- `npm run dev` avvio backend con nodemon
-- `npm run token:hash -- "<token>"` genera hash scrypt
+- verifica almeno una `image`
+- verifica almeno una `thumbnail43`
+- verifica almeno una `socialImage`
+- controlla assenza di `403/404`
 
 ## Troubleshooting rapido
 
 ### `EADDRINUSE: 5001`
 
-Un altro processo usa la porta 5001. Chiudi il processo e riavvia.
+Un altro processo sta usando la porta `5001`.
 
-### Login admin fallisce con 500 in produzione
+### Login admin fallisce in produzione
 
-Verifica nome variabile corretto: `API_WRITE_TOKEN_HASH`.
+Controlla prima:
+
+- `API_WRITE_TOKEN_HASH`
+- `API_SESSION_SECRET`
+
+### Upload source fallisce con errore CORS
+
+Controlla il CORS della bucket privata:
+
+- origin giusto
+- metodo `PUT`
+- header consentiti
 
 ### Immagini non visibili in produzione
 
 Controlla:
 
 - `R2_PUBLIC_URL`
-- dominio custom R2 attivo
-- oggetti presenti nel bucket
+- custom domain R2 attivo
+- oggetti presenti nella bucket pubblica
+- eventuale purge cache Cloudflare
 
-### CORS su upload
+### Replace source o regenerate non aggiorna subito l'immagine
 
-Configura CORS del bucket R2 con origin del sito e metodi `GET,HEAD,PUT`.
+Controlla:
+
+- `derivativesVersion` aggiornato
+- purge cache Cloudflare attiva
+- eventuale cache browser/CDN ancora presente
 
 ## Note operative
 
-- Ruota periodicamente i segreti (`API_WRITE_TOKEN_HASH`, `API_SESSION_SECRET`, chiavi R2).
+- ruota periodicamente i segreti:
+  - `API_WRITE_TOKEN_HASH`
+  - `API_SESSION_SECRET`
+  - chiavi R2
+- non esporre mai la bucket privata con un custom domain pubblico
+- se aggiungi un nuovo dominio frontend, ricordati di aggiornare:
+  - `CORS_ORIGINS`
+  - CORS della bucket privata
+  - eventuali regole Cloudflare correlate
