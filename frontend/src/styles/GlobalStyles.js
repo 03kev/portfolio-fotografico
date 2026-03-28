@@ -111,6 +111,24 @@ const GlobalStyles = createGlobalStyle`
     --z-popover: 1060;
     --z-tooltip: 1070;
 
+    /* Shared panel/card tokens */
+    --panel-overlay-pad-inline: 24px;
+    --panel-backdrop-bg: rgba(4, 6, 12, 0.74);
+    --panel-backdrop-blur: 8px;
+    --panel-radius: 20px;
+    --panel-border-color: rgba(255, 255, 255, 0.12);
+    --panel-bg: linear-gradient(180deg, rgba(12, 17, 28, 0.96), rgba(8, 12, 22, 0.98));
+    --panel-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+    --panel-padding: 22px;
+    --panel-gap: 16px;
+    --panel-inset-radius: 15px;
+    --panel-inset-border-color: rgba(255, 255, 255, 0.08);
+    --panel-inset-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%);
+    --panel-inset-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    --panel-inset-padding: 12px 14px;
+    --panel-close-size: 36px;
+    --panel-close-radius: 999px;
+
     /* Shared responsive shell tokens */
     --shell-overlay-pad-inline: 24px;
     --shell-overlay-pad-top: min(8vh, 72px);
@@ -194,6 +212,7 @@ const GlobalStyles = createGlobalStyle`
 
   @media (min-width: ${viewportBreakpoints.laptop}px) {
     :root {
+      --panel-padding: 20px;
       --shell-width: min(100%, 920px);
       --shell-max-height: min(90vh, 980px);
       --shell-glow-height: 96px;
@@ -219,6 +238,7 @@ const GlobalStyles = createGlobalStyle`
 
   @media (max-height: ${viewportHeights.compact}px) {
     :root {
+      --panel-padding: 18px;
       --shell-overlay-pad-top: 12px;
       --shell-max-height: calc(100vh - 24px);
       --shell-radius: 24px;
@@ -249,6 +269,7 @@ const GlobalStyles = createGlobalStyle`
 
   @media (max-height: ${viewportHeights.short}px) {
     :root {
+      --panel-padding: 16px;
       --shell-overlay-pad-top: 8px;
       --shell-max-height: calc(100vh - 16px);
       --shell-radius: 20px;
@@ -274,6 +295,8 @@ const GlobalStyles = createGlobalStyle`
   @media (max-width: ${viewportBreakpoints.tablet}px) {
     :root {
       --header-height: 70px;
+      --panel-overlay-pad-inline: 12px;
+      --panel-padding: 16px;
       --shell-overlay-pad-inline: 10px;
       --shell-overlay-pad-top: max(10px, env(safe-area-inset-top));
       --shell-radius: 24px;

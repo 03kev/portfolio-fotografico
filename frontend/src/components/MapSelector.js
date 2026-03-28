@@ -1,11 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import './MapSelector.css';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
+import { Check, LocateFixed, MapPinned, MousePointerClick, X } from 'lucide-react';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import { media } from '../styles/responsive';
+import { insetPanelSurface, modalBackdropSurface, panelSurface } from '../styles/surfaces';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -15,66 +18,61 @@ L.Icon.Default.mergeOptions({
 });
 
 const MapSelectorOverlay = styled(motion.div)`
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.85);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  ${modalBackdropSurface};
   z-index: 2000;
-  padding: 20px;
-  backdrop-filter: blur(10px);
 `;
 
 const MapContainer2 = styled(motion.div)`
-  background: white;
-  border-radius: 16px;
+  ${panelSurface};
+  container-type: inline-size;
   width: 100%;
-  max-width: 900px;
-  height: 80vh;
-  max-height: 700px;
+  max-width: 960px;
+  height: min(84vh, 760px);
   overflow: hidden;
-  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.4);
   display: flex;
   flex-direction: column;
+
+  ${media.down('tablet')`
+    height: min(88vh, 780px);
+  `}
 `;
 
 const MapHeader = styled.div`
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 20px 24px;
+  color: var(--color-text);
+  padding: 18px 22px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  gap: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   
   h3 {
     margin: 0;
-    font-size: 1.4rem;
-    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 1.18rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
   }
 `;
 
 const CloseButton = styled.button`
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.2);
-  color: white;
-  font-size: 1.5rem;
+  color: var(--color-text);
   cursor: pointer;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
+  width: var(--panel-close-size);
+  height: var(--panel-close-size);
+  border-radius: var(--panel-close-radius);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.3s ease;
+  transition: var(--transition-normal);
   
   &:hover {
-    background: rgba(255, 255, 255, 0.2);
-    transform: scale(1.1);
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(214, 179, 106, 0.3);
   }
 `;
 
@@ -84,7 +82,7 @@ const MapContent = styled.div`
   
   .leaflet-container {
     height: 100%;
-    border-radius: 0 0 16px 16px;
+    border-radius: 0 0 calc(var(--panel-radius) - 2px) calc(var(--panel-radius) - 2px);
   }
 `;
 
@@ -92,46 +90,48 @@ const MapInstructions = styled.div`
   position: absolute;
   top: 20px;
   left: 20px;
-  background: rgba(255, 255, 255, 0.4);
-  padding: 16px 20px;
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  ${insetPanelSurface};
   z-index: 1000;
-  font-size: 0.9rem;
-  color: #334155;
-  max-width: 280px;
-  backdrop-filter: blur(10px);
+  color: var(--color-text);
+  max-width: 320px;
   
   h4 {
-    margin: 0 0 8px 0;
-    color: #667eea;
-    font-size: 16px;
-    font-weight: 600;
-    margin-bottom: 2px;
+    margin: 0 0 6px 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: rgba(214, 179, 106, 0.96);
+    font-size: 0.9rem;
+    font-weight: 700;
   }
   
   p {
     margin: 0;
-    line-height: 1.4;
-    font-size: 13px;
+    line-height: 1.45;
+    font-size: 0.82rem;
+    color: var(--color-muted);
   }
+
+  ${media.down('tablet')`
+    top: 14px;
+    left: 14px;
+    right: 14px;
+    max-width: none;
+  `}
 `;
 
 const CoordinatesDisplay = styled.div`
   position: absolute;
   bottom: 20px;
   left: 20px;
-  background: rgba(0, 0, 0, 0.8);
-  color: white;
-  padding: 12px 16px;
-  border-radius: 12px;
-  backdrop-filter: blur(10px);
+  ${insetPanelSurface};
+  color: var(--color-text);
   z-index: 1000;
   font-family: 'Monaco', 'Consolas', monospace;
   font-size: 0.85rem;
   
   .coord-label {
-    opacity: 0.7;
+    color: var(--color-faint);
     font-size: 0.75rem;
     margin-bottom: 4px;
   }
@@ -139,6 +139,12 @@ const CoordinatesDisplay = styled.div`
   .coord-values {
     font-weight: 600;
   }
+
+  ${media.down('tablet')`
+    left: 14px;
+    right: 14px;
+    bottom: 80px;
+  `}
 `;
 
 const ActionButtons = styled.div`
@@ -148,25 +154,48 @@ const ActionButtons = styled.div`
   display: flex;
   gap: 12px;
   z-index: 1000;
+
+  ${media.down('tablet')`
+    left: 14px;
+    right: 14px;
+    bottom: 14px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  `}
 `;
 
 const ActionButton = styled.button`
-  background: ${props => props.primary 
-? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' 
-: 'rgba(255, 255, 255, 0.9)'};
-  color: ${props => props.primary ? 'white' : '#334155'};
-  border: none;
-  padding: 12px 20px;
-  border-radius: 12px;
+  background: ${({ primary }) => (
+    primary
+      ? 'linear-gradient(135deg, rgba(214, 179, 106, 0.98) 0%, rgba(188, 152, 80, 1) 100%)'
+      : 'rgba(18, 24, 34, 0.92)'
+  )};
+  color: ${({ primary }) => (primary ? '#16120b' : 'var(--color-text)')};
+  border: 1px solid ${({ primary }) => (
+    primary ? 'rgba(214, 179, 106, 0.26)' : 'rgba(255, 255, 255, 0.14)'
+  )};
+  padding: 12px 18px;
+  border-radius: var(--panel-inset-radius);
   font-weight: 600;
   cursor: pointer;
-  backdrop-filter: blur(10px);
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
-  transition: all 0.3s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: ${({ primary }) => (
+    primary
+      ? '0 14px 30px rgba(214, 179, 106, 0.18)'
+      : 'inset 0 1px 0 rgba(255, 255, 255, 0.04)'
+  )};
+  transition: var(--transition-normal);
   
   &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+    transform: translateY(-1px);
+    background: ${({ primary }) => (
+      primary
+        ? 'linear-gradient(135deg, rgba(220, 186, 114, 0.98) 0%, rgba(196, 158, 84, 1) 100%)'
+        : 'rgba(255, 255, 255, 0.08)'
+    )};
   }
   
   &:disabled {
@@ -254,7 +283,7 @@ const MapSelector = ({ isOpen, onClose, onLocationSelect, initialLocation = null
         await reverseGeocode(lat, lng);
     };
     
-    const handleConfirm = () => {
+    const handleConfirm = useCallback(() => {
         if (selectedPosition && onLocationSelect) {
             let base = address
             ? address
@@ -270,7 +299,7 @@ const MapSelector = ({ isOpen, onClose, onLocationSelect, initialLocation = null
             });
         }
         onClose();
-    };
+    }, [address, country, onClose, onLocationSelect, selectedPosition]);
     
     // Conferma posizione premendo Invio
     useEffect(() => {
@@ -304,8 +333,10 @@ const MapSelector = ({ isOpen, onClose, onLocationSelect, initialLocation = null
         transition={{ type: "spring", damping: 18, stiffness: 400 }}
         >
         <MapHeader>
-        <h3>🗺️ Seleziona Posizione</h3>
-        <CloseButton onClick={onClose}>×</CloseButton>
+        <h3><MapPinned size={18} /> Seleziona Posizione</h3>
+        <CloseButton onClick={onClose} aria-label="Chiudi">
+          <X size={18} />
+        </CloseButton>
         </MapHeader>
         
         <MapContent className="map-selector-container">
@@ -330,7 +361,7 @@ const MapSelector = ({ isOpen, onClose, onLocationSelect, initialLocation = null
         </MapContainer>
         
         <MapInstructions>
-        <h4>Come usare:</h4>
+        <h4><MousePointerClick size={15} /> Come usare</h4>
         <p>Clicca sulla mappa per selezionare una posizione, oppure usa il pulsante "Posizione attuale" per usare il GPS.</p>
         </MapInstructions>
         
@@ -342,7 +373,7 @@ const MapSelector = ({ isOpen, onClose, onLocationSelect, initialLocation = null
             </div>
             {address && (
                 <div style={{ fontSize: '0.8rem', opacity: 0.8, marginTop: '4px' }}>
-                📍 {address}{country ? `, ${country}` : ''}
+                {address}{country ? `, ${country}` : ''}
                 </div>
             )}
             </CoordinatesDisplay>
@@ -350,17 +381,17 @@ const MapSelector = ({ isOpen, onClose, onLocationSelect, initialLocation = null
         
         <ActionButtons>
         <ActionButton onClick={getCurrentLocation} disabled={loading}>
-        {loading ? '📍' : '🎯'} Posizione attuale
+        <LocateFixed size={16} /> Posizione attuale
         </ActionButton>
         <ActionButton onClick={onClose}>
-        Annulla
+        <X size={16} /> Annulla
         </ActionButton>
         <ActionButton 
         primary 
         onClick={handleConfirm}
         disabled={!selectedPosition}
         >
-        ✓ Conferma Posizione
+        <Check size={16} /> Conferma Posizione
         </ActionButton>
         </ActionButtons>
         </MapContent>
