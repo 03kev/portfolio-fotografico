@@ -343,102 +343,120 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
   return (
     <div className="crop-modal-backdrop" onClick={() => onClose?.()}>
       <div className="crop-modal-card" onClick={(event) => event.stopPropagation()}>
-        <div className="crop-modal-header">
-          <div className="crop-modal-title">
-            <span className="crop-modal-badge"><CropIcon size={14} /> Crop</span>
-            <h3>{photo.title || 'Composizione immagine'}</h3>
+        <header className="crop-modal-shell-header">
+          <div className="crop-modal-header-copy">
+            <div className="crop-modal-header-topline">
+              <span className="crop-modal-eyebrow">
+                <CropIcon size={14} />
+                Crop
+              </span>
+              <span className="crop-modal-progress-pill">{activePresetConfig.label}</span>
+            </div>
+            <h2>{photo.title || 'Composizione immagine'}</h2>
+            <p className="crop-modal-header-subtitle">
+              Seleziona il formato, sposta il crop e ridimensionalo dai corner handle.
+            </p>
           </div>
-          <button type="button" className="crop-modal-close" onClick={() => onClose?.()}>
+          <button type="button" className="crop-modal-close" onClick={() => onClose?.()} aria-label="Chiudi crop modal">
             <X size={18} />
           </button>
-        </div>
+        </header>
 
-        <p className="crop-modal-hint">
-          Seleziona il formato, sposta il crop e ridimensionalo dai corner handle.
-        </p>
-
-        <div className="crop-modal-presets">
-          {CROP_PRESETS.map((preset) => (
-            <button
-              key={preset.key}
-              type="button"
-              className={`crop-modal-preset ${activePreset === preset.key ? 'active' : ''}`}
-              onClick={() => setActivePreset(preset.key)}
-            >
-              {preset.label}
+        <div className="crop-modal-toolbar">
+          <div className="crop-modal-presets">
+            {CROP_PRESETS.map((preset) => (
+              <button
+                key={preset.key}
+                type="button"
+                className={`crop-modal-preset ${activePreset === preset.key ? 'active' : ''}`}
+                onClick={() => setActivePreset(preset.key)}
+              >
+                {preset.label}
+              </button>
+            ))}
+            <button type="button" className="crop-modal-reset" onClick={handleResetPreset}>
+              Reset preset
             </button>
-          ))}
-          <button type="button" className="crop-modal-reset" onClick={handleResetPreset}>
-            Reset preset
-          </button>
-        </div>
-
-        <div className="crop-modal-main">
-          <div className="crop-modal-editor-col">
-            <div className="crop-modal-workspace-shell">
-              <div ref={workspaceRef} className={`crop-modal-workspace ${isInteracting ? 'is-interacting' : ''}`}>
-                <img
-                  ref={imageRef}
-                  className="crop-modal-image"
-                  src={cropImageSrc}
-                  alt={`Crop ${photo.title || 'foto'}`}
-                  draggable="false"
-                  onLoad={refreshViewport}
-                />
-
-                {imageBounds && <div className="crop-modal-image-bounds" style={imageBounds} />}
-
-                {selection && (
-                  <>
-                    <div className="crop-modal-mask" style={maskTop} />
-                    <div className="crop-modal-mask" style={maskBottom} />
-                    <div className="crop-modal-mask" style={maskLeft} />
-                    <div className="crop-modal-mask" style={maskRight} />
-
-                    <div className="crop-modal-selection" style={selection} onPointerDown={beginMove}>
-                      <div className="crop-modal-grid" />
-                      {CROP_HANDLES.map((handle) => (
-                        <button
-                          key={handle}
-                          type="button"
-                          className={`crop-modal-handle crop-modal-handle-${handle}`}
-                          onPointerDown={(event) => beginResize(event, handle)}
-                          aria-label={`Ridimensiona ${handle}`}
-                        />
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
           </div>
+        </div>
 
-          <aside className="crop-modal-preview-col">
-            <h4>Preview attiva</h4>
-            <p>{activePresetConfig.label}</p>
-            <div className="crop-modal-preview-item">
-              <div className="crop-modal-preview-frame" style={{ aspectRatio: activePresetConfig.ratio }}>
-                <img
-                  src={cropImageSrc}
-                  alt={`Preview ${activePresetConfig.label}`}
-                  draggable="false"
-                  style={activePreviewStyle}
-                />
+        <div className="crop-modal-content">
+          <div className="crop-modal-main">
+            <div className="crop-modal-editor-col">
+              <div className="crop-modal-workspace-panel">
+                <div className="crop-modal-workspace-shell">
+                  <div ref={workspaceRef} className={`crop-modal-workspace ${isInteracting ? 'is-interacting' : ''}`}>
+                    <img
+                      ref={imageRef}
+                      className="crop-modal-image"
+                      src={cropImageSrc}
+                      alt={`Crop ${photo.title || 'foto'}`}
+                      draggable="false"
+                      onLoad={refreshViewport}
+                    />
+
+                    {imageBounds && <div className="crop-modal-image-bounds" style={imageBounds} />}
+
+                    {selection && (
+                      <>
+                        <div className="crop-modal-mask" style={maskTop} />
+                        <div className="crop-modal-mask" style={maskBottom} />
+                        <div className="crop-modal-mask" style={maskLeft} />
+                        <div className="crop-modal-mask" style={maskRight} />
+
+                        <div className="crop-modal-selection" style={selection} onPointerDown={beginMove}>
+                          <div className="crop-modal-grid" />
+                          {CROP_HANDLES.map((handle) => (
+                            <button
+                              key={handle}
+                              type="button"
+                              className={`crop-modal-handle crop-modal-handle-${handle}`}
+                              onPointerDown={(event) => beginResize(event, handle)}
+                              aria-label={`Ridimensiona ${handle}`}
+                            />
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
-              <span>{activePresetConfig.label}</span>
             </div>
-          </aside>
+
+            <aside className="crop-modal-preview-col">
+              <span className="crop-modal-preview-kicker">Preview</span>
+              <h4 className="crop-modal-preview-title">Preview attiva</h4>
+              <p className="crop-modal-preview-description">{activePresetConfig.label}</p>
+              <div className="crop-modal-preview-item">
+                <div className="crop-modal-preview-frame" style={{ aspectRatio: activePresetConfig.ratio }}>
+                  <img
+                    src={cropImageSrc}
+                    alt={`Preview ${activePresetConfig.label}`}
+                    draggable="false"
+                    style={activePreviewStyle}
+                  />
+                </div>
+                <span>{activePresetConfig.label}</span>
+              </div>
+            </aside>
+          </div>
         </div>
 
-        <div className="crop-modal-actions">
-          <button type="button" className="crop-modal-btn secondary" onClick={() => onClose?.()}>
-            Annulla
-          </button>
-          <button type="button" className="crop-modal-btn primary" onClick={handleApply}>
-            <Check size={16} />
-            Applica crop
-          </button>
-        </div>
+        <footer className="crop-modal-actions">
+          <div className="crop-modal-actions-meta">
+            <span className="crop-modal-actions-kicker">Preset attivo</span>
+            <span className="crop-modal-actions-value">{activePresetConfig.label}</span>
+          </div>
+          <div className="crop-modal-actions-buttons">
+            <button type="button" className="crop-modal-btn secondary" onClick={() => onClose?.()}>
+              Annulla
+            </button>
+            <button type="button" className="crop-modal-btn primary" onClick={handleApply}>
+              <Check size={16} />
+              Applica crop
+            </button>
+          </div>
+        </footer>
       </div>
     </div>
   );
