@@ -339,6 +339,18 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
     : null;
 
   const activePreviewStyle = buildPreviewStyleFromViewportRect(cropRect, imageBounds);
+  const getPresetShortLabel = (presetKey) => {
+    switch (presetKey) {
+      case 'r43':
+        return '4:3';
+      case 'r11':
+        return '1:1';
+      case 'social':
+        return '1200×630';
+      default:
+        return '';
+    }
+  };
 
   return (
     <div className="crop-modal-backdrop" onClick={() => onClose?.()}>
@@ -371,7 +383,8 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
                 className={`crop-modal-preset ${activePreset === preset.key ? 'active' : ''}`}
                 onClick={() => setActivePreset(preset.key)}
               >
-                {preset.label}
+                <span className="crop-modal-preset-full">{preset.label}</span>
+                <span className="crop-modal-preset-short">{getPresetShortLabel(preset.key)}</span>
               </button>
             ))}
           </div>
@@ -425,9 +438,11 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
             </div>
 
             <aside className="crop-modal-preview-col">
-              <span className="crop-modal-preview-kicker">Preview</span>
-              <h4 className="crop-modal-preview-title">Preview attiva</h4>
-              <p className="crop-modal-preview-description">{activePresetConfig.label}</p>
+              <div className="crop-modal-preview-copy">
+                <span className="crop-modal-preview-kicker">Preview</span>
+                <h4 className="crop-modal-preview-title">Preview attiva</h4>
+                <p className="crop-modal-preview-description">{activePresetConfig.label}</p>
+              </div>
               <div className="crop-modal-preview-item">
                 <div className="crop-modal-preview-frame" style={{ aspectRatio: activePresetConfig.ratio }}>
                   <img
@@ -437,7 +452,6 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
                     style={activePreviewStyle}
                   />
                 </div>
-                <span>{activePresetConfig.label}</span>
               </div>
             </aside>
           </div>

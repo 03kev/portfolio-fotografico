@@ -186,6 +186,10 @@
   transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 
+.crop-modal-preset-short {
+  display: none;
+}
+
 .crop-modal-preset:hover:not(:disabled),
 .crop-modal-reset:hover:not(:disabled) {
   transform: translateY(-1px);
@@ -619,48 +623,47 @@
 @container crop-modal (max-width: 980px) {
   .crop-modal-main {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(320px, 1fr) auto;
+    grid-template-rows: minmax(360px, 1fr) auto;
     gap: 12px;
   }
 
   .crop-modal-editor-col,
   .crop-modal-workspace-panel {
-    min-height: 320px;
+    min-height: 360px;
   }
 
   .crop-modal-preview-col {
     position: static;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 156px;
-    grid-template-areas:
-      "kicker frame"
-      "title frame"
-      "desc frame"
-      "meta frame";
-    align-items: start;
-    column-gap: 16px;
-    row-gap: 4px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 16px;
   }
 
   .crop-modal-preview-kicker {
-    grid-area: kicker;
-    margin-bottom: 2px;
+    margin-bottom: 4px;
   }
 
   .crop-modal-preview-title {
-    grid-area: title;
+    margin: 0;
   }
 
   .crop-modal-preview-description {
-    grid-area: desc;
-    margin: 2px 0 0;
+    margin: 4px 0 0;
   }
 
   .crop-modal-preview-item {
-    grid-area: frame;
+    flex: 0 0 156px;
     max-width: 156px;
-    width: 100%;
+    width: 156px;
     margin-top: 0;
+    align-self: center;
+  }
+
+  .crop-modal-preview-copy {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 }
 
@@ -710,23 +713,28 @@
   }
 
   .crop-modal-actions {
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
   }
 
   .crop-modal-actions-meta {
+    flex: 1 1 auto;
     gap: 2px;
   }
 
   .crop-modal-actions-buttons {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+    width: auto;
   }
 
   .crop-modal-btn.primary {
-    grid-column: 1 / -1;
+    grid-column: auto;
   }
 }
 
@@ -751,11 +759,21 @@
   }
 
   .crop-modal-toolbar {
+    align-items: stretch;
     gap: 10px;
   }
 
   .crop-modal-presets {
+    width: 100%;
+    flex-wrap: nowrap;
     gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .crop-modal-presets::-webkit-scrollbar {
+    display: none;
   }
 
   .crop-modal-preset,
@@ -763,6 +781,8 @@
     min-height: 36px;
     padding: 0 12px;
     font-size: 0.8rem;
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
 
   .crop-modal-reset {
@@ -801,15 +821,25 @@
     min-height: 44px;
     padding: 0 14px;
     font-size: 0.9rem;
+    min-width: 0;
+    white-space: nowrap;
   }
 
   .crop-modal-actions-buttons {
-    grid-template-columns: 0.95fr 0.95fr 1.1fr;
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: stretch;
+    width: 100%;
     gap: 8px;
   }
 
+  .crop-modal-btn-reset-mobile,
+  .crop-modal-btn.secondary {
+    flex: 0 1 auto;
+  }
+
   .crop-modal-btn.primary {
-    grid-column: auto;
+    flex: 1 1 auto;
   }
 
   .crop-modal-btn-reset-mobile {
@@ -818,18 +848,6 @@
 }
 
 @container crop-modal (max-width: 460px) {
-  .crop-modal-toolbar {
-    align-items: stretch;
-  }
-
-  .crop-modal-presets {
-    width: 100%;
-  }
-
-  .crop-modal-reset {
-    width: 100%;
-  }
-
   .crop-modal-main {
     grid-template-rows: minmax(320px, 1fr);
   }
@@ -837,6 +855,33 @@
   .crop-modal-editor-col,
   .crop-modal-workspace-panel {
     min-height: 320px;
+  }
+
+  .crop-modal-preset {
+    padding: 0 11px;
+    font-size: 0.78rem;
+  }
+
+  .crop-modal-preset-full {
+    display: none;
+  }
+
+  .crop-modal-preset-short {
+    display: inline;
+  }
+
+  .crop-modal-btn {
+    min-height: 42px;
+    padding: 0 12px;
+    font-size: 0.86rem;
+  }
+
+  .crop-modal-actions-buttons .crop-modal-btn {
+    gap: 0;
+  }
+
+  .crop-modal-actions-buttons .crop-modal-btn svg {
+    display: none;
   }
 }
 
