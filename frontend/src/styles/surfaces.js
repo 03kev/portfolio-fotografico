@@ -13,6 +13,12 @@ export const modalBackdropSurface = css`
   padding: var(--panel-overlay-pad-inline);
 `;
 
+export const topAlignedModalBackdropSurface = css`
+  ${modalBackdropSurface};
+  align-items: flex-start;
+  padding-top: var(--shell-overlay-pad-top);
+`;
+
 export const panelSurface = css`
   border-radius: var(--panel-radius);
   border: 1px solid var(--panel-border-color);
@@ -28,4 +34,3 @@ export const insetPanelSurface = css`
   box-shadow: var(--panel-inset-shadow);
   padding: var(--panel-inset-padding);
 `;
-

@@ -8,7 +8,7 @@ import { motion } from 'framer-motion';
 import { Check, LocateFixed, MapPinned, X } from 'lucide-react';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { media } from '../styles/responsive';
-import { insetPanelSurface, modalBackdropSurface, panelSurface } from '../styles/surfaces';
+import { insetPanelSurface, panelSurface, topAlignedModalBackdropSurface } from '../styles/surfaces';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -18,7 +18,7 @@ L.Icon.Default.mergeOptions({
 });
 
 const MapSelectorOverlay = styled(motion.div)`
-  ${modalBackdropSurface};
+  ${topAlignedModalBackdropSurface};
   z-index: 2000;
 `;
 
