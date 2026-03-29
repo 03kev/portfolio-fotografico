@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Check, Crop as CropIcon, RotateCcw, X } from 'lucide-react';
-import { resolveAssetUrl } from '../utils/imageUrl';
+import { resolveVersionedAssetUrl } from '../utils/imageUrl';
+import { hasLoadedImageSource, markImageSourceLoaded } from '../utils/imageLoadCache';
 import {
   CROP_HANDLES,
   CROP_MAX_SCALE,
@@ -50,15 +51,16 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
   const pointerStateRef = useRef(null);
   const refreshRafRef = useRef(null);
 
+  const imageVersion = photo?.derivativesVersion || photo?.updatedAt || photo?.id;
   const cropImageSrc = useMemo(
-    () => resolveAssetUrl(photo?.image),
-    [photo]
+    () => resolveVersionedAssetUrl(photo?.image, imageVersion),
+    [imageVersion, photo]
   );
 
   const workspacePreviewSrc = useMemo(() => {
     const previewCandidate = photo?.thumbnail43 || photo?.thumbnail11 || photo?.socialImage || '';
-    return previewCandidate ? resolveAssetUrl(previewCandidate, '') : '';
-  }, [photo]);
+    return previewCandidate ? resolveVersionedAssetUrl(previewCandidate, imageVersion, '') : '';
+  }, [imageVersion, photo]);
 
   const activePresetPreviewSrc = useMemo(() => {
     const previewCandidate = activePreset === 'r11'
@@ -67,8 +69,8 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
         ? (photo?.socialImage || photo?.thumbnail43 || photo?.thumbnail11 || '')
         : (photo?.thumbnail43 || photo?.thumbnail11 || photo?.socialImage || '');
 
-    return previewCandidate ? resolveAssetUrl(previewCandidate, '') : '';
-  }, [activePreset, photo]);
+    return previewCandidate ? resolveVersionedAssetUrl(previewCandidate, imageVersion, '') : '';
+  }, [activePreset, imageVersion, photo]);
 
   const activePresetConfig = useMemo(
     () => CROP_PRESETS.find((preset) => preset.key === activePreset) || CROP_PRESETS[0],
@@ -143,9 +145,9 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
     setCropViewport(null);
     setCropRect(null);
     setIsInteracting(false);
-    setIsFullImageLoaded(false);
+    setIsFullImageLoaded(hasLoadedImageSource(cropImageSrc));
     pointerStateRef.current = null;
-  }, [isOpen, photo]);
+  }, [cropImageSrc, isOpen, photo]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -153,6 +155,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
     const syncViewport = () => {
       const image = imageRef.current;
       if (image && image.complete && image.naturalWidth && image.naturalHeight) {
+        markImageSourceLoaded(cropImageSrc);
         setIsFullImageLoaded(true);
         scheduleViewportRefresh();
       }
@@ -470,6 +473,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
                       alt={`Crop ${photo.title || 'foto'}`}
                       draggable="false"
                       onLoad={() => {
+                        markImageSourceLoaded(cropImageSrc);
                         setIsFullImageLoaded(true);
                         refreshViewport();
                       }}

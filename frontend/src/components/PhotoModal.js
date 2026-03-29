@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Download, Map, MapPin } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
-import { LOCAL_IMAGE_FALLBACK, resolveAssetUrl } from '../utils/imageUrl';
+import { LOCAL_IMAGE_FALLBACK, resolveAssetUrl, resolveVersionedAssetUrl } from '../utils/imageUrl';
+import { hasLoadedImageSource, markImageSourceLoaded } from '../utils/imageLoadCache';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 const ModalOverlay = styled(motion.div)`
@@ -334,6 +335,10 @@ const PhotoModal = () => {
     const [isFullImageLoaded, setIsFullImageLoaded] = React.useState(false);
     const selectedPhotoId = selectedPhoto?.id;
     const selectedPhotoDerivativesVersion = selectedPhoto?.derivativesVersion;
+    const version = selectedPhoto?.derivativesVersion || selectedPhoto?.updatedAt || selectedPhoto?.id;
+    const imageSrc = resolveVersionedAssetUrl(selectedPhoto?.image, version);
+    const downloadSrc = resolveVersionedAssetUrl(selectedPhoto?.image, version, '');
+    const previewSrc = resolveAssetUrl(selectedPhoto?.thumbnail43 || selectedPhoto?.thumbnail11 || '');
 
     const closeModalWithRouteHandling = React.useCallback(() => {
         actions.closePhotoModal();
@@ -429,21 +434,10 @@ const PhotoModal = () => {
 
     useEffect(() => {
         if (!modalOpen || !selectedPhotoId) return;
-        setIsFullImageLoaded(false);
-    }, [modalOpen, selectedPhotoId, selectedPhotoDerivativesVersion]);
+        setIsFullImageLoaded(hasLoadedImageSource(imageSrc));
+    }, [imageSrc, modalOpen, selectedPhotoId, selectedPhotoDerivativesVersion]);
     
     if (!selectedPhoto) return null;
-
-    const version = selectedPhoto?.derivativesVersion || selectedPhoto?.updatedAt || selectedPhoto?.id;
-    const baseImageSrc = resolveAssetUrl(selectedPhoto.image);
-    const imageSrc = version
-        ? `${baseImageSrc}${baseImageSrc.includes('?') ? '&' : '?'}v=${encodeURIComponent(String(version))}`
-        : baseImageSrc;
-    const baseDownloadSrc = resolveAssetUrl(selectedPhoto.image, '');
-    const downloadSrc = version
-        ? `${baseDownloadSrc}${baseDownloadSrc.includes('?') ? '&' : '?'}v=${encodeURIComponent(String(version))}`
-        : baseDownloadSrc;
-    const previewSrc = resolveAssetUrl(selectedPhoto?.thumbnail43 || selectedPhoto?.thumbnail11 || '');
     const canDownload = Boolean(downloadSrc);
     const hasTechnicalData = Boolean(
         selectedPhoto.camera ||
@@ -508,6 +502,7 @@ const PhotoModal = () => {
             animate={{ scale: 1 }}
             transition={{ duration: 0.4 }}
             onLoad={() => {
+                markImageSourceLoaded(imageSrc);
                 setIsFullImageLoaded(true);
             }}
             onError={(e) => {
