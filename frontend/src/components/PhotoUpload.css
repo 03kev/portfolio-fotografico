@@ -6,9 +6,8 @@
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  overflow-y: auto;
-  padding: var(--shell-overlay-pad-inline);
-  padding-top: var(--shell-overlay-pad-top);
+  overflow: hidden;
+  padding: var(--shell-overlay-pad-top) var(--shell-overlay-pad-inline) var(--shell-overlay-pad-bottom);
   background:
     radial-gradient(circle at top center, rgba(214, 179, 106, 0.12), transparent 30%),
     linear-gradient(180deg, rgba(8, 9, 13, 0.84) 0%, rgba(4, 5, 8, 0.92) 100%);
@@ -255,6 +254,7 @@
 
 .steps-container {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: var(--shell-content-pad);
   scrollbar-width: none;
@@ -1044,15 +1044,12 @@
 
 @media (max-width: 768px) {
   .photo-upload-modal {
-    padding: var(--shell-overlay-pad-inline);
-    padding-top: var(--shell-overlay-pad-top);
-    align-items: stretch;
+    padding: var(--shell-overlay-pad-top) var(--shell-overlay-pad-inline) var(--shell-overlay-pad-bottom);
   }
 
   .photo-upload-container {
     width: 100%;
-    max-height: none;
-    min-height: calc(100vh - 20px);
+    max-height: var(--shell-max-height);
   }
 
   .upload-header-topline {

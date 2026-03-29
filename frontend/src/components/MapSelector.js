@@ -27,7 +27,8 @@ const MapContainer2 = styled(motion.div)`
   container-type: inline-size;
   width: 100%;
   max-width: 960px;
-  height: min(84vh, 760px);
+  height: min(760px, var(--shell-max-height));
+  max-height: min(760px, var(--shell-max-height));
   padding: 0;
   overflow: hidden;
   display: flex;
@@ -35,7 +36,8 @@ const MapContainer2 = styled(motion.div)`
 
   ${media.down('tablet')`
     max-width: none;
-    height: calc(100dvh - (var(--panel-overlay-pad-inline) * 2));
+    height: var(--shell-max-height);
+    max-height: var(--shell-max-height);
   `}
 `;
 

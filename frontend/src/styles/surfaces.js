@@ -16,7 +16,7 @@ export const modalBackdropSurface = css`
 export const topAlignedModalBackdropSurface = css`
   ${modalBackdropSurface};
   align-items: flex-start;
-  padding-top: var(--shell-overlay-pad-top);
+  padding: var(--shell-overlay-pad-top) var(--shell-overlay-pad-inline) var(--shell-overlay-pad-bottom);
 `;
 
 export const panelSurface = css`

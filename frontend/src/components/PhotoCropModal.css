@@ -5,9 +5,8 @@
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  overflow-y: auto;
-  padding: var(--shell-overlay-pad-inline);
-  padding-top: var(--shell-overlay-pad-top);
+  overflow: hidden;
+  padding: var(--shell-overlay-pad-top) var(--shell-overlay-pad-inline) var(--shell-overlay-pad-bottom);
   background:
     radial-gradient(circle at top center, rgba(214, 179, 106, 0.12), transparent 30%),
     linear-gradient(180deg, rgba(8, 9, 13, 0.84) 0%, rgba(4, 5, 8, 0.92) 100%);
@@ -20,8 +19,8 @@
   container-type: inline-size;
   container-name: crop-modal;
   width: min(1120px, 100%);
-  height: min(calc(100vh - (2 * var(--shell-overlay-pad-inline))), var(--shell-max-height));
-  max-height: min(calc(100vh - (2 * var(--shell-overlay-pad-inline))), var(--shell-max-height));
+  height: var(--shell-max-height);
+  max-height: var(--shell-max-height);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -511,6 +510,7 @@
   flex-direction: column;
   gap: 0;
   align-content: flex-start;
+  overflow: hidden auto;
 }
 
 .crop-modal-preview-kicker {
@@ -541,6 +541,7 @@
   flex-direction: column;
   gap: 8px;
   margin-top: 10px;
+  min-width: 0;
 }
 
 .crop-modal-preview-frame {
@@ -942,9 +943,19 @@
 }
 
 @media (max-height: 860px) {
-  .crop-modal-card {
-    height: min(calc(100vh - (2 * var(--shell-overlay-pad-inline))), 880px);
-    max-height: min(calc(100vh - (2 * var(--shell-overlay-pad-inline))), 880px);
+  .crop-modal-main {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .crop-modal-preview-col {
+    display: none;
+  }
+
+  .crop-modal-editor-col,
+  .crop-modal-workspace-panel {
+    min-height: 0;
   }
 
   .crop-modal-toolbar {
@@ -965,6 +976,23 @@
   .crop-modal-actions {
     padding-top: 12px;
     padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-height: 980px) {
+  .crop-modal-main {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .crop-modal-preview-col {
+    display: none;
+  }
+
+  .crop-modal-editor-col,
+  .crop-modal-workspace-panel {
+    min-height: 0;
   }
 }
 
@@ -991,15 +1019,12 @@
 
 @media (max-width: 768px) {
   .crop-modal-backdrop {
-    padding: var(--shell-overlay-pad-inline);
-    padding-top: var(--shell-overlay-pad-top);
-    padding-bottom: var(--shell-overlay-pad-top);
-    align-items: stretch;
+    padding: var(--shell-overlay-pad-top) var(--shell-overlay-pad-inline) var(--shell-overlay-pad-bottom);
   }
 
   .crop-modal-card {
     width: 100%;
-    height: calc(100dvh - (2 * var(--shell-overlay-pad-top)));
-    max-height: calc(100dvh - (2 * var(--shell-overlay-pad-top)));
+    height: var(--shell-max-height);
+    max-height: var(--shell-max-height);
   }
 }
