@@ -43,6 +43,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
   const [cropViewport, setCropViewport] = useState(null);
   const [cropRect, setCropRect] = useState(null);
   const [isInteracting, setIsInteracting] = useState(false);
+  const [isFullImageLoaded, setIsFullImageLoaded] = useState(false);
 
   const workspaceRef = useRef(null);
   const imageRef = useRef(null);
@@ -53,6 +54,21 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
     () => resolveAssetUrl(photo?.image),
     [photo]
   );
+
+  const workspacePreviewSrc = useMemo(() => {
+    const previewCandidate = photo?.thumbnail43 || photo?.thumbnail11 || photo?.socialImage || '';
+    return previewCandidate ? resolveAssetUrl(previewCandidate, '') : '';
+  }, [photo]);
+
+  const activePresetPreviewSrc = useMemo(() => {
+    const previewCandidate = activePreset === 'r11'
+      ? (photo?.thumbnail11 || photo?.thumbnail43 || photo?.socialImage || '')
+      : activePreset === 'social'
+        ? (photo?.socialImage || photo?.thumbnail43 || photo?.thumbnail11 || '')
+        : (photo?.thumbnail43 || photo?.thumbnail11 || photo?.socialImage || '');
+
+    return previewCandidate ? resolveAssetUrl(previewCandidate, '') : '';
+  }, [activePreset, photo]);
 
   const activePresetConfig = useMemo(
     () => CROP_PRESETS.find((preset) => preset.key === activePreset) || CROP_PRESETS[0],
@@ -127,6 +143,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
     setCropViewport(null);
     setCropRect(null);
     setIsInteracting(false);
+    setIsFullImageLoaded(false);
     pointerStateRef.current = null;
   }, [isOpen, photo]);
 
@@ -136,6 +153,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
     const syncViewport = () => {
       const image = imageRef.current;
       if (image && image.complete && image.naturalWidth && image.naturalHeight) {
+        setIsFullImageLoaded(true);
         scheduleViewportRefresh();
       }
     };
@@ -434,13 +452,30 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
               <div className="crop-modal-workspace-panel">
                 <div className="crop-modal-workspace-shell">
                   <div ref={workspaceRef} className={`crop-modal-workspace ${isInteracting ? 'is-interacting' : ''}`}>
+                    {workspacePreviewSrc ? (
+                      <img
+                        className={`crop-modal-image-preview ${isFullImageLoaded ? 'is-loaded' : ''}`}
+                        src={workspacePreviewSrc}
+                        alt=""
+                        aria-hidden="true"
+                      />
+                    ) : null}
+                    <div className={`crop-modal-image-loading-backdrop ${isFullImageLoaded ? 'is-loaded' : ''}`}>
+                      <div className="crop-modal-image-loading-spinner" />
+                    </div>
                     <img
                       ref={imageRef}
-                      className="crop-modal-image"
+                      className={`crop-modal-image ${isFullImageLoaded ? 'is-loaded' : ''}`}
                       src={cropImageSrc}
                       alt={`Crop ${photo.title || 'foto'}`}
                       draggable="false"
-                      onLoad={refreshViewport}
+                      onLoad={() => {
+                        setIsFullImageLoaded(true);
+                        refreshViewport();
+                      }}
+                      onError={() => {
+                        setIsFullImageLoaded(true);
+                      }}
                     />
 
                     {imageBounds && <div className="crop-modal-image-bounds" style={imageBounds} />}
@@ -479,7 +514,16 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
               </div>
               <div className="crop-modal-preview-item">
                 <div className="crop-modal-preview-frame" style={{ aspectRatio: activePresetConfig.ratio }}>
+                  {activePresetPreviewSrc ? (
+                    <img
+                      className={`crop-modal-preview-placeholder ${isFullImageLoaded ? 'is-loaded' : ''}`}
+                      src={activePresetPreviewSrc}
+                      alt=""
+                      aria-hidden="true"
+                    />
+                  ) : null}
                   <img
+                    className={`crop-modal-preview-image ${isFullImageLoaded ? 'is-loaded' : ''}`}
                     src={cropImageSrc}
                     alt={`Preview ${activePresetConfig.label}`}
                     draggable="false"

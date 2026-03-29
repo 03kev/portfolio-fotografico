@@ -303,6 +303,56 @@
   object-fit: contain;
   user-select: none;
   -webkit-user-drag: none;
+  opacity: 0;
+  filter: blur(8px);
+  transition: opacity 0.28s ease, filter 0.28s ease;
+}
+
+.crop-modal-image.is-loaded {
+  opacity: 1;
+  filter: none;
+}
+
+.crop-modal-image-preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(28px) saturate(1.08);
+  transform: scale(1.08);
+  opacity: 0.7;
+  transition: opacity 0.32s ease;
+  pointer-events: none;
+}
+
+.crop-modal-image-preview.is-loaded {
+  opacity: 0;
+}
+
+.crop-modal-image-loading-backdrop {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(7, 10, 18, 0.12) 0%, rgba(7, 10, 18, 0.24) 100%);
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.22s ease;
+}
+
+.crop-modal-image-loading-backdrop.is-loaded {
+  opacity: 0;
+}
+
+.crop-modal-image-loading-spinner {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.18);
+  border-top-color: rgba(214, 179, 106, 0.96);
+  animation: crop-modal-spin 0.85s linear infinite;
 }
 
 .crop-modal-image-bounds {
@@ -507,6 +557,33 @@
 
 .crop-modal-preview-frame img {
   display: block;
+}
+
+.crop-modal-preview-placeholder {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(18px) saturate(1.06);
+  transform: scale(1.05);
+  opacity: 0.74;
+  transition: opacity 0.28s ease;
+}
+
+.crop-modal-preview-placeholder.is-loaded {
+  opacity: 0;
+}
+
+.crop-modal-preview-image {
+  opacity: 0;
+  filter: blur(6px);
+  transition: opacity 0.26s ease, filter 0.26s ease;
+}
+
+.crop-modal-preview-image.is-loaded {
+  opacity: 1;
+  filter: none;
 }
 
 .crop-modal-preview-item span {
