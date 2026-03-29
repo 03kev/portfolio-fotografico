@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Check, Crop as CropIcon, RotateCcw, X } from 'lucide-react';
 import { resolveVersionedAssetUrl } from '../utils/imageUrl';
-import { hasLoadedImageSource, markImageSourceLoaded } from '../utils/imageLoadCache';
 import {
   CROP_HANDLES,
   CROP_MAX_SCALE,
@@ -20,6 +19,7 @@ import {
   clampBetween
 } from '../utils/cropEditor';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import { useSharedImageLoadState } from '../hooks/useSharedImageLoadState';
 import './PhotoCropModal.css';
 
 const getPhotoSettings = (photo) => {
@@ -44,7 +44,6 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
   const [cropViewport, setCropViewport] = useState(null);
   const [cropRect, setCropRect] = useState(null);
   const [isInteracting, setIsInteracting] = useState(false);
-  const [isFullImageLoaded, setIsFullImageLoaded] = useState(false);
 
   const workspaceRef = useRef(null);
   const imageRef = useRef(null);
@@ -56,6 +55,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
     () => resolveVersionedAssetUrl(photo?.image, imageVersion),
     [imageVersion, photo]
   );
+  const { isLoaded: isFullImageLoaded, setIsLoaded: setIsFullImageLoaded, markLoaded: markFullImageLoaded } = useSharedImageLoadState(cropImageSrc, isOpen && Boolean(photo?.id));
 
   const workspacePreviewSrc = useMemo(() => {
     const previewCandidate = photo?.thumbnail43 || photo?.thumbnail11 || photo?.socialImage || '';
@@ -145,9 +145,8 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
     setCropViewport(null);
     setCropRect(null);
     setIsInteracting(false);
-    setIsFullImageLoaded(hasLoadedImageSource(cropImageSrc));
     pointerStateRef.current = null;
-  }, [cropImageSrc, isOpen, photo]);
+  }, [isOpen, photo]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -155,8 +154,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
     const syncViewport = () => {
       const image = imageRef.current;
       if (image && image.complete && image.naturalWidth && image.naturalHeight) {
-        markImageSourceLoaded(cropImageSrc);
-        setIsFullImageLoaded(true);
+        markFullImageLoaded();
         scheduleViewportRefresh();
       }
     };
@@ -168,7 +166,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
       cancelAnimationFrame(rafId);
       clearTimeout(timeoutId);
     };
-  }, [cropImageSrc, isOpen, scheduleViewportRefresh]);
+  }, [cropImageSrc, isOpen, markFullImageLoaded, scheduleViewportRefresh]);
 
   useEffect(() => {
     if (!workspaceRef.current || typeof ResizeObserver === 'undefined') return undefined;
@@ -473,8 +471,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
                       alt={`Crop ${photo.title || 'foto'}`}
                       draggable="false"
                       onLoad={() => {
-                        markImageSourceLoaded(cropImageSrc);
-                        setIsFullImageLoaded(true);
+                        markFullImageLoaded();
                         refreshViewport();
                       }}
                       onError={() => {

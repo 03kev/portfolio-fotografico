@@ -5,8 +5,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Download, Map, MapPin } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { LOCAL_IMAGE_FALLBACK, resolveAssetUrl, resolveVersionedAssetUrl } from '../utils/imageUrl';
-import { hasLoadedImageSource, markImageSourceLoaded } from '../utils/imageLoadCache';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import { useSharedImageLoadState } from '../hooks/useSharedImageLoadState';
 
 const ModalOverlay = styled(motion.div)`
   position: fixed;
@@ -332,13 +332,12 @@ const PhotoModal = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const originalBodyOverflowRef = React.useRef(null);
-    const [isFullImageLoaded, setIsFullImageLoaded] = React.useState(false);
     const selectedPhotoId = selectedPhoto?.id;
-    const selectedPhotoDerivativesVersion = selectedPhoto?.derivativesVersion;
     const version = selectedPhoto?.derivativesVersion || selectedPhoto?.updatedAt || selectedPhoto?.id;
     const imageSrc = resolveVersionedAssetUrl(selectedPhoto?.image, version);
     const downloadSrc = resolveVersionedAssetUrl(selectedPhoto?.image, version, '');
     const previewSrc = resolveAssetUrl(selectedPhoto?.thumbnail43 || selectedPhoto?.thumbnail11 || '');
+    const { isLoaded: isFullImageLoaded, setIsLoaded: setIsFullImageLoaded, markLoaded: markFullImageLoaded } = useSharedImageLoadState(imageSrc, modalOpen && Boolean(selectedPhotoId));
 
     const closeModalWithRouteHandling = React.useCallback(() => {
         actions.closePhotoModal();
@@ -432,11 +431,6 @@ const PhotoModal = () => {
         return `${match[1]} × ${match[2]} px`;
     };
 
-    useEffect(() => {
-        if (!modalOpen || !selectedPhotoId) return;
-        setIsFullImageLoaded(hasLoadedImageSource(imageSrc));
-    }, [imageSrc, modalOpen, selectedPhotoId, selectedPhotoDerivativesVersion]);
-    
     if (!selectedPhoto) return null;
     const canDownload = Boolean(downloadSrc);
     const hasTechnicalData = Boolean(
@@ -502,8 +496,7 @@ const PhotoModal = () => {
             animate={{ scale: 1 }}
             transition={{ duration: 0.4 }}
             onLoad={() => {
-                markImageSourceLoaded(imageSrc);
-                setIsFullImageLoaded(true);
+                markFullImageLoaded();
             }}
             onError={(e) => {
                 e.currentTarget.onerror = null;

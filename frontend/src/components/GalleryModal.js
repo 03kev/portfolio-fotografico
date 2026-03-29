@@ -3,7 +3,7 @@ import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapPin, Camera } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
-import { resolveAssetUrl } from '../utils/imageUrl';
+import { resolveVersionedAssetUrl } from '../utils/imageUrl';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 const ModalOverlay = styled(motion.div)`
@@ -218,15 +218,6 @@ const PhotoDescription = styled.p`
   overflow: hidden;
 `;
 
-const LoadingSpinner = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 200px;
-  color: var(--color-accent);
-  font-size: var(--font-size-2xl);
-`;
-
 const EmptyState = styled.div`
   display: flex;
   flex-direction: column;
@@ -293,10 +284,8 @@ const GalleryModal = () => {
   };
 
   const getPhotoSrc = (photo) => {
-    const baseUrl = resolveAssetUrl(photo.image);
     const version = photo?.derivativesVersion || photo?.updatedAt || photo?.id;
-    if (!version) return baseUrl;
-    return `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}v=${encodeURIComponent(String(version))}`;
+    return resolveVersionedAssetUrl(photo.image, version);
   };
 
   if (!galleryPhotos || galleryPhotos.length === 0) {

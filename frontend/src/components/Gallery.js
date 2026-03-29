@@ -4,7 +4,7 @@ import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Trash2, Edit3, Crop, Upload, Loader2, X } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
-import { LOCAL_IMAGE_FALLBACK, resolveAssetUrl } from '../utils/imageUrl';
+import { LOCAL_IMAGE_FALLBACK, resolveVersionedAssetUrl } from '../utils/imageUrl';
 import { photoService, signSourceUpload, uploadSourceToSignedUrl } from '../utils/api';
 import { useGalleryQueryState } from '../hooks/useGalleryQueryState';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
@@ -952,11 +952,8 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   }, [actions]);
 
   const getThumbImageUrl = (photo) => {
-    const baseUrl = resolveAssetUrl(photo.thumbnail43);
     const version = photo?.derivativesVersion || photo?.updatedAt || photo?.id;
-    if (!version) return baseUrl;
-    const separator = baseUrl.includes('?') ? '&' : '?';
-    return `${baseUrl}${separator}v=${encodeURIComponent(String(version))}`;
+    return resolveVersionedAssetUrl(photo.thumbnail43, version);
   };
   const getPhotoCardUrl = (photo) => `/photo/${encodeURIComponent(String(photo.id))}`;
   const getPhotoAltText = (photo) => {
