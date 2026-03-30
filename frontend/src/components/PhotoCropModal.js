@@ -20,6 +20,7 @@ import {
 } from '../utils/cropEditor';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useSharedImageLoadState } from '../hooks/useSharedImageLoadState';
+import { useAdaptiveHeaderPill } from '../hooks/useAdaptiveHeaderPill';
 import './PhotoCropModal.css';
 
 const getPhotoSettings = (photo) => {
@@ -49,13 +50,6 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
   const imageRef = useRef(null);
   const pointerStateRef = useRef(null);
   const refreshRafRef = useRef(null);
-  const cardRef = useRef(null);
-  const headerCopyRef = useRef(null);
-  const headerToplineRef = useRef(null);
-  const headerEyebrowRef = useRef(null);
-  const headerFullPillMeasureRef = useRef(null);
-  const headerShortPillMeasureRef = useRef(null);
-  const [headerPillMode, setHeaderPillMode] = useState('full');
 
   const imageVersion = photo?.derivativesVersion || photo?.updatedAt || photo?.id;
   const cropImageSrc = useMemo(
@@ -86,6 +80,35 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
 
   const activeProfile = cropProfiles[activePreset] || DEFAULT_CROP_PROFILE;
   const activeRatio = getPresetRatioValue(activePreset);
+
+  const getPresetShortLabel = useCallback((presetKey) => {
+    switch (presetKey) {
+      case 'r43':
+        return '4:3';
+      case 'r11':
+        return '1:1';
+      case 'social':
+        return '1200×630';
+      default:
+        return '';
+    }
+  }, []);
+
+  const {
+    mode: headerPillMode,
+    cardRef,
+    headerRef,
+    headerCopyRef,
+    toplineRef: headerToplineRef,
+    leadingRef: headerEyebrowRef,
+    trailingRef: headerCloseRef,
+    fullMeasureRef: headerFullPillMeasureRef,
+    shortMeasureRef: headerShortPillMeasureRef
+  } = useAdaptiveHeaderPill({
+    enabled: isOpen && Boolean(photo),
+    fullLabel: activePresetConfig.label,
+    shortLabel: getPresetShortLabel(activePreset)
+  });
 
   const refreshViewport = useCallback(() => {
     const workspace = workspaceRef.current;
@@ -360,77 +383,6 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
     onClose?.();
   };
 
-  const getPresetShortLabel = (presetKey) => {
-    switch (presetKey) {
-      case 'r43':
-        return '4:3';
-      case 'r11':
-        return '1:1';
-      case 'social':
-        return '1200×630';
-      default:
-        return '';
-    }
-  };
-
-  const updateHeaderPillMode = useCallback(() => {
-    const card = cardRef.current;
-    const headerCopy = headerCopyRef.current;
-    const topline = headerToplineRef.current;
-    const eyebrow = headerEyebrowRef.current;
-    const fullMeasure = headerFullPillMeasureRef.current;
-    const shortMeasure = headerShortPillMeasureRef.current;
-
-    if (!card || !headerCopy || !topline || !eyebrow || !fullMeasure || !shortMeasure) return;
-
-    const cardWidth = card.clientWidth;
-    if (!cardWidth || cardWidth > 560) {
-      setHeaderPillMode('full');
-      return;
-    }
-
-    const gap = 10;
-    const availableWidth = headerCopy.clientWidth;
-    const eyebrowWidth = eyebrow.offsetWidth;
-    const fullWidth = eyebrowWidth + gap + fullMeasure.offsetWidth;
-    const shortWidth = eyebrowWidth + gap + shortMeasure.offsetWidth;
-
-    if (fullWidth <= availableWidth) {
-      setHeaderPillMode('full');
-      return;
-    }
-
-    if (shortWidth <= availableWidth) {
-      setHeaderPillMode('short');
-      return;
-    }
-
-    setHeaderPillMode('hidden');
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!isOpen || !photo) return;
-    updateHeaderPillMode();
-  }, [isOpen, photo, activePreset, updateHeaderPillMode]);
-
-  useEffect(() => {
-    if (!isOpen || !photo) return undefined;
-
-    const card = cardRef.current;
-    const topline = headerToplineRef.current;
-    if (!card || !topline || typeof ResizeObserver === 'undefined') return undefined;
-
-    const observer = new ResizeObserver(() => updateHeaderPillMode());
-    observer.observe(card);
-    observer.observe(topline);
-    window.addEventListener('resize', updateHeaderPillMode);
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', updateHeaderPillMode);
-    };
-  }, [isOpen, photo, updateHeaderPillMode]);
-
   if (!isOpen || !photo) return null;
 
   const imageBounds = cropViewport
@@ -483,7 +435,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
   return (
     <div className="crop-modal-backdrop" onClick={() => onClose?.()}>
       <div ref={cardRef} className="crop-modal-card" onClick={(event) => event.stopPropagation()}>
-        <header className="crop-modal-shell-header">
+        <header ref={headerRef} className="crop-modal-shell-header">
           <div ref={headerCopyRef} className="crop-modal-header-copy">
             <div ref={headerToplineRef} className="crop-modal-header-topline">
               <span ref={headerEyebrowRef} className="crop-modal-eyebrow">
@@ -509,7 +461,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
               Seleziona il formato, sposta il crop e ridimensionalo dai corner handle.
             </p>
           </div>
-          <button type="button" className="crop-modal-close" onClick={() => onClose?.()} aria-label="Chiudi crop modal">
+          <button ref={headerCloseRef} type="button" className="crop-modal-close" onClick={() => onClose?.()} aria-label="Chiudi crop modal">
             <X size={18} />
           </button>
         </header>

@@ -1,5 +1,6 @@
 import React from 'react';
 import { PencilLine, Upload, X } from 'lucide-react';
+import { useAdaptiveHeaderPill } from '../../hooks/useAdaptiveHeaderPill';
 
 const PhotoUploadShell = ({
   isEditMode,
@@ -15,19 +16,54 @@ const PhotoUploadShell = ({
   children,
   footer,
   onBackdropClick
-}) => (
+}) => {
+  const stepFullLabel = `Step ${currentStepIndex + 1}/${steps.length}`;
+  const stepShortLabel = `${currentStepIndex + 1}/${steps.length}`;
+  const {
+    mode: progressPillMode,
+    cardRef,
+    headerRef,
+    headerCopyRef,
+    toplineRef,
+    leadingRef,
+    trailingRef,
+    fullMeasureRef,
+    shortMeasureRef
+  } = useAdaptiveHeaderPill({
+    enabled: true,
+    fullLabel: stepFullLabel,
+    shortLabel: stepShortLabel
+  });
+
+  return (
   <div className="photo-upload-modal" onClick={onBackdropClick}>
-    <div className={`photo-upload-container${isClosing ? ' closing' : ''}`} onClick={(e) => e.stopPropagation()}>
-      <div className="upload-header">
-        <div className="upload-header-copy">
-          <div className="upload-header-topline">
-            <span className="upload-eyebrow">{isEditMode ? 'Editor foto' : 'Nuovo upload'}</span>
-            <span className="upload-progress-pill">Step {currentStepIndex + 1}/{steps.length}</span>
+    <div ref={cardRef} className={`photo-upload-container${isClosing ? ' closing' : ''}`} onClick={(e) => e.stopPropagation()}>
+      <div ref={headerRef} className="upload-header">
+        <div ref={headerCopyRef} className="upload-header-copy">
+          <div ref={toplineRef} className="upload-header-topline">
+            <span ref={leadingRef} className="upload-eyebrow">{isEditMode ? 'Editor foto' : 'Nuovo upload'}</span>
+            {progressPillMode !== 'hidden' && (
+              <span className="upload-progress-pill">
+                {progressPillMode === 'short' ? stepShortLabel : stepFullLabel}
+              </span>
+            )}
+            <span className="upload-progress-pill-measures" aria-hidden="true">
+              <span ref={fullMeasureRef} className="upload-progress-pill upload-progress-pill-measure">
+                {stepFullLabel}
+              </span>
+              <span ref={shortMeasureRef} className="upload-progress-pill upload-progress-pill-measure">
+                {stepShortLabel}
+              </span>
+            </span>
           </div>
-          <h2>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              {isEditMode ? <PencilLine size={18} /> : <Upload size={18} />}
-              {isEditMode ? 'Modifica Foto' : 'Carica Nuova Foto'}
+          <h2 className="upload-header-title">
+            <span className="upload-header-title-inner">
+              <span className="upload-header-title-icon" aria-hidden="true">
+                {isEditMode ? <PencilLine size={18} /> : <Upload size={18} />}
+              </span>
+              <span className="upload-header-title-text">
+                {isEditMode ? 'Modifica Foto' : 'Carica Nuova Foto'}
+              </span>
             </span>
           </h2>
           <p className="upload-header-subtitle">
@@ -36,6 +72,7 @@ const PhotoUploadShell = ({
           </p>
         </div>
         <button
+          ref={trailingRef}
           className="close-btn"
           onClick={() => !loading && onInitClose()}
           title="Chiudi"
@@ -64,6 +101,7 @@ const PhotoUploadShell = ({
       {footer}
     </div>
   </div>
-);
+  );
+};
 
 export default PhotoUploadShell;

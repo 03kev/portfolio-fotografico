@@ -95,6 +95,7 @@
 }
 
 .upload-header-topline {
+  position: relative;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -127,11 +128,45 @@
   border: 1px solid rgba(255, 255, 255, 0.09);
 }
 
+.upload-progress-pill-measures {
+  position: absolute;
+  inset: 0 auto auto 0;
+  visibility: hidden;
+  pointer-events: none;
+  height: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.upload-progress-pill-measure {
+  display: inline-flex;
+}
+
 .upload-header h2 {
   margin: 0;
   font-size: var(--shell-title-size);
   font-weight: 700;
   letter-spacing: -0.04em;
+}
+
+.upload-header-title-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.upload-header-title-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.upload-header-title-text {
+  min-width: 0;
 }
 
 .upload-header-subtitle {
@@ -1194,5 +1229,26 @@
   .upload-btn,
   .cancel-btn {
     min-height: 48px;
+  }
+
+  .upload-header-title-inner {
+    width: 100%;
+    align-items: flex-start;
+  }
+
+  .upload-header-title-text,
+  .upload-header-subtitle {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .upload-header-title-text {
+    -webkit-line-clamp: 2;
+  }
+
+  .upload-header-subtitle {
+    -webkit-line-clamp: 2;
   }
 }

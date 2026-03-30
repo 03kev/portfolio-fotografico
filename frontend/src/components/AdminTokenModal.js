@@ -22,7 +22,7 @@ const Card = styled(motion.div)`
 
 const Header = styled.div`
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 14px;
 `;
