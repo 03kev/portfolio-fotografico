@@ -49,6 +49,12 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
   const imageRef = useRef(null);
   const pointerStateRef = useRef(null);
   const refreshRafRef = useRef(null);
+  const cardRef = useRef(null);
+  const headerToplineRef = useRef(null);
+  const headerEyebrowRef = useRef(null);
+  const headerFullPillMeasureRef = useRef(null);
+  const headerShortPillMeasureRef = useRef(null);
+  const [headerPillMode, setHeaderPillMode] = useState('full');
 
   const imageVersion = photo?.derivativesVersion || photo?.updatedAt || photo?.id;
   const cropImageSrc = useMemo(
@@ -353,6 +359,76 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
     onClose?.();
   };
 
+  const getPresetShortLabel = (presetKey) => {
+    switch (presetKey) {
+      case 'r43':
+        return '4:3';
+      case 'r11':
+        return '1:1';
+      case 'social':
+        return '1200×630';
+      default:
+        return '';
+    }
+  };
+
+  const updateHeaderPillMode = useCallback(() => {
+    const card = cardRef.current;
+    const topline = headerToplineRef.current;
+    const eyebrow = headerEyebrowRef.current;
+    const fullMeasure = headerFullPillMeasureRef.current;
+    const shortMeasure = headerShortPillMeasureRef.current;
+
+    if (!card || !topline || !eyebrow || !fullMeasure || !shortMeasure) return;
+
+    const cardWidth = card.clientWidth;
+    if (!cardWidth || cardWidth > 560) {
+      setHeaderPillMode('full');
+      return;
+    }
+
+    const gap = 10;
+    const availableWidth = topline.clientWidth;
+    const eyebrowWidth = eyebrow.offsetWidth;
+    const fullWidth = eyebrowWidth + gap + fullMeasure.offsetWidth;
+    const shortWidth = eyebrowWidth + gap + shortMeasure.offsetWidth;
+
+    if (fullWidth <= availableWidth) {
+      setHeaderPillMode('full');
+      return;
+    }
+
+    if (shortWidth <= availableWidth) {
+      setHeaderPillMode('short');
+      return;
+    }
+
+    setHeaderPillMode('hidden');
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!isOpen || !photo) return;
+    updateHeaderPillMode();
+  }, [isOpen, photo, activePreset, updateHeaderPillMode]);
+
+  useEffect(() => {
+    if (!isOpen || !photo) return undefined;
+
+    const card = cardRef.current;
+    const topline = headerToplineRef.current;
+    if (!card || !topline || typeof ResizeObserver === 'undefined') return undefined;
+
+    const observer = new ResizeObserver(() => updateHeaderPillMode());
+    observer.observe(card);
+    observer.observe(topline);
+    window.addEventListener('resize', updateHeaderPillMode);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateHeaderPillMode);
+    };
+  }, [isOpen, photo, updateHeaderPillMode]);
+
   if (!isOpen || !photo) return null;
 
   const imageBounds = cropViewport
@@ -401,30 +477,30 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
     : null;
 
   const activePreviewStyle = buildPreviewStyleFromViewportRect(selection, imageBounds);
-  const getPresetShortLabel = (presetKey) => {
-    switch (presetKey) {
-      case 'r43':
-        return '4:3';
-      case 'r11':
-        return '1:1';
-      case 'social':
-        return '1200×630';
-      default:
-        return '';
-    }
-  };
 
   return (
     <div className="crop-modal-backdrop" onClick={() => onClose?.()}>
-      <div className="crop-modal-card" onClick={(event) => event.stopPropagation()}>
+      <div ref={cardRef} className="crop-modal-card" onClick={(event) => event.stopPropagation()}>
         <header className="crop-modal-shell-header">
           <div className="crop-modal-header-copy">
-            <div className="crop-modal-header-topline">
-              <span className="crop-modal-eyebrow">
+            <div ref={headerToplineRef} className="crop-modal-header-topline">
+              <span ref={headerEyebrowRef} className="crop-modal-eyebrow">
                 <CropIcon size={14} />
                 Crop
               </span>
-              <span className="crop-modal-progress-pill">{activePresetConfig.label}</span>
+              {headerPillMode !== 'hidden' && (
+                <span className="crop-modal-progress-pill">
+                  {headerPillMode === 'short' ? getPresetShortLabel(activePreset) : activePresetConfig.label}
+                </span>
+              )}
+              <span className="crop-modal-progress-pill-measures" aria-hidden="true">
+                <span ref={headerFullPillMeasureRef} className="crop-modal-progress-pill crop-modal-progress-pill-measure">
+                  {activePresetConfig.label}
+                </span>
+                <span ref={headerShortPillMeasureRef} className="crop-modal-progress-pill crop-modal-progress-pill-measure">
+                  {getPresetShortLabel(activePreset)}
+                </span>
+              </span>
             </div>
             <h2>{photo.title || 'Composizione immagine'}</h2>
             <p className="crop-modal-header-subtitle">
