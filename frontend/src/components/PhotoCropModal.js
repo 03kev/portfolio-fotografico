@@ -50,6 +50,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
   const pointerStateRef = useRef(null);
   const refreshRafRef = useRef(null);
   const cardRef = useRef(null);
+  const headerCopyRef = useRef(null);
   const headerToplineRef = useRef(null);
   const headerEyebrowRef = useRef(null);
   const headerFullPillMeasureRef = useRef(null);
@@ -374,12 +375,13 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
 
   const updateHeaderPillMode = useCallback(() => {
     const card = cardRef.current;
+    const headerCopy = headerCopyRef.current;
     const topline = headerToplineRef.current;
     const eyebrow = headerEyebrowRef.current;
     const fullMeasure = headerFullPillMeasureRef.current;
     const shortMeasure = headerShortPillMeasureRef.current;
 
-    if (!card || !topline || !eyebrow || !fullMeasure || !shortMeasure) return;
+    if (!card || !headerCopy || !topline || !eyebrow || !fullMeasure || !shortMeasure) return;
 
     const cardWidth = card.clientWidth;
     if (!cardWidth || cardWidth > 560) {
@@ -388,7 +390,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
     }
 
     const gap = 10;
-    const availableWidth = topline.clientWidth;
+    const availableWidth = headerCopy.clientWidth;
     const eyebrowWidth = eyebrow.offsetWidth;
     const fullWidth = eyebrowWidth + gap + fullMeasure.offsetWidth;
     const shortWidth = eyebrowWidth + gap + shortMeasure.offsetWidth;
@@ -482,7 +484,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
     <div className="crop-modal-backdrop" onClick={() => onClose?.()}>
       <div ref={cardRef} className="crop-modal-card" onClick={(event) => event.stopPropagation()}>
         <header className="crop-modal-shell-header">
-          <div className="crop-modal-header-copy">
+          <div ref={headerCopyRef} className="crop-modal-header-copy">
             <div ref={headerToplineRef} className="crop-modal-header-topline">
               <span ref={headerEyebrowRef} className="crop-modal-eyebrow">
                 <CropIcon size={14} />
