@@ -133,11 +133,11 @@ const GlobalStyles = createGlobalStyle`
     --shell-overlay-pad-inline: 24px;
     --shell-overlay-pad-top: min(8vh, 72px);
     --shell-overlay-pad-bottom: var(--shell-overlay-pad-inline);
-    --shell-height-buffer: 16px;
+    --shell-height-buffer: 18px;
     --shell-available-height: calc(100dvh - var(--shell-overlay-pad-top) - var(--shell-overlay-pad-bottom));
     --shell-bounded-height: min(var(--shell-height-cap), calc(var(--shell-available-height) - var(--shell-height-buffer)));
     --shell-width: min(100%, 980px);
-    --shell-height-cap: 1080px;
+    --shell-height-cap: 980px;
     --shell-max-height: var(--shell-bounded-height);
     --shell-radius: 30px;
     --shell-glow-height: 120px;
@@ -220,7 +220,7 @@ const GlobalStyles = createGlobalStyle`
       --panel-padding: 20px;
       --shell-width: min(100%, 920px);
       --shell-height-cap: 980px;
-      --shell-height-buffer: 14px;
+      --shell-height-buffer: 18px;
       --shell-max-height: var(--shell-bounded-height);
       --shell-glow-height: 96px;
       --shell-header-gap: 16px;
@@ -248,7 +248,7 @@ const GlobalStyles = createGlobalStyle`
       --panel-padding: 18px;
       --shell-overlay-pad-top: 12px;
       --shell-overlay-pad-bottom: 12px;
-      --shell-height-buffer: 12px;
+      --shell-height-buffer: 14px;
       --shell-max-height: var(--shell-bounded-height);
       --shell-radius: 24px;
       --shell-glow-height: 84px;
@@ -281,7 +281,7 @@ const GlobalStyles = createGlobalStyle`
       --panel-padding: 16px;
       --shell-overlay-pad-top: 8px;
       --shell-overlay-pad-bottom: 8px;
-      --shell-height-buffer: 8px;
+      --shell-height-buffer: 10px;
       --shell-max-height: var(--shell-bounded-height);
       --shell-radius: 20px;
       --shell-glow-height: 64px;
@@ -311,7 +311,7 @@ const GlobalStyles = createGlobalStyle`
       --shell-overlay-pad-inline: 10px;
       --shell-overlay-pad-top: max(10px, env(safe-area-inset-top));
       --shell-overlay-pad-bottom: max(10px, env(safe-area-inset-bottom));
-      --shell-height-buffer: 8px;
+      --shell-height-buffer: 10px;
       --shell-radius: 24px;
       --shell-header-gap: 14px;
       --shell-header-pad: 18px 18px 14px;

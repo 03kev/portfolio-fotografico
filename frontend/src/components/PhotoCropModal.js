@@ -42,7 +42,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
   const [cropProfiles, setCropProfiles] = useState(() => normalizeCropProfiles());
   const [initialCropProfiles, setInitialCropProfiles] = useState(() => normalizeCropProfiles());
   const [cropViewport, setCropViewport] = useState(null);
-  const [cropRect, setCropRect] = useState(null);
+  const [transientRect, setTransientRect] = useState(null);
   const [isInteracting, setIsInteracting] = useState(false);
 
   const workspaceRef = useRef(null);
@@ -143,10 +143,16 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
     setCropProfiles(normalizedProfiles);
     setInitialCropProfiles(normalizedProfiles);
     setCropViewport(null);
-    setCropRect(null);
+    setTransientRect(null);
     setIsInteracting(false);
     pointerStateRef.current = null;
   }, [isOpen, photo]);
+
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    setTransientRect(null);
+    scheduleViewportRefresh();
+  }, [activePreset, isOpen, scheduleViewportRefresh]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -212,8 +218,23 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
     setCropProfiles((prev) => ({ ...prev, [presetKey]: profile }));
   }, [cropViewport]);
 
+  const derivedSelection = useMemo(() => {
+    if (!cropViewport) return null;
+
+    const sourceRect = profileToSourceRect(
+      activeProfile,
+      cropViewport.naturalWidth,
+      cropViewport.naturalHeight,
+      activeRatio
+    );
+
+    return sourceRectToViewportRect(sourceRect, cropViewport);
+  }, [activeProfile, activeRatio, cropViewport]);
+
+  const selection = transientRect || derivedSelection;
+
   const beginMove = useCallback((event) => {
-    if (!event.isPrimary || !cropViewport || !cropRect) return;
+    if (!event.isPrimary || !cropViewport || !selection) return;
 
     event.preventDefault();
     pointerStateRef.current = {
@@ -221,15 +242,15 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      startRect: { ...cropRect },
+      startRect: { ...selection },
       viewport: cropViewport,
       presetKey: activePreset
     };
     setIsInteracting(true);
-  }, [activePreset, cropRect, cropViewport]);
+  }, [activePreset, cropViewport, selection]);
 
   const beginResize = useCallback((event, handle) => {
-    if (!event.isPrimary || !cropViewport || !cropRect) return;
+    if (!event.isPrimary || !cropViewport || !selection) return;
 
     event.preventDefault();
     event.stopPropagation();
@@ -246,7 +267,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      startRect: { ...cropRect },
+      startRect: { ...selection },
       viewport: cropViewport,
       presetKey: activePreset,
       ratio,
@@ -255,20 +276,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
     };
 
     setIsInteracting(true);
-  }, [activePreset, cropRect, cropViewport]);
-
-  useLayoutEffect(() => {
-    if (!cropViewport || isInteracting) return;
-
-    const sourceRect = profileToSourceRect(
-      activeProfile,
-      cropViewport.naturalWidth,
-      cropViewport.naturalHeight,
-      activeRatio
-    );
-
-    setCropRect(sourceRectToViewportRect(sourceRect, cropViewport));
-  }, [activeProfile, activeRatio, cropViewport, isInteracting]);
+  }, [activePreset, cropViewport, selection]);
 
   useEffect(() => {
     const onPointerMove = (event) => {
@@ -300,7 +308,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
         });
       }
 
-      setCropRect(nextRect);
+      setTransientRect(nextRect);
       saveRectToProfile(nextRect, state.presetKey, viewport);
     };
 
@@ -309,6 +317,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
       if (!state || event.pointerId !== state.pointerId) return;
 
       pointerStateRef.current = null;
+      setTransientRect(null);
       setIsInteracting(false);
     };
 
@@ -326,6 +335,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
   const handleResetPreset = () => {
     const sourceProfile = initialCropProfiles?.[activePreset] || DEFAULT_CROP_PROFILE;
     setCropProfiles((prev) => ({ ...prev, [activePreset]: { ...sourceProfile } }));
+    setTransientRect(null);
   };
 
   const handleApply = () => {
@@ -345,7 +355,6 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
 
   if (!isOpen || !photo) return null;
 
-  const selection = cropViewport && cropRect ? cropRect : null;
   const imageBounds = cropViewport
     ? {
         left: cropViewport.left,
@@ -391,7 +400,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
       }
     : null;
 
-  const activePreviewStyle = buildPreviewStyleFromViewportRect(cropRect, imageBounds);
+  const activePreviewStyle = buildPreviewStyleFromViewportRect(selection, imageBounds);
   const getPresetShortLabel = (presetKey) => {
     switch (presetKey) {
       case 'r43':
