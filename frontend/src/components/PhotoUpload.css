@@ -1036,8 +1036,8 @@
   }
 
   .upload-actions {
-    margin-top: 18px;
-    padding-top: 14px;
+    margin-top: 0;
+    padding-top: 6px;
   }
 
   .upload-actions-step {
@@ -1184,7 +1184,8 @@
   .upload-actions {
     align-items: stretch;
     gap: 10px;
-    padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+    margin-top: 0;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
     background: transparent;
   }
 
