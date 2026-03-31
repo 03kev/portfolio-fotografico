@@ -76,6 +76,7 @@ const GlobalStyles = createGlobalStyle`
 
     /* Layout /*/
     --header-height: 78px;
+    --mobile-bottom-nav-height: 0px;
 
     /* Typography */
     --font-size-xs: 0.75rem;
@@ -212,6 +213,7 @@ const GlobalStyles = createGlobalStyle`
 
   main {
     padding-top: var(--header-height);
+    padding-bottom: var(--mobile-bottom-nav-height);
     min-height: calc(100vh - var(--header-height));
   }
 
@@ -306,6 +308,7 @@ const GlobalStyles = createGlobalStyle`
   @media (max-width: ${viewportBreakpoints.tablet}px) {
     :root {
       --header-height: 70px;
+      --mobile-bottom-nav-height: 106px;
       --panel-overlay-pad-inline: 12px;
       --panel-padding: 16px;
       --shell-overlay-pad-inline: 10px;

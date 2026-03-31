@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import styled from 'styled-components';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Camera, KeyRound, Menu, X } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Camera, FolderOpen, Grid3X3, House, KeyRound, Mail, Map, UserRound } from 'lucide-react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 
 const HeaderContainer = styled(motion.header)`
@@ -14,9 +14,13 @@ const HeaderContainer = styled(motion.header)`
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 `;
 
-const Nav = styled.nav`
+const HeaderInner = styled.div`
   max-width: 1200px;
   margin: 0 auto;
+`;
+
+const Nav = styled.nav`
+  position: relative;
   padding: 0 var(--spacing-xl);
   display: flex;
   justify-content: space-between;
@@ -86,6 +90,12 @@ const NavLinks = styled.ul`
 
   @media (max-width: 768px) {
     display: none;
+  }
+
+  @media (min-width: 769px) {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
   }
 `;
 
@@ -202,61 +212,148 @@ const TokenButton = styled(motion.button)`
   }
 `;
 
-const MobileMenuButton = styled(motion.button)`
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--color-text);
+const MobileBottomNavBackdrop = styled(motion.button)`
   display: none;
-  align-items: center;
-  justify-content: center;
-
-  &:hover {
-    border-color: rgba(255, 255, 255, 0.16);
-    transform: translateY(-1px);
-  }
 
   @media (max-width: 768px) {
-    display: inline-flex;
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--z-fixed) - 1);
+    border: 0;
+    background: rgba(4, 6, 12, 0.32);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
   }
 `;
 
-const MobileMenu = styled(motion.div)`
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  background: rgba(11, 11, 13, 0.96);
-  backdrop-filter: blur(18px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 14px 0;
+const MobileBottomNav = styled.nav`
+  display: none;
+
+  @media (max-width: 768px) {
+    display: block;
+    position: fixed;
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+    bottom: max(12px, env(safe-area-inset-bottom));
+    z-index: var(--z-fixed);
+    padding: 10px;
+    border-radius: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(17, 19, 27, 0.92);
+    box-shadow: 0 24px 46px rgba(0, 0, 0, 0.42);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+  }
 `;
 
-const MobileNavLinks = styled.ul`
-  list-style: none;
-  padding: 0 var(--spacing-lg);
+const MobileBottomNavList = styled.ul`
+  display: none;
+
+  @media (max-width: 768px) {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+    list-style: none;
+  }
 `;
 
-const MobileNavItem = styled(motion.li)`
-  margin: 8px 0;
+const MobileBottomNavItem = styled.li`
+  min-width: 0;
 `;
 
-const MobileLink = styled(NavLink)`
+const mobileBottomNavShared = `
+  width: 100%;
+  min-height: 58px;
+  padding: 8px 6px;
+  border-radius: 16px;
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--color-muted);
   text-decoration: none;
-  font-weight: var(--font-weight-medium);
-  font-size: var(--font-size-lg);
-  display: block;
-  padding: 10px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 0.71rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+`;
 
-  &:hover {
-    color: var(--color-text);
-  }
+const MobileBottomNavLink = styled(NavLink)`
+  ${mobileBottomNavShared}
 
   &.active {
     color: var(--color-text);
+    background: rgba(214, 179, 106, 0.12);
+    border-color: rgba(214, 179, 106, 0.24);
+  }
+`;
+
+const MobileBottomNavButton = styled.button`
+  ${mobileBottomNavShared}
+  cursor: pointer;
+
+  ${(props) =>
+    props.$active
+      ? `
+    color: var(--color-text);
+    background: rgba(214, 179, 106, 0.12);
+    border-color: rgba(214, 179, 106, 0.24);
+  `
+      : ''}
+`;
+
+const BottomNavLabel = styled.span`
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+`;
+
+const MobileMoreSheet = styled(motion.div)`
+  display: none;
+
+  @media (max-width: 768px) {
+    display: block;
+    position: fixed;
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 94px);
+    z-index: var(--z-fixed);
+    padding: 10px;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(17, 19, 27, 0.94);
+    box-shadow: 0 22px 40px rgba(0, 0, 0, 0.38);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+  }
+`;
+
+const MobileMoreSheetList = styled.div`
+  display: grid;
+  gap: 8px;
+`;
+
+const MobileMoreSheetLink = styled(NavLink)`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  padding: 0 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--color-text);
+  text-decoration: none;
+  font-weight: 600;
+
+  &.active {
+    background: rgba(214, 179, 106, 0.12);
+    border-color: rgba(214, 179, 106, 0.24);
   }
 `;
 
@@ -268,7 +365,7 @@ const Header = ({
   authFeedback = 'idle'
 }) => {
   const [scrolled, setScrolled] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const location = useLocation();
 
   useEffect(() => {
@@ -278,9 +375,8 @@ const Header = ({
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Close mobile menu on navigation
   useEffect(() => {
-    setMobileMenuOpen(false);
+    setMobileMoreOpen(false);
   }, [location.pathname]);
 
   const navItems = [
@@ -292,84 +388,132 @@ const Header = ({
     { to: '/contact', label: 'Contatti' }
   ];
 
+  const mobilePrimaryItems = [
+    { to: '/', label: 'Home', icon: House },
+    { to: '/series', label: 'Serie', icon: Grid3X3 },
+    { to: '/map', label: 'Mappa', icon: Map },
+    { to: '/gallery', label: 'Archivio', icon: FolderOpen }
+  ];
+
+  const mobileSecondaryItems = [
+    { to: '/about', label: 'Chi sono', icon: UserRound },
+    { to: '/contact', label: 'Contatti', icon: Mail }
+  ];
+
   return (
-    <HeaderContainer
-      $scrolled={scrolled}
-      initial={{ y: -80, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 0.45, ease: 'easeOut' }}
-    >
-      <Nav>
-        <Logo to="/" whileTap={{ scale: 0.98 }} aria-label="Torna alla home">
-          <LogoIcon src="/favicon.svg" alt="" aria-hidden="true" />
-          <LogoText>
-            FotoPortfolio <span className="dot" />
-          </LogoText>
-        </Logo>
+    <>
+      <HeaderContainer
+        $scrolled={scrolled}
+        initial={{ y: -80, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.45, ease: 'easeOut' }}
+      >
+        <HeaderInner>
+          <Nav>
+            <Logo to="/" whileTap={{ scale: 0.98 }} aria-label="Torna alla home">
+              <LogoIcon src="/favicon.svg" alt="" aria-hidden="true" />
+              <LogoText>
+                FotoPortfolio <span className="dot" />
+              </LogoText>
+            </Logo>
 
-        <NavLinks>
-          {navItems.map((item) => (
-            <li key={item.to}>
-              <StyledNavLink to={item.to} end={item.to === '/'}>
-                {item.label}
-              </StyledNavLink>
-            </li>
-          ))}
-        </NavLinks>
+            <NavLinks>
+              {navItems.map((item) => (
+                <li key={item.to}>
+                  <StyledNavLink to={item.to} end={item.to === '/'}>
+                    {item.label}
+                  </StyledNavLink>
+                </li>
+              ))}
+            </NavLinks>
 
-        <Right>
-          {isAdmin && onConfigureAuth && (
-            <TokenButton
-              type="button"
-              onClick={onConfigureAuth}
-              whileTap={{ scale: 0.98 }}
-              $active={hasAuthToken}
-              $feedback={authFeedback}
-              title={hasAuthToken ? 'Token API configurato' : 'Configura token API'}
-              aria-label={hasAuthToken ? 'Sessione admin attiva (clicca per disattivare)' : 'Configura token admin'}
-            >
-              <KeyRound size={16} />
-            </TokenButton>
-          )}
+            <Right>
+              {isAdmin && onConfigureAuth && (
+                <TokenButton
+                  type="button"
+                  onClick={onConfigureAuth}
+                  whileTap={{ scale: 0.98 }}
+                  $active={hasAuthToken}
+                  $feedback={authFeedback}
+                  title={hasAuthToken ? 'Token API configurato' : 'Configura token API'}
+                  aria-label={hasAuthToken ? 'Sessione admin attiva (clicca per disattivare)' : 'Configura token admin'}
+                >
+                  <KeyRound size={16} />
+                </TokenButton>
+              )}
 
-          {isAdmin && onOpenUpload && (
-            <UploadButton onClick={onOpenUpload} whileTap={{ scale: 0.98 }}>
-              <Camera size={16} />
-              <UploadButtonLabel>Carica</UploadButtonLabel>
-            </UploadButton>
-          )}
-
-          <MobileMenuButton
-            onClick={() => setMobileMenuOpen((v) => !v)}
-            whileTap={{ scale: 0.95 }}
-            aria-label={mobileMenuOpen ? 'Chiudi menu' : 'Apri menu'}
-          >
-            {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
-          </MobileMenuButton>
-        </Right>
-      </Nav>
+              {isAdmin && onOpenUpload && (
+                <UploadButton onClick={onOpenUpload} whileTap={{ scale: 0.98 }}>
+                  <Camera size={16} />
+                  <UploadButtonLabel>Carica</UploadButtonLabel>
+                </UploadButton>
+              )}
+            </Right>
+          </Nav>
+        </HeaderInner>
+      </HeaderContainer>
 
       <AnimatePresence>
-        {mobileMenuOpen && (
-          <MobileMenu
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.2 }}
-          >
-            <MobileNavLinks>
-              {navItems.map((item) => (
-                <MobileNavItem key={item.to} whileTap={{ scale: 0.98 }}>
-                  <MobileLink to={item.to} end={item.to === '/'}>
-                    {item.label}
-                  </MobileLink>
-                </MobileNavItem>
-              ))}
-            </MobileNavLinks>
-          </MobileMenu>
+        {mobileMoreOpen && (
+          <>
+            <MobileBottomNavBackdrop
+              type="button"
+              aria-label="Chiudi menu mobile"
+              onClick={() => setMobileMoreOpen(false)}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            />
+            <MobileMoreSheet
+              initial={{ opacity: 0, y: 14, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+            >
+              <MobileMoreSheetList>
+                {mobileSecondaryItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <MobileMoreSheetLink key={item.to} to={item.to}>
+                      <Icon size={18} />
+                      <span>{item.label}</span>
+                    </MobileMoreSheetLink>
+                  );
+                })}
+              </MobileMoreSheetList>
+            </MobileMoreSheet>
+          </>
         )}
       </AnimatePresence>
-    </HeaderContainer>
+
+      <MobileBottomNav aria-label="Navigazione mobile">
+        <MobileBottomNavList>
+          {mobilePrimaryItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <MobileBottomNavItem key={item.to}>
+                <MobileBottomNavLink to={item.to} end={item.to === '/'}>
+                  <Icon size={18} />
+                  <BottomNavLabel>{item.label}</BottomNavLabel>
+                </MobileBottomNavLink>
+              </MobileBottomNavItem>
+            );
+          })}
+          <MobileBottomNavItem>
+            <MobileBottomNavButton
+              type="button"
+              $active={mobileMoreOpen || mobileSecondaryItems.some((item) => location.pathname === item.to)}
+              onClick={() => setMobileMoreOpen((open) => !open)}
+              aria-expanded={mobileMoreOpen}
+              aria-label="Altre sezioni"
+            >
+              <UserRound size={18} />
+              <BottomNavLabel>Altro</BottomNavLabel>
+            </MobileBottomNavButton>
+          </MobileBottomNavItem>
+        </MobileBottomNavList>
+      </MobileBottomNav>
+    </>
   );
 };
 
