@@ -21,15 +21,19 @@ const Nav = styled.nav`
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   height: 78px;
 
   @media (max-width: 768px) {
     padding: 0 var(--spacing-lg);
+    gap: 8px;
     height: 70px;
   }
 `;
 
 const Logo = styled(motion(Link))`
+  flex: 1 1 auto;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -65,6 +69,15 @@ const LogoText = styled.span`
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  @media (max-width: 420px) {
+    gap: 6px;
+    font-size: 0.96rem;
+  }
 `;
 
 const NavLinks = styled.ul`
@@ -113,9 +126,14 @@ const StyledNavLink = styled(NavLink)`
 `;
 
 const Right = styled.div`
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 12px;
+
+  @media (max-width: 768px) {
+    gap: 8px;
+  }
 `;
 
 const UploadButton = styled(motion.button)`
@@ -139,6 +157,22 @@ const UploadButton = styled(motion.button)`
   @media (max-width: 768px) {
     padding: 9px 12px;
     font-size: var(--font-size-xs);
+  }
+
+  @media (max-width: 420px) {
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    justify-content: center;
+    border-radius: 12px;
+  }
+`;
+
+const UploadButtonLabel = styled.span`
+  white-space: nowrap;
+
+  @media (max-width: 420px) {
+    display: none;
   }
 `;
 
@@ -301,7 +335,7 @@ const Header = ({
           {isAdmin && onOpenUpload && (
             <UploadButton onClick={onOpenUpload} whileTap={{ scale: 0.98 }}>
               <Camera size={16} />
-              Carica
+              <UploadButtonLabel>Carica</UploadButtonLabel>
             </UploadButton>
           )}
 
