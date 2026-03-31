@@ -305,7 +305,7 @@ const GlobalStyles = createGlobalStyle`
     }
   }
 
-  @media (max-width: ${viewportBreakpoints.tablet}px) {
+  @media (max-width: ${viewportBreakpoints.tablet}px) and (hover: none) and (pointer: coarse) {
     :root {
       --header-height: 70px;
       --mobile-bottom-nav-height: 106px;

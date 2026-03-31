@@ -4,6 +4,8 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Camera, FolderOpen, Grid3X3, House, KeyRound, Mail, Map, UserRound } from 'lucide-react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 
+const mobileNavQuery = '@media (max-width: 768px) and (hover: none) and (pointer: coarse)';
+
 const HeaderContainer = styled(motion.header)`
   position: fixed;
   top: 0;
@@ -28,7 +30,7 @@ const Nav = styled.nav`
   gap: 12px;
   height: 78px;
 
-  @media (max-width: 768px) {
+  ${mobileNavQuery} {
     padding: 0 var(--spacing-lg);
     gap: 8px;
     height: 70px;
@@ -63,7 +65,7 @@ const LogoIcon = styled.img`
   object-fit: contain;
   background: transparent;
 
-  @media (max-width: 768px) {
+  ${mobileNavQuery} {
     width: 28px;
     height: 28px;
   }
@@ -78,7 +80,7 @@ const LogoText = styled.span`
   overflow: hidden;
   text-overflow: ellipsis;
 
-  @media (max-width: 420px) {
+  @media (max-width: 420px) and (hover: none) and (pointer: coarse) {
     gap: 6px;
     font-size: 0.96rem;
   }
@@ -88,11 +90,11 @@ const NavLinks = styled.ul`
   display: flex;
   gap: var(--spacing-xl);
 
-  @media (max-width: 768px) {
+  ${mobileNavQuery} {
     display: none;
   }
 
-  @media (min-width: 769px) {
+  @media (min-width: 769px), ((max-width: 768px) and (hover: hover)) {
     position: absolute;
     left: 50%;
     transform: translateX(-50%);
@@ -141,7 +143,7 @@ const Right = styled.div`
   align-items: center;
   gap: 12px;
 
-  @media (max-width: 768px) {
+  ${mobileNavQuery} {
     gap: 8px;
   }
 `;
@@ -164,12 +166,12 @@ const UploadButton = styled(motion.button)`
     transform: translateY(-1px);
   }
 
-  @media (max-width: 768px) {
+  ${mobileNavQuery} {
     padding: 9px 12px;
     font-size: var(--font-size-xs);
   }
 
-  @media (max-width: 420px) {
+  @media (max-width: 420px) and (hover: none) and (pointer: coarse) {
     width: 38px;
     height: 38px;
     padding: 0;
@@ -181,7 +183,7 @@ const UploadButton = styled(motion.button)`
 const UploadButtonLabel = styled.span`
   white-space: nowrap;
 
-  @media (max-width: 420px) {
+  @media (max-width: 420px) and (hover: none) and (pointer: coarse) {
     display: none;
   }
 `;
@@ -215,7 +217,7 @@ const TokenButton = styled(motion.button)`
 const MobileBottomNavBackdrop = styled(motion.button)`
   display: none;
 
-  @media (max-width: 768px) {
+  ${mobileNavQuery} {
     display: block;
     position: fixed;
     inset: 0;
@@ -230,7 +232,7 @@ const MobileBottomNavBackdrop = styled(motion.button)`
 const MobileBottomNav = styled.nav`
   display: none;
 
-  @media (max-width: 768px) {
+  ${mobileNavQuery} {
     display: block;
     position: fixed;
     left: max(12px, env(safe-area-inset-left));
@@ -250,7 +252,7 @@ const MobileBottomNav = styled.nav`
 const MobileBottomNavList = styled.ul`
   display: none;
 
-  @media (max-width: 768px) {
+  ${mobileNavQuery} {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 6px;
@@ -316,7 +318,7 @@ const BottomNavLabel = styled.span`
 const MobileMoreSheet = styled(motion.div)`
   display: none;
 
-  @media (max-width: 768px) {
+  ${mobileNavQuery} {
     display: block;
     position: fixed;
     left: max(12px, env(safe-area-inset-left));
