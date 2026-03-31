@@ -1,11 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Camera, FolderOpen, Grid3X3, House, KeyRound, Mail, Map, UserRound } from 'lucide-react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 
 const mobileNavQuery = '@media (max-width: 768px) and (hover: none) and (pointer: coarse)';
-
 const HeaderContainer = styled(motion.header)`
   position: fixed;
   top: 0;
@@ -19,6 +18,7 @@ const HeaderContainer = styled(motion.header)`
 const HeaderInner = styled.div`
   max-width: 1200px;
   margin: 0 auto;
+  position: relative;
 `;
 
 const Nav = styled.nav`
@@ -40,9 +40,8 @@ const Nav = styled.nav`
 const Logo = styled(motion(Link))`
   flex: 1 1 auto;
   min-width: 0;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 10px;
   color: var(--color-text);
   font-weight: var(--font-weight-semibold);
   letter-spacing: -0.02em;
@@ -56,6 +55,13 @@ const Logo = styled(motion(Link))`
     display: block;
     flex-shrink: 0;
   }
+`;
+
+const LogoContent = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 `;
 
 const LogoIcon = styled.img`
@@ -99,6 +105,106 @@ const NavLinks = styled.ul`
     left: 50%;
     transform: translateX(-50%);
   }
+
+  ${({ $compact }) =>
+    $compact
+      ? `
+    display: none;
+  `
+      : ''}
+`;
+
+const DesktopCompactNavRail = styled.div`
+  display: ${({ $visible }) => ($visible ? 'block' : 'none')};
+  padding: 0 24px 14px;
+`;
+
+const DesktopCompactNavScroll = styled.div`
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+`;
+
+const DesktopCompactNavList = styled.ul`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  width: max-content;
+  min-width: 100%;
+  margin: 0 auto;
+`;
+
+const DesktopCompactNavLink = styled(NavLink)`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  position: relative;
+  transition: color 0.2s ease;
+
+  &:hover {
+    color: var(--color-text);
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    bottom: 8px;
+    width: 0;
+    height: 2px;
+    background: rgba(214, 179, 106, 0.65);
+    transition: width var(--transition-normal);
+  }
+
+  &:hover::after {
+    width: 100%;
+  }
+
+  &.active {
+    color: var(--color-text);
+  }
+
+  &.active::after {
+    width: 100%;
+  }
+`;
+
+const DesktopNavMeasure = styled.ul`
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+  display: flex;
+  gap: var(--spacing-xl);
+  width: max-content;
+  white-space: nowrap;
+
+  ${mobileNavQuery} {
+    display: none;
+  }
+`;
+
+const DesktopNavMeasureItem = styled.span`
+  display: inline-flex;
+  align-items: center;
+  min-height: 42px;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.01em;
 `;
 
 const StyledNavLink = styled(NavLink)`
@@ -108,6 +214,7 @@ const StyledNavLink = styled(NavLink)`
   letter-spacing: 0.01em;
   padding: 10px 0;
   position: relative;
+  white-space: nowrap;
 
   &:hover {
     color: var(--color-text);
@@ -368,7 +475,12 @@ const Header = ({
 }) => {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
+  const [compactDesktopNav, setCompactDesktopNav] = useState(false);
   const location = useLocation();
+  const navRef = useRef(null);
+  const logoContentRef = useRef(null);
+  const rightRef = useRef(null);
+  const navMeasureRef = useRef(null);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 24);
@@ -402,6 +514,65 @@ const Header = ({
     { to: '/contact', label: 'Contatti', icon: Mail }
   ];
 
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const finePointerQuery = window.matchMedia('(hover: hover) and (pointer: fine)');
+    const touchMobileQuery = window.matchMedia('(max-width: 768px) and (hover: none) and (pointer: coarse)');
+
+    const measureLayout = () => {
+      if (!navRef.current || !logoContentRef.current || !rightRef.current || !navMeasureRef.current) return;
+
+      if (!finePointerQuery.matches || touchMobileQuery.matches) {
+        setCompactDesktopNav(false);
+        return;
+      }
+
+      const navWidth = navRef.current.clientWidth;
+      const logoWidth = logoContentRef.current.offsetWidth;
+      const rightWidth = rightRef.current.offsetWidth;
+      const linksWidth = navMeasureRef.current.scrollWidth;
+      const sideWidth = Math.max(logoWidth, rightWidth);
+      const centerSafetyGap = 125;
+      const availableCenterWidth = Math.max(0, navWidth - sideWidth * 2 - centerSafetyGap);
+
+      setCompactDesktopNav(linksWidth > availableCenterWidth);
+    };
+
+    measureLayout();
+
+    const resizeObserver = new ResizeObserver(measureLayout);
+    resizeObserver.observe(navRef.current);
+    resizeObserver.observe(logoContentRef.current);
+    resizeObserver.observe(rightRef.current);
+    resizeObserver.observe(navMeasureRef.current);
+
+    window.addEventListener('resize', measureLayout);
+    finePointerQuery.addEventListener?.('change', measureLayout);
+    touchMobileQuery.addEventListener?.('change', measureLayout);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', measureLayout);
+      finePointerQuery.removeEventListener?.('change', measureLayout);
+      touchMobileQuery.removeEventListener?.('change', measureLayout);
+    };
+  }, []);
+
+  useEffect(() => {
+    const root = document.documentElement;
+
+    if (compactDesktopNav) {
+      root.style.setProperty('--header-height', '132px');
+    } else {
+      root.style.removeProperty('--header-height');
+    }
+
+    return () => {
+      root.style.removeProperty('--header-height');
+    };
+  }, [compactDesktopNav]);
+
   return (
     <>
       <HeaderContainer
@@ -411,15 +582,17 @@ const Header = ({
         transition={{ duration: 0.45, ease: 'easeOut' }}
       >
         <HeaderInner>
-          <Nav>
+          <Nav ref={navRef}>
             <Logo to="/" whileTap={{ scale: 0.98 }} aria-label="Torna alla home">
-              <LogoIcon src="/favicon.svg" alt="" aria-hidden="true" />
-              <LogoText>
-                FotoPortfolio <span className="dot" />
-              </LogoText>
+              <LogoContent ref={logoContentRef}>
+                <LogoIcon src="/favicon.svg" alt="" aria-hidden="true" />
+                <LogoText>
+                  FotoPortfolio <span className="dot" />
+                </LogoText>
+              </LogoContent>
             </Logo>
 
-            <NavLinks>
+            <NavLinks $compact={compactDesktopNav}>
               {navItems.map((item) => (
                 <li key={item.to}>
                   <StyledNavLink to={item.to} end={item.to === '/'}>
@@ -429,7 +602,7 @@ const Header = ({
               ))}
             </NavLinks>
 
-            <Right>
+            <Right ref={rightRef}>
               {isAdmin && onConfigureAuth && (
                 <TokenButton
                   type="button"
@@ -452,6 +625,28 @@ const Header = ({
               )}
             </Right>
           </Nav>
+
+          <DesktopCompactNavRail $visible={compactDesktopNav}>
+            <DesktopCompactNavScroll>
+              <DesktopCompactNavList>
+                {navItems.map((item) => (
+                  <li key={item.to}>
+                    <DesktopCompactNavLink to={item.to} end={item.to === '/'}>
+                      {item.label}
+                    </DesktopCompactNavLink>
+                  </li>
+                ))}
+              </DesktopCompactNavList>
+            </DesktopCompactNavScroll>
+          </DesktopCompactNavRail>
+
+          <DesktopNavMeasure ref={navMeasureRef} aria-hidden="true">
+            {navItems.map((item) => (
+              <li key={item.to}>
+                <DesktopNavMeasureItem>{item.label}</DesktopNavMeasureItem>
+              </li>
+            ))}
+          </DesktopNavMeasure>
         </HeaderInner>
       </HeaderContainer>
 
