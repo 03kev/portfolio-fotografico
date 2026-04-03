@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import { Camera } from 'lucide-react';
 import { useSeries } from '../contexts/SeriesContext';
 import { usePhotos } from '../contexts/PhotoContext';
-import { IMAGES_BASE_URL } from '../utils/constants';
+import { resolveVersionedAssetUrl } from '../utils/imageUrl';
 
 const Grid = styled(motion.div)`
   display: grid;
@@ -115,7 +115,7 @@ export default function FeaturedSeries({ limit = 6 }) {
     const photo = photos.find(p => p.id === coverId);
     if (!photo || !photo.thumbnail11) return null;
     return {
-      url: `${IMAGES_BASE_URL}${photo.thumbnail11}?v=${photo.derivativesVersion || photo.id}`,
+      url: resolveVersionedAssetUrl(photo.thumbnail11, photo.derivativesVersion || photo.id),
       alt: s.title
     };
   };

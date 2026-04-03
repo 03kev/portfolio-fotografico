@@ -3,31 +3,26 @@ import styled from 'styled-components';
 import { AnimatePresence, motion } from 'framer-motion';
 import { KeyRound, Loader2, X } from 'lucide-react';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import { media } from '../styles/responsive';
+import { insetPanelSurface, modalBackdropSurface, panelSurface } from '../styles/surfaces';
 
 const Backdrop = styled(motion.div)`
-  position: fixed;
-  inset: 0;
+  ${modalBackdropSurface};
   z-index: 1400;
-  background: rgba(4, 6, 12, 0.74);
-  backdrop-filter: blur(6px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
 `;
 
 const Card = styled(motion.div)`
   width: min(460px, 100%);
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: linear-gradient(180deg, rgba(12, 17, 28, 0.96), rgba(8, 12, 22, 0.98));
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
-  padding: 22px;
+  ${panelSurface};
+
+  ${media.down('tablet')`
+    width: min(100%, 420px);
+  `}
 `;
 
 const Header = styled.div`
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 14px;
 `;
@@ -53,9 +48,9 @@ const Description = styled.p`
 `;
 
 const CloseButton = styled.button`
-  width: 34px;
-  height: 34px;
-  border-radius: 999px;
+  width: var(--panel-close-size);
+  height: var(--panel-close-size);
+  border-radius: var(--panel-close-radius);
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(255, 255, 255, 0.05);
   color: var(--color-muted);
@@ -84,12 +79,11 @@ const Label = styled.label`
 
 const Input = styled.input`
   width: 100%;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.03);
+  ${insetPanelSurface};
+  border-color: rgba(255, 255, 255, 0.14);
   color: var(--color-text);
   font-size: var(--font-size-sm);
+  box-shadow: none;
 
   &:focus {
     outline: none;

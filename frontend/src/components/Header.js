@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Camera, KeyRound, Menu, X } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Camera, FolderOpen, Grid3X3, House, KeyRound, Mail, Map, UserRound } from 'lucide-react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 
+const mobileNavQuery = '@media (max-width: 768px) and (hover: none) and (pointer: coarse)';
 const HeaderContainer = styled(motion.header)`
   position: fixed;
   top: 0;
@@ -14,25 +15,33 @@ const HeaderContainer = styled(motion.header)`
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 `;
 
-const Nav = styled.nav`
+const HeaderInner = styled.div`
   max-width: 1200px;
   margin: 0 auto;
+  position: relative;
+`;
+
+const Nav = styled.nav`
+  position: relative;
   padding: 0 var(--spacing-xl);
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   height: 78px;
 
-  @media (max-width: 768px) {
+  ${mobileNavQuery} {
     padding: 0 var(--spacing-lg);
+    gap: 8px;
     height: 70px;
   }
 `;
 
 const Logo = styled(motion(Link))`
-  display: inline-flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
   align-items: center;
-  gap: 10px;
   color: var(--color-text);
   font-weight: var(--font-weight-semibold);
   letter-spacing: -0.02em;
@@ -48,6 +57,13 @@ const Logo = styled(motion(Link))`
   }
 `;
 
+const LogoContent = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+`;
+
 const LogoIcon = styled.img`
   width: 35px;
   height: 35px;
@@ -55,7 +71,7 @@ const LogoIcon = styled.img`
   object-fit: contain;
   background: transparent;
 
-  @media (max-width: 768px) {
+  ${mobileNavQuery} {
     width: 28px;
     height: 28px;
   }
@@ -65,15 +81,130 @@ const LogoText = styled.span`
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  @media (max-width: 420px) and (hover: none) and (pointer: coarse) {
+    gap: 6px;
+    font-size: 0.96rem;
+  }
 `;
 
 const NavLinks = styled.ul`
   display: flex;
   gap: var(--spacing-xl);
 
-  @media (max-width: 768px) {
+  ${mobileNavQuery} {
     display: none;
   }
+
+  @media (min-width: 769px), ((max-width: 768px) and (hover: hover)) {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  ${({ $compact }) =>
+    $compact
+      ? `
+    display: none;
+  `
+      : ''}
+`;
+
+const DesktopCompactNavRail = styled.div`
+  display: ${({ $visible }) => ($visible ? 'block' : 'none')};
+  padding: 0 24px 14px;
+`;
+
+const DesktopCompactNavScroll = styled.div`
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+`;
+
+const DesktopCompactNavList = styled.ul`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  width: max-content;
+  min-width: 100%;
+  margin: 0 auto;
+`;
+
+const DesktopCompactNavLink = styled(NavLink)`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  position: relative;
+  transition: color 0.2s ease;
+
+  &:hover {
+    color: var(--color-text);
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    bottom: 8px;
+    width: 0;
+    height: 2px;
+    background: rgba(214, 179, 106, 0.65);
+    transition: width var(--transition-normal);
+  }
+
+  &:hover::after {
+    width: 100%;
+  }
+
+  &.active {
+    color: var(--color-text);
+  }
+
+  &.active::after {
+    width: 100%;
+  }
+`;
+
+const DesktopNavMeasure = styled.ul`
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+  display: flex;
+  gap: var(--spacing-xl);
+  width: max-content;
+  white-space: nowrap;
+
+  ${mobileNavQuery} {
+    display: none;
+  }
+`;
+
+const DesktopNavMeasureItem = styled.span`
+  display: inline-flex;
+  align-items: center;
+  min-height: 42px;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.01em;
 `;
 
 const StyledNavLink = styled(NavLink)`
@@ -83,6 +214,7 @@ const StyledNavLink = styled(NavLink)`
   letter-spacing: 0.01em;
   padding: 10px 0;
   position: relative;
+  white-space: nowrap;
 
   &:hover {
     color: var(--color-text);
@@ -113,9 +245,14 @@ const StyledNavLink = styled(NavLink)`
 `;
 
 const Right = styled.div`
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 12px;
+
+  ${mobileNavQuery} {
+    gap: 8px;
+  }
 `;
 
 const UploadButton = styled(motion.button)`
@@ -136,9 +273,25 @@ const UploadButton = styled(motion.button)`
     transform: translateY(-1px);
   }
 
-  @media (max-width: 768px) {
+  ${mobileNavQuery} {
     padding: 9px 12px;
     font-size: var(--font-size-xs);
+  }
+
+  @media (max-width: 420px) and (hover: none) and (pointer: coarse) {
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    justify-content: center;
+    border-radius: 12px;
+  }
+`;
+
+const UploadButtonLabel = styled.span`
+  white-space: nowrap;
+
+  @media (max-width: 420px) and (hover: none) and (pointer: coarse) {
+    display: none;
   }
 `;
 
@@ -168,61 +321,148 @@ const TokenButton = styled(motion.button)`
   }
 `;
 
-const MobileMenuButton = styled(motion.button)`
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--color-text);
+const MobileBottomNavBackdrop = styled(motion.button)`
   display: none;
-  align-items: center;
-  justify-content: center;
 
-  &:hover {
-    border-color: rgba(255, 255, 255, 0.16);
-    transform: translateY(-1px);
+  ${mobileNavQuery} {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--z-fixed) - 1);
+    border: 0;
+    background: rgba(4, 6, 12, 0.32);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
   }
+`;
 
-  @media (max-width: 768px) {
-    display: inline-flex;
+const MobileBottomNav = styled.nav`
+  display: none;
+
+  ${mobileNavQuery} {
+    display: block;
+    position: fixed;
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+    bottom: max(12px, env(safe-area-inset-bottom));
+    z-index: var(--z-fixed);
+    padding: 10px;
+    border-radius: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(17, 19, 27, 0.92);
+    box-shadow: 0 24px 46px rgba(0, 0, 0, 0.42);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
   }
 `;
 
-const MobileMenu = styled(motion.div)`
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  background: rgba(11, 11, 13, 0.96);
-  backdrop-filter: blur(18px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 14px 0;
+const MobileBottomNavList = styled.ul`
+  display: none;
+
+  ${mobileNavQuery} {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+    list-style: none;
+  }
 `;
 
-const MobileNavLinks = styled.ul`
-  list-style: none;
-  padding: 0 var(--spacing-lg);
+const MobileBottomNavItem = styled.li`
+  min-width: 0;
 `;
 
-const MobileNavItem = styled(motion.li)`
-  margin: 8px 0;
-`;
-
-const MobileLink = styled(NavLink)`
+const mobileBottomNavShared = `
+  width: 100%;
+  min-height: 58px;
+  padding: 8px 6px;
+  border-radius: 16px;
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--color-muted);
   text-decoration: none;
-  font-weight: var(--font-weight-medium);
-  font-size: var(--font-size-lg);
-  display: block;
-  padding: 10px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 0.71rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+`;
 
-  &:hover {
-    color: var(--color-text);
-  }
+const MobileBottomNavLink = styled(NavLink)`
+  ${mobileBottomNavShared}
 
   &.active {
     color: var(--color-text);
+    background: rgba(214, 179, 106, 0.12);
+    border-color: rgba(214, 179, 106, 0.24);
+  }
+`;
+
+const MobileBottomNavButton = styled.button`
+  ${mobileBottomNavShared}
+  cursor: pointer;
+
+  ${(props) =>
+    props.$active
+      ? `
+    color: var(--color-text);
+    background: rgba(214, 179, 106, 0.12);
+    border-color: rgba(214, 179, 106, 0.24);
+  `
+      : ''}
+`;
+
+const BottomNavLabel = styled.span`
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+`;
+
+const MobileMoreSheet = styled(motion.div)`
+  display: none;
+
+  ${mobileNavQuery} {
+    display: block;
+    position: fixed;
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 94px);
+    z-index: var(--z-fixed);
+    padding: 10px;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(17, 19, 27, 0.94);
+    box-shadow: 0 22px 40px rgba(0, 0, 0, 0.38);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+  }
+`;
+
+const MobileMoreSheetList = styled.div`
+  display: grid;
+  gap: 8px;
+`;
+
+const MobileMoreSheetLink = styled(NavLink)`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  padding: 0 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--color-text);
+  text-decoration: none;
+  font-weight: 600;
+
+  &.active {
+    background: rgba(214, 179, 106, 0.12);
+    border-color: rgba(214, 179, 106, 0.24);
   }
 `;
 
@@ -234,8 +474,13 @@ const Header = ({
   authFeedback = 'idle'
 }) => {
   const [scrolled, setScrolled] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
+  const [compactDesktopNav, setCompactDesktopNav] = useState(false);
   const location = useLocation();
+  const navRef = useRef(null);
+  const logoContentRef = useRef(null);
+  const rightRef = useRef(null);
+  const navMeasureRef = useRef(null);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 24);
@@ -244,9 +489,8 @@ const Header = ({
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Close mobile menu on navigation
   useEffect(() => {
-    setMobileMenuOpen(false);
+    setMobileMoreOpen(false);
   }, [location.pathname]);
 
   const navItems = [
@@ -258,84 +502,215 @@ const Header = ({
     { to: '/contact', label: 'Contatti' }
   ];
 
+  const mobilePrimaryItems = [
+    { to: '/', label: 'Home', icon: House },
+    { to: '/series', label: 'Serie', icon: Grid3X3 },
+    { to: '/map', label: 'Mappa', icon: Map },
+    { to: '/gallery', label: 'Archivio', icon: FolderOpen }
+  ];
+
+  const mobileSecondaryItems = [
+    { to: '/about', label: 'Chi sono', icon: UserRound },
+    { to: '/contact', label: 'Contatti', icon: Mail }
+  ];
+
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const finePointerQuery = window.matchMedia('(hover: hover) and (pointer: fine)');
+    const touchMobileQuery = window.matchMedia('(max-width: 768px) and (hover: none) and (pointer: coarse)');
+
+    const measureLayout = () => {
+      if (!navRef.current || !logoContentRef.current || !rightRef.current || !navMeasureRef.current) return;
+
+      if (!finePointerQuery.matches || touchMobileQuery.matches) {
+        setCompactDesktopNav(false);
+        return;
+      }
+
+      const navWidth = navRef.current.clientWidth;
+      const logoWidth = logoContentRef.current.offsetWidth;
+      const rightWidth = rightRef.current.offsetWidth;
+      const linksWidth = navMeasureRef.current.scrollWidth;
+      const sideWidth = Math.max(logoWidth, rightWidth);
+      const centerSafetyGap = 125;
+      const availableCenterWidth = Math.max(0, navWidth - sideWidth * 2 - centerSafetyGap);
+
+      setCompactDesktopNav(linksWidth > availableCenterWidth);
+    };
+
+    measureLayout();
+
+    const resizeObserver = new ResizeObserver(measureLayout);
+    resizeObserver.observe(navRef.current);
+    resizeObserver.observe(logoContentRef.current);
+    resizeObserver.observe(rightRef.current);
+    resizeObserver.observe(navMeasureRef.current);
+
+    window.addEventListener('resize', measureLayout);
+    finePointerQuery.addEventListener?.('change', measureLayout);
+    touchMobileQuery.addEventListener?.('change', measureLayout);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', measureLayout);
+      finePointerQuery.removeEventListener?.('change', measureLayout);
+      touchMobileQuery.removeEventListener?.('change', measureLayout);
+    };
+  }, []);
+
+  useEffect(() => {
+    const root = document.documentElement;
+
+    if (compactDesktopNav) {
+      root.style.setProperty('--header-height', '132px');
+    } else {
+      root.style.removeProperty('--header-height');
+    }
+
+    return () => {
+      root.style.removeProperty('--header-height');
+    };
+  }, [compactDesktopNav]);
+
   return (
-    <HeaderContainer
-      $scrolled={scrolled}
-      initial={{ y: -80, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 0.45, ease: 'easeOut' }}
-    >
-      <Nav>
-        <Logo to="/" whileTap={{ scale: 0.98 }} aria-label="Torna alla home">
-          <LogoIcon src="/favicon.svg" alt="" aria-hidden="true" />
-          <LogoText>
-            FotoPortfolio <span className="dot" />
-          </LogoText>
-        </Logo>
+    <>
+      <HeaderContainer
+        $scrolled={scrolled}
+        initial={{ y: -80, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.45, ease: 'easeOut' }}
+      >
+        <HeaderInner>
+          <Nav ref={navRef}>
+            <Logo to="/" whileTap={{ scale: 0.98 }} aria-label="Torna alla home">
+              <LogoContent ref={logoContentRef}>
+                <LogoIcon src="/favicon.svg" alt="" aria-hidden="true" />
+                <LogoText>
+                  FotoPortfolio <span className="dot" />
+                </LogoText>
+              </LogoContent>
+            </Logo>
 
-        <NavLinks>
-          {navItems.map((item) => (
-            <li key={item.to}>
-              <StyledNavLink to={item.to} end={item.to === '/'}>
-                {item.label}
-              </StyledNavLink>
-            </li>
-          ))}
-        </NavLinks>
+            <NavLinks $compact={compactDesktopNav}>
+              {navItems.map((item) => (
+                <li key={item.to}>
+                  <StyledNavLink to={item.to} end={item.to === '/'}>
+                    {item.label}
+                  </StyledNavLink>
+                </li>
+              ))}
+            </NavLinks>
 
-        <Right>
-          {isAdmin && onConfigureAuth && (
-            <TokenButton
-              type="button"
-              onClick={onConfigureAuth}
-              whileTap={{ scale: 0.98 }}
-              $active={hasAuthToken}
-              $feedback={authFeedback}
-              title={hasAuthToken ? 'Token API configurato' : 'Configura token API'}
-              aria-label={hasAuthToken ? 'Sessione admin attiva (clicca per disattivare)' : 'Configura token admin'}
-            >
-              <KeyRound size={16} />
-            </TokenButton>
-          )}
+            <Right ref={rightRef}>
+              {isAdmin && onConfigureAuth && (
+                <TokenButton
+                  type="button"
+                  onClick={onConfigureAuth}
+                  whileTap={{ scale: 0.98 }}
+                  $active={hasAuthToken}
+                  $feedback={authFeedback}
+                  title={hasAuthToken ? 'Token API configurato' : 'Configura token API'}
+                  aria-label={hasAuthToken ? 'Sessione admin attiva (clicca per disattivare)' : 'Configura token admin'}
+                >
+                  <KeyRound size={16} />
+                </TokenButton>
+              )}
 
-          {isAdmin && onOpenUpload && (
-            <UploadButton onClick={onOpenUpload} whileTap={{ scale: 0.98 }}>
-              <Camera size={16} />
-              Carica
-            </UploadButton>
-          )}
+              {isAdmin && onOpenUpload && (
+                <UploadButton onClick={onOpenUpload} whileTap={{ scale: 0.98 }}>
+                  <Camera size={16} />
+                  <UploadButtonLabel>Carica</UploadButtonLabel>
+                </UploadButton>
+              )}
+            </Right>
+          </Nav>
 
-          <MobileMenuButton
-            onClick={() => setMobileMenuOpen((v) => !v)}
-            whileTap={{ scale: 0.95 }}
-            aria-label={mobileMenuOpen ? 'Chiudi menu' : 'Apri menu'}
-          >
-            {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
-          </MobileMenuButton>
-        </Right>
-      </Nav>
+          <DesktopCompactNavRail $visible={compactDesktopNav}>
+            <DesktopCompactNavScroll>
+              <DesktopCompactNavList>
+                {navItems.map((item) => (
+                  <li key={item.to}>
+                    <DesktopCompactNavLink to={item.to} end={item.to === '/'}>
+                      {item.label}
+                    </DesktopCompactNavLink>
+                  </li>
+                ))}
+              </DesktopCompactNavList>
+            </DesktopCompactNavScroll>
+          </DesktopCompactNavRail>
+
+          <DesktopNavMeasure ref={navMeasureRef} aria-hidden="true">
+            {navItems.map((item) => (
+              <li key={item.to}>
+                <DesktopNavMeasureItem>{item.label}</DesktopNavMeasureItem>
+              </li>
+            ))}
+          </DesktopNavMeasure>
+        </HeaderInner>
+      </HeaderContainer>
 
       <AnimatePresence>
-        {mobileMenuOpen && (
-          <MobileMenu
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.2 }}
-          >
-            <MobileNavLinks>
-              {navItems.map((item) => (
-                <MobileNavItem key={item.to} whileTap={{ scale: 0.98 }}>
-                  <MobileLink to={item.to} end={item.to === '/'}>
-                    {item.label}
-                  </MobileLink>
-                </MobileNavItem>
-              ))}
-            </MobileNavLinks>
-          </MobileMenu>
+        {mobileMoreOpen && (
+          <>
+            <MobileBottomNavBackdrop
+              type="button"
+              aria-label="Chiudi menu mobile"
+              onClick={() => setMobileMoreOpen(false)}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            />
+            <MobileMoreSheet
+              initial={{ opacity: 0, y: 14, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+            >
+              <MobileMoreSheetList>
+                {mobileSecondaryItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <MobileMoreSheetLink key={item.to} to={item.to}>
+                      <Icon size={18} />
+                      <span>{item.label}</span>
+                    </MobileMoreSheetLink>
+                  );
+                })}
+              </MobileMoreSheetList>
+            </MobileMoreSheet>
+          </>
         )}
       </AnimatePresence>
-    </HeaderContainer>
+
+      <MobileBottomNav aria-label="Navigazione mobile">
+        <MobileBottomNavList>
+          {mobilePrimaryItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <MobileBottomNavItem key={item.to}>
+                <MobileBottomNavLink to={item.to} end={item.to === '/'}>
+                  <Icon size={18} />
+                  <BottomNavLabel>{item.label}</BottomNavLabel>
+                </MobileBottomNavLink>
+              </MobileBottomNavItem>
+            );
+          })}
+          <MobileBottomNavItem>
+            <MobileBottomNavButton
+              type="button"
+              $active={mobileMoreOpen || mobileSecondaryItems.some((item) => location.pathname === item.to)}
+              onClick={() => setMobileMoreOpen((open) => !open)}
+              aria-expanded={mobileMoreOpen}
+              aria-label="Altre sezioni"
+            >
+              <UserRound size={18} />
+              <BottomNavLabel>Altro</BottomNavLabel>
+            </MobileBottomNavButton>
+          </MobileBottomNavItem>
+        </MobileBottomNavList>
+      </MobileBottomNav>
+    </>
   );
 };
 

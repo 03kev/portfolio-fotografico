@@ -1,4 +1,5 @@
 import { createGlobalStyle } from 'styled-components';
+import { viewportBreakpoints, viewportHeights } from './responsive';
 
 /**
  * Design refresh (più "professionale")
@@ -75,6 +76,7 @@ const GlobalStyles = createGlobalStyle`
 
     /* Layout /*/
     --header-height: 78px;
+    --mobile-bottom-nav-height: 0px;
 
     /* Typography */
     --font-size-xs: 0.75rem;
@@ -109,6 +111,64 @@ const GlobalStyles = createGlobalStyle`
     --z-modal: 1050;
     --z-popover: 1060;
     --z-tooltip: 1070;
+
+    /* Shared panel/card tokens */
+    --panel-overlay-pad-inline: 24px;
+    --panel-backdrop-bg: rgba(4, 6, 12, 0.74);
+    --panel-backdrop-blur: 8px;
+    --panel-radius: 20px;
+    --panel-border-color: rgba(255, 255, 255, 0.12);
+    --panel-bg: linear-gradient(180deg, rgba(12, 17, 28, 0.96), rgba(8, 12, 22, 0.98));
+    --panel-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+    --panel-padding: 22px;
+    --panel-gap: 16px;
+    --panel-inset-radius: 15px;
+    --panel-inset-border-color: rgba(255, 255, 255, 0.08);
+    --panel-inset-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%);
+    --panel-inset-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    --panel-inset-padding: 12px 14px;
+    --panel-close-size: 36px;
+    --panel-close-radius: 999px;
+
+    /* Shared responsive shell tokens */
+    --shell-overlay-pad-inline: 24px;
+    --shell-overlay-pad-top: min(8vh, 72px);
+    --shell-overlay-pad-bottom: var(--shell-overlay-pad-inline);
+    --shell-height-buffer: 18px;
+    --shell-available-height: calc(100dvh - var(--shell-overlay-pad-top) - var(--shell-overlay-pad-bottom));
+    --shell-bounded-height: min(var(--shell-height-cap), calc(var(--shell-available-height) - var(--shell-height-buffer)));
+    --shell-width: min(100%, 980px);
+    --shell-height-cap: 980px;
+    --shell-max-height: var(--shell-bounded-height);
+    --shell-radius: 30px;
+    --shell-glow-height: 120px;
+    --shell-header-gap: 18px;
+    --shell-header-pad: 28px 30px 18px;
+    --shell-title-size: clamp(1.5rem, 2vw, 1.95rem);
+    --shell-subtitle-size: 0.96rem;
+    --shell-subtitle-line-height: 1.55;
+    --shell-close-size: 48px;
+    --shell-step-top: 112px;
+    --shell-step-gap: 12px;
+    --shell-step-pad: 14px 30px 16px;
+    --shell-step-button-pad: 14px 16px;
+    --shell-step-button-radius: 18px;
+    --shell-step-index-size: 28px;
+    --shell-step-index-font-size: 0.82rem;
+    --shell-step-text-size: 0.95rem;
+    --shell-content-pad: 28px 30px 30px;
+    --shell-content-max-width: 780px;
+    --shell-section-pad: 22px;
+    --shell-section-radius: 22px;
+    --shell-field-gap: 16px;
+    --shell-field-pad: 14px 16px;
+    --shell-upload-stage-max-inline-size: 440px;
+    --shell-upload-stage-pad: 42px 24px;
+    --shell-upload-stage-radius: 26px;
+    --shell-preview-radius: 24px;
+    --shell-footer-gap: 18px;
+    --shell-footer-pad: 18px 30px calc(18px + env(safe-area-inset-bottom));
+    --shell-action-min-height: 52px;
   }
 
   /* Reset */
@@ -153,12 +213,132 @@ const GlobalStyles = createGlobalStyle`
 
   main {
     padding-top: var(--header-height);
+    padding-bottom: var(--mobile-bottom-nav-height);
     min-height: calc(100vh - var(--header-height));
   }
 
-  @media (max-width: 768px) {
+  @media (min-width: ${viewportBreakpoints.laptop}px) {
+    :root {
+      --panel-padding: 20px;
+      --shell-width: min(100%, 920px);
+      --shell-height-cap: 980px;
+      --shell-height-buffer: 18px;
+      --shell-max-height: var(--shell-bounded-height);
+      --shell-glow-height: 96px;
+      --shell-header-gap: 16px;
+      --shell-header-pad: 22px 24px 14px;
+      --shell-title-size: clamp(1.45rem, 1.8vw, 1.8rem);
+      --shell-subtitle-size: 0.92rem;
+      --shell-subtitle-line-height: 1.45;
+      --shell-step-top: 96px;
+      --shell-step-gap: 10px;
+      --shell-step-pad: 12px 24px 14px;
+      --shell-step-button-pad: 12px 14px;
+      --shell-step-button-radius: 16px;
+      --shell-content-pad: 22px 24px 24px;
+      --shell-content-max-width: 700px;
+      --shell-section-pad: 18px;
+      --shell-section-radius: 18px;
+      --shell-upload-stage-pad: 34px 22px;
+      --shell-footer-pad: 14px 24px calc(14px + env(safe-area-inset-bottom));
+      --shell-action-min-height: 48px;
+    }
+  }
+
+  @media (max-height: ${viewportHeights.compact}px) {
+    :root {
+      --panel-padding: 18px;
+      --shell-overlay-pad-top: 12px;
+      --shell-overlay-pad-bottom: 12px;
+      --shell-height-buffer: 14px;
+      --shell-max-height: var(--shell-bounded-height);
+      --shell-radius: 24px;
+      --shell-glow-height: 84px;
+      --shell-header-gap: 14px;
+      --shell-header-pad: 18px 22px 14px;
+      --shell-title-size: clamp(1.34rem, 1.7vw, 1.6rem);
+      --shell-subtitle-size: 0.9rem;
+      --shell-subtitle-line-height: 1.45;
+      --shell-close-size: 42px;
+      --shell-step-top: 88px;
+      --shell-step-gap: 10px;
+      --shell-step-pad: 12px 22px 14px;
+      --shell-step-button-pad: 11px 13px;
+      --shell-step-button-radius: 16px;
+      --shell-step-index-size: 25px;
+      --shell-step-index-font-size: 0.78rem;
+      --shell-step-text-size: 0.91rem;
+      --shell-content-pad: 18px 22px 20px;
+      --shell-section-pad: 18px;
+      --shell-section-radius: 18px;
+      --shell-field-gap: 12px;
+      --shell-field-pad: 12px 14px;
+      --shell-footer-gap: 14px;
+      --shell-action-min-height: 46px;
+    }
+  }
+
+  @media (max-height: ${viewportHeights.short}px) {
+    :root {
+      --panel-padding: 16px;
+      --shell-overlay-pad-top: 8px;
+      --shell-overlay-pad-bottom: 8px;
+      --shell-height-buffer: 10px;
+      --shell-max-height: var(--shell-bounded-height);
+      --shell-radius: 20px;
+      --shell-glow-height: 64px;
+      --shell-header-gap: 10px;
+      --shell-header-pad: 14px 18px 10px;
+      --shell-title-size: clamp(1.2rem, 1.45vw, 1.42rem);
+      --shell-subtitle-size: 0.84rem;
+      --shell-subtitle-line-height: 1.35;
+      --shell-close-size: 38px;
+      --shell-step-top: 72px;
+      --shell-step-gap: 8px;
+      --shell-step-pad: 10px 18px 10px;
+      --shell-step-button-pad: 10px 12px;
+      --shell-step-button-radius: 14px;
+      --shell-step-index-size: 22px;
+      --shell-step-index-font-size: 0.74rem;
+      --shell-step-text-size: 0.84rem;
+      --shell-content-pad: 14px 18px 16px;
+    }
+  }
+
+  @media (max-width: ${viewportBreakpoints.tablet}px) {
+    :root {
+      --panel-overlay-pad-inline: 12px;
+      --panel-padding: 16px;
+      --shell-overlay-pad-inline: 10px;
+      --shell-overlay-pad-top: max(10px, env(safe-area-inset-top));
+      --shell-overlay-pad-bottom: max(10px, env(safe-area-inset-bottom));
+      --shell-height-buffer: 10px;
+      --shell-radius: 24px;
+      --shell-header-gap: 14px;
+      --shell-header-pad: 18px 18px 14px;
+      --shell-title-size: 1.34rem;
+      --shell-subtitle-size: 0.88rem;
+      --shell-close-size: 42px;
+      --shell-step-top: 98px;
+      --shell-step-gap: 8px;
+      --shell-step-pad: 12px 16px 14px;
+      --shell-step-button-pad: 11px 10px;
+      --shell-step-button-radius: 15px;
+      --shell-step-index-size: 24px;
+      --shell-step-index-font-size: 0.75rem;
+      --shell-step-text-size: 0.83rem;
+      --shell-content-pad: 18px 16px 18px;
+      --shell-content-max-width: 100%;
+      --shell-upload-stage-pad: 28px 20px;
+      --shell-upload-stage-radius: 22px;
+      --shell-preview-radius: 20px;
+    }
+  }
+
+  @media (max-width: ${viewportBreakpoints.tablet}px) and (hover: none) and (pointer: coarse) {
     :root {
       --header-height: 70px;
+      --mobile-bottom-nav-height: 106px;
     }
   }
 
