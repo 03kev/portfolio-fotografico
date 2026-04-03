@@ -1,23 +1,37 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useOutletContext, useSearchParams } from 'react-router-dom';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Trash2, Edit3, Crop } from 'lucide-react';
+import { Search, Trash2, Edit3, Crop, Upload, Loader2, X } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
-import { LOCAL_IMAGE_FALLBACK, resolveAssetUrl } from '../utils/imageUrl';
+import { LOCAL_IMAGE_FALLBACK, resolveVersionedAssetUrl } from '../utils/imageUrl';
+import { photoService, signSourceUpload, uploadSourceToSignedUrl } from '../utils/api';
+import { useGalleryQueryState } from '../hooks/useGalleryQueryState';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import {
+  buildOperationErrorMessage
+} from '../utils/operationErrors';
 import PhotoUpload from './PhotoUpload';
 import PhotoCropModal from './PhotoCropModal';
 
 const DEBOUNCE_DELAY_FILTER = 200;
+const SOURCE_REUPLOAD_ACCEPT = 'image/jpeg,image/jpg,image/png,image/webp';
 
-function useDebounce(value, delay) {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const handler = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(handler);
-  }, [value, delay]);
-  return debounced;
-}
+const REUPLOAD_STEP_LABELS = {
+  sign: 'firma URL upload',
+  upload: 'upload source su R2',
+  replace: 'rigenerazione derivate'
+};
+
+const CROP_STEP_LABELS = {
+  update: 'salvataggio crop',
+  regenerate: 'rigenerazione derivate'
+};
+
+const SKELETON_CARD_COUNT = 9;
+const INITIAL_VISIBLE_CARDS = 24;
+const VISIBLE_CARDS_BATCH = 24;
+const LOAD_MORE_ROOT_MARGIN = '900px 0px';
 
 const cardVariants = {
   hidden: { opacity: 0, scale: 0.98, y: 8 },
@@ -168,6 +182,8 @@ const PhotoImage = styled(motion.img)`
   width: 100%;
   height: 100%;
   object-fit: cover;
+  color: transparent;
+  font-size: 0;
   transition: transform 0.45s ease;
 
   ${PhotoCard}:hover & {
@@ -271,6 +287,118 @@ const CropButton = styled(motion.button)`
   }
 `;
 
+const ReplaceSourceButton = styled(motion.button)`
+  position: absolute;
+  top: var(--spacing-md);
+  right: calc(var(--spacing-md) + 144px);
+  background: rgba(123, 107, 255, 0.88);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: white;
+  padding: 8px;
+  border-radius: var(--border-radius-full);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity var(--transition-normal), background var(--transition-normal);
+  z-index: 10;
+
+  ${PhotoCard}:hover & {
+    opacity: 1;
+  }
+
+  &:hover {
+    background: rgba(103, 84, 255, 1);
+  }
+
+  &:disabled {
+    cursor: wait;
+    opacity: 0.5;
+  }
+`;
+
+const ReuploadCardOverlay = styled.div`
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(8, 10, 16, 0.58);
+  backdrop-filter: blur(2px);
+  z-index: 12;
+  pointer-events: auto;
+  color: rgba(255, 255, 255, 0.94);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.01em;
+`;
+
+const ReuploadCardSpinner = styled(Loader2)`
+  animation: replace-source-spin 0.9s linear infinite;
+  color: rgba(214, 179, 106, 0.98);
+  filter: drop-shadow(0 0 8px rgba(214, 179, 106, 0.35));
+
+  @keyframes replace-source-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+`;
+
+const ReuploadProgressMeta = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: min(240px, 72%);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.78rem;
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.01em;
+  gap: 10px;
+`;
+
+const ReuploadProgressTrack = styled.div`
+  width: min(240px, 72%);
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+`;
+
+const ReuploadProgressFill = styled.div`
+  width: ${({ $percent }) => `${$percent}%`};
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(214, 179, 106, 0.92), rgba(255, 230, 168, 0.94));
+  transition: width 220ms ease-out;
+`;
+
+const ReuploadAbortButton = styled.button`
+  margin-top: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: var(--border-radius-full);
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 0.76rem;
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  transition: var(--transition-normal);
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.34);
+    transform: translateY(-1px);
+  }
+`;
+
 const OverlayContent = styled.div`
   width: 100%;
 `;
@@ -331,6 +459,76 @@ const LoadingSpinner = styled.div`
   }
 `;
 
+const SkeletonBase = styled.div`
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.08) 45%,
+      rgba(255, 255, 255, 0.15) 50%,
+      rgba(255, 255, 255, 0.08) 55%,
+      transparent 100%
+    );
+    animation: gallery-skeleton-shimmer 1.3s ease-in-out infinite;
+  }
+
+  @keyframes gallery-skeleton-shimmer {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+`;
+
+const SkeletonSearch = styled(SkeletonBase)`
+  width: min(560px, 100%);
+  height: 46px;
+  border-radius: var(--border-radius-xl);
+  margin: 0 auto;
+`;
+
+const SkeletonFilterRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+`;
+
+const SkeletonFilterChip = styled(SkeletonBase)`
+  width: ${({ $w }) => $w || 84}px;
+  height: 34px;
+  border-radius: var(--border-radius-full);
+`;
+
+const SkeletonGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--spacing-xl);
+
+  @media (max-width: 768px) {
+    grid-template-columns: 1fr;
+    gap: var(--spacing-lg);
+  }
+`;
+
+const SkeletonCard = styled(SkeletonBase)`
+  border-radius: var(--border-radius-2xl);
+  aspect-ratio: 4 / 3;
+`;
+
+const LoadMoreSentinel = styled.div`
+  width: 100%;
+  height: 1px;
+`;
+
 const NoResults = styled(motion.div)`
   text-align: center;
   padding: var(--spacing-3xl) var(--spacing-lg);
@@ -348,38 +546,302 @@ const NoResults = styled(motion.div)`
   }
 `;
 
+const DeleteModalBackdrop = styled(motion.div)`
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 6, 12, 0.74);
+  backdrop-filter: blur(6px);
+  z-index: 1300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+`;
+
+const DeleteModalCard = styled(motion.div)`
+  width: min(460px, 100%);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(180deg, rgba(12, 17, 28, 0.96), rgba(8, 12, 22, 0.98));
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+  padding: 22px;
+`;
+
+const DeleteModalTitle = styled.h3`
+  margin: 0 0 8px 0;
+  font-size: 1.12rem;
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+`;
+
+const DeleteModalText = styled.p`
+  margin: 0;
+  color: var(--color-muted);
+  line-height: 1.5;
+  font-size: var(--font-size-sm);
+`;
+
+const DeleteModalActions = styled.div`
+  margin-top: 18px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+`;
+
+const DeleteModalButton = styled.button`
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--border-radius-lg);
+  padding: 9px 14px;
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: var(--transition-normal);
+  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.04);
+
+  &:hover:enabled {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.24);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+  }
+`;
+
+const DeleteConfirmButton = styled(DeleteModalButton)`
+  background: rgba(214, 56, 56, 0.92);
+  border-color: rgba(255, 255, 255, 0.2);
+
+  &:hover:enabled {
+    background: rgba(194, 39, 39, 0.96);
+    border-color: rgba(255, 255, 255, 0.28);
+  }
+`;
+
+const DeleteInlineSpinner = styled(Loader2)`
+  animation: delete-photo-spin 0.9s linear infinite;
+
+  @keyframes delete-photo-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+`;
+
+const GalleryCard = React.memo(function GalleryCard({
+  photo,
+  index,
+  isAdmin,
+  hideCardDescriptions,
+  hasActivePhotoOp,
+  photoOpStatus,
+  getPhotoCardUrl,
+  getPhotoAltText,
+  getThumbImageUrl,
+  onOpen,
+  onDelete,
+  onEdit,
+  onCrop,
+  onReuploadSource,
+  onAbortReuploadUpload
+}) {
+  const isCardOpActive = Boolean(photoOpStatus?.active);
+  const isPendingCard = Boolean(photo?.__pending);
+  const canOpenCard = !isCardOpActive && !isPendingCard;
+  const cardImageSrc = isPendingCard ? String(photo.previewUrl || '') : getThumbImageUrl(photo);
+
+  return (
+    <motion.div
+      layout
+      variants={cardVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+      onClick={() => {
+        if (!canOpenCard) return;
+        onOpen(photo);
+      }}
+    >
+      <PhotoCard>
+        {!isPendingCard && (
+          <SeoImageLink href={getPhotoCardUrl(photo)} aria-hidden="true" tabIndex={-1}>
+            {photo.title || 'Foto'}
+          </SeoImageLink>
+        )}
+        {isAdmin && !isPendingCard && (
+          <>
+            {!hasActivePhotoOp && !isCardOpActive && (
+              <ReplaceSourceButton
+                onClick={(event) => onReuploadSource(event, photo)}
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                title="Reupload source privata"
+              >
+                <Upload size={18} />
+              </ReplaceSourceButton>
+            )}
+            {!hasActivePhotoOp && !isCardOpActive && (
+              <>
+                <CropButton
+                  onClick={(event) => onCrop(event, photo)}
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  title="Modifica crop"
+                >
+                  <Crop size={18} />
+                </CropButton>
+                <EditButton
+                  onClick={(event) => onEdit(event, photo)}
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                >
+                  <Edit3 size={18} />
+                </EditButton>
+                <DeleteButton
+                  onClick={(event) => onDelete(event, photo)}
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                >
+                  <Trash2 size={18} />
+                </DeleteButton>
+              </>
+            )}
+          </>
+        )}
+        <PhotoImage
+          src={cardImageSrc}
+          alt={getPhotoAltText(photo)}
+          loading={index < 3 ? 'eager' : 'lazy'}
+          fetchPriority={index < 3 ? 'high' : 'auto'}
+          decoding="async"
+          onError={(event) => {
+            event.currentTarget.onerror = null;
+            event.currentTarget.src = LOCAL_IMAGE_FALLBACK;
+          }}
+        />
+        {isCardOpActive && (
+          <ReuploadCardOverlay>
+            <ReuploadCardSpinner size={26} />
+            <span>{photoOpStatus?.label || 'Operazione in corso'}</span>
+            <ReuploadProgressMeta>
+              <span>{photoOpStatus?.type === 'source-reupload' || photoOpStatus?.type === 'new-upload' ? 'Stato upload' : 'Stato operazione'}</span>
+              <span>{Math.round(photoOpStatus?.percent || 0)}%</span>
+            </ReuploadProgressMeta>
+            <ReuploadProgressTrack>
+              <ReuploadProgressFill $percent={Math.max(0, Math.min(100, photoOpStatus?.percent || 0))} />
+            </ReuploadProgressTrack>
+            {photoOpStatus?.type === 'source-reupload' && photoOpStatus?.step === 'upload' && (
+              <ReuploadAbortButton
+                type="button"
+                onClick={(event) => onAbortReuploadUpload(event, photo.id, photoOpStatus?.step)}
+              >
+                <X size={14} />
+                Annulla upload
+              </ReuploadAbortButton>
+            )}
+          </ReuploadCardOverlay>
+        )}
+        {!isCardOpActive && (
+          <PhotoOverlay>
+            <OverlayContent>
+              <PhotoTitle>{photo.title}</PhotoTitle>
+              <PhotoLocation>{photo.location}</PhotoLocation>
+              {!hideCardDescriptions && (
+                <PhotoDescription>{photo.description}</PhotoDescription>
+              )}
+              {Array.isArray(photo.tags) && photo.tags.length > 0 && (
+                <PhotoTags>
+                  {photo.tags.slice(0, 3).map((tag) => (
+                    <Tag key={tag}>{tag}</Tag>
+                  ))}
+                </PhotoTags>
+              )}
+            </OverlayContent>
+          </PhotoOverlay>
+        )}
+      </PhotoCard>
+    </motion.div>
+  );
+});
+
 const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptions = false }) => {
-  const { photos, filteredPhotos, loading, actions, filters, modalOpen } = usePhotos();
+  const { photos, filteredPhotos, loading, actions, modalOpen, photoOpsByPhotoId, pendingUploads } = usePhotos();
   const outletContext = useOutletContext();
   const isAdmin = Boolean(outletContext?.isAdmin);
-  const [searchParams] = useSearchParams();
-  const photoParam = searchParams.get('photo');
+  const notify = outletContext?.notify || null;
+  const {
+    activeFilter,
+    searchTerm,
+    debouncedSearchTerm,
+    photoParam,
+    handleFilterClick,
+    handleSearchChange,
+    clearSearch
+  } = useGalleryQueryState({ debounceMs: DEBOUNCE_DELAY_FILTER });
   const resolvedPhotoId = forcedPhotoId || photoParam;
+  const hasForcedPhotoId = Boolean(forcedPhotoId);
+  const forcedPhotoExists = !hasForcedPhotoId
+    || photos.some((photo) => String(photo.id) === String(forcedPhotoId));
+  const waitingForForcedModal = hasForcedPhotoId && forcedPhotoExists && !modalOpen;
   const autoOpenedPhotoRef = useRef(null);
-
-  const [activeFilter, setActiveFilter] = useState(() => {
-    return filters.tags && filters.tags.length > 0 ? filters.tags[0] : 'all';
-  });
-  const [searchTerm, setSearchTerm] = useState(() => {
-    return filters.search || '';
-  });
+  const sourceFileInputRef = useRef(null);
+  const searchInputRef = useRef(null);
   const [editingPhoto, setEditingPhoto] = useState(null);
   const [croppingPhoto, setCroppingPhoto] = useState(null);
-
-  const debouncedSearchTerm = useDebounce(searchTerm, DEBOUNCE_DELAY_FILTER);
+  const [reuploadSourcePhoto, setReuploadSourcePhoto] = useState(null);
+  const [photoPendingDelete, setPhotoPendingDelete] = useState(null);
+  const [deletingPhoto, setDeletingPhoto] = useState(false);
+  const softProgressTimerRef = useRef(null);
+  const reuploadUploadAbortControllerRef = useRef(null);
+  const activeReuploadPhotoIdRef = useRef(null);
+  const isMountedRef = useRef(true);
+  const loadMoreTriggerRef = useRef(null);
+  const [visibleCardsCount, setVisibleCardsCount] = useState(INITIAL_VISIBLE_CARDS);
+  const lastRevealKeyRef = useRef(null);
+  const previousGalleryLengthRef = useRef(0);
 
   const allTags = useMemo(() =>
     [...new Set(photos.flatMap(photo => Array.isArray(photo.tags) ? photo.tags : []))],
   [photos]);
 
   const filterOptions = useMemo(() => ['all', ...allTags], [allTags]);
+  const hasActivePhotoOp = useMemo(
+    () => Object.values(photoOpsByPhotoId || {}).some((entry) => Boolean(entry?.active)),
+    [photoOpsByPhotoId]
+  );
+
+  const galleryCards = useMemo(() => {
+    const pendingCards = (pendingUploads || []).map((entry) => ({
+      ...entry,
+      __pending: true
+    }));
+    const pendingPhotoIds = new Set(
+      pendingCards
+        .map((entry) => String(entry?.id || '').trim())
+        .filter(Boolean)
+    );
+
+    const stablePhotos = filteredPhotos.filter((photo) => !pendingPhotoIds.has(String(photo?.id || '').trim()));
+    return [...pendingCards, ...stablePhotos];
+  }, [pendingUploads, filteredPhotos]);
+
+  const visibleGalleryCards = useMemo(
+    () => galleryCards.slice(0, Math.max(0, visibleCardsCount)),
+    [galleryCards, visibleCardsCount]
+  );
 
   useEffect(() => {
-    if (debouncedSearchTerm.trim()) {
+    const nextSearch = debouncedSearchTerm.trim();
+    if (nextSearch) {
       if (activeFilter !== 'all') {
-        actions.setFilter({ search: debouncedSearchTerm, tags: [activeFilter] });
+        actions.setFilter({ search: nextSearch, tags: [activeFilter] });
       } else {
-        actions.setFilter({ search: debouncedSearchTerm, tags: [] });
+        actions.setFilter({ search: nextSearch, tags: [] });
       }
     } else {
       if (activeFilter !== 'all') {
@@ -392,13 +854,47 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   }, [debouncedSearchTerm, activeFilter]);
 
   useEffect(() => {
-    const currentTag = filters.tags && filters.tags.length > 0 ? filters.tags[0] : 'all';
-    const currentSearch = filters.search || '';
+    const revealKey = `${activeFilter}::${debouncedSearchTerm.trim()}`;
+    const previousLength = previousGalleryLengthRef.current;
+    const nextLength = galleryCards.length;
+    const allCardsWereVisible = visibleCardsCount >= previousLength;
 
-    if (currentTag !== activeFilter) setActiveFilter(currentTag);
-    if (currentSearch !== searchTerm) setSearchTerm(currentSearch);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.tags?.join(','), filters.search]);
+    if (lastRevealKeyRef.current !== revealKey) {
+      lastRevealKeyRef.current = revealKey;
+      setVisibleCardsCount(Math.min(nextLength, INITIAL_VISIBLE_CARDS));
+    } else if (allCardsWereVisible) {
+      // Keep live updates snappy: if the grid was already fully visible,
+      // show newly inserted cards immediately instead of re-running the reveal.
+      setVisibleCardsCount(nextLength);
+    } else if (visibleCardsCount > nextLength) {
+      setVisibleCardsCount(nextLength);
+    }
+
+    previousGalleryLengthRef.current = nextLength;
+  }, [galleryCards.length, activeFilter, debouncedSearchTerm, visibleCardsCount]);
+
+  useEffect(() => {
+    if (loading || waitingForForcedModal) return;
+    if (visibleCardsCount >= galleryCards.length) return;
+    if (!loadMoreTriggerRef.current) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry?.isIntersecting) return;
+        setVisibleCardsCount((previous) => Math.min(galleryCards.length, previous + VISIBLE_CARDS_BATCH));
+      },
+      {
+        root: null,
+        rootMargin: LOAD_MORE_ROOT_MARGIN,
+        threshold: 0
+      }
+    );
+
+    observer.observe(loadMoreTriggerRef.current);
+
+    return () => observer.disconnect();
+  }, [loading, waitingForForcedModal, visibleCardsCount, galleryCards.length]);
 
   useEffect(() => {
     if (!resolvedPhotoId) {
@@ -416,29 +912,48 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     autoOpenedPhotoRef.current = resolvedPhotoId;
   }, [resolvedPhotoId, loading, photos, actions]);
 
-  const hasForcedPhotoId = Boolean(forcedPhotoId);
-  const forcedPhotoExists = !hasForcedPhotoId
-    || photos.some((photo) => String(photo.id) === String(forcedPhotoId));
-  const waitingForForcedModal = hasForcedPhotoId && forcedPhotoExists && !modalOpen;
+  useEffect(() => {
+    const isTextEditingElement = (element) => {
+      if (!(element instanceof HTMLElement)) return false;
+      const tagName = element.tagName;
+      return element.isContentEditable || tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT';
+    };
 
-  const handleFilterClick = (filter) => {
-    setActiveFilter(filter);
-    if (filter === 'all') {
-      actions.clearFilters();
-      setSearchTerm('');
-    }
-  };
+    const handleKeyDown = (event) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
 
-  const handlePhotoClick = (photo) => {
+      const activeElement = document.activeElement;
+      const isSearchFocused = activeElement === searchInputRef.current;
+
+      if (event.key === '/') {
+        if (isTextEditingElement(activeElement) && !isSearchFocused) return;
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+        return;
+      }
+
+      if (event.key === 'Escape' && isSearchFocused) {
+        event.preventDefault();
+        if (searchTerm.trim()) {
+          clearSearch();
+        } else {
+          searchInputRef.current?.blur();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [searchTerm, clearSearch]);
+
+  const handlePhotoClick = useCallback((photo) => {
     actions.openPhotoModal(photo);
-  };
+  }, [actions]);
 
   const getThumbImageUrl = (photo) => {
-    const baseUrl = resolveAssetUrl(photo.thumbnail43);
     const version = photo?.derivativesVersion || photo?.updatedAt || photo?.id;
-    if (!version) return baseUrl;
-    const separator = baseUrl.includes('?') ? '&' : '?';
-    return `${baseUrl}${separator}v=${encodeURIComponent(String(version))}`;
+    return resolveVersionedAssetUrl(photo.thumbnail43, version);
   };
   const getPhotoCardUrl = (photo) => `/photo/${encodeURIComponent(String(photo.id))}`;
   const getPhotoAltText = (photo) => {
@@ -451,32 +966,265 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     return title;
   };
 
-  const handleDelete = async (e, photoId) => {
+  const handleDelete = useCallback((e, photo) => {
     e.stopPropagation();
-    if (window.confirm('Sei sicuro di voler eliminare questa foto?')) {
-      try {
-        await actions.deletePhoto(photoId);
-      } catch (error) {
-        console.error('Errore nell\'eliminazione della foto:', error);
-        alert('Errore nell\'eliminazione della foto');
-      }
+    if (deletingPhoto || hasActivePhotoOp) return;
+    setPhotoPendingDelete(photo);
+  }, [deletingPhoto, hasActivePhotoOp]);
+
+  const handleCancelDelete = useCallback(() => {
+    if (deletingPhoto) return;
+    setPhotoPendingDelete(null);
+  }, [deletingPhoto]);
+
+  const handleConfirmDelete = async () => {
+    if (!photoPendingDelete || deletingPhoto) return;
+
+    setDeletingPhoto(true);
+    try {
+      await actions.deletePhoto(photoPendingDelete.id);
+      notify?.success?.(`Foto eliminata: "${photoPendingDelete.title || 'foto'}".`, 3200);
+      setPhotoPendingDelete(null);
+    } catch (error) {
+      console.error('Errore nell\'eliminazione della foto:', error);
+      setPhotoPendingDelete(null);
+      notify?.error?.(
+        buildOperationErrorMessage(error, 'eliminazione foto'),
+        5200
+      );
+    } finally {
+      setDeletingPhoto(false);
     }
   };
 
-  const handleEdit = (e, photo) => {
+  useEscapeToClose({
+    enabled: Boolean(photoPendingDelete),
+    onClose: handleCancelDelete,
+    canClose: !deletingPhoto
+  });
+
+  const handleEdit = useCallback((e, photo) => {
     e.stopPropagation();
+    if (hasActivePhotoOp) return;
     setEditingPhoto(photo);
+  }, [hasActivePhotoOp]);
+
+  const handleCrop = useCallback((e, photo) => {
+    e.stopPropagation();
+    if (hasActivePhotoOp) return;
+    setCroppingPhoto(photo);
+  }, [hasActivePhotoOp]);
+
+  const handleReuploadSourceClick = useCallback((e, photo) => {
+    e.stopPropagation();
+    if (hasActivePhotoOp) return;
+    setReuploadSourcePhoto(photo);
+    if (sourceFileInputRef.current) {
+      sourceFileInputRef.current.value = '';
+      sourceFileInputRef.current.click();
+    }
+  }, [hasActivePhotoOp]);
+
+  const stopSoftProgress = useCallback(() => {
+    if (softProgressTimerRef.current) {
+      clearInterval(softProgressTimerRef.current);
+      softProgressTimerRef.current = null;
+    }
+  }, []);
+
+  const startSoftProgress = useCallback((photoId, from = 74, to = 95, intervalMs = 240) => {
+    stopSoftProgress();
+    let current = Math.max(0, Math.min(100, from));
+    actions.setPhotoOpStatus(photoId, { percent: current });
+    softProgressTimerRef.current = setInterval(() => {
+      current = Math.min(to, current + 1);
+      actions.setPhotoOpStatus(photoId, { percent: current });
+      if (current >= to) {
+        stopSoftProgress();
+      }
+    }, intervalMs);
+  }, [actions, stopSoftProgress]);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      stopSoftProgress();
+    };
+  }, [stopSoftProgress]);
+
+  const handleAbortReuploadUpload = (event, photoId, step) => {
+    event.stopPropagation();
+    if (step !== 'upload') return;
+    if (activeReuploadPhotoIdRef.current !== photoId) return;
+    reuploadUploadAbortControllerRef.current?.abort();
   };
 
-  const handleCrop = (e, photo) => {
-    e.stopPropagation();
-    setCroppingPhoto(photo);
+  const handleReuploadSourceSelected = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    const targetPhoto = reuploadSourcePhoto;
+    if (!file || !targetPhoto) {
+      if (isMountedRef.current) setReuploadSourcePhoto(null);
+      return;
+    }
+
+    const targetPhotoId = targetPhoto.id;
+    activeReuploadPhotoIdRef.current = targetPhotoId;
+    actions.setPhotoOpStatus(targetPhotoId, {
+      active: true,
+      type: 'source-reupload',
+      percent: 3,
+      label: 'Preparazione upload',
+      step: 'sign'
+    });
+    let currentStep = 'sign';
+    try {
+      notify?.info?.(`Caricamento source in corso per "${targetPhoto.title || 'foto'}"...`, 2500);
+
+      currentStep = 'sign';
+      actions.setPhotoOpStatus(targetPhotoId, {
+        percent: 8,
+        label: 'Firma URL upload',
+        step: 'sign'
+      });
+      const signedData = await signSourceUpload({
+        uploadId: String(targetPhoto.id),
+        file
+      });
+
+      currentStep = 'upload';
+      actions.setPhotoOpStatus(targetPhotoId, {
+        percent: 12,
+        label: 'Upload source su R2',
+        step: 'upload'
+      });
+      const uploadAbortController = new AbortController();
+      reuploadUploadAbortControllerRef.current = uploadAbortController;
+      await uploadSourceToSignedUrl({
+        uploadUrl: signedData.uploadUrl,
+        file,
+        signal: uploadAbortController.signal,
+        onProgress: ({ ratio }) => {
+          const normalized = Math.max(0, Math.min(1, Number(ratio) || 0));
+          const mapped = Math.round(12 + normalized * 58); // 12% -> 70%
+          actions.setPhotoOpStatus(targetPhotoId, { percent: mapped });
+        }
+      });
+      reuploadUploadAbortControllerRef.current = null;
+
+      currentStep = 'replace';
+      actions.setPhotoOpStatus(targetPhotoId, {
+        label: 'Rigenerazione derivate',
+        percent: 74,
+        step: 'replace'
+      });
+      startSoftProgress(targetPhotoId, 74, 95);
+      const replaceResponse = await photoService.replaceSource(targetPhoto.id, {
+        sourcePath: signedData.sourcePath,
+        sourceContentType: file.type,
+        replaceToken: signedData.replaceToken || ''
+      });
+      stopSoftProgress();
+      const updatedPhoto = replaceResponse?.data?.data || replaceResponse?.data;
+      actions.applyPhotoUpdate?.(updatedPhoto);
+      actions.setPhotoOpStatus(targetPhotoId, {
+        percent: 100,
+        label: 'Completato',
+        step: 'done'
+      });
+      notify?.success?.(`Source aggiornata: "${targetPhoto.title || 'foto'}".`, 3500);
+    } catch (error) {
+      stopSoftProgress();
+      console.error('Errore reupload source privata:', error);
+      if (error?.code === 'UPLOAD_ABORTED') {
+        notify?.info?.('Upload source annullato.', 3500);
+      } else {
+        const stepLabel = REUPLOAD_STEP_LABELS[currentStep] || 'operazione source';
+        notify?.error?.(buildOperationErrorMessage(error, stepLabel), 6500);
+      }
+    } finally {
+      reuploadUploadAbortControllerRef.current = null;
+      activeReuploadPhotoIdRef.current = null;
+      setTimeout(() => {
+        actions.clearPhotoOpStatus(targetPhotoId);
+      }, 250);
+      if (isMountedRef.current) setReuploadSourcePhoto(null);
+    }
+  };
+
+  const handleApplyCropInBackground = async ({ photoId, photoTitle, nextSettings }) => {
+    if (!photoId || !nextSettings) return;
+
+    const title = photoTitle || 'foto';
+    actions.setPhotoOpStatus(photoId, {
+      active: true,
+      type: 'crop',
+      percent: 12,
+      label: 'Salvataggio crop',
+      step: 'update'
+    });
+
+    let currentStep = 'update';
+    try {
+      notify?.info?.(`Applicazione crop in corso per "${title}"...`, 2200);
+      await photoService.update(photoId, { settings: JSON.stringify(nextSettings) });
+
+      currentStep = 'regenerate';
+      actions.setPhotoOpStatus(photoId, {
+        percent: 38,
+        label: 'Rigenerazione derivate',
+        step: 'regenerate'
+      });
+      startSoftProgress(photoId, 38, 95);
+
+      const regenerateResponse = await photoService.regenerateDerivatives(photoId);
+      stopSoftProgress();
+
+      const updatedPhoto = regenerateResponse?.data?.data || regenerateResponse?.data;
+      actions.applyPhotoUpdate?.(updatedPhoto);
+      actions.setPhotoOpStatus(photoId, {
+        percent: 100,
+        label: 'Crop applicato',
+        step: 'done'
+      });
+      notify?.success?.(`Crop applicato: "${title}".`, 3200);
+    } catch (error) {
+      stopSoftProgress();
+      console.error('Errore applicazione crop:', error);
+      const stepLabel = CROP_STEP_LABELS[currentStep] || 'applicazione crop';
+      notify?.error?.(buildOperationErrorMessage(error, stepLabel), 6000);
+    } finally {
+      setTimeout(() => {
+        actions.clearPhotoOpStatus(photoId);
+      }, 250);
+    }
   };
 
   if (loading || waitingForForcedModal) {
     return (
       <GallerySection>
         <Container>
+          <SectionHeader>
+            <SectionTitle as={headingLevel}>Archivio</SectionTitle>
+            <SectionSubtitle>
+              Filtra per tag o cerca per titolo, luogo e descrizione.
+            </SectionSubtitle>
+          </SectionHeader>
+          <ControlsRow>
+            <SkeletonSearch />
+            <SkeletonFilterRow>
+              <SkeletonFilterChip $w={62} />
+              <SkeletonFilterChip $w={94} />
+              <SkeletonFilterChip $w={86} />
+              <SkeletonFilterChip $w={78} />
+              <SkeletonFilterChip $w={90} />
+            </SkeletonFilterRow>
+          </ControlsRow>
+          <SkeletonGrid>
+            {Array.from({ length: SKELETON_CARD_COUNT }).map((_, idx) => (
+              <SkeletonCard key={`gallery-skeleton-${idx}`} />
+            ))}
+          </SkeletonGrid>
           <LoadingContainer>
             <LoadingSpinner />
           </LoadingContainer>
@@ -488,6 +1236,14 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   return (
     <GallerySection>
       <Container>
+        <input
+          ref={sourceFileInputRef}
+          type="file"
+          accept={SOURCE_REUPLOAD_ACCEPT}
+          style={{ display: 'none' }}
+          onChange={handleReuploadSourceSelected}
+        />
+
         <SectionHeader>
           <SectionTitle as={headingLevel} initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.45, ease: 'easeOut' }}>
             Archivio
@@ -500,10 +1256,11 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
         <ControlsRow>
           <SearchContainer initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.35 }}>
             <SearchInput
+              ref={searchInputRef}
               type="text"
               placeholder="Cerca…"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={handleSearchChange}
             />
             <SearchIcon>
               <Search size={18} />
@@ -524,95 +1281,58 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
           </FilterContainer>
         </ControlsRow>
 
-        {filteredPhotos.length === 0 ? (
+        {galleryCards.length === 0 ? (
           <NoResults initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <h3>Nessuna foto trovata</h3>
             <p>Prova a cambiare filtri o ricerca.</p>
           </NoResults>
         ) : (
-          <GalleryGrid key="gallery-grid">
-            <AnimatePresence mode="popLayout" initial={false}>
-              {filteredPhotos.map((photo, index) => (
-                <motion.div
-                  key={photo.id}
-                  layout
-                  variants={cardVariants}
-                  initial="hidden"
-                  animate="visible"
-                  exit="exit"
-                  onClick={() => handlePhotoClick(photo)}
-                >
-                  <PhotoCard>
-                    <SeoImageLink href={getPhotoCardUrl(photo)} aria-hidden="true" tabIndex={-1}>
-                      {photo.title || 'Foto'}
-                    </SeoImageLink>
-                    {isAdmin && (
-                      <>
-                        <CropButton
-                          onClick={(e) => handleCrop(e, photo)}
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                          title="Modifica crop"
-                        >
-                          <Crop size={18} />
-                        </CropButton>
-                        <EditButton
-                          onClick={(e) => handleEdit(e, photo)}
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                        >
-                          <Edit3 size={18} />
-                        </EditButton>
-                        <DeleteButton
-                          onClick={(e) => handleDelete(e, photo.id)}
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                        >
-                          <Trash2 size={18} />
-                        </DeleteButton>
-                      </>
-                    )}
-                    <PhotoImage
-                      src={getThumbImageUrl(photo)}
-                      alt={getPhotoAltText(photo)}
-                      loading={index < 3 ? 'eager' : 'lazy'}
-                      fetchPriority={index < 3 ? 'high' : 'auto'}
-                      decoding="async"
-                      onError={(e) => {
-                        e.currentTarget.onerror = null;
-                        e.currentTarget.src = LOCAL_IMAGE_FALLBACK;
-                      }}
+          <>
+            <GalleryGrid key="gallery-grid">
+              <AnimatePresence mode="popLayout" initial={false}>
+                {visibleGalleryCards.map((photo, index) => {
+                  return (
+                    <GalleryCard
+                      key={photo.id}
+                      photo={photo}
+                      index={index}
+                      isAdmin={isAdmin}
+                      hideCardDescriptions={hideCardDescriptions}
+                      hasActivePhotoOp={hasActivePhotoOp}
+                      photoOpStatus={photoOpsByPhotoId?.[String(photo.id)]}
+                      getPhotoCardUrl={getPhotoCardUrl}
+                      getPhotoAltText={getPhotoAltText}
+                      getThumbImageUrl={getThumbImageUrl}
+                      onOpen={handlePhotoClick}
+                      onDelete={handleDelete}
+                      onEdit={handleEdit}
+                      onCrop={handleCrop}
+                      onReuploadSource={handleReuploadSourceClick}
+                      onAbortReuploadUpload={handleAbortReuploadUpload}
                     />
-                    <PhotoOverlay>
-                      <OverlayContent>
-                        <PhotoTitle>{photo.title}</PhotoTitle>
-                        <PhotoLocation>{photo.location}</PhotoLocation>
-                        {!hideCardDescriptions && (
-                          <PhotoDescription>{photo.description}</PhotoDescription>
-                        )}
-                        {Array.isArray(photo.tags) && photo.tags.length > 0 && (
-                          <PhotoTags>
-                            {photo.tags.slice(0, 3).map(tag => (
-                              <Tag key={tag}>{tag}</Tag>
-                            ))}
-                          </PhotoTags>
-                        )}
-                      </OverlayContent>
-                    </PhotoOverlay>
-                  </PhotoCard>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </GalleryGrid>
+                  );
+                })}
+              </AnimatePresence>
+            </GalleryGrid>
+            {visibleCardsCount < galleryCards.length && (
+              <LoadMoreSentinel ref={loadMoreTriggerRef} aria-hidden="true" />
+            )}
+          </>
         )}
 
         {isAdmin && editingPhoto && (
           <PhotoUpload
             photoToEdit={editingPhoto}
             onClose={() => setEditingPhoto(null)}
-            onUploadSuccess={() => {
+            onUploadSuccess={(updatedPhoto) => {
+              actions.applyPhotoUpdate?.(updatedPhoto);
               setEditingPhoto(null);
-              actions.fetchPhotos();
+            }}
+            onUploadError={(error) => {
+              notify?.error?.(
+                error?.message || buildOperationErrorMessage(error, 'aggiornamento foto'),
+                6000
+              );
             }}
           />
         )}
@@ -621,11 +1341,61 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
           photo={croppingPhoto}
           isOpen={isAdmin && Boolean(croppingPhoto)}
           onClose={() => setCroppingPhoto(null)}
-          onSaved={async () => {
+          onApply={({ photoId, photoTitle, nextSettings }) => {
             setCroppingPhoto(null);
-            await actions.fetchPhotos();
+            handleApplyCropInBackground({ photoId, photoTitle, nextSettings });
           }}
         />
+
+        <AnimatePresence>
+          {photoPendingDelete && (
+            <DeleteModalBackdrop
+              key="delete-modal-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={handleCancelDelete}
+            >
+              <DeleteModalCard
+                key="delete-modal-card"
+                initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 8, scale: 0.98 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <DeleteModalTitle>Elimina foto</DeleteModalTitle>
+                <DeleteModalText>
+                  Stai per eliminare <strong>{photoPendingDelete.title || 'questa foto'}</strong>.
+                  L&apos;operazione rimuove anche source privata e derivate pubbliche.
+                </DeleteModalText>
+                <DeleteModalActions>
+                  <DeleteModalButton
+                    type="button"
+                    onClick={handleCancelDelete}
+                    disabled={deletingPhoto}
+                  >
+                    Annulla
+                  </DeleteModalButton>
+                  <DeleteConfirmButton
+                    type="button"
+                    onClick={handleConfirmDelete}
+                    disabled={deletingPhoto}
+                  >
+                    {deletingPhoto ? (
+                      <>
+                        <DeleteInlineSpinner size={16} />
+                        Eliminazione...
+                      </>
+                    ) : (
+                      'Elimina'
+                    )}
+                  </DeleteConfirmButton>
+                </DeleteModalActions>
+              </DeleteModalCard>
+            </DeleteModalBackdrop>
+          )}
+        </AnimatePresence>
       </Container>
     </GallerySection>
   );

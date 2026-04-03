@@ -3,7 +3,7 @@ import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { usePhotos } from '../contexts/PhotoContext';
-import { IMAGES_BASE_URL } from '../utils/constants';
+import { resolveVersionedAssetUrl } from '../utils/imageUrl';
 
 const Grid = styled(motion.div)`
   display: grid;
@@ -113,7 +113,7 @@ export default function FeaturedGallery({ limit = 18 }) {
             aria-label={p.title || 'Apri foto'}
           >
             <Img 
-              src={p.thumbnail11 ? `${IMAGES_BASE_URL}${p.thumbnail11}?v=${p.derivativesVersion || p.id}` : '/photo-fallback.svg'} 
+              src={resolveVersionedAssetUrl(p.thumbnail11, p.derivativesVersion || p.id)} 
               alt={p.title || 'Foto'} 
               loading="lazy" 
             />

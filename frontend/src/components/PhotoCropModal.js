@@ -1,7 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Crop as CropIcon, Loader2, X } from 'lucide-react';
-import { photoService } from '../utils/api';
-import { resolveAssetUrl } from '../utils/imageUrl';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Check, Crop as CropIcon, RotateCcw, X } from 'lucide-react';
+import { resolveVersionedAssetUrl } from '../utils/imageUrl';
 import {
   CROP_HANDLES,
   CROP_MAX_SCALE,
@@ -19,6 +18,9 @@ import {
   viewportRectToSourceRect,
   clampBetween
 } from '../utils/cropEditor';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import { useSharedImageLoadState } from '../hooks/useSharedImageLoadState';
+import { useAdaptiveHeaderPill } from '../hooks/useAdaptiveHeaderPill';
 import './PhotoCropModal.css';
 
 const getPhotoSettings = (photo) => {
@@ -36,31 +38,40 @@ const getPhotoSettings = (photo) => {
   return photo.settings && typeof photo.settings === 'object' ? photo.settings : {};
 };
 
-const getErrorMessage = (error) => {
-  if (typeof error === 'string') return error;
-  if (error?.message) return error.message;
-  if (error?.error?.message) return error.error.message;
-  return 'Errore durante l\'aggiornamento del crop';
-};
-
-const PhotoCropModal = ({ photo, isOpen, onClose, onSaved }) => {
+const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
   const [activePreset, setActivePreset] = useState('r43');
   const [cropProfiles, setCropProfiles] = useState(() => normalizeCropProfiles());
   const [initialCropProfiles, setInitialCropProfiles] = useState(() => normalizeCropProfiles());
   const [cropViewport, setCropViewport] = useState(null);
-  const [cropRect, setCropRect] = useState(null);
+  const [transientRect, setTransientRect] = useState(null);
   const [isInteracting, setIsInteracting] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
 
   const workspaceRef = useRef(null);
   const imageRef = useRef(null);
   const pointerStateRef = useRef(null);
+  const refreshRafRef = useRef(null);
 
+  const imageVersion = photo?.derivativesVersion || photo?.updatedAt || photo?.id;
   const cropImageSrc = useMemo(
-    () => resolveAssetUrl(photo?.image),
-    [photo]
+    () => resolveVersionedAssetUrl(photo?.image, imageVersion),
+    [imageVersion, photo]
   );
+  const { isLoaded: isFullImageLoaded, setIsLoaded: setIsFullImageLoaded, markLoaded: markFullImageLoaded } = useSharedImageLoadState(cropImageSrc, isOpen && Boolean(photo?.id));
+
+  const workspacePreviewSrc = useMemo(() => {
+    const previewCandidate = photo?.thumbnail43 || photo?.thumbnail11 || photo?.socialImage || '';
+    return previewCandidate ? resolveVersionedAssetUrl(previewCandidate, imageVersion, '') : '';
+  }, [imageVersion, photo]);
+
+  const activePresetPreviewSrc = useMemo(() => {
+    const previewCandidate = activePreset === 'r11'
+      ? (photo?.thumbnail11 || photo?.thumbnail43 || photo?.socialImage || '')
+      : activePreset === 'social'
+        ? (photo?.socialImage || photo?.thumbnail43 || photo?.thumbnail11 || '')
+        : (photo?.thumbnail43 || photo?.thumbnail11 || photo?.socialImage || '');
+
+    return previewCandidate ? resolveVersionedAssetUrl(previewCandidate, imageVersion, '') : '';
+  }, [activePreset, imageVersion, photo]);
 
   const activePresetConfig = useMemo(
     () => CROP_PRESETS.find((preset) => preset.key === activePreset) || CROP_PRESETS[0],
@@ -69,6 +80,35 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onSaved }) => {
 
   const activeProfile = cropProfiles[activePreset] || DEFAULT_CROP_PROFILE;
   const activeRatio = getPresetRatioValue(activePreset);
+
+  const getPresetShortLabel = useCallback((presetKey) => {
+    switch (presetKey) {
+      case 'r43':
+        return '4:3';
+      case 'r11':
+        return '1:1';
+      case 'social':
+        return '1200×630';
+      default:
+        return '';
+    }
+  }, []);
+
+  const {
+    mode: headerPillMode,
+    cardRef,
+    headerRef,
+    headerCopyRef,
+    toplineRef: headerToplineRef,
+    leadingRef: headerEyebrowRef,
+    trailingRef: headerCloseRef,
+    fullMeasureRef: headerFullPillMeasureRef,
+    shortMeasureRef: headerShortPillMeasureRef
+  } = useAdaptiveHeaderPill({
+    enabled: isOpen && Boolean(photo),
+    fullLabel: activePresetConfig.label,
+    shortLabel: getPresetShortLabel(activePreset)
+  });
 
   const refreshViewport = useCallback(() => {
     const workspace = workspaceRef.current;
@@ -100,6 +140,20 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onSaved }) => {
     setCropViewport({ left, top, width, height, naturalWidth, naturalHeight });
   }, []);
 
+  const scheduleViewportRefresh = useCallback(() => {
+    if (refreshRafRef.current) {
+      cancelAnimationFrame(refreshRafRef.current);
+    }
+
+    refreshRafRef.current = requestAnimationFrame(() => {
+      refreshViewport();
+      refreshRafRef.current = requestAnimationFrame(() => {
+        refreshViewport();
+        refreshRafRef.current = null;
+      });
+    });
+  }, [refreshViewport]);
+
   useEffect(() => {
     if (!isOpen) return;
     const originalOverflow = document.body.style.overflow;
@@ -119,11 +173,16 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onSaved }) => {
     setCropProfiles(normalizedProfiles);
     setInitialCropProfiles(normalizedProfiles);
     setCropViewport(null);
-    setCropRect(null);
+    setTransientRect(null);
     setIsInteracting(false);
     pointerStateRef.current = null;
-    setError('');
   }, [isOpen, photo]);
+
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    setTransientRect(null);
+    scheduleViewportRefresh();
+  }, [activePreset, isOpen, scheduleViewportRefresh]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -131,7 +190,8 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onSaved }) => {
     const syncViewport = () => {
       const image = imageRef.current;
       if (image && image.complete && image.naturalWidth && image.naturalHeight) {
-        refreshViewport();
+        markFullImageLoaded();
+        scheduleViewportRefresh();
       }
     };
 
@@ -142,16 +202,40 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onSaved }) => {
       cancelAnimationFrame(rafId);
       clearTimeout(timeoutId);
     };
-  }, [cropImageSrc, isOpen, refreshViewport]);
+  }, [cropImageSrc, isOpen, markFullImageLoaded, scheduleViewportRefresh]);
 
   useEffect(() => {
     if (!workspaceRef.current || typeof ResizeObserver === 'undefined') return undefined;
 
-    const observer = new ResizeObserver(() => refreshViewport());
+    const observer = new ResizeObserver(() => scheduleViewportRefresh());
     observer.observe(workspaceRef.current);
 
     return () => observer.disconnect();
-  }, [refreshViewport]);
+  }, [scheduleViewportRefresh]);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const handleWindowResize = () => scheduleViewportRefresh();
+    window.addEventListener('resize', handleWindowResize);
+
+    return () => {
+      window.removeEventListener('resize', handleWindowResize);
+    };
+  }, [isOpen, scheduleViewportRefresh]);
+
+  useEffect(() => (
+    () => {
+      if (refreshRafRef.current) {
+        cancelAnimationFrame(refreshRafRef.current);
+      }
+    }
+  ), []);
+
+  useEscapeToClose({
+    enabled: isOpen,
+    onClose
+  });
 
   const saveRectToProfile = useCallback((rect, presetKey, viewportOverride = null) => {
     const viewport = viewportOverride || cropViewport;
@@ -164,8 +248,23 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onSaved }) => {
     setCropProfiles((prev) => ({ ...prev, [presetKey]: profile }));
   }, [cropViewport]);
 
+  const derivedSelection = useMemo(() => {
+    if (!cropViewport) return null;
+
+    const sourceRect = profileToSourceRect(
+      activeProfile,
+      cropViewport.naturalWidth,
+      cropViewport.naturalHeight,
+      activeRatio
+    );
+
+    return sourceRectToViewportRect(sourceRect, cropViewport);
+  }, [activeProfile, activeRatio, cropViewport]);
+
+  const selection = transientRect || derivedSelection;
+
   const beginMove = useCallback((event) => {
-    if (!event.isPrimary || !cropViewport || !cropRect) return;
+    if (!event.isPrimary || !cropViewport || !selection) return;
 
     event.preventDefault();
     pointerStateRef.current = {
@@ -173,15 +272,15 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onSaved }) => {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      startRect: { ...cropRect },
+      startRect: { ...selection },
       viewport: cropViewport,
       presetKey: activePreset
     };
     setIsInteracting(true);
-  }, [activePreset, cropRect, cropViewport]);
+  }, [activePreset, cropViewport, selection]);
 
   const beginResize = useCallback((event, handle) => {
-    if (!event.isPrimary || !cropViewport || !cropRect) return;
+    if (!event.isPrimary || !cropViewport || !selection) return;
 
     event.preventDefault();
     event.stopPropagation();
@@ -198,7 +297,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onSaved }) => {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      startRect: { ...cropRect },
+      startRect: { ...selection },
       viewport: cropViewport,
       presetKey: activePreset,
       ratio,
@@ -207,20 +306,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onSaved }) => {
     };
 
     setIsInteracting(true);
-  }, [activePreset, cropRect, cropViewport]);
-
-  useEffect(() => {
-    if (!cropViewport || isInteracting) return;
-
-    const sourceRect = profileToSourceRect(
-      activeProfile,
-      cropViewport.naturalWidth,
-      cropViewport.naturalHeight,
-      activeRatio
-    );
-
-    setCropRect(sourceRectToViewportRect(sourceRect, cropViewport));
-  }, [activeProfile, activeRatio, cropViewport, isInteracting]);
+  }, [activePreset, cropViewport, selection]);
 
   useEffect(() => {
     const onPointerMove = (event) => {
@@ -252,7 +338,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onSaved }) => {
         });
       }
 
-      setCropRect(nextRect);
+      setTransientRect(nextRect);
       saveRectToProfile(nextRect, state.presetKey, viewport);
     };
 
@@ -261,6 +347,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onSaved }) => {
       if (!state || event.pointerId !== state.pointerId) return;
 
       pointerStateRef.current = null;
+      setTransientRect(null);
       setIsInteracting(false);
     };
 
@@ -278,35 +365,26 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onSaved }) => {
   const handleResetPreset = () => {
     const sourceProfile = initialCropProfiles?.[activePreset] || DEFAULT_CROP_PROFILE;
     setCropProfiles((prev) => ({ ...prev, [activePreset]: { ...sourceProfile } }));
+    setTransientRect(null);
   };
 
-  const handleApply = async () => {
+  const handleApply = () => {
     if (!photo?.id) return;
-
-    setSaving(true);
-    setError('');
-
-    try {
-      const existingSettings = getPhotoSettings(photo);
-      const nextSettings = {
-        ...existingSettings,
-        cropProfiles: normalizeCropProfiles(cropProfiles)
-      };
-
-      await photoService.update(photo.id, { settings: JSON.stringify(nextSettings) });
-      await photoService.regenerateDerivatives(photo.id);
-      onSaved?.();
-      onClose?.();
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setSaving(false);
-    }
+    const existingSettings = getPhotoSettings(photo);
+    const nextSettings = {
+      ...existingSettings,
+      cropProfiles: normalizeCropProfiles(cropProfiles)
+    };
+    onApply?.({
+      photoId: photo.id,
+      photoTitle: photo.title || 'foto',
+      nextSettings
+    });
+    onClose?.();
   };
 
   if (!isOpen || !photo) return null;
 
-  const selection = cropViewport && cropRect ? cropRect : null;
   const imageBounds = cropViewport
     ? {
         left: cropViewport.left,
@@ -352,110 +430,166 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onSaved }) => {
       }
     : null;
 
-  const activePreviewStyle = buildPreviewStyleFromViewportRect(cropRect, imageBounds);
+  const activePreviewStyle = buildPreviewStyleFromViewportRect(selection, imageBounds);
 
   return (
-    <div className="crop-modal-backdrop" onClick={() => !saving && onClose?.()}>
-      <div className="crop-modal-card" onClick={(event) => event.stopPropagation()}>
-        <div className="crop-modal-header">
-          <div className="crop-modal-title">
-            <span className="crop-modal-badge"><CropIcon size={14} /> Crop</span>
-            <h3>{photo.title || 'Composizione immagine'}</h3>
+    <div className="crop-modal-backdrop" onClick={() => onClose?.()}>
+      <div ref={cardRef} className="crop-modal-card" onClick={(event) => event.stopPropagation()}>
+        <header ref={headerRef} className="crop-modal-shell-header">
+          <div ref={headerCopyRef} className="crop-modal-header-copy">
+            <div ref={headerToplineRef} className="crop-modal-header-topline">
+              <span ref={headerEyebrowRef} className="crop-modal-eyebrow">
+                <CropIcon size={14} />
+                Crop
+              </span>
+              {headerPillMode !== 'hidden' && (
+                <span className="crop-modal-progress-pill">
+                  {headerPillMode === 'short' ? getPresetShortLabel(activePreset) : activePresetConfig.label}
+                </span>
+              )}
+              <span className="crop-modal-progress-pill-measures" aria-hidden="true">
+                <span ref={headerFullPillMeasureRef} className="crop-modal-progress-pill crop-modal-progress-pill-measure">
+                  {activePresetConfig.label}
+                </span>
+                <span ref={headerShortPillMeasureRef} className="crop-modal-progress-pill crop-modal-progress-pill-measure">
+                  {getPresetShortLabel(activePreset)}
+                </span>
+              </span>
+            </div>
+            <h2>{photo.title || 'Composizione immagine'}</h2>
+            <p className="crop-modal-header-subtitle">
+              Seleziona il formato, sposta il crop e ridimensionalo dai corner handle.
+            </p>
           </div>
-          <button type="button" className="crop-modal-close" onClick={() => !saving && onClose?.()} disabled={saving}>
+          <button ref={headerCloseRef} type="button" className="crop-modal-close" onClick={() => onClose?.()} aria-label="Chiudi crop modal">
             <X size={18} />
           </button>
-        </div>
+        </header>
 
-        <p className="crop-modal-hint">
-          Seleziona il formato, sposta il crop e ridimensionalo dai corner handle.
-        </p>
-
-        <div className="crop-modal-presets">
-          {CROP_PRESETS.map((preset) => (
-            <button
-              key={preset.key}
-              type="button"
-              className={`crop-modal-preset ${activePreset === preset.key ? 'active' : ''}`}
-              onClick={() => setActivePreset(preset.key)}
-              disabled={saving}
-            >
-              {preset.label}
-            </button>
-          ))}
-          <button type="button" className="crop-modal-reset" onClick={handleResetPreset} disabled={saving}>
-            Reset preset
-          </button>
-        </div>
-
-        <div className="crop-modal-main">
-          <div className="crop-modal-editor-col">
-            <div className="crop-modal-workspace-shell">
-              <div ref={workspaceRef} className={`crop-modal-workspace ${isInteracting ? 'is-interacting' : ''}`}>
-                <img
-                  ref={imageRef}
-                  className="crop-modal-image"
-                  src={cropImageSrc}
-                  alt={`Crop ${photo.title || 'foto'}`}
-                  draggable="false"
-                  onLoad={refreshViewport}
-                />
-
-                {imageBounds && <div className="crop-modal-image-bounds" style={imageBounds} />}
-
-                {selection && (
-                  <>
-                    <div className="crop-modal-mask" style={maskTop} />
-                    <div className="crop-modal-mask" style={maskBottom} />
-                    <div className="crop-modal-mask" style={maskLeft} />
-                    <div className="crop-modal-mask" style={maskRight} />
-
-                    <div className="crop-modal-selection" style={selection} onPointerDown={beginMove}>
-                      <div className="crop-modal-grid" />
-                      {CROP_HANDLES.map((handle) => (
-                        <button
-                          key={handle}
-                          type="button"
-                          className={`crop-modal-handle crop-modal-handle-${handle}`}
-                          onPointerDown={(event) => beginResize(event, handle)}
-                          aria-label={`Ridimensiona ${handle}`}
-                        />
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
+        <div className="crop-modal-toolbar">
+          <div className="crop-modal-presets">
+            {CROP_PRESETS.map((preset) => (
+              <button
+                key={preset.key}
+                type="button"
+                className={`crop-modal-preset ${activePreset === preset.key ? 'active' : ''}`}
+                onClick={() => setActivePreset(preset.key)}
+              >
+                <span className="crop-modal-preset-full">{preset.label}</span>
+                <span className="crop-modal-preset-short">{getPresetShortLabel(preset.key)}</span>
+              </button>
+            ))}
           </div>
+          <button type="button" className="crop-modal-reset" onClick={handleResetPreset}>
+            <RotateCcw size={14} />
+            Ripristina preset
+          </button>
+        </div>
 
-          <aside className="crop-modal-preview-col">
-            <h4>Preview attiva</h4>
-            <p>{activePresetConfig.label}</p>
-            <div className="crop-modal-preview-item">
-              <div className="crop-modal-preview-frame" style={{ aspectRatio: activePresetConfig.ratio }}>
-                <img
-                  src={cropImageSrc}
-                  alt={`Preview ${activePresetConfig.label}`}
-                  draggable="false"
-                  style={activePreviewStyle}
-                />
+        <div className="crop-modal-content">
+          <div className="crop-modal-main">
+            <div className="crop-modal-editor-col">
+              <div className="crop-modal-workspace-panel">
+                <div className="crop-modal-workspace-shell">
+                  <div ref={workspaceRef} className={`crop-modal-workspace ${isInteracting ? 'is-interacting' : ''}`}>
+                    {workspacePreviewSrc ? (
+                      <img
+                        className={`crop-modal-image-preview ${isFullImageLoaded ? 'is-loaded' : ''}`}
+                        src={workspacePreviewSrc}
+                        alt=""
+                        aria-hidden="true"
+                      />
+                    ) : null}
+                    <div className={`crop-modal-image-loading-backdrop ${isFullImageLoaded ? 'is-loaded' : ''}`}>
+                      <div className="crop-modal-image-loading-spinner" />
+                    </div>
+                    <img
+                      ref={imageRef}
+                      className={`crop-modal-image ${isFullImageLoaded ? 'is-loaded' : ''}`}
+                      src={cropImageSrc}
+                      alt={`Crop ${photo.title || 'foto'}`}
+                      draggable="false"
+                      onLoad={() => {
+                        markFullImageLoaded();
+                        refreshViewport();
+                      }}
+                      onError={() => {
+                        setIsFullImageLoaded(true);
+                      }}
+                    />
+
+                    {imageBounds && <div className="crop-modal-image-bounds" style={imageBounds} />}
+
+                    {selection && (
+                      <>
+                        <div className="crop-modal-mask" style={maskTop} />
+                        <div className="crop-modal-mask" style={maskBottom} />
+                        <div className="crop-modal-mask" style={maskLeft} />
+                        <div className="crop-modal-mask" style={maskRight} />
+
+                        <div className="crop-modal-selection" style={selection} onPointerDown={beginMove}>
+                          <div className="crop-modal-grid" />
+                          {CROP_HANDLES.map((handle) => (
+                            <button
+                              key={handle}
+                              type="button"
+                              className={`crop-modal-handle crop-modal-handle-${handle}`}
+                              onPointerDown={(event) => beginResize(event, handle)}
+                              aria-label={`Ridimensiona ${handle}`}
+                            />
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
-              <span>{activePresetConfig.label}</span>
             </div>
-          </aside>
+
+            <aside className="crop-modal-preview-col">
+              <div className="crop-modal-preview-copy">
+                <span className="crop-modal-preview-kicker">Preview</span>
+                <h4 className="crop-modal-preview-title">Preview attiva</h4>
+                <p className="crop-modal-preview-description">{activePresetConfig.label}</p>
+              </div>
+              <div className="crop-modal-preview-item">
+                <div className="crop-modal-preview-frame" style={{ aspectRatio: activePresetConfig.ratio }}>
+                  {activePresetPreviewSrc ? (
+                    <img
+                      className={`crop-modal-preview-placeholder ${isFullImageLoaded ? 'is-loaded' : ''}`}
+                      src={activePresetPreviewSrc}
+                      alt=""
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                  <img
+                    className={`crop-modal-preview-image ${isFullImageLoaded ? 'is-loaded' : ''}`}
+                    src={cropImageSrc}
+                    alt={`Preview ${activePresetConfig.label}`}
+                    draggable="false"
+                    style={activePreviewStyle}
+                  />
+                </div>
+              </div>
+            </aside>
+          </div>
         </div>
 
-        {error && <div className="crop-modal-error">{error}</div>}
-
-        <div className="crop-modal-actions">
-          <button type="button" className="crop-modal-btn secondary" onClick={() => onClose?.()} disabled={saving}>
-            Annulla
-          </button>
-          <button type="button" className="crop-modal-btn primary" onClick={handleApply} disabled={saving}>
-            {saving ? <Loader2 size={16} className="spin" /> : <Check size={16} />}
-            {saving ? 'Applico...' : 'Applica crop'}
-          </button>
-        </div>
+        <footer className="crop-modal-actions">
+          <div className="crop-modal-actions-buttons">
+            <button type="button" className="crop-modal-btn secondary crop-modal-btn-reset-mobile" onClick={handleResetPreset}>
+              <RotateCcw size={15} />
+              Ripristina
+            </button>
+            <button type="button" className="crop-modal-btn secondary" onClick={() => onClose?.()}>
+              Annulla
+            </button>
+            <button type="button" className="crop-modal-btn primary" onClick={handleApply}>
+              <Check size={16} />
+              Applica
+            </button>
+          </div>
+        </footer>
       </div>
     </div>
   );

@@ -3,7 +3,8 @@ import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapPin, Camera } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
-import { resolveAssetUrl } from '../utils/imageUrl';
+import { resolveVersionedAssetUrl } from '../utils/imageUrl';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 const ModalOverlay = styled(motion.div)`
   position: fixed;
@@ -217,15 +218,6 @@ const PhotoDescription = styled.p`
   overflow: hidden;
 `;
 
-const LoadingSpinner = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 200px;
-  color: var(--color-accent);
-  font-size: var(--font-size-2xl);
-`;
-
 const EmptyState = styled.div`
   display: flex;
   flex-direction: column;
@@ -275,21 +267,10 @@ const GalleryModal = () => {
     };
   }, [galleryModalOpen]);
 
-  useEffect(() => {
-    const handleEscape = (e) => {
-      if (e.key === 'Escape') {
-        actions.closeGalleryModal();
-      }
-    };
-
-    if (galleryModalOpen) {
-      document.addEventListener('keydown', handleEscape);
-    }
-
-    return () => {
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, [galleryModalOpen, actions]);
+  useEscapeToClose({
+    enabled: galleryModalOpen,
+    onClose: actions.closeGalleryModal
+  });
 
   const handleOverlayClick = (e) => {
     if (e.target === e.currentTarget) {
@@ -302,7 +283,10 @@ const GalleryModal = () => {
     actions.openPhotoModal(photo);
   };
 
-  const getPhotoSrc = (photo) => resolveAssetUrl(photo.image);
+  const getPhotoSrc = (photo) => {
+    const version = photo?.derivativesVersion || photo?.updatedAt || photo?.id;
+    return resolveVersionedAssetUrl(photo.image, version);
+  };
 
   if (!galleryPhotos || galleryPhotos.length === 0) {
     return null;

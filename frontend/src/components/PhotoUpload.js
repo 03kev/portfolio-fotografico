@@ -1,13 +1,39 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { AlertTriangle, FolderOpen, Globe, Loader2, MapPin, PencilLine, Save, Upload } from 'lucide-react';
-import { usePhotos } from '../contexts/PhotoContext';
-import { photoService, uploadUtils } from '../utils/api';
-import MapSelector from './MapSelector';
+import { AlertTriangle, Loader2, Save, Upload } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import exifr from 'exifr';
+import { usePhotos } from '../contexts/PhotoContext';
+import { signSourceUpload, uploadSourceToSignedUrl, uploadUtils } from '../utils/api';
+import { buildOperationErrorMessage } from '../utils/operationErrors';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import { usePhotoUploadWizard } from '../hooks/usePhotoUploadWizard';
+import MapSelector from './MapSelector';
+import PhotoUploadShell from './photoUpload/PhotoUploadShell';
+import UploadStep from './photoUpload/UploadStep';
+import InfoLocationStep from './photoUpload/InfoLocationStep';
+import DetailsStep from './photoUpload/DetailsStep';
 import './PhotoUpload.css';
 
 const METADATA_FILE_ACCEPT = 'image/*,.nef,.nrw,.cr2,.cr3,.arw,.dng,.rw2,.orf,.raf,.pef,.srw,.raw,.tif,.tiff';
+
+const CREATE_UPLOAD_STEP_LABELS = {
+    sign: 'firma URL upload',
+    upload: 'upload file su R2',
+    create: 'creazione foto'
+};
+
+const STEP_DESCRIPTIONS = {
+    1: 'Seleziona il file iniziale da cui generare tutte le derivate pubbliche.',
+    2: 'Compila i dati descrittivi e posiziona correttamente lo scatto.',
+    3: 'Completa metadati tecnici e organizzazione dei tag.'
+};
+
+const getCreateUploadStepLabel = (step = 'create') => CREATE_UPLOAD_STEP_LABELS[step] || 'creazione foto';
+
+const buildCreateUploadErrorMessage = (error, step = 'create') => {
+    const stepLabel = getCreateUploadStepLabel(step);
+    return buildOperationErrorMessage(error, stepLabel);
+};
 
 const getPhotoSettings = (photo) => {
     if (!photo) return {};
@@ -36,11 +62,10 @@ const getSteps = (isEditMode) => (
 );
 
 const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) => {
-    const { actions } = usePhotos();
+    const { actions, photoOpsByPhotoId } = usePhotos();
     const isEditMode = Boolean(photoToEdit);
     const steps = useMemo(() => getSteps(isEditMode), [isEditMode]);
-    const firstStep = steps[0].id;
-    const lastStep = steps[steps.length - 1].id;
+    const initialStep = steps[0].id;
 
     const [formData, setFormData] = useState(() => {
         if (isEditMode) {
@@ -86,7 +111,6 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
     const [loading, setLoading] = useState(false);
     const [locationLoading, setLocationLoading] = useState(false);
     const [showMapSelector, setShowMapSelector] = useState(false);
-    const [currentStep, setCurrentStep] = useState(firstStep);
     const [isClosing, setIsClosing] = useState(false);
     const [metadataLoading, setMetadataLoading] = useState(false);
     const [metadataStatus, setMetadataStatus] = useState({ type: '', message: '' });
@@ -94,6 +118,10 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
     const fileInputRef = useRef(null);
     const metadataFileInputRef = useRef(null);
     const tagInputRef = useRef(null);
+    const hasActivePhotoOp = useMemo(
+        () => Object.values(photoOpsByPhotoId || {}).some((entry) => Boolean(entry?.active)),
+        [photoOpsByPhotoId]
+    );
 
     useEffect(() => {
         const originalOverflow = document.body.style.overflow;
@@ -102,10 +130,6 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             document.body.style.overflow = originalOverflow;
         };
     }, []);
-
-    useEffect(() => {
-        setCurrentStep(firstStep);
-    }, [photoToEdit, firstStep]);
 
     const extractImageMetadata = useCallback(async (file, sourceLabel = 'file selezionato') => {
         try {
@@ -305,7 +329,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         setError('');
     }, []);
 
-    const handleInputChange = (field, value) => {
+    const handleInputChange = useCallback((field, value) => {
         setFormData((prev) => {
             if (field.includes('.')) {
                 const [parent, child] = field.split('.');
@@ -314,7 +338,17 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             return { ...prev, [field]: value };
         });
         if (error) setError('');
-    };
+    }, [error]);
+
+    const adjustCoordinate = useCallback((field, delta) => {
+        setFormData((prev) => {
+            const currentValue = Number.parseFloat(prev[field]);
+            const safeCurrent = Number.isFinite(currentValue) ? currentValue : 0;
+            const nextValue = (safeCurrent + delta).toFixed(6);
+            return { ...prev, [field]: nextValue };
+        });
+        if (error) setError('');
+    }, [error]);
 
     const addTag = useCallback((tag) => {
         const newTag = tag.trim();
@@ -328,50 +362,28 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         setTagInput('');
     }, []);
 
-    const removeTag = (tagToRemove) => {
+    const removeTag = useCallback((tagToRemove) => {
         setFormData((prev) => ({ ...prev, tags: prev.tags.filter((t) => t !== tagToRemove) }));
-    };
+    }, []);
 
-    const handleTagKeyPress = (e) => {
+    const handleTagKeyPress = useCallback((e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
             if (tagInput.trim()) addTag(tagInput);
         }
-    };
+    }, [addTag, tagInput]);
 
-    const initClose = () => {
+    const initClose = useCallback(() => {
         if (loading) return;
         setIsClosing(true);
         setTimeout(() => onClose?.(), 75);
-    };
+    }, [loading, onClose]);
 
-    const nextStep = useCallback(() => {
-        if (loading) return;
-
-        if (!isEditMode && currentStep === 1 && !selectedFile) {
-            setError('Seleziona un\'immagine prima di continuare');
-            return;
-        }
-        if (currentStep === 2 && !formData.title.trim()) {
-            setError('Il campo Titolo è obbligatorio');
-            return;
-        }
-
-        const index = steps.findIndex((step) => step.id === currentStep);
-        if (index >= 0 && index < steps.length - 1) {
-            setError('');
-            setCurrentStep(steps[index + 1].id);
-        }
-    }, [loading, isEditMode, currentStep, selectedFile, formData.title, steps]);
-
-    const prevStep = useCallback(() => {
-        if (loading) return;
-        const index = steps.findIndex((step) => step.id === currentStep);
-        if (index > 0) {
-            setError('');
-            setCurrentStep(steps[index - 1].id);
-        }
-    }, [loading, currentStep, steps]);
+    useEscapeToClose({
+        enabled: Boolean(onClose),
+        onClose: initClose,
+        canClose: !loading
+    });
 
     const handleUpload = useCallback(async () => {
         if (!isEditMode && !selectedFile) {
@@ -383,494 +395,359 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             return;
         }
 
-        setLoading(true);
-        setError('');
+        const nextSettings = { ...(formData.settings || {}) };
+        delete nextSettings.cropFocus;
 
-        try {
-            const nextSettings = { ...(formData.settings || {}) };
-            delete nextSettings.cropFocus;
+        if (isEditMode) {
+            setError('');
+            const targetPhotoId = photoToEdit?.id;
 
-            if (isEditMode) {
+            if (!targetPhotoId) {
+                const errorMessage = 'ID foto non valido per aggiornamento.';
+                if (onUploadError) onUploadError({ message: errorMessage });
+                return;
+            }
+
+            actions.setPhotoOpStatus(targetPhotoId, {
+                active: true,
+                type: 'edit',
+                percent: 18,
+                label: 'Salvataggio dettagli',
+                step: 'update'
+            });
+
+            if (onClose) {
+                onClose();
+            }
+
+            try {
                 const updateData = {
                     ...formData,
                     settings: JSON.stringify(nextSettings),
                     tags: formData.tags
                 };
 
-                const result = await actions.updatePhoto(photoToEdit.id, updateData);
+                const result = await actions.updatePhotoInBackground(photoToEdit.id, updateData);
+                actions.setPhotoOpStatus(targetPhotoId, {
+                    percent: 100,
+                    label: 'Dettagli aggiornati',
+                    step: 'done'
+                });
                 if (onUploadSuccess) onUploadSuccess(result);
-            } else {
-                let result;
-                try {
-                    const photoId = Date.now();
-                    const uploadId = String(photoId);
-                    const signResponse = await photoService.getUploadUrl({
-                        uploadId,
-                        variant: 'source',
-                        mimetype: selectedFile.type,
-                        fileSize: selectedFile.size
-                    });
-                    const signedData = signResponse?.data?.data || signResponse?.data;
 
-                    if (!signedData?.uploadUrl || !signedData?.sourcePath) {
-                        throw new Error('URL di upload non valida ricevuta dal server');
-                    }
-
-                    const uploadResponse = await fetch(signedData.uploadUrl, {
-                        method: 'PUT',
-                        headers: {
-                            'Content-Type': selectedFile.type || 'application/octet-stream',
-                            'Cache-Control': 'private, no-store'
-                        },
-                        body: selectedFile
-                    });
-
-                    if (!uploadResponse.ok) {
-                        throw new Error(`Upload su storage fallito (${uploadResponse.status})`);
-                    }
-
-                    const uploadData = {
-                        ...formData,
-                        photoId,
-                        sourcePath: signedData.sourcePath,
-                        sourceContentType: selectedFile.type,
-                        settings: nextSettings,
-                        tags: formData.tags
-                    };
-                    result = await actions.addPhoto(uploadData);
-                } catch (directUploadError) {
-                    const directUploadMessage = directUploadError?.message || directUploadError?.error?.message || '';
-                    const shouldFallbackToMultipart = directUploadMessage.includes('Upload diretto disponibile solo con R2 configurato');
-
-                    if (!shouldFallbackToMultipart) {
-                        throw directUploadError;
-                    }
-
-                    const multipartPayload = uploadUtils.createFormData({
-                        ...formData,
-                        image: selectedFile,
-                        settings: JSON.stringify(nextSettings),
-                        tags: formData.tags
-                    });
-                    result = await actions.addPhoto(multipartPayload);
-                }
-
-                if (onUploadSuccess) onUploadSuccess(result);
+                setTimeout(() => {
+                    actions.clearPhotoOpStatus(targetPhotoId);
+                }, 300);
+            } catch (err) {
+                console.error('Errore upload foto:', err);
+                const errorMessage = buildOperationErrorMessage(err, 'aggiornamento foto');
+                actions.clearPhotoOpStatus(targetPhotoId);
+                if (onUploadError) onUploadError({ ...err, message: errorMessage });
             }
+            return;
+        }
 
-            setFormData({
-                title: '',
-                description: '',
-                date: new Date().toISOString().split('T')[0],
-                location: '',
-                lat: '',
-                lng: '',
-                camera: '',
-                lens: '',
-                settings: { aperture: '', shutter: '', iso: '', focal: '' },
-                tags: []
-            });
-            setSelectedFile(null);
-            setPreview(null);
-            setTagInput('');
-            setCurrentStep(firstStep);
-            if (onClose) onClose();
-        } catch (err) {
-            console.error('Errore upload foto:', err);
-            const statusCode = err?.status || err?.code || err?.response?.status || err?.error?.code;
-            const isPayloadTooLarge = String(statusCode) === '413';
-            const errorMessage = isPayloadTooLarge
-                ? 'File troppo grande per l\'upload. Usa upload diretto R2 o riduci la dimensione.'
-                : (err?.message || err?.error?.message || 'Errore durante il caricamento');
-            setError(errorMessage);
-            if (onUploadError) onUploadError(err);
-        } finally {
+        if (hasActivePhotoOp) {
+            setError('È già in corso un\'altra operazione. Attendi il completamento.');
+            return;
+        }
+
+        setError('');
+
+        const selectedFileSnapshot = selectedFile;
+        const formDataSnapshot = {
+            ...formData,
+            tags: Array.isArray(formData.tags) ? [...formData.tags] : []
+        };
+        const pendingPreviewUrl = preview || '';
+        const photoId = Date.now();
+        const pendingId = photoId;
+
+        actions.addPendingUpload({
+            id: pendingId,
+            title: formDataSnapshot.title || 'Nuova foto',
+            location: formDataSnapshot.location || 'Caricamento in corso',
+            description: formDataSnapshot.description || '',
+            tags: formDataSnapshot.tags,
+            previewUrl: pendingPreviewUrl
+        });
+        actions.setPhotoOpStatus(pendingId, {
+            active: true,
+            type: 'new-upload',
+            percent: 3,
+            label: 'Preparazione upload',
+            step: 'sign'
+        });
+
+        setLoading(true);
+        if (onClose) {
+            onClose();
+        } else {
             setLoading(false);
+        }
+
+        let currentUploadStep = 'sign';
+        let softTimer = null;
+        const startSoftProgress = (from = 84, to = 95, intervalMs = 260) => {
+            let current = Math.max(0, Math.min(100, from));
+            actions.setPhotoOpStatus(pendingId, { percent: current });
+            softTimer = setInterval(() => {
+                current = Math.min(to, current + 1);
+                actions.setPhotoOpStatus(pendingId, { percent: current });
+                if (current >= to && softTimer) {
+                    clearInterval(softTimer);
+                    softTimer = null;
+                }
+            }, intervalMs);
+        };
+        const stopSoftProgress = () => {
+            if (!softTimer) return;
+            clearInterval(softTimer);
+            softTimer = null;
+        };
+
+        try {
+            currentUploadStep = 'sign';
+            actions.setPhotoOpStatus(pendingId, {
+                percent: 8,
+                label: 'Firma URL upload',
+                step: 'sign'
+            });
+            const signedData = await signSourceUpload({
+                uploadId: String(photoId),
+                file: selectedFileSnapshot
+            });
+
+            currentUploadStep = 'upload';
+            actions.setPhotoOpStatus(pendingId, {
+                percent: 12,
+                label: 'Upload file su R2',
+                step: 'upload'
+            });
+            await uploadSourceToSignedUrl({
+                uploadUrl: signedData.uploadUrl,
+                file: selectedFileSnapshot,
+                onProgress: ({ ratio }) => {
+                    const normalized = Math.max(0, Math.min(1, Number(ratio) || 0));
+                    const mapped = Math.round(12 + normalized * 66);
+                    actions.setPhotoOpStatus(pendingId, { percent: mapped });
+                }
+            });
+
+            currentUploadStep = 'create';
+            actions.setPhotoOpStatus(pendingId, {
+                percent: 84,
+                label: 'Creazione foto',
+                step: 'create'
+            });
+            startSoftProgress(84, 95);
+
+            const uploadData = {
+                ...formDataSnapshot,
+                photoId,
+                sourcePath: signedData.sourcePath,
+                sourceContentType: selectedFileSnapshot.type,
+                settings: nextSettings,
+                tags: formDataSnapshot.tags
+            };
+            const result = await actions.createPhotoInBackground(uploadData);
+            stopSoftProgress();
+
+            actions.setPhotoOpStatus(pendingId, {
+                percent: 100,
+                label: 'Foto caricata',
+                step: 'done'
+            });
+            actions.removePendingUpload(pendingId);
+            setTimeout(() => {
+                actions.clearPhotoOpStatus(pendingId);
+            }, 250);
+            if (onUploadSuccess) onUploadSuccess(result);
+        } catch (err) {
+            stopSoftProgress();
+            console.error('Errore upload foto:', err);
+            actions.removePendingUpload(pendingId);
+            actions.clearPhotoOpStatus(pendingId);
+            const errorMessage = buildCreateUploadErrorMessage(err, currentUploadStep);
+            if (onUploadError) {
+                onUploadError({
+                    ...err,
+                    message: errorMessage
+                });
+            }
         }
     }, [
         isEditMode,
         selectedFile,
+        preview,
         formData,
         actions,
         photoToEdit,
+        hasActivePhotoOp,
         onUploadSuccess,
         onUploadError,
-        firstStep,
         onClose
     ]);
 
-    useEffect(() => {
-        const onKeyDown = (e) => {
-            if (e.key !== 'Enter' || loading) return;
-
-            if (tagInputRef.current === document.activeElement) {
-                e.preventDefault();
-                if (tagInput.trim()) addTag(tagInput);
-                return;
-            }
-
-            if (currentStep !== lastStep) {
-                const disabledNext =
-                    (!isEditMode && currentStep === 1 && !selectedFile) ||
-                    (currentStep === 2 && !formData.title.trim());
-                if (!disabledNext) nextStep();
-                return;
-            }
-
-            if ((selectedFile || isEditMode) && formData.title.trim() && !loading) {
-                handleUpload();
-            }
-        };
-
-        document.addEventListener('keydown', onKeyDown);
-        return () => document.removeEventListener('keydown', onKeyDown);
-    }, [
+    const {
         currentStep,
-        lastStep,
-        loading,
-        tagInput,
-        selectedFile,
-        isEditMode,
-        formData.title,
-        addTag,
+        selectStep,
         nextStep,
-        handleUpload
-    ]);
+        prevStep,
+        currentStepIndex,
+        currentStepLabel,
+        currentStepDescription,
+        isFirstStep,
+        isLastStep,
+        actionsLayoutClass,
+        isNextDisabled
+    } = usePhotoUploadWizard({
+        steps,
+        initialStep,
+        loading,
+        isEditMode,
+        selectedFile,
+        title: formData.title,
+        tagInput,
+        tagInputRef,
+        addTag,
+        onSubmit: handleUpload,
+        setError,
+        stepDescriptions: STEP_DESCRIPTIONS
+    });
 
-    const isFirstStep = currentStep === firstStep;
-    const isLastStep = currentStep === lastStep;
+    const footer = (
+        <div className="upload-actions">
+            <div className="upload-actions-meta">
+                <span className="upload-actions-step">Step {currentStepIndex + 1} / {steps.length}</span>
+                <span className="upload-actions-caption">{currentStepLabel}</span>
+            </div>
+            <div className={`upload-actions-buttons${actionsLayoutClass}`}>
+                {!isFirstStep && (
+                    <button type="button" className="cancel-btn" onClick={prevStep} disabled={loading}>
+                        Indietro
+                    </button>
+                )}
 
-    const isNextDisabled =
-        loading ||
-        (!isEditMode && currentStep === 1 && !selectedFile) ||
-        (currentStep === 2 && !formData.title.trim());
-
-    return (
-        <div className="photo-upload-modal" onClick={() => !loading && initClose()}>
-            <div className={`photo-upload-container${isClosing ? ' closing' : ''}`} onClick={(e) => e.stopPropagation()}>
-                <div className="upload-header">
-                    <h2>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                            {isEditMode ? <PencilLine size={18} /> : <Upload size={18} />}
-                            {isEditMode ? 'Modifica Foto' : 'Carica Nuova Foto'}
-                        </span>
-                    </h2>
-                    {onClose && (
-                        <button className="close-btn" onClick={() => !loading && initClose()} title="Chiudi">
-                            ×
-                        </button>
-                    )}
-                </div>
-
-                <nav className="step-navbar">
-                    {steps.map((step) => (
+                {!isLastStep ? (
+                    <button type="button" className="upload-btn" onClick={nextStep} disabled={isNextDisabled}>
+                        Avanti
+                    </button>
+                ) : (
+                    <>
                         <button
-                            key={step.id}
-                            className={currentStep === step.id ? 'active' : ''}
-                            onClick={() => {
-                                if (!loading) {
-                                    setError('');
-                                    setCurrentStep(step.id);
-                                }
-                            }}
-                            disabled={loading}
+                            type="button"
+                            className="upload-btn"
+                            onClick={handleUpload}
+                            disabled={loading || (!selectedFile && !isEditMode)}
                         >
-                            {step.label}
-                        </button>
-                    ))}
-                </nav>
-
-                <div className="steps-container">
-                    <input
-                        ref={metadataFileInputRef}
-                        type="file"
-                        accept={METADATA_FILE_ACCEPT}
-                        style={{ display: 'none' }}
-                        onChange={handleMetadataFileSelect}
-                    />
-
-                    {!isEditMode && currentStep === 1 && (
-                        <div className="step-content">
-                            <div
-                                className={`upload-area ${selectedFile ? 'has-file' : ''}`}
-                                onClick={() => !loading && fileInputRef.current?.click()}
-                            >
-                                {preview ? (
-                                    <div className="preview-container">
-                                        <img src={preview} alt="Preview" className="preview-image" />
-                                        <div className="preview-overlay">
-                                            <button className="change-image-btn">Cambia immagine</button>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="upload-placeholder">
-                                        <div className="upload-icon">
-                                            <FolderOpen size={28} />
-                                        </div>
-                                        <p>Clicca per selezionare un'immagine</p>
-                                        <p className="upload-hint">Formati JPG, PNG, WebP - Max 50MB</p>
-                                    </div>
-                                )}
-                            </div>
-                            <input
-                                ref={fileInputRef}
-                                type="file"
-                                accept="image/*"
-                                style={{ display: 'none' }}
-                                onChange={handleFileSelect}
-                            />
-                        </div>
-                    )}
-
-                    {currentStep === 2 && (
-                        <div className="step-content">
-                            <div className="form-group">
-                                <label>Titolo<span style={{ color: '#999', marginLeft: '2px' }}>*</span></label>
-                                <input
-                                    type="text"
-                                    value={formData.title}
-                                    onChange={(e) => handleInputChange('title', e.target.value)}
-                                    placeholder="Es: Tramonto in Toscana"
-                                />
-                            </div>
-
-                            <div className="form-group">
-                                <label>Descrizione</label>
-                                <textarea
-                                    rows="3"
-                                    value={formData.description}
-                                    onChange={(e) => handleInputChange('description', e.target.value)}
-                                    placeholder="Racconta la storia..."
-                                />
-                            </div>
-
-                            <div className="location-section">
-                                <label>Posizione</label>
-                                <div className="location-input-group">
-                                    <input
-                                        type="text"
-                                        value={formData.location}
-                                        onChange={(e) => handleInputChange('location', e.target.value)}
-                                        placeholder="Es: Val d'Orcia, Toscana"
-                                    />
-                                    <button
-                                        className="location-btn gps-btn"
-                                        onClick={getCurrentLocation}
-                                        disabled={locationLoading || loading}
-                                        title="Usa GPS"
-                                    >
-                                        {locationLoading ? <Loader2 size={16} /> : <MapPin size={16} />}
-                                    </button>
-                                    <button
-                                        className="location-btn map-btn"
-                                        onClick={() => setShowMapSelector(true)}
-                                        disabled={loading}
-                                        title="Mappa"
-                                    >
-                                        <Globe size={16} />
-                                    </button>
-                                </div>
-                                <div className="coordinates-group">
-                                    <div className="form-group">
-                                        <label>Latitudine</label>
-                                        <input
-                                            type="number"
-                                            step="any"
-                                            value={formData.lat}
-                                            onChange={(e) => handleInputChange('lat', e.target.value)}
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label>Longitudine</label>
-                                        <input
-                                            type="number"
-                                            step="any"
-                                            value={formData.lng}
-                                            onChange={(e) => handleInputChange('lng', e.target.value)}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {currentStep === 3 && (
-                        <div className="step-content">
-                            <div className="tech-details">
-                                <div className="tech-header-actions">
-                                    <h3>Dettagli Tecnici</h3>
-                                    <button
-                                        type="button"
-                                        className="metadata-btn"
-                                        onClick={() => metadataFileInputRef.current?.click()}
-                                        disabled={loading || metadataLoading}
-                                    >
-                                        {metadataLoading ? <Loader2 size={16} /> : <FolderOpen size={16} />}
-                                        {metadataLoading ? 'Importing...' : 'Import metadata'}
-                                    </button>
-                                </div>
-                                {metadataStatus.message && (
-                                    <p className={`metadata-status ${metadataStatus.type}`}>
-                                        {metadataStatus.message}
-                                    </p>
-                                )}
-                                <div className="form-group">
-                                    <label>Data</label>
-                                    <input
-                                        type="date"
-                                        value={formData.date}
-                                        onChange={(e) => handleInputChange('date', e.target.value)}
-                                    />
-                                </div>
-                                <div className="form-group">
-                                    <label>Fotocamera</label>
-                                    <input
-                                        type="text"
-                                        value={formData.camera}
-                                        placeholder="Es: Canon EOS R5"
-                                        onChange={(e) => handleInputChange('camera', e.target.value)}
-                                    />
-                                </div>
-                                <div className="form-group">
-                                    <label>Obiettivo</label>
-                                    <input
-                                        type="text"
-                                        value={formData.lens}
-                                        placeholder="Es: RF 24-70mm f/2.8L IS"
-                                        onChange={(e) => handleInputChange('lens', e.target.value)}
-                                    />
-                                </div>
-                                <div className="settings-row">
-                                    <div className="form-group">
-                                        <label>Apertura</label>
-                                        <input
-                                            type="text"
-                                            value={formData.settings.aperture}
-                                            placeholder="es. f/8"
-                                            onChange={(e) => handleInputChange('settings.aperture', e.target.value)}
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label>Tempo</label>
-                                        <input
-                                            type="text"
-                                            value={formData.settings.shutter}
-                                            placeholder="es. 1/125s"
-                                            onChange={(e) => handleInputChange('settings.shutter', e.target.value)}
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label>ISO</label>
-                                        <input
-                                            type="text"
-                                            value={formData.settings.iso}
-                                            placeholder="es. 100"
-                                            onChange={(e) => handleInputChange('settings.iso', e.target.value)}
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label>Focale</label>
-                                        <input
-                                            type="text"
-                                            value={formData.settings.focal}
-                                            placeholder="es. 35mm"
-                                            onChange={(e) => handleInputChange('settings.focal', e.target.value)}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="tags-section">
-                                <label>Tag</label>
-                                <div className="tags-input-group">
-                                    <input
-                                        ref={tagInputRef}
-                                        type="text"
-                                        value={tagInput}
-                                        placeholder="Aggiungi tag e premi Invio"
-                                        onChange={(e) => setTagInput(e.target.value)}
-                                        onKeyPress={handleTagKeyPress}
-                                    />
-                                    <button type="button" onClick={() => addTag(tagInput)} disabled={!tagInput.trim()}>
-                                        +
-                                    </button>
-                                </div>
-                                {formData.tags.length > 0 && (
-                                    <div className="tags-list">
-                                        {formData.tags.map((tag, idx) => (
-                                            <span key={idx} className="tag">
-                                                {tag}
-                                                <button type="button" onClick={() => removeTag(tag)}>×</button>
-                                            </span>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
-
-                    {error && (
-                        <div className="error-message">
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                                <AlertTriangle size={16} /> {error}
+                                {loading ? <Loader2 size={16} /> : isEditMode ? <Save size={16} /> : <Upload size={16} />}
+                                {loading
+                                    ? (isEditMode ? 'Salvataggio...' : 'Caricamento...')
+                                    : (isEditMode ? 'Salva Modifiche' : 'Carica Foto')}
                             </span>
-                        </div>
-                    )}
-
-                    <div className="upload-actions">
-                        {!isFirstStep && (
-                            <button type="button" className="cancel-btn" onClick={prevStep} disabled={loading}>
-                                Indietro
+                        </button>
+                        {onClose && (
+                            <button type="button" className="cancel-btn" onClick={onClose} disabled={loading}>
+                                Annulla
                             </button>
                         )}
-
-                        {!isLastStep ? (
-                            <button type="button" className="upload-btn" onClick={nextStep} disabled={isNextDisabled}>
-                                Avanti
-                            </button>
-                        ) : (
-                            <>
-                                <button
-                                    type="button"
-                                    className="upload-btn"
-                                    onClick={handleUpload}
-                                    disabled={loading || (!selectedFile && !isEditMode)}
-                                >
-                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                                        {loading ? <Loader2 size={16} /> : isEditMode ? <Save size={16} /> : <Upload size={16} />}
-                                        {loading
-                                            ? (isEditMode ? 'Salvataggio...' : 'Caricamento...')
-                                            : (isEditMode ? 'Salva Modifiche' : 'Carica Foto')}
-                                    </span>
-                                </button>
-                                {onClose && (
-                                    <button type="button" className="cancel-btn" onClick={onClose} disabled={loading}>
-                                        Annulla
-                                    </button>
-                                )}
-                            </>
-                        )}
-                    </div>
-                </div>
-
-                <AnimatePresence initial={false} mode="wait">
-                    {showMapSelector && (
-                        <MapSelector
-                            key="map-selector"
-                            isOpen={showMapSelector}
-                            onClose={() => setShowMapSelector(false)}
-                            onLocationSelect={handleMapLocationSelect}
-                            initialLocation={
-                                formData.lat && formData.lng
-                                    ? { lat: parseFloat(formData.lat), lng: parseFloat(formData.lng) }
-                                    : null
-                            }
-                            initialFullAddress={formData.location ? formData.location : ''}
-                        />
-                    )}
-                </AnimatePresence>
+                    </>
+                )}
             </div>
         </div>
+    );
+
+    return (
+        <PhotoUploadShell
+            isEditMode={isEditMode}
+            currentStepIndex={currentStepIndex}
+            steps={steps}
+            currentStep={currentStep}
+            currentStepLabel={currentStepLabel}
+            currentStepDescription={currentStepDescription}
+            loading={loading}
+            isClosing={isClosing}
+            onInitClose={initClose}
+            onStepSelect={selectStep}
+            onBackdropClick={() => !loading && initClose()}
+            footer={footer}
+        >
+            <div className="steps-container">
+                <input
+                    ref={metadataFileInputRef}
+                    type="file"
+                    accept={METADATA_FILE_ACCEPT}
+                    style={{ display: 'none' }}
+                    onChange={handleMetadataFileSelect}
+                />
+
+                {!isEditMode && currentStep === 1 && (
+                    <UploadStep
+                        loading={loading}
+                        selectedFile={selectedFile}
+                        preview={preview}
+                        fileInputRef={fileInputRef}
+                        handleFileSelect={handleFileSelect}
+                    />
+                )}
+
+                {currentStep === 2 && (
+                    <InfoLocationStep
+                        formData={formData}
+                        loading={loading}
+                        locationLoading={locationLoading}
+                        handleInputChange={handleInputChange}
+                        getCurrentLocation={getCurrentLocation}
+                        setShowMapSelector={setShowMapSelector}
+                        adjustCoordinate={adjustCoordinate}
+                    />
+                )}
+
+                {currentStep === 3 && (
+                    <DetailsStep
+                        formData={formData}
+                        loading={loading}
+                        metadataLoading={metadataLoading}
+                        metadataStatus={metadataStatus}
+                        metadataFileInputRef={metadataFileInputRef}
+                        handleInputChange={handleInputChange}
+                        tagInput={tagInput}
+                        setTagInput={setTagInput}
+                        tagInputRef={tagInputRef}
+                        handleTagKeyPress={handleTagKeyPress}
+                        addTag={addTag}
+                        removeTag={removeTag}
+                    />
+                )}
+
+                {error && (
+                    <div className="error-message">
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                            <AlertTriangle size={16} /> {error}
+                        </span>
+                    </div>
+                )}
+            </div>
+
+            <AnimatePresence initial={false} mode="wait">
+                {showMapSelector && (
+                    <MapSelector
+                        key="map-selector"
+                        isOpen={showMapSelector}
+                        onClose={() => setShowMapSelector(false)}
+                        onLocationSelect={handleMapLocationSelect}
+                        initialLocation={
+                            formData.lat && formData.lng
+                                ? { lat: parseFloat(formData.lat), lng: parseFloat(formData.lng) }
+                                : null
+                        }
+                        initialFullAddress={formData.location ? formData.location : ''}
+                    />
+                )}
+            </AnimatePresence>
+        </PhotoUploadShell>
     );
 };
 

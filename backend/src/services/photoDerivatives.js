@@ -120,6 +120,20 @@ function normalizeCropProfile(rawProfile) {
     return { x, y, scale };
 }
 
+const DEFAULT_CROP_PROFILE = Object.freeze({
+    x: 0.5,
+    y: 0.5,
+    scale: 1
+});
+
+function buildDefaultCropProfiles() {
+    return {
+        r43: { ...DEFAULT_CROP_PROFILE },
+        r11: { ...DEFAULT_CROP_PROFILE },
+        social: { ...DEFAULT_CROP_PROFILE }
+    };
+}
+
 function getCropProfilesFromSettings(settings) {
     if (typeof settings === 'string') {
         try {
@@ -206,31 +220,22 @@ async function generatePhotoDerivatives(sourceBuffer, cropProfiles = null) {
     const rawHeight = Number(metadata.height || 0);
     const sourceWidth = [5, 6, 7, 8].includes(orientation) ? rawHeight : rawWidth;
     const sourceHeight = [5, 6, 7, 8].includes(orientation) ? rawWidth : rawHeight;
+    if (!Number.isFinite(sourceWidth) || !Number.isFinite(sourceHeight) || sourceWidth <= 0 || sourceHeight <= 0) {
+        throw new Error('Impossibile estrarre una risoluzione valida dal source originale.');
+    }
     const normalizedProfiles = cropProfiles && typeof cropProfiles === 'object' ? cropProfiles : null;
 
-    const image = await base
-        .clone()
-        .resize(3840, 2160, { fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: 92, effort: 6 })
-        .toBuffer();
-
     const createCoverDerivative = async (targetWidth, targetHeight, profile, outputBuilder) => {
-        if (!profile) {
-            return outputBuilder(
-                base.clone().resize(targetWidth, targetHeight, { fit: 'cover', position: sharp.strategy.attention })
-            );
-        }
-
         const cropRegion = computeCoverCropRegion(
             sourceWidth,
             sourceHeight,
             targetWidth,
             targetHeight,
-            profile
+            profile || DEFAULT_CROP_PROFILE
         );
         if (!cropRegion) {
             return outputBuilder(
-                base.clone().resize(targetWidth, targetHeight, { fit: 'cover', position: sharp.strategy.attention })
+                base.clone().resize(targetWidth, targetHeight, { fit: 'cover', position: 'centre' })
             );
         }
 
@@ -242,47 +247,60 @@ async function generatePhotoDerivatives(sourceBuffer, cropProfiles = null) {
         );
     };
 
-    const thumbnail43 = await createCoverDerivative(400, 300, normalizeCropProfile(normalizedProfiles?.r43), (pipeline) => (
+    const imagePromise = base
+        .clone()
+        .resize(3840, 2160, { fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 92, effort: 6 })
+        .toBuffer();
+
+    const thumbnail43Promise = createCoverDerivative(
+        400,
+        300,
+        normalizeCropProfile(normalizedProfiles?.r43) || DEFAULT_CROP_PROFILE,
+        (pipeline) => (
         pipeline.webp({ quality: 84, effort: 5 }).toBuffer()
     ));
 
-    const thumbnail11 = await createCoverDerivative(400, 400, normalizeCropProfile(normalizedProfiles?.r11), (pipeline) => (
+    const thumbnail11Promise = createCoverDerivative(
+        400,
+        400,
+        normalizeCropProfile(normalizedProfiles?.r11) || DEFAULT_CROP_PROFILE,
+        (pipeline) => (
         pipeline.webp({ quality: 84, effort: 5 }).toBuffer()
     ));
 
-    const socialImage = await createCoverDerivative(1200, 630, normalizeCropProfile(normalizedProfiles?.social), (pipeline) => (
+    const socialImagePromise = createCoverDerivative(
+        1200,
+        630,
+        normalizeCropProfile(normalizedProfiles?.social) || DEFAULT_CROP_PROFILE,
+        (pipeline) => (
         pipeline.jpeg({ quality: 84, mozjpeg: true, progressive: true }).toBuffer()
     ));
 
-    return { image, thumbnail43, thumbnail11, socialImage };
-}
+    const [image, thumbnail43, thumbnail11, socialImage] = await Promise.all([
+        imagePromise,
+        thumbnail43Promise,
+        thumbnail11Promise,
+        socialImagePromise
+    ]);
 
-async function extractSourceResolution(sourceBuffer) {
-    const metadata = await sharp(sourceBuffer).metadata();
-    const orientation = Number(metadata.orientation || 1);
-    const rawWidth = Number(metadata.width || 0);
-    const rawHeight = Number(metadata.height || 0);
-
-    const width = [5, 6, 7, 8].includes(orientation) ? rawHeight : rawWidth;
-    const height = [5, 6, 7, 8].includes(orientation) ? rawWidth : rawHeight;
-
-    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-        throw new Error('Impossibile estrarre una risoluzione valida dal source originale.');
-    }
-
-    const normalizedWidth = Math.round(width);
-    const normalizedHeight = Math.round(height);
+    const width = Math.round(sourceWidth);
+    const height = Math.round(sourceHeight);
 
     return {
-        width: normalizedWidth,
-        height: normalizedHeight,
-        resolution: `${normalizedWidth}x${normalizedHeight}`
+        image,
+        thumbnail43,
+        thumbnail11,
+        socialImage,
+        width,
+        height,
+        resolution: `${width}x${height}`
     };
 }
 
 module.exports = {
     buildPhotoAssetPaths,
-    extractSourceResolution,
+    buildDefaultCropProfiles,
     generatePhotoDerivatives,
     getCropProfilesFromSettings,
     normalizePrivateSourcePath,

@@ -18,8 +18,12 @@ const ACTIONS = {
     DELETE_PHOTO: 'DELETE_PHOTO',
     SET_MAP_CENTER: 'SET_MAP_CENTER',
     SET_FILTER: 'SET_FILTER',
-    FORCE_GALLERY_SYNC: 'FORCE_GALLERY_SYNC',
-    SET_PENDING_MAP_FOCUS: 'SET_PENDING_MAP_FOCUS'
+    SET_PENDING_MAP_FOCUS: 'SET_PENDING_MAP_FOCUS',
+    SET_PHOTO_OP_STATUS: 'SET_PHOTO_OP_STATUS',
+    CLEAR_PHOTO_OP_STATUS: 'CLEAR_PHOTO_OP_STATUS',
+    ADD_PENDING_UPLOAD: 'ADD_PENDING_UPLOAD',
+    UPDATE_PENDING_UPLOAD: 'UPDATE_PENDING_UPLOAD',
+    REMOVE_PENDING_UPLOAD: 'REMOVE_PENDING_UPLOAD'
 };
 
 // Initial State
@@ -39,9 +43,26 @@ const initialState = {
         tags: [],
         location: ''
     },
-    gallerySyncTrigger: 0, // Contatore per forzare re-render della gallery
-    pendingMapFocus: null // Foto da focalizzare quando si arriva alla mappa
+    pendingMapFocus: null,
+    photoOpsByPhotoId: {},
+    pendingUploads: []
 };
+
+function samePhotoId(a, b) {
+    return String(a?.id ?? '') === String(b?.id ?? '');
+}
+
+function reconcilePhotoReference(nextPhotos, currentPhoto) {
+    if (!currentPhoto) return null;
+    return nextPhotos.find((photo) => samePhotoId(photo, currentPhoto)) || null;
+}
+
+function reconcilePhotoCollection(nextPhotos, currentCollection) {
+    if (!Array.isArray(currentCollection) || currentCollection.length === 0) return [];
+    return currentCollection
+        .map((item) => reconcilePhotoReference(nextPhotos, item))
+        .filter(Boolean);
+}
 
 // Reducer
 function photoReducer(state, action) {
@@ -53,12 +74,23 @@ function photoReducer(state, action) {
         };
         
         case ACTIONS.SET_PHOTOS:
+        {
+        const nextPhotos = Array.isArray(action.payload) ? action.payload : [];
+        const nextSelectedPhoto = reconcilePhotoReference(nextPhotos, state.selectedPhoto);
+        const nextGalleryPhotos = reconcilePhotoCollection(nextPhotos, state.galleryPhotos);
+        const nextPendingMapFocus = reconcilePhotoReference(nextPhotos, state.pendingMapFocus);
         return {
             ...state,
-            photos: action.payload,
+            photos: nextPhotos,
             loading: false,
-            error: null
+            error: null,
+            selectedPhoto: nextSelectedPhoto,
+            modalOpen: nextSelectedPhoto ? state.modalOpen : false,
+            galleryPhotos: nextGalleryPhotos,
+            galleryModalOpen: nextGalleryPhotos.length > 0 ? state.galleryModalOpen : false,
+            pendingMapFocus: nextPendingMapFocus
         };
+        }
         
         case ACTIONS.SET_ERROR:
         return {
@@ -100,23 +132,49 @@ function photoReducer(state, action) {
         };
         
         case ACTIONS.ADD_PHOTO:
+        {
+        const newPhoto = action.payload;
         return {
             ...state,
-            photos: [action.payload, ...state.photos]
+            photos: [newPhoto, ...state.photos.filter((photo) => !samePhotoId(photo, newPhoto))],
+            selectedPhoto: samePhotoId(state.selectedPhoto, newPhoto) ? newPhoto : state.selectedPhoto,
+            galleryPhotos: [newPhoto, ...state.galleryPhotos.filter((photo) => !samePhotoId(photo, newPhoto))],
+            pendingMapFocus: samePhotoId(state.pendingMapFocus, newPhoto) ? newPhoto : state.pendingMapFocus
         };
+        }
         
         case ACTIONS.UPDATE_PHOTO:
+        {
+        const updatedPhoto = action.payload;
         return {
             ...state,
             photos: state.photos.map(photo => 
-                photo.id === action.payload.id ? action.payload : photo
-            )
+                samePhotoId(photo, updatedPhoto) ? updatedPhoto : photo
+            ),
+            selectedPhoto: samePhotoId(state.selectedPhoto, updatedPhoto) ? updatedPhoto : state.selectedPhoto,
+            galleryPhotos: state.galleryPhotos.map(photo =>
+                samePhotoId(photo, updatedPhoto) ? updatedPhoto : photo
+            ),
+            pendingMapFocus: samePhotoId(state.pendingMapFocus, updatedPhoto) ? updatedPhoto : state.pendingMapFocus
         };
+        }
         
         case ACTIONS.DELETE_PHOTO:
+        {
+        const deletedPhotoId = action.payload;
+        const nextPhotos = state.photos.filter((photo) => !samePhotoId(photo, { id: deletedPhotoId }));
+        const nextGalleryPhotos = state.galleryPhotos.filter((photo) => !samePhotoId(photo, { id: deletedPhotoId }));
+        const nextSelectedPhoto = samePhotoId(state.selectedPhoto, { id: deletedPhotoId }) ? null : state.selectedPhoto;
+        const nextPendingMapFocus = samePhotoId(state.pendingMapFocus, { id: deletedPhotoId }) ? null : state.pendingMapFocus;
         return {
             ...state,
-            photos: state.photos.filter(photo => photo.id !== action.payload)
+            photos: nextPhotos,
+            selectedPhoto: nextSelectedPhoto,
+            modalOpen: nextSelectedPhoto ? state.modalOpen : false,
+            galleryPhotos: nextGalleryPhotos,
+            galleryModalOpen: nextGalleryPhotos.length > 0 ? state.galleryModalOpen : false,
+            pendingMapFocus: nextPendingMapFocus
+        };
         };
         
         case ACTIONS.SET_MAP_CENTER:
@@ -135,17 +193,83 @@ function photoReducer(state, action) {
             }
         };
         
-        case ACTIONS.FORCE_GALLERY_SYNC:
-        return {
-            ...state,
-            gallerySyncTrigger: state.gallerySyncTrigger + 1
-        };
-        
         case ACTIONS.SET_PENDING_MAP_FOCUS:
         return {
             ...state,
             pendingMapFocus: action.payload
         };
+
+        case ACTIONS.SET_PHOTO_OP_STATUS:
+        {
+        const { photoId, patch } = action.payload || {};
+        const key = String(photoId || '').trim();
+        if (!key) return state;
+
+        return {
+            ...state,
+            photoOpsByPhotoId: {
+                ...state.photoOpsByPhotoId,
+                [key]: {
+                    ...(state.photoOpsByPhotoId[key] || {}),
+                    ...(patch || {})
+                }
+            }
+        };
+        }
+
+        case ACTIONS.CLEAR_PHOTO_OP_STATUS:
+        {
+        const key = String(action.payload || '').trim();
+        if (!key || !state.photoOpsByPhotoId[key]) return state;
+        const nextPhotoOpsByPhotoId = { ...state.photoOpsByPhotoId };
+        delete nextPhotoOpsByPhotoId[key];
+        return {
+            ...state,
+            photoOpsByPhotoId: nextPhotoOpsByPhotoId
+        };
+        }
+
+        case ACTIONS.ADD_PENDING_UPLOAD:
+        {
+        const payload = action.payload || {};
+        const key = String(payload.id || '').trim();
+        if (!key) return state;
+        const nextPending = [
+            payload,
+            ...state.pendingUploads.filter((entry) => String(entry?.id || '') !== key)
+        ];
+        return {
+            ...state,
+            pendingUploads: nextPending
+        };
+        }
+
+        case ACTIONS.UPDATE_PENDING_UPLOAD:
+        {
+        const payload = action.payload || {};
+        const key = String(payload.id || '').trim();
+        if (!key) return state;
+        const hasExisting = state.pendingUploads.some((entry) => String(entry?.id || '') === key);
+        if (!hasExisting) return state;
+        return {
+            ...state,
+            pendingUploads: state.pendingUploads.map((entry) => (
+                String(entry?.id || '') === key
+                    ? { ...entry, ...(payload.patch || {}) }
+                    : entry
+            ))
+        };
+        }
+
+        case ACTIONS.REMOVE_PENDING_UPLOAD:
+        {
+        const key = String(action.payload || '').trim();
+        if (!key) return state;
+        return {
+            ...state,
+            pendingUploads: state.pendingUploads.filter((entry) => String(entry?.id || '') !== key)
+        };
+        }
         
         default:
         return state;
@@ -156,16 +280,15 @@ function photoReducer(state, action) {
 export function PhotoProvider({ children }) {
     const [state, dispatch] = useReducer(photoReducer, initialState);
     const focusHandlerRef = useRef(null);
-    const fetchTimeoutRef = useRef(null);
     const lastFetchTimeRef = useRef(0);
     
     // Actions
     const actions = {
         // Fetch photos from API with debouncing
-        fetchPhotos: async () => {
+        fetchPhotos: async ({ force = false } = {}) => {
             // Evita fetch multipli troppo ravvicinati
             const now = Date.now();
-            if (now - lastFetchTimeRef.current < 500) {
+            if (!force && now - lastFetchTimeRef.current < 500) {
                 console.log('Fetch troppo ravvicinato, ignorato');
                 return;
             }
@@ -233,9 +356,9 @@ export function PhotoProvider({ children }) {
                     ? await photoService.upload(photoData)
                     : await photoService.create(photoData);
                 const newPhoto = response.data?.data || response.data;
-                
-                // Ricarica tutte le foto dal server per assicurare coerenza
-                await actions.fetchPhotos();
+
+                dispatch({ type: ACTIONS.ADD_PHOTO, payload: newPhoto });
+                dispatch({ type: ACTIONS.SET_LOADING, payload: false });
                 
                 // Emetti evento per notificare altri contesti
                 window.dispatchEvent(new CustomEvent('photoAdded', { detail: { photo: newPhoto } }));
@@ -244,6 +367,25 @@ export function PhotoProvider({ children }) {
             } catch (error) {
                 console.error('Error adding photo:', error);
                 dispatch({ type: ACTIONS.SET_ERROR, payload: 'Errore durante il caricamento della foto' });
+                throw error;
+            }
+        },
+
+        // Create a photo without toggling global loading (for background flows)
+        createPhotoInBackground: async (photoData) => {
+            try {
+                const isFormData = typeof FormData !== 'undefined' && photoData instanceof FormData;
+                const response = isFormData
+                    ? await photoService.upload(photoData)
+                    : await photoService.create(photoData);
+                const newPhoto = response.data?.data || response.data;
+
+                dispatch({ type: ACTIONS.ADD_PHOTO, payload: newPhoto });
+                window.dispatchEvent(new CustomEvent('photoAdded', { detail: { photo: newPhoto } }));
+
+                return newPhoto;
+            } catch (error) {
+                console.error('Error creating photo in background:', error);
                 throw error;
             }
         },
@@ -265,6 +407,25 @@ export function PhotoProvider({ children }) {
                 throw error;
             }
         },
+
+        // Update photo without toggling global loading (for modal/background flows)
+        updatePhotoInBackground: async (photoId, photoData) => {
+            try {
+                const response = await photoService.update(photoId, photoData);
+                const updatedPhoto = response.data?.data || response.data;
+                dispatch({ type: ACTIONS.UPDATE_PHOTO, payload: updatedPhoto });
+                return updatedPhoto;
+            } catch (error) {
+                console.error('Error updating photo in background:', error);
+                throw error;
+            }
+        },
+
+        // Apply a photo update already returned by an API call
+        applyPhotoUpdate: (updatedPhoto) => {
+            if (!updatedPhoto || updatedPhoto.id === undefined || updatedPhoto.id === null) return;
+            dispatch({ type: ACTIONS.UPDATE_PHOTO, payload: updatedPhoto });
+        },
         
         // Delete photo
         deletePhoto: async (photoId) => {
@@ -283,12 +444,6 @@ export function PhotoProvider({ children }) {
         // Set filters
         setFilter: (filterData) => {
             dispatch({ type: ACTIONS.SET_FILTER, payload: filterData });
-        },
-        
-        // Set filters and force gallery sync (for PhotoModal)
-        setFilterAndSync: (filterData) => {
-            dispatch({ type: ACTIONS.SET_FILTER, payload: filterData });
-            dispatch({ type: ACTIONS.FORCE_GALLERY_SYNC });
         },
         
         // Clear filters
@@ -312,12 +467,51 @@ export function PhotoProvider({ children }) {
         // Clear pending map focus
         clearPendingMapFocus: () => {
             dispatch({ type: ACTIONS.SET_PENDING_MAP_FOCUS, payload: null });
+        },
+
+        // Track long-running card operations (source reupload, crop regenerate) globally
+        setPhotoOpStatus: (photoId, patch) => {
+            if (photoId === undefined || photoId === null) return;
+            dispatch({
+                type: ACTIONS.SET_PHOTO_OP_STATUS,
+                payload: { photoId, patch }
+            });
+        },
+
+        clearPhotoOpStatus: (photoId) => {
+            if (photoId === undefined || photoId === null) return;
+            dispatch({
+                type: ACTIONS.CLEAR_PHOTO_OP_STATUS,
+                payload: photoId
+            });
+        },
+
+        addPendingUpload: (payload) => {
+            dispatch({
+                type: ACTIONS.ADD_PENDING_UPLOAD,
+                payload
+            });
+        },
+
+        updatePendingUpload: (id, patch) => {
+            dispatch({
+                type: ACTIONS.UPDATE_PENDING_UPLOAD,
+                payload: { id, patch }
+            });
+        },
+
+        removePendingUpload: (id) => {
+            dispatch({
+                type: ACTIONS.REMOVE_PENDING_UPLOAD,
+                payload: id
+            });
         }
     };
     
     // Load photos on mount
     useEffect(() => {
-        actions.fetchPhotos();
+        actions.fetchPhotos({ force: true });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
     
     // Filtered photos based on current filters

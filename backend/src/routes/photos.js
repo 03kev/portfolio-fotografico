@@ -2,20 +2,18 @@ const express = require('express');
 const multer = require('multer');
 const {
     createPrivateUploadPresignedPutUrl,
-    createUploadPresignedPutUrl,
     deletePrivateObject,
     deleteUploadObject
 } = require('../services/r2Storage');
 const {
     buildPhotoAssetPaths,
-    extractSourceResolution,
+    buildDefaultCropProfiles,
     generatePhotoDerivatives,
     getCropProfilesFromSettings,
     normalizePrivateSourcePathForPhotoId
 } = require('../services/photoDerivatives');
 const {
-    PRIVATE_SOURCE_PREFIX,
-    PUBLIC_UPLOADS_PREFIX
+    PRIVATE_SOURCE_PREFIX
 } = require('../config/assetPaths');
 const DEFAULTS = require('../config/defaults');
 const { parseNumericIdOrThrow } = require('../utils/ids');
@@ -35,6 +33,8 @@ const {
     presentPhoto,
     purgePublicAssetsBestEffort,
     readPrivateSourceBuffer,
+    readPrivateSourceObject,
+    sendRouteError,
     withDefaultPhotoVariants,
     writePrivateObject,
     writePublicObject
@@ -42,7 +42,59 @@ const {
 
 const router = express.Router();
 router.use(protectWriteMethods);
-const PUBLIC_ASSET_CACHE_CONTROL = DEFAULTS.publicAssetCacheControl;
+const photoMutationLocks = new Map();
+
+function acquirePhotoMutationLock(photoId, operation) {
+    if (photoMutationLocks.has(photoId)) return null;
+    const token = Symbol(`${operation}:${photoId}:${Date.now()}`);
+    photoMutationLocks.set(photoId, {
+        token,
+        operation,
+        startedAtMs: Date.now()
+    });
+    return token;
+}
+
+function releasePhotoMutationLock(photoId, token) {
+    const active = photoMutationLocks.get(photoId);
+    if (!active) return;
+    if (active.token !== token) return;
+    photoMutationLocks.delete(photoId);
+}
+
+function getActivePhotoMutationLock(photoId) {
+    return photoMutationLocks.get(photoId) || null;
+}
+
+function createPhotoOperationTimer(operation, photoId) {
+    const startNs = process.hrtime.bigint();
+    let prevNs = startNs;
+    const stages = [];
+
+    const toMs = (nsDelta) => Number(nsDelta) / 1_000_000;
+
+    return {
+        mark(stage) {
+            const nowNs = process.hrtime.bigint();
+            stages.push({
+                stage,
+                ms: Number(toMs(nowNs - prevNs).toFixed(2))
+            });
+            prevNs = nowNs;
+        },
+        flush(status, extra = {}) {
+            const totalMs = Number(toMs(process.hrtime.bigint() - startNs).toFixed(2));
+            console.info('[photo_operation_timing]', {
+                operation,
+                photoId,
+                status,
+                totalMs,
+                stages,
+                ...extra
+            });
+        }
+    };
+}
 
 // Configurazione multer per upload immagini
 const storage = multer.memoryStorage();
@@ -80,9 +132,8 @@ router.get('/', async (req, res) => {
         });
     } catch (error) {
         console.error('Errore nel recupero foto:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Errore nel recupero delle foto'
+        return sendRouteError(res, error, {
+            fallbackMessage: 'Errore nel recupero delle foto'
         });
     }
 });
@@ -108,15 +159,8 @@ router.get('/:id', async (req, res) => {
         });
     } catch (error) {
         console.error('Errore nel recupero foto:', error);
-        if (error.status === 400 || error.code === 'INVALID_ID') {
-            return res.status(400).json({
-                success: false,
-                message: error.message
-            });
-        }
-        res.status(500).json({
-            success: false,
-            message: 'Errore nel recupero della foto'
+        return sendRouteError(res, error, {
+            fallbackMessage: 'Errore nel recupero della foto'
         });
     }
 });
@@ -126,7 +170,12 @@ router.post('/upload-url', async (req, res) => {
     try {
         const { uploadId, mimetype, contentType, fileSize, variant } = req.body || {};
         const rawVariant = String(variant || 'source').trim().toLowerCase();
-        const uploadVariant = ['source', 'image'].includes(rawVariant) ? rawVariant : 'source';
+        if (rawVariant !== 'source') {
+            return res.status(400).json({
+                success: false,
+                message: 'variant non valido: usare solo "source".'
+            });
+        }
         const effectiveMimeType = String(mimetype || contentType || '').trim();
         if (!effectiveMimeType || !isAllowedMimeType(effectiveMimeType, allowedUploadTypes)) {
             return res.status(400).json({
@@ -145,38 +194,25 @@ router.post('/upload-url', async (req, res) => {
         }
 
         const uploadFilename = buildUploadFilename(effectiveMimeType, uploadId);
-        const uploadPath = uploadVariant === 'source'
-            ? `${PRIVATE_SOURCE_PREFIX}/${uploadFilename}`
-            : `${PUBLIC_UPLOADS_PREFIX}/${uploadFilename}`;
-
-        const signed = uploadVariant === 'source'
-            ? await createPrivateUploadPresignedPutUrl(uploadPath, {
-                contentType: effectiveMimeType,
-                cacheControl: 'private, no-store',
-                expiresInSeconds: 300
-            })
-            : await createUploadPresignedPutUrl(uploadPath, {
-                contentType: effectiveMimeType,
-                cacheControl: PUBLIC_ASSET_CACHE_CONTROL,
-                expiresInSeconds: 300
-            });
+        const uploadPath = `${PRIVATE_SOURCE_PREFIX}/${uploadFilename}`;
+        const signed = await createPrivateUploadPresignedPutUrl(uploadPath, {
+            contentType: effectiveMimeType,
+            cacheControl: 'private, no-store',
+            expiresInSeconds: DEFAULTS.r2SignedUploadUrlExpiresSeconds
+        });
 
         return res.json({
             success: true,
             data: {
                 uploadUrl: signed.uploadUrl,
-                imagePath: signed.uploadPath,
-                sourcePath: uploadVariant === 'source' ? signed.uploadPath : '',
-                variant: uploadVariant,
-                publicUrl: signed.publicUrl,
+                sourcePath: signed.uploadPath,
                 expiresInSeconds: signed.expiresInSeconds
             }
         });
     } catch (error) {
         console.error('Errore generazione URL upload diretto:', error);
-        return res.status(500).json({
-            success: false,
-            message: 'Errore nella generazione URL upload'
+        return sendRouteError(res, error, {
+            fallbackMessage: 'Errore nella generazione URL upload'
         });
     }
 });
@@ -193,7 +229,11 @@ router.post('/', upload.single('image'), async (req, res) => {
             ? requestedPhotoId
             : Date.now();
         const sourceExtension = getImageExtensionFromMimeType(req.file?.mimetype || req.body?.sourceContentType);
-        const cropProfiles = getCropProfilesFromSettings(sanitized.settings);
+        const cropProfiles = getCropProfilesFromSettings(sanitized.settings) || buildDefaultCropProfiles();
+        const normalizedSettings = {
+            ...(sanitized.settings && typeof sanitized.settings === 'object' ? sanitized.settings : {}),
+            cropProfiles
+        };
         const assets = buildPhotoAssetPaths(photoId, sourceExtension);
         const photos = await readPhotosDB();
 
@@ -221,22 +261,27 @@ router.post('/', upload.single('image'), async (req, res) => {
             }
 
             sourcePath = providedSourcePath;
-            sourceBuffer = await readPrivateSourceBuffer(sourcePath);
-            if (!sourceBuffer) {
+            const sourceObject = await readPrivateSourceObject(sourcePath);
+            if (!sourceObject) {
                 return res.status(400).json({
                     success: false,
                     message: 'sourcePath non trovato: carica prima il file originale su /api/photos/upload-url'
                 });
             }
+            sourceBuffer = sourceObject.buffer;
+            if (!sourceContentType && sourceObject.contentType) {
+                sourceContentType = sourceObject.contentType;
+            }
 
         }
 
         const derivatives = await generatePhotoDerivatives(sourceBuffer, cropProfiles);
-        const sourceResolution = await extractSourceResolution(sourceBuffer);
-        await writePublicObject(assets.imagePath, derivatives.image, 'image/webp');
-        await writePublicObject(assets.thumbnail43Path, derivatives.thumbnail43, 'image/webp');
-        await writePublicObject(assets.thumbnail11Path, derivatives.thumbnail11, 'image/webp');
-        await writePublicObject(assets.socialImagePath, derivatives.socialImage, 'image/jpeg');
+        await Promise.all([
+            writePublicObject(assets.imagePath, derivatives.image, 'image/webp'),
+            writePublicObject(assets.thumbnail43Path, derivatives.thumbnail43, 'image/webp'),
+            writePublicObject(assets.thumbnail11Path, derivatives.thumbnail11, 'image/webp'),
+            writePublicObject(assets.socialImagePath, derivatives.socialImage, 'image/jpeg')
+        ]);
 
         // Crea oggetto foto con valori di default
         const newPhoto = {
@@ -252,8 +297,8 @@ router.post('/', upload.single('image'), async (req, res) => {
             date: sanitized.date,
             camera: sanitized.camera,
             lens: sanitized.lens,
-            resolution: sourceResolution.resolution,
-            settings: sanitized.settings,
+            resolution: derivatives.resolution,
+            settings: normalizedSettings,
             tags: sanitized.tags
         };
         
@@ -283,26 +328,154 @@ router.post('/', upload.single('image'), async (req, res) => {
             });
         }
 
-        if (error.code === 'INVALID_FILE_TYPE' || error.code === 'INVALID_COORDINATE' || error.status === 400) {
-            return res.status(400).json({
+        return sendRouteError(res, error, {
+            fallbackMessage: 'Errore nell\'upload della foto'
+        });
+    }
+});
+
+// POST - Reupload source privata esistente e rigenera derivate pubbliche (stessi path canonici)
+router.post('/:id/replace-source', async (req, res) => {
+    let photoId = null;
+    let lockToken = null;
+    let timer = null;
+    try {
+        const { id } = req.params;
+        photoId = parseNumericIdOrThrow(id, 'ID foto');
+        lockToken = acquirePhotoMutationLock(photoId, 'replace-source');
+        if (!lockToken) {
+            const activeLock = getActivePhotoMutationLock(photoId);
+            return res.status(409).json({
                 success: false,
-                message: error.message
+                code: 'PHOTO_MUTATION_IN_PROGRESS',
+                message: `Operazione già in corso su questa foto${activeLock?.operation ? ` (${activeLock.operation})` : ''}.`
+            });
+        }
+        timer = createPhotoOperationTimer('replace-source', photoId);
+
+        const photos = await readPhotosDB();
+        timer.mark('read_photos_db');
+        const photoIndex = photos.findIndex((p) => Number(p.id) === photoId);
+
+        if (photoIndex === -1) {
+            return res.status(404).json({
+                success: false,
+                message: 'Foto non trovata'
             });
         }
 
-        res.status(500).json({
-            success: false,
-            message: 'Errore nell\'upload della foto'
+        const nextSourcePath = normalizePrivateSourcePathForPhotoId(req.body?.sourcePath, photoId);
+        if (!nextSourcePath) {
+            return res.status(400).json({
+                success: false,
+                message: `sourcePath non valido: atteso ${PRIVATE_SOURCE_PREFIX}/photo_${photoId}.[ext]`
+            });
+        }
+
+        const sourceObject = await readPrivateSourceObject(nextSourcePath);
+        timer.mark('read_private_source');
+        if (!sourceObject) {
+            return res.status(404).json({
+                success: false,
+                message: 'Source privata non trovata nello storage.'
+            });
+        }
+
+        const currentPhoto = photos[photoIndex];
+        const publicAssets = withDefaultPhotoVariants(currentPhoto);
+        const cropProfiles = getCropProfilesFromSettings(currentPhoto.settings);
+
+        const derivatives = await generatePhotoDerivatives(sourceObject.buffer, cropProfiles);
+        timer.mark('generate_derivatives');
+
+        await Promise.all([
+            writePublicObject(publicAssets.image, derivatives.image, 'image/webp'),
+            writePublicObject(publicAssets.thumbnail43, derivatives.thumbnail43, 'image/webp'),
+            writePublicObject(publicAssets.thumbnail11, derivatives.thumbnail11, 'image/webp'),
+            writePublicObject(publicAssets.socialImage, derivatives.socialImage, 'image/jpeg')
+        ]);
+        timer.mark('write_public_derivatives');
+
+        const bodySourceContentType = String(req.body?.sourceContentType || '').trim();
+        const nextSourceContentType = sourceObject.contentType || bodySourceContentType || currentPhoto.sourceContentType || '';
+        const previousSourcePath = normalizePrivateSourcePathForPhotoId(currentPhoto.sourcePath, photoId);
+
+        const updatedPhoto = {
+            ...currentPhoto,
+            sourcePath: nextSourcePath,
+            sourceContentType: nextSourceContentType,
+            resolution: derivatives.resolution,
+            derivativesVersion: Date.now()
+        };
+
+        photos[photoIndex] = updatedPhoto;
+        await writePhotosDB(photos);
+        timer.mark('write_photo_metadata');
+
+        if (previousSourcePath && previousSourcePath !== nextSourcePath) {
+            try {
+                await deletePrivateObject(previousSourcePath);
+                timer.mark('delete_previous_private_source');
+            } catch (error) {
+                console.warn('[photo_replace_source_cleanup_failed]', {
+                    photoId,
+                    path: previousSourcePath,
+                    message: error?.message || 'Errore sconosciuto'
+                });
+            }
+        }
+
+        await purgePublicAssetsBestEffort(
+            [publicAssets.image, publicAssets.thumbnail43, publicAssets.thumbnail11, publicAssets.socialImage],
+            'photo_replace_source'
+        );
+        timer.mark('purge_public_cache');
+        timer.flush('success', {
+            derivativesVersion: updatedPhoto.derivativesVersion
         });
+
+        return res.json({
+            success: true,
+            message: 'Source privata aggiornata e derivate rigenerate con successo',
+            data: presentPhoto(updatedPhoto)
+        });
+    } catch (error) {
+        timer?.flush('error', {
+            code: error?.code || null,
+            message: error?.message || 'Errore sconosciuto'
+        });
+        console.error('Errore replace source privata:', error);
+        return sendRouteError(res, error, {
+            fallbackMessage: 'Errore durante il reupload della source privata'
+        });
+    } finally {
+        if (photoId && lockToken) {
+            releasePhotoMutationLock(photoId, lockToken);
+        }
     }
 });
 
 // POST - Rigenera derivate da source full-res (stessi path, overwrite su R2)
 router.post('/:id/regenerate-derivatives', async (req, res) => {
+    let photoId = null;
+    let lockToken = null;
+    let timer = null;
     try {
         const { id } = req.params;
-        const photoId = parseNumericIdOrThrow(id, 'ID foto');
+        photoId = parseNumericIdOrThrow(id, 'ID foto');
+        lockToken = acquirePhotoMutationLock(photoId, 'regenerate-derivatives');
+        if (!lockToken) {
+            const activeLock = getActivePhotoMutationLock(photoId);
+            return res.status(409).json({
+                success: false,
+                code: 'PHOTO_MUTATION_IN_PROGRESS',
+                message: `Operazione già in corso su questa foto${activeLock?.operation ? ` (${activeLock.operation})` : ''}.`
+            });
+        }
+        timer = createPhotoOperationTimer('regenerate-derivatives', photoId);
+
         const photos = await readPhotosDB();
+        timer.mark('read_photos_db');
         const photoIndex = photos.findIndex((p) => Number(p.id) === photoId);
 
         if (photoIndex === -1) {
@@ -322,6 +495,7 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
         }
 
         const sourceBuffer = await readPrivateSourceBuffer(sourcePath);
+        timer.mark('read_private_source');
         if (!sourceBuffer) {
             return res.status(404).json({
                 success: false,
@@ -333,25 +507,33 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
 
         const cropProfiles = getCropProfilesFromSettings(photo.settings);
         const derivatives = await generatePhotoDerivatives(sourceBuffer, cropProfiles);
-        const sourceResolution = await extractSourceResolution(sourceBuffer);
-        await writePublicObject(publicAssets.image, derivatives.image, 'image/webp');
-        await writePublicObject(publicAssets.thumbnail43, derivatives.thumbnail43, 'image/webp');
-        await writePublicObject(publicAssets.thumbnail11, derivatives.thumbnail11, 'image/webp');
-        await writePublicObject(publicAssets.socialImage, derivatives.socialImage, 'image/jpeg');
+        timer.mark('generate_derivatives');
+        await Promise.all([
+            writePublicObject(publicAssets.image, derivatives.image, 'image/webp'),
+            writePublicObject(publicAssets.thumbnail43, derivatives.thumbnail43, 'image/webp'),
+            writePublicObject(publicAssets.thumbnail11, derivatives.thumbnail11, 'image/webp'),
+            writePublicObject(publicAssets.socialImage, derivatives.socialImage, 'image/jpeg')
+        ]);
+        timer.mark('write_public_derivatives');
 
         const updatedPhoto = {
             ...photo,
-            resolution: sourceResolution.resolution,
+            resolution: derivatives.resolution,
             derivativesVersion: Date.now()
         };
 
         photos[photoIndex] = updatedPhoto;
         await writePhotosDB(photos);
+        timer.mark('write_photo_metadata');
 
         await purgePublicAssetsBestEffort(
             [publicAssets.image, publicAssets.thumbnail43, publicAssets.thumbnail11, publicAssets.socialImage],
             'photo_regenerate_derivatives'
         );
+        timer.mark('purge_public_cache');
+        timer.flush('success', {
+            derivativesVersion: updatedPhoto.derivativesVersion
+        });
 
         return res.json({
             success: true,
@@ -359,17 +541,18 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
             data: presentPhoto(updatedPhoto)
         });
     } catch (error) {
-        console.error('Errore rigenerazione derivate:', error);
-        if (error.status === 400 || error.code === 'INVALID_ID') {
-            return res.status(400).json({
-                success: false,
-                message: error.message
-            });
-        }
-        return res.status(500).json({
-            success: false,
-            message: 'Errore durante la rigenerazione derivate'
+        timer?.flush('error', {
+            code: error?.code || null,
+            message: error?.message || 'Errore sconosciuto'
         });
+        console.error('Errore rigenerazione derivate:', error);
+        return sendRouteError(res, error, {
+            fallbackMessage: 'Errore durante la rigenerazione derivate'
+        });
+    } finally {
+        if (photoId && lockToken) {
+            releasePhotoMutationLock(photoId, lockToken);
+        }
     }
 });
 
@@ -412,15 +595,8 @@ router.put('/:id', async (req, res) => {
         });
     } catch (error) {
         console.error('Errore nell\'aggiornamento:', error);
-        if (error.status === 400 || error.code === 'INVALID_COORDINATE' || error.code === 'INVALID_ID') {
-            return res.status(400).json({
-                success: false,
-                message: error.message
-            });
-        }
-        res.status(500).json({
-            success: false,
-            message: 'Errore nell\'aggiornamento della foto'
+        return sendRouteError(res, error, {
+            fallbackMessage: 'Errore nell\'aggiornamento della foto'
         });
     }
 });
@@ -522,15 +698,8 @@ router.delete('/:id', async (req, res) => {
         });
     } catch (error) {
         console.error('Errore nell\'eliminazione:', error);
-        if (error.status === 400 || error.code === 'INVALID_ID') {
-            return res.status(400).json({
-                success: false,
-                message: error.message
-            });
-        }
-        res.status(500).json({
-            success: false,
-            message: 'Errore nell\'eliminazione della foto'
+        return sendRouteError(res, error, {
+            fallbackMessage: 'Errore nell\'eliminazione della foto'
         });
     }
 });

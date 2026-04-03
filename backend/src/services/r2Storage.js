@@ -1,6 +1,7 @@
 const { Readable } = require('stream');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { env } = require('../config/env');
+const DEFAULTS = require('../config/defaults');
 const { PRIVATE_PREFIX, PUBLIC_UPLOADS_PREFIX } = require('../config/assetPaths');
 
 let s3ClientInstance = null;
@@ -204,7 +205,9 @@ async function createUploadPresignedPutUrl(uploadPath, options = {}) {
     }
     const client = getR2Client();
     const { PutObjectCommand } = s3Commands;
-    const expiresInSeconds = Number(options.expiresInSeconds) > 0 ? Number(options.expiresInSeconds) : 300;
+    const expiresInSeconds = Number(options.expiresInSeconds) > 0
+        ? Number(options.expiresInSeconds)
+        : DEFAULTS.r2SignedUploadUrlExpiresSeconds;
 
     const command = new PutObjectCommand({
         Bucket: env.r2Bucket,
@@ -237,7 +240,9 @@ async function createPrivateUploadPresignedPutUrl(privatePath, options = {}) {
 
     const client = getR2Client();
     const { PutObjectCommand } = s3Commands;
-    const expiresInSeconds = Number(options.expiresInSeconds) > 0 ? Number(options.expiresInSeconds) : 300;
+    const expiresInSeconds = Number(options.expiresInSeconds) > 0
+        ? Number(options.expiresInSeconds)
+        : DEFAULTS.r2SignedUploadUrlExpiresSeconds;
 
     const command = new PutObjectCommand({
         Bucket: getPrivateBucketName(),
