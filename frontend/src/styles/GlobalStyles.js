@@ -305,10 +305,8 @@ const GlobalStyles = createGlobalStyle`
     }
   }
 
-  @media (max-width: ${viewportBreakpoints.tablet}px) and (hover: none) and (pointer: coarse) {
+  @media (max-width: ${viewportBreakpoints.tablet}px) {
     :root {
-      --header-height: 70px;
-      --mobile-bottom-nav-height: 106px;
       --panel-overlay-pad-inline: 12px;
       --panel-padding: 16px;
       --shell-overlay-pad-inline: 10px;
@@ -334,6 +332,13 @@ const GlobalStyles = createGlobalStyle`
       --shell-upload-stage-pad: 28px 20px;
       --shell-upload-stage-radius: 22px;
       --shell-preview-radius: 20px;
+    }
+  }
+
+  @media (max-width: ${viewportBreakpoints.tablet}px) and (hover: none) and (pointer: coarse) {
+    :root {
+      --header-height: 70px;
+      --mobile-bottom-nav-height: 106px;
     }
   }
 
