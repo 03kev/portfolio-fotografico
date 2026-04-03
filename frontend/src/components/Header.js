@@ -4,7 +4,6 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Camera, FolderOpen, Grid3X3, House, KeyRound, Mail, Map, UserRound } from 'lucide-react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 
-const mobileNavQuery = '@media (max-width: 768px) and (hover: none) and (pointer: coarse)';
 const HeaderContainer = styled(motion.header)`
   position: fixed;
   top: 0;
@@ -30,11 +29,11 @@ const Nav = styled.nav`
   gap: 12px;
   height: 78px;
 
-  ${mobileNavQuery} {
+  ${({ $mobileLayout }) => $mobileLayout && `
     padding: 0 var(--spacing-lg);
     gap: 8px;
     height: 70px;
-  }
+  `}
 `;
 
 const Logo = styled(motion(Link))`
@@ -71,10 +70,10 @@ const LogoIcon = styled.img`
   object-fit: contain;
   background: transparent;
 
-  ${mobileNavQuery} {
+  ${({ $mobileLayout }) => $mobileLayout && `
     width: 28px;
     height: 28px;
-  }
+  `}
 `;
 
 const LogoText = styled.span`
@@ -86,19 +85,15 @@ const LogoText = styled.span`
   overflow: hidden;
   text-overflow: ellipsis;
 
-  @media (max-width: 420px) and (hover: none) and (pointer: coarse) {
+  ${({ $mobileLayout }) => $mobileLayout && `
     gap: 6px;
     font-size: 0.96rem;
-  }
+  `}
 `;
 
 const NavLinks = styled.ul`
   display: flex;
   gap: var(--spacing-xl);
-
-  ${mobileNavQuery} {
-    display: none;
-  }
 
   @media (min-width: 769px), ((max-width: 768px) and (hover: hover)) {
     position: absolute;
@@ -108,6 +103,13 @@ const NavLinks = styled.ul`
 
   ${({ $compact }) =>
     $compact
+      ? `
+    display: none;
+  `
+      : ''}
+
+  ${({ $mobileLayout }) =>
+    $mobileLayout
       ? `
     display: none;
   `
@@ -192,9 +194,9 @@ const DesktopNavMeasure = styled.ul`
   width: max-content;
   white-space: nowrap;
 
-  ${mobileNavQuery} {
+  ${({ $mobileLayout }) => $mobileLayout && `
     display: none;
-  }
+  `}
 `;
 
 const DesktopNavMeasureItem = styled.span`
@@ -250,9 +252,9 @@ const Right = styled.div`
   align-items: center;
   gap: 12px;
 
-  ${mobileNavQuery} {
+  ${({ $mobileLayout }) => $mobileLayout && `
     gap: 8px;
-  }
+  `}
 `;
 
 const UploadButton = styled(motion.button)`
@@ -273,26 +275,26 @@ const UploadButton = styled(motion.button)`
     transform: translateY(-1px);
   }
 
-  ${mobileNavQuery} {
+  ${({ $mobileLayout }) => $mobileLayout && `
     padding: 9px 12px;
     font-size: var(--font-size-xs);
-  }
+  `}
 
-  @media (max-width: 420px) and (hover: none) and (pointer: coarse) {
+  ${({ $mobileLayout, $iconOnlyOnMobile }) => $mobileLayout && $iconOnlyOnMobile && `
     width: 38px;
     height: 38px;
     padding: 0;
     justify-content: center;
     border-radius: 12px;
-  }
+  `}
 `;
 
 const UploadButtonLabel = styled.span`
   white-space: nowrap;
 
-  @media (max-width: 420px) and (hover: none) and (pointer: coarse) {
+  ${({ $mobileLayout, $hideOnMobile }) => $mobileLayout && $hideOnMobile && `
     display: none;
-  }
+  `}
 `;
 
 const TokenButton = styled(motion.button)`
@@ -324,7 +326,7 @@ const TokenButton = styled(motion.button)`
 const MobileBottomNavBackdrop = styled(motion.button)`
   display: none;
 
-  ${mobileNavQuery} {
+  ${({ $visible }) => $visible && `
     display: block;
     position: fixed;
     inset: 0;
@@ -333,13 +335,13 @@ const MobileBottomNavBackdrop = styled(motion.button)`
     background: rgba(4, 6, 12, 0.32);
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
-  }
+  `}
 `;
 
 const MobileBottomNav = styled.nav`
   display: none;
 
-  ${mobileNavQuery} {
+  ${({ $visible }) => $visible && `
     display: block;
     position: fixed;
     left: max(12px, env(safe-area-inset-left));
@@ -353,18 +355,18 @@ const MobileBottomNav = styled.nav`
     box-shadow: 0 24px 46px rgba(0, 0, 0, 0.42);
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
-  }
+  `}
 `;
 
 const MobileBottomNavList = styled.ul`
   display: none;
 
-  ${mobileNavQuery} {
+  ${({ $visible }) => $visible && `
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 6px;
     list-style: none;
-  }
+  `}
 `;
 
 const MobileBottomNavItem = styled.li`
@@ -425,7 +427,7 @@ const BottomNavLabel = styled.span`
 const MobileMoreSheet = styled(motion.div)`
   display: none;
 
-  ${mobileNavQuery} {
+  ${({ $visible }) => $visible && `
     display: block;
     position: fixed;
     left: max(12px, env(safe-area-inset-left));
@@ -439,7 +441,7 @@ const MobileMoreSheet = styled(motion.div)`
     box-shadow: 0 22px 40px rgba(0, 0, 0, 0.38);
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
-  }
+  `}
 `;
 
 const MobileMoreSheetList = styled.div`
@@ -476,6 +478,7 @@ const Header = ({
   const [scrolled, setScrolled] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [compactDesktopNav, setCompactDesktopNav] = useState(false);
+  const [useMobileNav, setUseMobileNav] = useState(false);
   const location = useLocation();
   const navRef = useRef(null);
   const logoContentRef = useRef(null);
@@ -518,12 +521,23 @@ const Header = ({
     if (typeof window === 'undefined') return undefined;
 
     const finePointerQuery = window.matchMedia('(hover: hover) and (pointer: fine)');
-    const touchMobileQuery = window.matchMedia('(max-width: 768px) and (hover: none) and (pointer: coarse)');
+    const narrowViewportQuery = window.matchMedia('(max-width: 768px)');
+    const hoverNoneQuery = window.matchMedia('(hover: none)');
+    const coarsePointerQuery = window.matchMedia('(pointer: coarse)');
 
     const measureLayout = () => {
       if (!navRef.current || !logoContentRef.current || !rightRef.current || !navMeasureRef.current) return;
 
-      if (!finePointerQuery.matches || touchMobileQuery.matches) {
+      const ua = window.navigator.userAgent || '';
+      const touchCapable = window.navigator.maxTouchPoints > 0 || 'ontouchstart' in window;
+      const mobileLikeDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|Tablet|SamsungBrowser/i.test(ua);
+      const shouldUseMobileNav =
+        narrowViewportQuery.matches &&
+        (touchCapable || mobileLikeDevice || hoverNoneQuery.matches || coarsePointerQuery.matches);
+
+      setUseMobileNav(shouldUseMobileNav);
+
+      if (!finePointerQuery.matches || shouldUseMobileNav) {
         setCompactDesktopNav(false);
         return;
       }
@@ -549,20 +563,26 @@ const Header = ({
 
     window.addEventListener('resize', measureLayout);
     finePointerQuery.addEventListener?.('change', measureLayout);
-    touchMobileQuery.addEventListener?.('change', measureLayout);
+    narrowViewportQuery.addEventListener?.('change', measureLayout);
+    hoverNoneQuery.addEventListener?.('change', measureLayout);
+    coarsePointerQuery.addEventListener?.('change', measureLayout);
 
     return () => {
       resizeObserver.disconnect();
       window.removeEventListener('resize', measureLayout);
       finePointerQuery.removeEventListener?.('change', measureLayout);
-      touchMobileQuery.removeEventListener?.('change', measureLayout);
+      narrowViewportQuery.removeEventListener?.('change', measureLayout);
+      hoverNoneQuery.removeEventListener?.('change', measureLayout);
+      coarsePointerQuery.removeEventListener?.('change', measureLayout);
     };
   }, []);
 
   useEffect(() => {
     const root = document.documentElement;
 
-    if (compactDesktopNav) {
+    if (useMobileNav) {
+      root.style.setProperty('--header-height', '70px');
+    } else if (compactDesktopNav) {
       root.style.setProperty('--header-height', '132px');
     } else {
       root.style.removeProperty('--header-height');
@@ -571,7 +591,7 @@ const Header = ({
     return () => {
       root.style.removeProperty('--header-height');
     };
-  }, [compactDesktopNav]);
+  }, [compactDesktopNav, useMobileNav]);
 
   return (
     <>
@@ -582,17 +602,17 @@ const Header = ({
         transition={{ duration: 0.45, ease: 'easeOut' }}
       >
         <HeaderInner>
-          <Nav ref={navRef}>
+          <Nav ref={navRef} $mobileLayout={useMobileNav}>
             <Logo to="/" whileTap={{ scale: 0.98 }} aria-label="Torna alla home">
               <LogoContent ref={logoContentRef}>
-                <LogoIcon src="/favicon.svg" alt="" aria-hidden="true" />
-                <LogoText>
+                <LogoIcon src="/favicon.svg" alt="" aria-hidden="true" $mobileLayout={useMobileNav} />
+                <LogoText $mobileLayout={useMobileNav}>
                   FotoPortfolio <span className="dot" />
                 </LogoText>
               </LogoContent>
             </Logo>
 
-            <NavLinks $compact={compactDesktopNav}>
+            <NavLinks $compact={compactDesktopNav} $mobileLayout={useMobileNav}>
               {navItems.map((item) => (
                 <li key={item.to}>
                   <StyledNavLink to={item.to} end={item.to === '/'}>
@@ -602,7 +622,7 @@ const Header = ({
               ))}
             </NavLinks>
 
-            <Right ref={rightRef}>
+            <Right ref={rightRef} $mobileLayout={useMobileNav}>
               {isAdmin && onConfigureAuth && (
                 <TokenButton
                   type="button"
@@ -618,15 +638,22 @@ const Header = ({
               )}
 
               {isAdmin && onOpenUpload && (
-                <UploadButton onClick={onOpenUpload} whileTap={{ scale: 0.98 }}>
+                <UploadButton
+                  onClick={onOpenUpload}
+                  whileTap={{ scale: 0.98 }}
+                  $mobileLayout={useMobileNav}
+                  $iconOnlyOnMobile
+                >
                   <Camera size={16} />
-                  <UploadButtonLabel>Carica</UploadButtonLabel>
+                  <UploadButtonLabel $mobileLayout={useMobileNav} $hideOnMobile>
+                    Carica
+                  </UploadButtonLabel>
                 </UploadButton>
               )}
             </Right>
           </Nav>
 
-          <DesktopCompactNavRail $visible={compactDesktopNav}>
+          <DesktopCompactNavRail $visible={compactDesktopNav && !useMobileNav}>
             <DesktopCompactNavScroll>
               <DesktopCompactNavList>
                 {navItems.map((item) => (
@@ -640,7 +667,7 @@ const Header = ({
             </DesktopCompactNavScroll>
           </DesktopCompactNavRail>
 
-          <DesktopNavMeasure ref={navMeasureRef} aria-hidden="true">
+          <DesktopNavMeasure ref={navMeasureRef} aria-hidden="true" $mobileLayout={useMobileNav}>
             {navItems.map((item) => (
               <li key={item.to}>
                 <DesktopNavMeasureItem>{item.label}</DesktopNavMeasureItem>
@@ -654,6 +681,7 @@ const Header = ({
         {mobileMoreOpen && (
           <>
             <MobileBottomNavBackdrop
+              $visible={useMobileNav}
               type="button"
               aria-label="Chiudi menu mobile"
               onClick={() => setMobileMoreOpen(false)}
@@ -662,6 +690,7 @@ const Header = ({
               exit={{ opacity: 0 }}
             />
             <MobileMoreSheet
+              $visible={useMobileNav}
               initial={{ opacity: 0, y: 14, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 12, scale: 0.98 }}
@@ -683,8 +712,8 @@ const Header = ({
         )}
       </AnimatePresence>
 
-      <MobileBottomNav aria-label="Navigazione mobile">
-        <MobileBottomNavList>
+      <MobileBottomNav aria-label="Navigazione mobile" $visible={useMobileNav}>
+        <MobileBottomNavList $visible={useMobileNav}>
           {mobilePrimaryItems.map((item) => {
             const Icon = item.icon;
             return (
