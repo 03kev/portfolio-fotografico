@@ -20,6 +20,25 @@ const P = styled.p`
   line-height: 1.75;
 `;
 
+const Quote = styled.blockquote`
+  margin: 24px 0;
+  padding: 18px 20px;
+  border-left: 2px solid rgba(213, 180, 104, 0.75);
+  background: rgba(255, 255, 255, 0.02);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 1.02rem;
+  line-height: 1.7;
+  font-style: italic;
+`;
+
+const QuoteAuthor = styled.cite`
+  display: block;
+  margin-top: 10px;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 0.9rem;
+  font-style: normal;
+`;
+
 export default function AboutPage() {
   useSeo({
     title: 'Chi Sono',
@@ -41,6 +60,14 @@ export default function AboutPage() {
           <P>
             In questo portfolio trovi serie tematiche e un'archivio completo. Se ti va, parti dalla mappa per esplorare gli scatti per posizione.
           </P>
+          <Quote>
+            The camera is an instrument that teaches people how to see without a camera.
+            <QuoteAuthor>Dorothea Lange</QuoteAuthor>
+          </Quote>
+          <Quote>
+            The Earth is art, the photographer is only a witness.
+            <QuoteAuthor>Yann Arthus-Bertrand</QuoteAuthor>
+          </Quote>
         </Card>
       </Wrap>
     </Section>
