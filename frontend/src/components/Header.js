@@ -338,21 +338,6 @@ const TokenButton = styled(motion.button)`
   }
 `;
 
-const MobileBottomNavBackdrop = styled(motion.button)`
-  display: none;
-
-  ${({ $visible }) => $visible && `
-    display: block;
-    position: fixed;
-    inset: 0;
-    z-index: calc(var(--z-fixed) - 1);
-    border: 0;
-    background: rgba(4, 6, 12, 0.18);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-  `}
-`;
-
 const MobileBottomNav = styled.nav`
   display: none;
 
@@ -381,7 +366,7 @@ const MobileBottomNavList = styled.ul`
 
   ${({ $visible }) => $visible && `
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(var(--mobile-bottom-nav-columns, 5), minmax(0, 1fr));
     gap: 2px;
     list-style: none;
   `}
@@ -506,15 +491,15 @@ const MobileMoreSheet = styled(motion.div)`
     position: fixed;
     left: max(10px, env(safe-area-inset-left));
     right: max(10px, env(safe-area-inset-right));
-    bottom: calc(max(10px, env(safe-area-inset-bottom)) + 86px);
+    bottom: calc(max(10px, env(safe-area-inset-bottom)) + 82px);
     z-index: var(--z-fixed);
     padding: 8px;
-    border-radius: 24px;
+    border-radius: 22px;
     border: 1px solid rgba(255, 255, 255, 0.06);
     background:
-      linear-gradient(180deg, rgba(9, 11, 16, 0.76), rgba(5, 7, 12, 0.9));
+      linear-gradient(180deg, rgba(9, 11, 16, 0.82), rgba(5, 7, 12, 0.94));
     box-shadow:
-      0 18px 34px rgba(0, 0, 0, 0.28),
+      0 18px 34px rgba(0, 0, 0, 0.3),
       inset 0 1px 0 rgba(255, 255, 255, 0.03);
     backdrop-filter: blur(22px) saturate(115%);
     -webkit-backdrop-filter: blur(22px) saturate(115%);
@@ -523,37 +508,33 @@ const MobileMoreSheet = styled(motion.div)`
 
 const MobileMoreSheetList = styled.div`
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
+  gap: 6px;
 `;
 
 const MobileMoreSheetLink = styled(NavLink)`
-  min-height: 58px;
-  padding: 8px 6px 6px;
+  min-height: 52px;
+  padding: 0 14px;
   border-radius: 16px;
-  border: 0;
-  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
   color: var(--color-muted);
   text-decoration: none;
   font-weight: 600;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
+  gap: 12px;
   position: relative;
-  transition: color 0.2s ease, transform 0.2s ease;
+  transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease;
 
   &::after {
     content: '';
     position: absolute;
-    left: 50%;
+    left: 16px;
+    right: 16px;
     bottom: 0;
-    width: 22px;
     height: 2px;
     border-radius: 999px;
     background: transparent;
-    transform: translateX(-50%);
     transition: background 0.2s ease;
   }
 
@@ -564,6 +545,8 @@ const MobileMoreSheetLink = styled(NavLink)`
 
   &.active {
     color: var(--color-accent);
+    background: rgba(214, 179, 106, 0.08);
+    border-color: rgba(214, 179, 106, 0.18);
   }
 
   &.active::after {
@@ -577,7 +560,7 @@ const MobileMoreSheetLink = styled(NavLink)`
 `;
 
 const MobileMoreSheetLabel = styled.span`
-  font-size: 0.72rem;
+  font-size: 0.92rem;
   line-height: 1;
   white-space: nowrap;
 `;
@@ -856,23 +839,14 @@ const Header = ({
         </HeaderInner>
       </HeaderContainer>
 
-      <AnimatePresence>
-        {mobileMoreOpen && (
-          <>
-            <MobileBottomNavBackdrop
-              $visible={useMobileNav}
-              type="button"
-              aria-label="Chiudi menu mobile"
-              onClick={() => setMobileMoreOpen(false)}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            />
+      {useMobileNav && (
+        <AnimatePresence>
+          {mobileMoreOpen && (
             <MobileMoreSheet
               $visible={useMobileNav}
-              initial={{ opacity: 0, y: 14, scale: 0.98 }}
+              initial={{ opacity: 0, y: 10, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              exit={{ opacity: 0, y: 8, scale: 0.98 }}
               transition={{ duration: 0.18, ease: 'easeOut' }}
             >
               <MobileMoreSheetList>
@@ -887,12 +861,15 @@ const Header = ({
                 })}
               </MobileMoreSheetList>
             </MobileMoreSheet>
-          </>
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>
+      )}
 
       <MobileBottomNav aria-label="Navigazione mobile" $visible={useMobileNav}>
-        <MobileBottomNavList $visible={useMobileNav}>
+        <MobileBottomNavList
+          $visible={useMobileNav}
+          style={{ '--mobile-bottom-nav-columns': 5 }}
+        >
           {mobilePrimaryItems.map((item) => {
             const Icon = item.icon;
             return (
@@ -907,7 +884,7 @@ const Header = ({
           <MobileBottomNavItem>
             <MobileBottomNavButton
               type="button"
-              $active={mobileMoreOpen || mobileSecondaryItems.some((item) => location.pathname === item.to)}
+              $active={mobileMoreOpen || mobileSecondaryItems.some((secondaryItem) => location.pathname === secondaryItem.to)}
               onClick={() => setMobileMoreOpen((open) => !open)}
               aria-expanded={mobileMoreOpen}
               aria-label="Altre sezioni"
