@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Camera, Ellipsis, FolderOpen, Grid3X3, House, KeyRound, Mail, Map, UserRound } from 'lucide-react';
+import { Camera, Ellipsis, House, Images, KeyRound, Mail, Map, PanelsTopLeft, UserRound } from 'lucide-react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { useMeasuredLayoutMode, useMobileDeviceLayout } from '../hooks';
 
@@ -350,14 +350,16 @@ const MobileBottomNav = styled.nav`
     z-index: var(--z-fixed);
     padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
     border-radius: 24px;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.09);
     background:
-      linear-gradient(180deg, rgba(9, 11, 16, 0.78), rgba(5, 7, 12, 0.92));
+      linear-gradient(180deg, rgba(16, 18, 26, 0.6), rgba(6, 8, 13, 0.78));
     box-shadow:
-      0 18px 34px rgba(0, 0, 0, 0.28),
-      inset 0 1px 0 rgba(255, 255, 255, 0.03);
-    backdrop-filter: blur(22px) saturate(115%);
-    -webkit-backdrop-filter: blur(22px) saturate(115%);
+      0 16px 34px rgba(0, 0, 0, 0.24),
+      0 0 0 1px rgba(255, 255, 255, 0.02) inset,
+      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      inset 0 -12px 22px rgba(0, 0, 0, 0.16);
+    backdrop-filter: blur(28px) saturate(128%);
+    -webkit-backdrop-filter: blur(28px) saturate(128%);
   `}
 `;
 
@@ -394,7 +396,7 @@ const mobileBottomNavShared = `
   font-weight: 600;
   letter-spacing: 0.01em;
   position: relative;
-  transition: color 0.2s ease, transform 0.2s ease;
+  transition: color 0.2s ease, transform 0.2s ease, background 0.2s ease;
 `;
 
 const MobileBottomNavLink = styled(NavLink)`
@@ -415,6 +417,7 @@ const MobileBottomNavLink = styled(NavLink)`
 
   &.active {
     color: var(--color-accent);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
   }
 
   &.active::after {
@@ -453,6 +456,7 @@ const MobileBottomNavButton = styled.button`
     props.$active
       ? `
     color: var(--color-accent);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
   `
       : ''}
 
@@ -495,14 +499,16 @@ const MobileMoreSheet = styled(motion.div)`
     z-index: var(--z-fixed);
     padding: 8px;
     border-radius: 22px;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.09);
     background:
-      linear-gradient(180deg, rgba(9, 11, 16, 0.82), rgba(5, 7, 12, 0.94));
+      linear-gradient(180deg, rgba(16, 18, 26, 0.6), rgba(6, 8, 13, 0.78));
     box-shadow:
-      0 18px 34px rgba(0, 0, 0, 0.3),
-      inset 0 1px 0 rgba(255, 255, 255, 0.03);
-    backdrop-filter: blur(22px) saturate(115%);
-    -webkit-backdrop-filter: blur(22px) saturate(115%);
+      0 16px 34px rgba(0, 0, 0, 0.24),
+      0 0 0 1px rgba(255, 255, 255, 0.02) inset,
+      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      inset 0 -12px 22px rgba(0, 0, 0, 0.16);
+    backdrop-filter: blur(28px) saturate(128%);
+    -webkit-backdrop-filter: blur(28px) saturate(128%);
   `}
 `;
 
@@ -515,8 +521,9 @@ const MobileMoreSheetLink = styled(NavLink)`
   min-height: 52px;
   padding: 0 14px;
   border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018));
   color: var(--color-muted);
   text-decoration: none;
   font-weight: 600;
@@ -545,8 +552,9 @@ const MobileMoreSheetLink = styled(NavLink)`
 
   &.active {
     color: var(--color-accent);
-    background: rgba(214, 179, 106, 0.08);
-    border-color: rgba(214, 179, 106, 0.18);
+    background:
+      linear-gradient(180deg, rgba(214, 179, 106, 0.12), rgba(214, 179, 106, 0.04));
+    border-color: rgba(214, 179, 106, 0.22);
   }
 
   &.active::after {
@@ -577,6 +585,8 @@ const Header = ({
   const location = useLocation();
   const useMobileNav = useMobileDeviceLayout();
   const navRef = useRef(null);
+  const mobileMoreSheetRef = useRef(null);
+  const mobileMoreButtonRef = useRef(null);
   const brandFullMeasureRef = useRef(null);
   const brandCompactMeasureRef = useRef(null);
   const rightFullMeasureRef = useRef(null);
@@ -594,6 +604,25 @@ const Header = ({
     setMobileMoreOpen(false);
   }, [location.pathname]);
 
+  useEffect(() => {
+    if (!useMobileNav || !mobileMoreOpen) return undefined;
+
+    const handlePointerDown = (event) => {
+      const target = event.target;
+
+      if (mobileMoreSheetRef.current?.contains(target)) return;
+      if (mobileMoreButtonRef.current?.contains(target)) return;
+
+      setMobileMoreOpen(false);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown, true);
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true);
+    };
+  }, [mobileMoreOpen, useMobileNav]);
+
   const navItems = [
     { to: '/', label: 'Home' },
     { to: '/series', label: 'Serie' },
@@ -605,9 +634,9 @@ const Header = ({
 
   const mobilePrimaryItems = [
     { to: '/', label: 'Home', icon: House },
-    { to: '/series', label: 'Serie', icon: Grid3X3 },
+    { to: '/series', label: 'Serie', icon: PanelsTopLeft },
     { to: '/map', label: 'Mappa', icon: Map },
-    { to: '/gallery', label: 'Archivio', icon: FolderOpen }
+    { to: '/gallery', label: 'Archivio', icon: Images }
   ];
 
   const mobileSecondaryItems = [
@@ -843,6 +872,7 @@ const Header = ({
         <AnimatePresence>
           {mobileMoreOpen && (
             <MobileMoreSheet
+              ref={mobileMoreSheetRef}
               $visible={useMobileNav}
               initial={{ opacity: 0, y: 10, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -883,6 +913,7 @@ const Header = ({
           })}
           <MobileBottomNavItem>
             <MobileBottomNavButton
+              ref={mobileMoreButtonRef}
               type="button"
               $active={mobileMoreOpen || mobileSecondaryItems.some((secondaryItem) => location.pathname === secondaryItem.to)}
               onClick={() => setMobileMoreOpen((open) => !open)}
