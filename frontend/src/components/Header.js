@@ -359,8 +359,8 @@ const MobileBottomNav = styled.nav`
   ${({ $visible }) => $visible && `
     display: block;
     position: fixed;
-    left: max(14px, env(safe-area-inset-left));
-    right: max(14px, env(safe-area-inset-right));
+    left: max(10px, env(safe-area-inset-left));
+    right: max(10px, env(safe-area-inset-right));
     bottom: max(10px, env(safe-area-inset-bottom));
     z-index: var(--z-fixed);
     padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
@@ -504,42 +504,82 @@ const MobileMoreSheet = styled(motion.div)`
   ${({ $visible }) => $visible && `
     display: block;
     position: fixed;
-    left: max(12px, env(safe-area-inset-left));
-    right: max(12px, env(safe-area-inset-right));
-    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 94px);
+    left: max(10px, env(safe-area-inset-left));
+    right: max(10px, env(safe-area-inset-right));
+    bottom: calc(max(10px, env(safe-area-inset-bottom)) + 86px);
     z-index: var(--z-fixed);
-    padding: 10px;
-    border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background: rgba(17, 19, 27, 0.94);
-    box-shadow: 0 22px 40px rgba(0, 0, 0, 0.38);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
+    padding: 8px;
+    border-radius: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    background:
+      linear-gradient(180deg, rgba(9, 11, 16, 0.76), rgba(5, 7, 12, 0.9));
+    box-shadow:
+      0 18px 34px rgba(0, 0, 0, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(22px) saturate(115%);
+    -webkit-backdrop-filter: blur(22px) saturate(115%);
   `}
 `;
 
 const MobileMoreSheetList = styled.div`
   display: grid;
-  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
 `;
 
 const MobileMoreSheetLink = styled(NavLink)`
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 46px;
-  padding: 0 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--color-text);
+  min-height: 58px;
+  padding: 8px 6px 6px;
+  border-radius: 16px;
+  border: 0;
+  background: transparent;
+  color: var(--color-muted);
   text-decoration: none;
   font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  position: relative;
+  transition: color 0.2s ease, transform 0.2s ease;
+
+  &::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: 0;
+    width: 22px;
+    height: 2px;
+    border-radius: 999px;
+    background: transparent;
+    transform: translateX(-50%);
+    transition: background 0.2s ease;
+  }
+
+  svg {
+    opacity: 0.84;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
 
   &.active {
-    background: rgba(214, 179, 106, 0.12);
-    border-color: rgba(214, 179, 106, 0.24);
+    color: var(--color-accent);
   }
+
+  &.active::after {
+    background: rgba(214, 179, 106, 0.92);
+  }
+
+  &.active svg {
+    opacity: 1;
+    transform: translateY(-1px);
+  }
+`;
+
+const MobileMoreSheetLabel = styled.span`
+  font-size: 0.72rem;
+  line-height: 1;
+  white-space: nowrap;
 `;
 
 const Header = ({
@@ -841,7 +881,7 @@ const Header = ({
                   return (
                     <MobileMoreSheetLink key={item.to} to={item.to}>
                       <Icon size={18} />
-                      <span>{item.label}</span>
+                      <MobileMoreSheetLabel>{item.label}</MobileMoreSheetLabel>
                     </MobileMoreSheetLink>
                   );
                 })}
