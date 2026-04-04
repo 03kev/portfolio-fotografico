@@ -1,8 +1,9 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Camera, FolderOpen, Grid3X3, House, KeyRound, Mail, Map, UserRound } from 'lucide-react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
+import { useMeasuredLayoutMode, useMobileDeviceLayout } from '../hooks';
 
 const HeaderContainer = styled(motion.header)`
   position: fixed;
@@ -24,7 +25,7 @@ const Nav = styled.nav`
   position: relative;
   padding: 0 var(--spacing-xl);
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
   gap: 12px;
   height: 78px;
@@ -37,7 +38,7 @@ const Nav = styled.nav`
 `;
 
 const Logo = styled(motion(Link))`
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   display: flex;
   align-items: center;
@@ -74,6 +75,11 @@ const LogoIcon = styled.img`
     width: 28px;
     height: 28px;
   `}
+
+  ${({ $denseDesktop }) => $denseDesktop && `
+    width: 32px;
+    height: 32px;
+  `}
 `;
 
 const LogoText = styled.span`
@@ -88,6 +94,10 @@ const LogoText = styled.span`
   ${({ $mobileLayout }) => $mobileLayout && `
     gap: 6px;
     font-size: 0.96rem;
+  `}
+
+  ${({ $hidden }) => $hidden && `
+    display: none;
   `}
 `;
 
@@ -247,6 +257,7 @@ const StyledNavLink = styled(NavLink)`
 `;
 
 const Right = styled.div`
+  margin-left: auto;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -254,6 +265,10 @@ const Right = styled.div`
 
   ${({ $mobileLayout }) => $mobileLayout && `
     gap: 8px;
+  `}
+
+  ${({ $denseDesktop }) => $denseDesktop && `
+    gap: 10px;
   `}
 `;
 
@@ -280,7 +295,7 @@ const UploadButton = styled(motion.button)`
     font-size: var(--font-size-xs);
   `}
 
-  ${({ $mobileLayout, $iconOnlyOnMobile }) => $mobileLayout && $iconOnlyOnMobile && `
+  ${({ $mobileLayout, $iconOnly }) => ($mobileLayout || $iconOnly) && `
     width: 38px;
     height: 38px;
     padding: 0;
@@ -292,7 +307,7 @@ const UploadButton = styled(motion.button)`
 const UploadButtonLabel = styled.span`
   white-space: nowrap;
 
-  ${({ $mobileLayout, $hideOnMobile }) => $mobileLayout && $hideOnMobile && `
+  ${({ $mobileLayout, $iconOnly }) => ($mobileLayout || $iconOnly) && `
     display: none;
   `}
 `;
@@ -477,12 +492,13 @@ const Header = ({
 }) => {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
-  const [compactDesktopNav, setCompactDesktopNav] = useState(false);
-  const [useMobileNav, setUseMobileNav] = useState(false);
   const location = useLocation();
+  const useMobileNav = useMobileDeviceLayout();
   const navRef = useRef(null);
-  const logoContentRef = useRef(null);
-  const rightRef = useRef(null);
+  const brandFullMeasureRef = useRef(null);
+  const brandCompactMeasureRef = useRef(null);
+  const rightFullMeasureRef = useRef(null);
+  const rightCompactMeasureRef = useRef(null);
   const navMeasureRef = useRef(null);
 
   useEffect(() => {
@@ -517,65 +533,71 @@ const Header = ({
     { to: '/contact', label: 'Contatti', icon: Mail }
   ];
 
-  useLayoutEffect(() => {
-    if (typeof window === 'undefined') return undefined;
+  const resolveDesktopLayoutMode = useCallback(() => {
+    if (useMobileNav) return 'mobile';
+    if (
+      !navRef.current ||
+      !brandFullMeasureRef.current ||
+      !brandCompactMeasureRef.current ||
+      !rightFullMeasureRef.current ||
+      !rightCompactMeasureRef.current ||
+      !navMeasureRef.current
+    ) {
+      return 'inline-full';
+    }
 
-    const finePointerQuery = window.matchMedia('(hover: hover) and (pointer: fine)');
-    const narrowViewportQuery = window.matchMedia('(max-width: 768px)');
-    const hoverNoneQuery = window.matchMedia('(hover: none)');
-    const coarsePointerQuery = window.matchMedia('(pointer: coarse)');
+    const navStyles = window.getComputedStyle(navRef.current);
+    const paddingInline =
+      (parseFloat(navStyles.paddingLeft || '0') || 0) +
+      (parseFloat(navStyles.paddingRight || '0') || 0);
+    const availableWidth = Math.max(navRef.current.clientWidth - paddingInline, 0);
 
-    const measureLayout = () => {
-      if (!navRef.current || !logoContentRef.current || !rightRef.current || !navMeasureRef.current) return;
+    const brandFullWidth = brandFullMeasureRef.current.offsetWidth;
+    const brandCompactWidth = brandCompactMeasureRef.current.offsetWidth;
+    const rightFullWidth = rightFullMeasureRef.current.offsetWidth;
+    const rightCompactWidth = rightCompactMeasureRef.current.offsetWidth;
+    const navLinksWidth = navMeasureRef.current.scrollWidth;
 
-      const ua = window.navigator.userAgent || '';
-      const touchCapable = window.navigator.maxTouchPoints > 0 || 'ontouchstart' in window;
-      const mobileLikeDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|Tablet|SamsungBrowser/i.test(ua);
-      const shouldUseMobileNav =
-        narrowViewportQuery.matches &&
-        (touchCapable || mobileLikeDevice || hoverNoneQuery.matches || coarsePointerQuery.matches);
-
-      setUseMobileNav(shouldUseMobileNav);
-
-      if (!finePointerQuery.matches || shouldUseMobileNav) {
-        setCompactDesktopNav(false);
-        return;
-      }
-
-      const navWidth = navRef.current.clientWidth;
-      const logoWidth = logoContentRef.current.offsetWidth;
-      const rightWidth = rightRef.current.offsetWidth;
-      const linksWidth = navMeasureRef.current.scrollWidth;
-      const sideWidth = Math.max(logoWidth, rightWidth);
-      const centerSafetyGap = 125;
-      const availableCenterWidth = Math.max(0, navWidth - sideWidth * 2 - centerSafetyGap);
-
-      setCompactDesktopNav(linksWidth > availableCenterWidth);
+    const fitsInline = (brandWidth, rightWidth) => {
+      const sideWidth = Math.max(brandWidth, rightWidth);
+      const centerSafetyGap = 112;
+      return availableWidth >= sideWidth * 2 + navLinksWidth + centerSafetyGap;
     };
 
-    measureLayout();
-
-    const resizeObserver = new ResizeObserver(measureLayout);
-    resizeObserver.observe(navRef.current);
-    resizeObserver.observe(logoContentRef.current);
-    resizeObserver.observe(rightRef.current);
-    resizeObserver.observe(navMeasureRef.current);
-
-    window.addEventListener('resize', measureLayout);
-    finePointerQuery.addEventListener?.('change', measureLayout);
-    narrowViewportQuery.addEventListener?.('change', measureLayout);
-    hoverNoneQuery.addEventListener?.('change', measureLayout);
-    coarsePointerQuery.addEventListener?.('change', measureLayout);
-
-    return () => {
-      resizeObserver.disconnect();
-      window.removeEventListener('resize', measureLayout);
-      finePointerQuery.removeEventListener?.('change', measureLayout);
-      narrowViewportQuery.removeEventListener?.('change', measureLayout);
-      hoverNoneQuery.removeEventListener?.('change', measureLayout);
-      coarsePointerQuery.removeEventListener?.('change', measureLayout);
+    const fitsStacked = (brandWidth, rightWidth) => {
+      const topRowGap = 24;
+      return availableWidth >= brandWidth + rightWidth + topRowGap;
     };
-  }, []);
+
+    if (fitsInline(brandFullWidth, rightFullWidth)) return 'inline-full';
+    if (fitsInline(brandFullWidth, rightCompactWidth)) return 'inline-compact-upload';
+    if (fitsStacked(brandFullWidth, rightFullWidth)) return 'stacked-full';
+    if (fitsStacked(brandFullWidth, rightCompactWidth)) return 'stacked-compact-upload';
+    if (fitsStacked(brandCompactWidth, rightCompactWidth)) return 'stacked-compact-brand';
+
+    return 'stacked-compact-brand';
+  }, [useMobileNav]);
+
+  const layoutMode = useMeasuredLayoutMode({
+    enabled: true,
+    initialMode: 'inline-full',
+    observedRefs: [
+      navRef,
+      brandFullMeasureRef,
+      brandCompactMeasureRef,
+      rightFullMeasureRef,
+      rightCompactMeasureRef,
+      navMeasureRef
+    ],
+    resolveMode: resolveDesktopLayoutMode
+  });
+
+  const compactDesktopNav = !useMobileNav && layoutMode.startsWith('stacked');
+  const compactBrand = layoutMode === 'stacked-compact-brand';
+  const compactUpload =
+    layoutMode === 'inline-compact-upload' ||
+    layoutMode === 'stacked-compact-upload' ||
+    layoutMode === 'stacked-compact-brand';
 
   useEffect(() => {
     const root = document.documentElement;
@@ -604,9 +626,15 @@ const Header = ({
         <HeaderInner>
           <Nav ref={navRef} $mobileLayout={useMobileNav}>
             <Logo to="/" whileTap={{ scale: 0.98 }} aria-label="Torna alla home">
-              <LogoContent ref={logoContentRef}>
-                <LogoIcon src="/favicon.svg" alt="" aria-hidden="true" $mobileLayout={useMobileNav} />
-                <LogoText $mobileLayout={useMobileNav}>
+              <LogoContent>
+                <LogoIcon
+                  src="/favicon.svg"
+                  alt=""
+                  aria-hidden="true"
+                  $mobileLayout={useMobileNav}
+                  $denseDesktop={compactBrand}
+                />
+                <LogoText $mobileLayout={useMobileNav} $hidden={compactBrand}>
                   FotoPortfolio <span className="dot" />
                 </LogoText>
               </LogoContent>
@@ -622,7 +650,7 @@ const Header = ({
               ))}
             </NavLinks>
 
-            <Right ref={rightRef} $mobileLayout={useMobileNav}>
+            <Right $mobileLayout={useMobileNav} $denseDesktop={compactBrand}>
               {isAdmin && onConfigureAuth && (
                 <TokenButton
                   type="button"
@@ -642,10 +670,10 @@ const Header = ({
                   onClick={onOpenUpload}
                   whileTap={{ scale: 0.98 }}
                   $mobileLayout={useMobileNav}
-                  $iconOnlyOnMobile
+                  $iconOnly={compactUpload}
                 >
                   <Camera size={16} />
-                  <UploadButtonLabel $mobileLayout={useMobileNav} $hideOnMobile>
+                  <UploadButtonLabel $mobileLayout={useMobileNav} $iconOnly={compactUpload}>
                     Carica
                   </UploadButtonLabel>
                 </UploadButton>
@@ -673,6 +701,58 @@ const Header = ({
                 <DesktopNavMeasureItem>{item.label}</DesktopNavMeasureItem>
               </li>
             ))}
+          </DesktopNavMeasure>
+
+          <DesktopNavMeasure aria-hidden="true" $mobileLayout={useMobileNav} ref={brandFullMeasureRef}>
+            <li>
+              <LogoContent>
+                <LogoIcon src="/favicon.svg" alt="" aria-hidden="true" />
+                <LogoText>
+                  FotoPortfolio <span className="dot" />
+                </LogoText>
+              </LogoContent>
+            </li>
+          </DesktopNavMeasure>
+
+          <DesktopNavMeasure aria-hidden="true" $mobileLayout={useMobileNav} ref={brandCompactMeasureRef}>
+            <li>
+              <LogoIcon src="/favicon.svg" alt="" aria-hidden="true" />
+            </li>
+          </DesktopNavMeasure>
+
+          <DesktopNavMeasure aria-hidden="true" $mobileLayout={useMobileNav} ref={rightFullMeasureRef}>
+            <li>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '12px' }}>
+                {isAdmin && onConfigureAuth && (
+                  <TokenButton type="button" aria-hidden="true">
+                    <KeyRound size={16} />
+                  </TokenButton>
+                )}
+                {isAdmin && onOpenUpload && (
+                  <UploadButton type="button" aria-hidden="true">
+                    <Camera size={16} />
+                    <UploadButtonLabel>Carica</UploadButtonLabel>
+                  </UploadButton>
+                )}
+              </div>
+            </li>
+          </DesktopNavMeasure>
+
+          <DesktopNavMeasure aria-hidden="true" $mobileLayout={useMobileNav} ref={rightCompactMeasureRef}>
+            <li>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
+                {isAdmin && onConfigureAuth && (
+                  <TokenButton type="button" aria-hidden="true">
+                    <KeyRound size={16} />
+                  </TokenButton>
+                )}
+                {isAdmin && onOpenUpload && (
+                  <UploadButton type="button" aria-hidden="true" $iconOnly>
+                    <Camera size={16} />
+                  </UploadButton>
+                )}
+              </div>
+            </li>
           </DesktopNavMeasure>
         </HeaderInner>
       </HeaderContainer>
