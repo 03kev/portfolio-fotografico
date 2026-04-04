@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Camera, FolderOpen, Grid3X3, House, KeyRound, Mail, Map, UserRound } from 'lucide-react';
+import { Camera, Ellipsis, FolderOpen, Grid3X3, House, KeyRound, Mail, Map, UserRound } from 'lucide-react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { useMeasuredLayoutMode, useMobileDeviceLayout } from '../hooks';
 
@@ -347,9 +347,9 @@ const MobileBottomNavBackdrop = styled(motion.button)`
     inset: 0;
     z-index: calc(var(--z-fixed) - 1);
     border: 0;
-    background: rgba(4, 6, 12, 0.32);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
+    background: rgba(4, 6, 12, 0.18);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
   `}
 `;
 
@@ -359,17 +359,20 @@ const MobileBottomNav = styled.nav`
   ${({ $visible }) => $visible && `
     display: block;
     position: fixed;
-    left: max(12px, env(safe-area-inset-left));
-    right: max(12px, env(safe-area-inset-right));
-    bottom: max(12px, env(safe-area-inset-bottom));
+    left: max(14px, env(safe-area-inset-left));
+    right: max(14px, env(safe-area-inset-right));
+    bottom: max(10px, env(safe-area-inset-bottom));
     z-index: var(--z-fixed);
-    padding: 10px;
-    border-radius: 22px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background: rgba(17, 19, 27, 0.92);
-    box-shadow: 0 24px 46px rgba(0, 0, 0, 0.42);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    border-radius: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    background:
+      linear-gradient(180deg, rgba(9, 11, 16, 0.78), rgba(5, 7, 12, 0.92));
+    box-shadow:
+      0 18px 34px rgba(0, 0, 0, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(22px) saturate(115%);
+    -webkit-backdrop-filter: blur(22px) saturate(115%);
   `}
 `;
 
@@ -379,7 +382,7 @@ const MobileBottomNavList = styled.ul`
   ${({ $visible }) => $visible && `
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 6px;
+    gap: 2px;
     list-style: none;
   `}
 `;
@@ -390,10 +393,10 @@ const MobileBottomNavItem = styled.li`
 
 const mobileBottomNavShared = `
   width: 100%;
-  min-height: 58px;
-  padding: 8px 6px;
-  border-radius: 16px;
-  border: 1px solid transparent;
+  min-height: 52px;
+  padding: 7px 4px 6px;
+  border-radius: 14px;
+  border: 0;
   background: transparent;
   color: var(--color-muted);
   text-decoration: none;
@@ -401,20 +404,46 @@ const mobileBottomNavShared = `
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  font-size: 0.71rem;
+  gap: 5px;
+  font-size: 0.68rem;
   font-weight: 600;
   letter-spacing: 0.01em;
-  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  position: relative;
+  transition: color 0.2s ease, transform 0.2s ease;
 `;
 
 const MobileBottomNavLink = styled(NavLink)`
   ${mobileBottomNavShared}
 
+  &::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: 0;
+    width: 22px;
+    height: 2px;
+    border-radius: 999px;
+    background: transparent;
+    transform: translateX(-50%);
+    transition: background 0.2s ease, width 0.2s ease;
+  }
+
   &.active {
-    color: var(--color-text);
-    background: rgba(214, 179, 106, 0.12);
-    border-color: rgba(214, 179, 106, 0.24);
+    color: var(--color-accent);
+  }
+
+  &.active::after {
+    background: rgba(214, 179, 106, 0.92);
+  }
+
+  svg {
+    opacity: 0.84;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+
+  &.active svg {
+    opacity: 1;
+    transform: translateY(-1px);
   }
 `;
 
@@ -422,14 +451,43 @@ const MobileBottomNavButton = styled.button`
   ${mobileBottomNavShared}
   cursor: pointer;
 
+  &::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: 0;
+    width: 22px;
+    height: 2px;
+    border-radius: 999px;
+    background: transparent;
+    transform: translateX(-50%);
+    transition: background 0.2s ease, width 0.2s ease;
+  }
+
   ${(props) =>
     props.$active
       ? `
-    color: var(--color-text);
-    background: rgba(214, 179, 106, 0.12);
-    border-color: rgba(214, 179, 106, 0.24);
+    color: var(--color-accent);
   `
       : ''}
+
+  ${(props) =>
+    props.$active
+      ? `
+    &::after {
+      background: rgba(214, 179, 106, 0.92);
+    }
+
+    svg {
+      opacity: 1;
+      transform: translateY(-1px);
+    }
+  `
+      : `
+    svg {
+      opacity: 0.84;
+    }
+  `}
 `;
 
 const BottomNavLabel = styled.span`
@@ -437,6 +495,7 @@ const BottomNavLabel = styled.span`
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
+  line-height: 1;
 `;
 
 const MobileMoreSheet = styled(motion.div)`
@@ -813,7 +872,7 @@ const Header = ({
               aria-expanded={mobileMoreOpen}
               aria-label="Altre sezioni"
             >
-              <UserRound size={18} />
+              <Ellipsis size={18} />
               <BottomNavLabel>Altro</BottomNavLabel>
             </MobileBottomNavButton>
           </MobileBottomNavItem>
