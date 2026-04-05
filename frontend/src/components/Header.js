@@ -338,7 +338,7 @@ const TokenButton = styled(motion.button)`
   }
 `;
 
-const MobileBottomNav = styled.nav`
+const MobileBottomNavDock = styled.div`
   display: none;
 
   ${({ $visible }) => $visible && `
@@ -349,7 +349,25 @@ const MobileBottomNav = styled.nav`
     width: min(calc(100vw - 20px), 460px);
     bottom: max(10px, env(safe-area-inset-bottom));
     z-index: var(--z-fixed);
-    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    width: min(calc(100vw - 20px), 460px);
+    bottom: max(10px, env(safe-area-inset-bottom));
+    z-index: var(--z-fixed);
+    --mobile-nav-columns: 5;
+    --mobile-nav-gap: 2px;
+    --mobile-nav-pad-x: 10px;
+    --mobile-nav-pad-top: 8px;
+    --mobile-nav-pad-bottom: calc(8px + env(safe-area-inset-bottom));
+    --mobile-nav-slot-width: calc(((100% - (var(--mobile-nav-pad-x) * 2)) - ((var(--mobile-nav-columns) - 1) * var(--mobile-nav-gap))) / var(--mobile-nav-columns));
+  `}
+`;
+
+const MobileBottomNav = styled.nav`
+  display: none;
+
+  ${({ $visible }) => $visible && `
+    display: block;
+    width: 100%;
+    padding: var(--mobile-nav-pad-top) var(--mobile-nav-pad-x) var(--mobile-nav-pad-bottom);
     border-radius: 24px;
     border: 1px solid rgba(255, 255, 255, 0.09);
     background:
@@ -369,8 +387,8 @@ const MobileBottomNavList = styled.ul`
 
   ${({ $visible }) => $visible && `
     display: grid;
-    grid-template-columns: repeat(var(--mobile-bottom-nav-columns, 5), minmax(0, 1fr));
-    gap: 2px;
+    grid-template-columns: repeat(var(--mobile-bottom-nav-columns, var(--mobile-nav-columns)), minmax(0, 1fr));
+    gap: var(--mobile-nav-gap);
     list-style: none;
   `}
 `;
@@ -493,14 +511,16 @@ const MobileMoreSheet = styled(motion.div)`
 
   ${({ $visible }) => $visible && `
     display: block;
-    position: fixed;
-    left: 0;
+    position: absolute;
     right: 0;
-    margin: 0 auto;
-    width: min(calc(100vw - 20px), 460px);
-    bottom: calc(max(10px, env(safe-area-inset-bottom)) + 82px);
-    z-index: var(--z-fixed);
-    padding: 8px;
+    bottom: calc(100% + 10px);
+    width: calc(
+      (var(--mobile-nav-slot-width) * var(--mobile-more-columns, 2)) +
+      (var(--mobile-nav-gap) * (var(--mobile-more-columns, 2) - 1)) +
+      (var(--mobile-nav-pad-x) * 2)
+    );
+    max-width: 100%;
+    padding: 8px var(--mobile-nav-pad-x);
     border-radius: 22px;
     border: 1px solid rgba(255, 255, 255, 0.09);
     background:
@@ -517,35 +537,29 @@ const MobileMoreSheet = styled(motion.div)`
 
 const MobileMoreSheetList = styled.div`
   display: grid;
-  gap: 6px;
+  grid-template-columns: repeat(var(--mobile-more-columns, 2), minmax(0, 1fr));
+  gap: var(--mobile-nav-gap);
 `;
 
 const MobileMoreSheetLink = styled(NavLink)`
+  ${mobileBottomNavShared}
   min-height: 52px;
-  padding: 0 14px;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018));
-  color: var(--color-muted);
-  text-decoration: none;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  padding: 7px 6px 6px;
+  border-radius: 14px;
   position: relative;
-  transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+  transition: color 0.2s ease, background 0.2s ease, transform 0.2s ease;
 
   &::after {
     content: '';
     position: absolute;
-    left: 16px;
-    right: 16px;
+    left: 50%;
     bottom: 0;
+    width: 22px;
     height: 2px;
     border-radius: 999px;
     background: transparent;
-    transition: background 0.2s ease;
+    transform: translateX(-50%);
+    transition: background 0.2s ease, width 0.2s ease;
   }
 
   svg {
@@ -555,9 +569,7 @@ const MobileMoreSheetLink = styled(NavLink)`
 
   &.active {
     color: var(--color-accent);
-    background:
-      linear-gradient(180deg, rgba(214, 179, 106, 0.12), rgba(214, 179, 106, 0.04));
-    border-color: rgba(214, 179, 106, 0.22);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
   }
 
   &.active::after {
@@ -571,9 +583,12 @@ const MobileMoreSheetLink = styled(NavLink)`
 `;
 
 const MobileMoreSheetLabel = styled.span`
-  font-size: 0.92rem;
+  font-size: 0.68rem;
   line-height: 1;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 `;
 
 const Header = ({
@@ -871,12 +886,13 @@ const Header = ({
         </HeaderInner>
       </HeaderContainer>
 
-      {useMobileNav && (
+      <MobileBottomNavDock $visible={useMobileNav}>
         <AnimatePresence>
-          {mobileMoreOpen && (
+          {useMobileNav && mobileMoreOpen && (
             <MobileMoreSheet
               ref={mobileMoreSheetRef}
               $visible={useMobileNav}
+              style={{ '--mobile-more-columns': mobileSecondaryItems.length }}
               initial={{ opacity: 0, y: 10, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 8, scale: 0.98 }}
@@ -896,39 +912,39 @@ const Header = ({
             </MobileMoreSheet>
           )}
         </AnimatePresence>
-      )}
 
-      <MobileBottomNav aria-label="Navigazione mobile" $visible={useMobileNav}>
-        <MobileBottomNavList
-          $visible={useMobileNav}
-          style={{ '--mobile-bottom-nav-columns': 5 }}
-        >
-          {mobilePrimaryItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <MobileBottomNavItem key={item.to}>
-                <MobileBottomNavLink to={item.to} end={item.to === '/'}>
-                  <Icon size={18} />
-                  <BottomNavLabel>{item.label}</BottomNavLabel>
-                </MobileBottomNavLink>
-              </MobileBottomNavItem>
-            );
-          })}
-          <MobileBottomNavItem>
-            <MobileBottomNavButton
-              ref={mobileMoreButtonRef}
-              type="button"
-              $active={mobileMoreOpen || mobileSecondaryItems.some((secondaryItem) => location.pathname === secondaryItem.to)}
-              onClick={() => setMobileMoreOpen((open) => !open)}
-              aria-expanded={mobileMoreOpen}
-              aria-label="Altre sezioni"
-            >
-              <Ellipsis size={18} />
-              <BottomNavLabel>Altro</BottomNavLabel>
-            </MobileBottomNavButton>
-          </MobileBottomNavItem>
-        </MobileBottomNavList>
-      </MobileBottomNav>
+        <MobileBottomNav aria-label="Navigazione mobile" $visible={useMobileNav}>
+          <MobileBottomNavList
+            $visible={useMobileNav}
+            style={{ '--mobile-bottom-nav-columns': 5 }}
+          >
+            {mobilePrimaryItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <MobileBottomNavItem key={item.to}>
+                  <MobileBottomNavLink to={item.to} end={item.to === '/'}>
+                    <Icon size={18} />
+                    <BottomNavLabel>{item.label}</BottomNavLabel>
+                  </MobileBottomNavLink>
+                </MobileBottomNavItem>
+              );
+            })}
+            <MobileBottomNavItem>
+              <MobileBottomNavButton
+                ref={mobileMoreButtonRef}
+                type="button"
+                $active={mobileMoreOpen || mobileSecondaryItems.some((secondaryItem) => location.pathname === secondaryItem.to)}
+                onClick={() => setMobileMoreOpen((open) => !open)}
+                aria-expanded={mobileMoreOpen}
+                aria-label="Altre sezioni"
+              >
+                <Ellipsis size={18} />
+                <BottomNavLabel>Altro</BottomNavLabel>
+              </MobileBottomNavButton>
+            </MobileBottomNavItem>
+          </MobileBottomNavList>
+        </MobileBottomNav>
+      </MobileBottomNavDock>
     </>
   );
 };
