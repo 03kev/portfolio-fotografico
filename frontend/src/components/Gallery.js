@@ -8,6 +8,7 @@ import { LOCAL_IMAGE_FALLBACK, resolveVersionedAssetUrl } from '../utils/imageUr
 import { photoService, signSourceUpload, uploadSourceToSignedUrl } from '../utils/api';
 import { useGalleryQueryState } from '../hooks/useGalleryQueryState';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import { useMobileDeviceLayout, useTouchLongPressReveal } from '../hooks';
 import {
   buildOperationErrorMessage
 } from '../utils/operationErrors';
@@ -365,6 +366,86 @@ const ReplaceSourceButton = styled(motion.button)`
   }
 `;
 
+const MobileManageButton = styled.button`
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(10, 12, 18, 0.74);
+  backdrop-filter: blur(12px);
+  color: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 14px 26px rgba(0, 0, 0, 0.22);
+  z-index: 14;
+`;
+
+const MobileAdminPanel = styled.div`
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: grid;
+  grid-template-columns: repeat(2, 42px);
+  gap: 8px;
+  padding: 10px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(10, 12, 18, 0.9);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.26);
+  z-index: 15;
+`;
+
+const MobileAdminAction = styled.button`
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: ${({ $tone }) => {
+    if ($tone === 'purple') return 'rgba(123, 107, 255, 0.18)';
+    if ($tone === 'blue') return 'rgba(39, 137, 255, 0.18)';
+    if ($tone === 'gold') return 'rgba(214, 179, 106, 0.18)';
+    if ($tone === 'danger') return 'rgba(220, 38, 38, 0.18)';
+    return 'rgba(255, 255, 255, 0.06)';
+  }};
+  color: ${({ $tone }) => {
+    if ($tone === 'purple') return 'rgba(197, 189, 255, 0.98)';
+    if ($tone === 'blue') return 'rgba(178, 216, 255, 0.98)';
+    if ($tone === 'gold') return 'rgba(239, 216, 161, 0.98)';
+    if ($tone === 'danger') return 'rgba(255, 211, 211, 0.98)';
+    return 'rgba(255, 255, 255, 0.94)';
+  }};
+`;
+
+const MobileCaptionBar = styled.div`
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 34px 12px 10px;
+  background: linear-gradient(180deg, rgba(8, 10, 16, 0) 0%, rgba(8, 10, 16, 0.72) 52%, rgba(8, 10, 16, 0.96) 100%);
+  pointer-events: none;
+  z-index: 11;
+`;
+
+const MobileCaptionTitle = styled.div`
+  color: rgba(255, 255, 255, 0.96);
+  font-size: 0.84rem;
+  line-height: 1.25;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+`;
+
 const ReuploadCardOverlay = styled.div`
   position: absolute;
   inset: 0;
@@ -687,6 +768,9 @@ const GalleryCard = React.memo(function GalleryCard({
   photo,
   index,
   isAdmin,
+  compactMobile,
+  isTouchCardActive,
+  isMobileAdminOpen,
   hideCardDescriptions,
   hasActivePhotoOp,
   photoOpStatus,
@@ -698,12 +782,51 @@ const GalleryCard = React.memo(function GalleryCard({
   onEdit,
   onCrop,
   onReuploadSource,
-  onAbortReuploadUpload
+  onAbortReuploadUpload,
+  onRevealMobileCard,
+  onHideMobileCard,
+  onToggleMobileAdmin,
+  onCloseMobileAdmin
 }) {
   const isCardOpActive = Boolean(photoOpStatus?.active);
   const isPendingCard = Boolean(photo?.__pending);
   const canOpenCard = !isCardOpActive && !isPendingCard;
   const cardImageSrc = isPendingCard ? String(photo.previewUrl || '') : getThumbImageUrl(photo);
+  const isMobileUiVisible = compactMobile && (isTouchCardActive || isMobileAdminOpen);
+  const mobileAdminActions = [
+    {
+      key: 'replace',
+      tone: 'purple',
+      title: 'Reupload source privata',
+      icon: Upload,
+      onClick: onReuploadSource
+    },
+    {
+      key: 'crop',
+      tone: 'blue',
+      title: 'Modifica crop',
+      icon: Crop,
+      onClick: onCrop
+    },
+    {
+      key: 'edit',
+      tone: 'gold',
+      title: 'Modifica foto',
+      icon: Edit3,
+      onClick: onEdit
+    },
+    {
+      key: 'delete',
+      tone: 'danger',
+      title: 'Elimina foto',
+      icon: Trash2,
+      onClick: onDelete
+    }
+  ];
+  const { bind: touchRevealBind, consumeTrigger } = useTouchLongPressReveal({
+    enabled: compactMobile && !isPendingCard && !isCardOpActive,
+    onLongPress: () => onRevealMobileCard(photo.id)
+  });
 
   return (
     <motion.div
@@ -712,7 +835,13 @@ const GalleryCard = React.memo(function GalleryCard({
       initial="hidden"
       animate="visible"
       exit="exit"
+      {...touchRevealBind}
       onClick={() => {
+        if (compactMobile && (isTouchCardActive || isMobileAdminOpen || consumeTrigger())) {
+          onCloseMobileAdmin();
+          onHideMobileCard();
+          return;
+        }
         if (!canOpenCard) return;
         onOpen(photo);
       }}
@@ -723,7 +852,46 @@ const GalleryCard = React.memo(function GalleryCard({
             {photo.title || 'Foto'}
           </SeoImageLink>
         )}
-        {isAdmin && !isPendingCard && (
+        {isAdmin && compactMobile && !isPendingCard && !hasActivePhotoOp && !isCardOpActive && isMobileUiVisible && (
+          <>
+            <MobileManageButton
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleMobileAdmin(photo.id);
+              }}
+              aria-label={isMobileAdminOpen ? 'Chiudi azioni admin' : 'Apri azioni admin'}
+              title={isMobileAdminOpen ? 'Chiudi azioni admin' : 'Apri azioni admin'}
+            >
+              <Edit3 size={18} />
+            </MobileManageButton>
+            {isMobileAdminOpen && (
+              <MobileAdminPanel onClick={(event) => event.stopPropagation()}>
+                {mobileAdminActions.map((action) => {
+                  const ActionIcon = action.icon;
+
+                  return (
+                    <MobileAdminAction
+                      key={action.key}
+                      type="button"
+                      $tone={action.tone}
+                      onClick={(event) => {
+                        onCloseMobileAdmin();
+                        onHideMobileCard();
+                        action.onClick(event, photo);
+                      }}
+                      title={action.title}
+                      aria-label={action.title}
+                    >
+                      <ActionIcon size={18} />
+                    </MobileAdminAction>
+                  );
+                })}
+              </MobileAdminPanel>
+            )}
+          </>
+        )}
+        {isAdmin && !compactMobile && !isPendingCard && (
           <>
             {!hasActivePhotoOp && !isCardOpActive && (
               <ReplaceSourceButton
@@ -796,7 +964,7 @@ const GalleryCard = React.memo(function GalleryCard({
             )}
           </ReuploadCardOverlay>
         )}
-        {!isCardOpActive && (
+        {!isCardOpActive && !compactMobile && (
           <PhotoOverlay>
             <OverlayContent>
               <PhotoTitle>{photo.title}</PhotoTitle>
@@ -813,6 +981,11 @@ const GalleryCard = React.memo(function GalleryCard({
               )}
             </OverlayContent>
           </PhotoOverlay>
+        )}
+        {isMobileUiVisible && Boolean(photo?.title) && (
+          <MobileCaptionBar>
+            <MobileCaptionTitle>{photo.title}</MobileCaptionTitle>
+          </MobileCaptionBar>
         )}
       </PhotoCard>
     </motion.div>
@@ -846,6 +1019,8 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const [reuploadSourcePhoto, setReuploadSourcePhoto] = useState(null);
   const [photoPendingDelete, setPhotoPendingDelete] = useState(null);
   const [deletingPhoto, setDeletingPhoto] = useState(false);
+  const [mobileTouchPhotoId, setMobileTouchPhotoId] = useState(null);
+  const [mobileAdminPhotoId, setMobileAdminPhotoId] = useState(null);
   const softProgressTimerRef = useRef(null);
   const reuploadUploadAbortControllerRef = useRef(null);
   const activeReuploadPhotoIdRef = useRef(null);
@@ -854,6 +1029,16 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const [visibleCardsCount, setVisibleCardsCount] = useState(INITIAL_VISIBLE_CARDS);
   const lastRevealKeyRef = useRef(null);
   const previousGalleryLengthRef = useRef(0);
+  const compactMobile = useMobileDeviceLayout({ maxWidth: 900 });
+
+  useEffect(() => {
+    if (!compactMobile && mobileAdminPhotoId !== null) {
+      setMobileAdminPhotoId(null);
+    }
+    if (!compactMobile && mobileTouchPhotoId !== null) {
+      setMobileTouchPhotoId(null);
+    }
+  }, [compactMobile, mobileAdminPhotoId, mobileTouchPhotoId]);
 
   const allTags = useMemo(() =>
     [...new Set(photos.flatMap(photo => Array.isArray(photo.tags) ? photo.tags : []))],
@@ -1347,6 +1532,9 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                       photo={photo}
                       index={index}
                       isAdmin={isAdmin}
+                      compactMobile={compactMobile}
+                      isTouchCardActive={mobileTouchPhotoId === photo.id}
+                      isMobileAdminOpen={mobileAdminPhotoId === photo.id}
                       hideCardDescriptions={hideCardDescriptions}
                       hasActivePhotoOp={hasActivePhotoOp}
                       photoOpStatus={photoOpsByPhotoId?.[String(photo.id)]}
@@ -1359,6 +1547,16 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                       onCrop={handleCrop}
                       onReuploadSource={handleReuploadSourceClick}
                       onAbortReuploadUpload={handleAbortReuploadUpload}
+                      onRevealMobileCard={(photoId) => {
+                        setMobileTouchPhotoId(photoId);
+                        setMobileAdminPhotoId((current) => (current === photoId ? current : null));
+                      }}
+                      onHideMobileCard={() => setMobileTouchPhotoId(null)}
+                      onToggleMobileAdmin={(photoId) => {
+                        setMobileTouchPhotoId(photoId);
+                        setMobileAdminPhotoId((current) => (current === photoId ? null : photoId));
+                      }}
+                      onCloseMobileAdmin={() => setMobileAdminPhotoId(null)}
                     />
                   );
                 })}

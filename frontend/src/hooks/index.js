@@ -224,3 +224,4 @@ export const useMediaQuery = (query) => {
 
 export { useMobileDeviceLayout } from './useMobileDeviceLayout';
 export { useMeasuredLayoutMode } from './useMeasuredLayoutMode';
+export { useTouchLongPressReveal } from './useTouchLongPressReveal';
