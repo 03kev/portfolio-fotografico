@@ -82,12 +82,21 @@ const ControlsRow = styled.div`
   flex-direction: column;
   gap: var(--spacing-lg);
   margin-bottom: var(--spacing-2xl);
+
+  @media (max-width: 768px) {
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-xl);
+  }
 `;
 
 const SearchContainer = styled(motion.div)`
   max-width: 560px;
   margin: 0 auto;
   position: relative;
+
+  @media (max-width: 768px) {
+    max-width: none;
+  }
 `;
 
 const SearchInput = styled.input`
@@ -102,6 +111,11 @@ const SearchInput = styled.input`
   &:focus {
     border-color: rgba(214, 179, 106, 0.55);
     box-shadow: 0 0 0 3px rgba(214, 179, 106, 0.10);
+  }
+
+  @media (max-width: 768px) {
+    padding: 11px 42px 11px 14px;
+    font-size: var(--font-size-sm);
   }
 `;
 
@@ -119,6 +133,23 @@ const FilterContainer = styled(motion.div)`
   flex-wrap: wrap;
   justify-content: center;
   gap: 10px;
+
+  @media (max-width: 768px) {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 8px;
+    padding: 0 10px 4px 2px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    mask-image: linear-gradient(90deg, black 0, black calc(100% - 10px), transparent 100%);
+    -webkit-mask-image: linear-gradient(90deg, black 0, black calc(100% - 10px), transparent 100%);
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
 `;
 
 const FilterButton = styled(motion.button)`
@@ -135,6 +166,12 @@ const FilterButton = styled(motion.button)`
     border-color: rgba(255, 255, 255, 0.16);
     transform: translateY(-1px);
   }
+
+  @media (max-width: 768px) {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    padding: 8px 14px;
+  }
 `;
 
 const GalleryGrid = styled(motion.div).attrs({ layout: true })`
@@ -143,8 +180,12 @@ const GalleryGrid = styled(motion.div).attrs({ layout: true })`
   gap: var(--spacing-xl);
 
   @media (max-width: 768px) {
-    grid-template-columns: 1fr;
-    gap: var(--spacing-lg);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--spacing-md);
+  }
+
+  @media (max-width: 420px) {
+    gap: 12px;
   }
 `;
 
@@ -163,6 +204,11 @@ const PhotoCard = styled(motion.div)`
     transform: translateY(-4px);
     border-color: rgba(214, 179, 106, 0.22);
     box-shadow: var(--shadow-large);
+  }
+
+  @media (max-width: 768px) {
+    border-radius: 18px;
+    box-shadow: var(--shadow-small);
   }
 `;
 
@@ -514,8 +560,12 @@ const SkeletonGrid = styled.div`
   gap: var(--spacing-xl);
 
   @media (max-width: 768px) {
-    grid-template-columns: 1fr;
-    gap: var(--spacing-lg);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--spacing-md);
+  }
+
+  @media (max-width: 420px) {
+    gap: 12px;
   }
 `;
 
