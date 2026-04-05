@@ -129,6 +129,37 @@ const SearchIcon = styled.div`
   pointer-events: none;
 `;
 
+const FilterRailShell = styled(motion.div)`
+  @media (max-width: 768px) {
+    position: relative;
+
+    &::before,
+    &::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      bottom: 4px;
+      width: 34px;
+      pointer-events: none;
+      z-index: 2;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+
+    &::before {
+      left: 0;
+      background: linear-gradient(90deg, rgba(8, 10, 16, 0.96) 0%, rgba(8, 10, 16, 0.72) 55%, rgba(8, 10, 16, 0) 100%);
+      opacity: ${({ $fadeLeft }) => ($fadeLeft ? 1 : 0)};
+    }
+
+    &::after {
+      right: 0;
+      background: linear-gradient(90deg, rgba(8, 10, 16, 0) 0%, rgba(8, 10, 16, 0.72) 45%, rgba(8, 10, 16, 0.96) 100%);
+      opacity: ${({ $fadeRight }) => ($fadeRight ? 1 : 0)};
+    }
+  }
+`;
+
 const FilterContainer = styled(motion.div)`
   display: flex;
   flex-wrap: wrap;
@@ -144,8 +175,6 @@ const FilterContainer = styled(motion.div)`
     padding: 0 10px 4px 2px;
     scrollbar-width: none;
     -ms-overflow-style: none;
-    mask-image: linear-gradient(90deg, black 0, black calc(100% - 10px), transparent 100%);
-    -webkit-mask-image: linear-gradient(90deg, black 0, black calc(100% - 10px), transparent 100%);
 
     &::-webkit-scrollbar {
       display: none;
@@ -1014,6 +1043,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const autoOpenedPhotoRef = useRef(null);
   const sourceFileInputRef = useRef(null);
   const searchInputRef = useRef(null);
+  const filterRailRef = useRef(null);
   const [editingPhoto, setEditingPhoto] = useState(null);
   const [croppingPhoto, setCroppingPhoto] = useState(null);
   const [reuploadSourcePhoto, setReuploadSourcePhoto] = useState(null);
@@ -1021,6 +1051,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const [deletingPhoto, setDeletingPhoto] = useState(false);
   const [mobileTouchPhotoId, setMobileTouchPhotoId] = useState(null);
   const [mobileAdminPhotoId, setMobileAdminPhotoId] = useState(null);
+  const [filterRailFadeState, setFilterRailFadeState] = useState({ left: false, right: false });
   const softProgressTimerRef = useRef(null);
   const reuploadUploadAbortControllerRef = useRef(null);
   const activeReuploadPhotoIdRef = useRef(null);
@@ -1043,6 +1074,31 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const allTags = useMemo(() =>
     [...new Set(photos.flatMap(photo => Array.isArray(photo.tags) ? photo.tags : []))],
   [photos]);
+
+  useEffect(() => {
+    const railNode = filterRailRef.current;
+    if (!railNode) return undefined;
+
+    const updateRailFade = () => {
+      const { scrollLeft, clientWidth, scrollWidth } = railNode;
+      const maxScrollLeft = Math.max(0, scrollWidth - clientWidth);
+      const threshold = 6;
+
+      setFilterRailFadeState({
+        left: scrollLeft > threshold,
+        right: scrollLeft < maxScrollLeft - threshold
+      });
+    };
+
+    updateRailFade();
+    railNode.addEventListener('scroll', updateRailFade, { passive: true });
+    window.addEventListener('resize', updateRailFade);
+
+    return () => {
+      railNode.removeEventListener('scroll', updateRailFade);
+      window.removeEventListener('resize', updateRailFade);
+    };
+  }, [allTags.length, compactMobile]);
 
   const filterOptions = useMemo(() => ['all', ...allTags], [allTags]);
   const hasActivePhotoOp = useMemo(
@@ -1502,18 +1558,30 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
             </SearchIcon>
           </SearchContainer>
 
-          <FilterContainer initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ duration: 0.35 }}>
-            {filterOptions.map((filter) => (
-              <FilterButton
-                key={filter}
-                active={activeFilter === filter}
-                onClick={() => handleFilterClick(filter)}
-                whileTap={{ scale: 0.98 }}
-              >
-                {filter === 'all' ? 'Tutti' : filter}
-              </FilterButton>
-            ))}
-          </FilterContainer>
+          <FilterRailShell
+            $fadeLeft={filterRailFadeState.left}
+            $fadeRight={filterRailFadeState.right}
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.35 }}
+          >
+            <FilterContainer
+              ref={filterRailRef}
+              initial={false}
+            >
+              {filterOptions.map((filter) => (
+                <FilterButton
+                  key={filter}
+                  active={activeFilter === filter}
+                  onClick={() => handleFilterClick(filter)}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  {filter === 'all' ? 'Tutti' : filter}
+                </FilterButton>
+              ))}
+            </FilterContainer>
+          </FilterRailShell>
         </ControlsRow>
 
         {galleryCards.length === 0 ? (
