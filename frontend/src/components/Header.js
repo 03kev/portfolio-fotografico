@@ -344,8 +344,9 @@ const MobileBottomNav = styled.nav`
   ${({ $visible }) => $visible && `
     display: block;
     position: fixed;
-    left: max(10px, env(safe-area-inset-left));
-    right: max(10px, env(safe-area-inset-right));
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(calc(100vw - 20px), 460px);
     bottom: max(10px, env(safe-area-inset-bottom));
     z-index: var(--z-fixed);
     padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
@@ -493,8 +494,10 @@ const MobileMoreSheet = styled(motion.div)`
   ${({ $visible }) => $visible && `
     display: block;
     position: fixed;
-    left: max(10px, env(safe-area-inset-left));
-    right: max(10px, env(safe-area-inset-right));
+    left: 0;
+    right: 0;
+    margin: 0 auto;
+    width: min(calc(100vw - 20px), 460px);
     bottom: calc(max(10px, env(safe-area-inset-bottom)) + 82px);
     z-index: var(--z-fixed);
     padding: 8px;
