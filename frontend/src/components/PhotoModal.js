@@ -2,12 +2,13 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Download, Map, MapPin } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { LOCAL_IMAGE_FALLBACK, resolveAssetUrl, resolveVersionedAssetUrl } from '../utils/imageUrl';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useSharedImageLoadState } from '../hooks/useSharedImageLoadState';
 import { useMobileDeviceLayout } from '../hooks';
+import PhotoModalDetails from './photoModal/PhotoModalDetails';
+import PhotoModalMobilePager from './photoModal/PhotoModalMobilePager';
 
 const ModalOverlay = styled(motion.div)`
   position: fixed;
@@ -206,241 +207,6 @@ const CloseButton = styled(motion.button)`
   }
 `;
 
-const PhotoTitle = styled(motion.h2)`
-  color: var(--color-white);
-  font-size: var(--font-size-2xl);
-  font-weight: var(--font-weight-bold);
-  margin-bottom: var(--spacing-sm);
-  line-height: 1.2;
-
-  @media (max-width: 768px) {
-    font-size: var(--font-size-xl);
-    margin-bottom: 10px;
-  }
-`;
-
-const PhotoLocation = styled(motion.p)`
-  color: var(--color-accent);
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-medium);
-  margin-bottom: var(--spacing-lg);
-  cursor: pointer;
-  transition: all var(--transition-normal);
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-
-  &:hover {
-    color: var(--color-white);
-  }
-
-  @media (max-width: 768px) {
-    font-size: var(--font-size-base);
-    margin-bottom: 12px;
-  }
-`;
-
-const PhotoDescription = styled(motion.p)`
-  color: rgba(255, 255, 255, 0.8);
-  font-size: var(--font-size-base);
-  line-height: 1.6;
-  margin-bottom: var(--spacing-xl);
-
-  @media (max-width: 768px) {
-    font-size: var(--font-size-sm);
-    line-height: 1.55;
-    margin-bottom: 14px;
-  }
-`;
-
-const MetadataSection = styled(motion.div)`
-  margin-bottom: var(--spacing-xl);
-
-  @media (max-width: 768px) {
-    margin-bottom: 16px;
-  }
-`;
-
-const MetadataTitle = styled.h3`
-  color: var(--color-white);
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-semibold);
-  margin-bottom: var(--spacing-md);
-  padding-bottom: var(--spacing-sm);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-
-  @media (max-width: 768px) {
-    font-size: var(--font-size-base);
-    margin-bottom: 10px;
-    padding-bottom: 8px;
-  }
-`;
-
-const MetadataGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--spacing-md);
-
-  @media (max-width: 768px) {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-  }
-
-  @media (max-width: 360px) {
-    grid-template-columns: 1fr;
-  }
-`;
-
-const MetadataItem = styled.div`
-  background: rgba(255, 255, 255, 0.02);
-  padding: 13px 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-
-  &.wide {
-    grid-column: 1 / -1;
-  }
-
-  .label {
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 0.78rem;
-    font-weight: var(--font-weight-medium);
-    margin-bottom: 6px;
-  }
-
-  .value {
-    color: var(--color-white);
-    font-size: 0.98rem;
-    font-weight: var(--font-weight-medium);
-    line-height: 1.35;
-  }
-`;
-
-const TagsContainer = styled(motion.div)`
-  margin-bottom: var(--spacing-xl);
-`;
-
-const TagsGrid = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-sm);
-
-  @media (max-width: 768px) {
-    gap: 8px;
-  }
-`;
-
-const Tag = styled(motion.span)`
-  background: var(--accent-gradient);
-  color: var(--color-white);
-  padding: var(--spacing-xs) var(--spacing-md);
-  border-radius: var(--border-radius-full);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  cursor: pointer;
-  transition: all var(--transition-normal);
-
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(79, 172, 254, 0.3);
-  }
-`;
-
-const ActionButtons = styled(motion.div)`
-  display: flex;
-  gap: var(--spacing-md);
-  margin-top: var(--spacing-xl);
-
-  @media (max-width: 768px) {
-    flex-direction: row;
-    gap: 10px;
-    margin-top: 16px;
-  }
-`;
-
-const ActionButton = styled(motion.button)`
-  flex: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: var(--spacing-md) var(--spacing-lg);
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--color-white);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: var(--border-radius);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  cursor: pointer;
-  transition: all var(--transition-normal);
-  backdrop-filter: blur(10px);
-
-  &:hover {
-    background: var(--accent-gradient);
-    border-color: transparent;
-    transform: translateY(-2px);
-  }
-
-  &.primary {
-    background: var(--primary-gradient);
-    border-color: transparent;
-
-    &:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 20px rgba(103, 126, 234, 0.4);
-    }
-  }
-
-  @media (max-width: 768px) {
-    min-width: 0;
-    padding: 14px 12px;
-    font-size: 0.95rem;
-    gap: 6px;
-  }
-
-  @media (max-width: 420px) {
-    font-size: 0.88rem;
-    padding: 13px 10px;
-
-    svg {
-      width: 15px;
-      height: 15px;
-    }
-  }
-`;
-
-const MobileViewport = styled.div`
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  flex-direction: column;
-  background: rgba(0, 0, 0, 0.9);
-`;
-
-const MobileCarousel = styled.div`
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scroll-snap-type: x mandatory;
-  scroll-behavior: smooth;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-
-  &::-webkit-scrollbar {
-    display: none;
-  }
-`;
-
-const MobileSlide = styled.section`
-  flex: 0 0 100%;
-  min-width: 100%;
-  min-height: 0;
-  scroll-snap-align: start;
-  scroll-snap-stop: always;
-`;
-
 const MobileImageSlide = styled(ImageContainer)`
   height: 100%;
   min-height: 0;
@@ -461,41 +227,6 @@ const MobileInfoSlide = styled(InfoPanel)`
   &::-webkit-scrollbar {
     display: none;
   }
-`;
-
-const MobileIndicatorBar = styled.div`
-  display: flex;
-  justify-content: center;
-  padding: 10px 0 14px;
-  margin-top: 4px;
-  background: linear-gradient(
-    180deg,
-    rgba(10, 12, 18, 0) 0%,
-    rgba(10, 12, 18, 0.34) 100%
-  );
-  pointer-events: none;
-`;
-
-const MobileIndicatorPill = styled.div`
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 11px;
-  border-radius: 999px;
-  background: rgba(8, 10, 16, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(14px);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.26);
-`;
-
-const MobileIndicatorDot = styled.span`
-  width: ${({ $active }) => ($active ? '18px' : '7px')};
-  height: 7px;
-  border-radius: 999px;
-  background: ${({ $active }) =>
-    $active ? 'var(--color-accent)' : 'rgba(255, 255, 255, 0.25)'};
-  transition: width 0.22s ease, background 0.22s ease, opacity 0.22s ease;
-  opacity: ${({ $active }) => ($active ? 1 : 0.9)};
 `;
 
 const PhotoModal = () => {
@@ -622,169 +353,6 @@ const PhotoModal = () => {
 
     if (!selectedPhoto) return null;
     const canDownload = Boolean(downloadSrc);
-    const hasTechnicalData = Boolean(
-        selectedPhoto.camera ||
-        selectedPhoto.lens ||
-        selectedPhoto.resolution ||
-        selectedPhoto.settings?.aperture ||
-        selectedPhoto.settings?.shutter ||
-        selectedPhoto.settings?.iso ||
-        selectedPhoto.settings?.focal ||
-        selectedPhoto.date
-    );
-
-    const renderInfoContent = (withMotion = true) => (
-      <>
-        <PhotoTitle
-          initial={withMotion ? { opacity: 0, y: 20 } : false}
-          animate={withMotion ? { opacity: 1, y: 0 } : false}
-          transition={withMotion ? { duration: 0.4, delay: 0.1 } : undefined}
-        >
-          {selectedPhoto.title}
-        </PhotoTitle>
-
-        <PhotoLocation
-          initial={withMotion ? { opacity: 0, y: 20 } : false}
-          animate={withMotion ? { opacity: 1, y: 0 } : false}
-          transition={withMotion ? { duration: 0.4, delay: 0.2 } : undefined}
-          onClick={handleLocationClick}
-        >
-          <MapPin size={16} />
-          {selectedPhoto.location}
-        </PhotoLocation>
-
-        {selectedPhoto.description && (
-          <PhotoDescription
-            initial={withMotion ? { opacity: 0, y: 20 } : false}
-            animate={withMotion ? { opacity: 1, y: 0 } : false}
-            transition={withMotion ? { duration: 0.4, delay: 0.3 } : undefined}
-          >
-            {selectedPhoto.description}
-          </PhotoDescription>
-        )}
-
-        {hasTechnicalData && (
-          <MetadataSection
-            initial={withMotion ? { opacity: 0, y: 20 } : false}
-            animate={withMotion ? { opacity: 1, y: 0 } : false}
-            transition={withMotion ? { duration: 0.4, delay: 0.4 } : undefined}
-          >
-            <MetadataTitle>Dati Tecnici</MetadataTitle>
-            <MetadataGrid>
-              {selectedPhoto.camera && (
-                <MetadataItem className="wide">
-                  <div className="label">Camera</div>
-                  <div className="value">{selectedPhoto.camera}</div>
-                </MetadataItem>
-              )}
-              {selectedPhoto.lens && (
-                <MetadataItem className="wide">
-                  <div className="label">Obiettivo</div>
-                  <div className="value">{selectedPhoto.lens}</div>
-                </MetadataItem>
-              )}
-              {selectedPhoto.resolution && (
-                <MetadataItem className="wide">
-                  <div className="label">Risoluzione</div>
-                  <div className="value">{formatResolution(selectedPhoto.resolution)}</div>
-                </MetadataItem>
-              )}
-              {selectedPhoto.settings && (
-                <>
-                  {selectedPhoto.settings.aperture && (
-                    <MetadataItem>
-                      <div className="label">Apertura</div>
-                      <div className="value">{selectedPhoto.settings.aperture}</div>
-                    </MetadataItem>
-                  )}
-                  {selectedPhoto.settings.shutter && (
-                    <MetadataItem>
-                      <div className="label">Tempo</div>
-                      <div className="value">{selectedPhoto.settings.shutter}</div>
-                    </MetadataItem>
-                  )}
-                  {selectedPhoto.settings.iso && (
-                    <MetadataItem>
-                      <div className="label">ISO</div>
-                      <div className="value">{selectedPhoto.settings.iso}</div>
-                    </MetadataItem>
-                  )}
-                  {selectedPhoto.settings.focal && (
-                    <MetadataItem>
-                      <div className="label">Focale</div>
-                      <div className="value">{selectedPhoto.settings.focal}</div>
-                    </MetadataItem>
-                  )}
-                </>
-              )}
-              {selectedPhoto.date && (
-                <MetadataItem className="wide">
-                  <div className="label">Data</div>
-                  <div className="value">{formatDate(selectedPhoto.date)}</div>
-                </MetadataItem>
-              )}
-            </MetadataGrid>
-          </MetadataSection>
-        )}
-
-        {selectedPhoto.tags && selectedPhoto.tags.length > 0 && (
-          <TagsContainer
-            initial={withMotion ? { opacity: 0, y: 20 } : false}
-            animate={withMotion ? { opacity: 1, y: 0 } : false}
-            transition={withMotion ? { duration: 0.4, delay: 0.5 } : undefined}
-          >
-            <MetadataTitle>Tag</MetadataTitle>
-            <TagsGrid>
-              {selectedPhoto.tags.map((tag, index) => (
-                <Tag
-                  key={tag}
-                  onClick={() => handleTagClick(tag)}
-                  initial={withMotion ? { opacity: 0, scale: 0.8 } : false}
-                  animate={withMotion ? { opacity: 1, scale: 1 } : false}
-                  transition={withMotion ? { duration: 0.3, delay: 0.1 * index } : undefined}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  {tag}
-                </Tag>
-              ))}
-            </TagsGrid>
-          </TagsContainer>
-        )}
-
-        <ActionButtons
-          initial={withMotion ? { opacity: 0, y: 20 } : false}
-          animate={withMotion ? { opacity: 1, y: 0 } : false}
-          transition={withMotion ? { duration: 0.4, delay: 0.6 } : undefined}
-        >
-          <ActionButton
-            onClick={handleLocationClick}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-          >
-            <Map size={16} />
-            Vai alla Mappa
-          </ActionButton>
-          <ActionButton
-            className="primary"
-            disabled={!canDownload}
-            onClick={() => {
-              if (!canDownload) return;
-              if (galleryModalOpen) actions.closeGalleryModal();
-              const link = document.createElement('a');
-              link.href = downloadSrc;
-              link.download = `${selectedPhoto.title}.jpg`;
-              link.click();
-            }}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-          >
-            <Download size={16} />
-            Download
-          </ActionButton>
-        </ActionButtons>
-      </>
-    );
     
     return (
         <AnimatePresence>
@@ -849,64 +417,81 @@ const PhotoModal = () => {
             />
             </ImageContainer>
             ) : (
-              <MobileViewport>
-                <MobileCarousel
-                  ref={mobileCarouselRef}
-                  onScroll={handleMobileCarouselScroll}
-                >
-                  <MobileSlide aria-label="Foto">
-                    <MobileImageSlide>
-                      {previewSrc && (
-                        <ImagePreview
-                          src={previewSrc}
-                          alt=""
-                          aria-hidden="true"
-                          $loaded={isFullImageLoaded}
-                        />
-                      )}
-                      <LoadingBackdrop
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: isFullImageLoaded ? 0 : 1 }}
-                        transition={{ duration: 0.2, ease: 'easeOut' }}
-                      >
-                        <LoadingSpinner
-                          animate={{ opacity: isFullImageLoaded ? 0 : 1, scale: isFullImageLoaded ? 0.96 : 1 }}
-                          transition={{ duration: 0.18, ease: 'easeOut' }}
-                        />
-                      </LoadingBackdrop>
-                      <ModalImage
-                        key={imageSrc}
-                        $loaded={isFullImageLoaded}
-                        src={imageSrc}
-                        alt={selectedPhoto.title}
-                        initial={{ scale: 1.04 }}
-                        animate={{ scale: 1 }}
-                        transition={{ duration: 0.35 }}
-                        onLoad={() => {
-                          markFullImageLoaded();
-                        }}
-                        onError={(e) => {
-                          e.currentTarget.onerror = null;
-                          e.currentTarget.src = LOCAL_IMAGE_FALLBACK;
-                          setIsFullImageLoaded(true);
-                        }}
-                      />
-                    </MobileImageSlide>
-                  </MobileSlide>
-                  <MobileSlide aria-label="Dettagli">
-                    <MobileInfoSlide>{renderInfoContent(false)}</MobileInfoSlide>
-                  </MobileSlide>
-                </MobileCarousel>
-                <MobileIndicatorBar>
-                  <MobileIndicatorPill aria-hidden="true">
-                    <MobileIndicatorDot $active={activeMobileSlide === 0} />
-                    <MobileIndicatorDot $active={activeMobileSlide === 1} />
-                  </MobileIndicatorPill>
-                </MobileIndicatorBar>
-              </MobileViewport>
+              <PhotoModalMobilePager
+                activeSlide={activeMobileSlide}
+                carouselRef={mobileCarouselRef}
+                onScroll={handleMobileCarouselScroll}
+              >
+                <MobileImageSlide>
+                  {previewSrc && (
+                    <ImagePreview
+                      src={previewSrc}
+                      alt=""
+                      aria-hidden="true"
+                      $loaded={isFullImageLoaded}
+                    />
+                  )}
+                  <LoadingBackdrop
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: isFullImageLoaded ? 0 : 1 }}
+                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                  >
+                    <LoadingSpinner
+                      animate={{ opacity: isFullImageLoaded ? 0 : 1, scale: isFullImageLoaded ? 0.96 : 1 }}
+                      transition={{ duration: 0.18, ease: 'easeOut' }}
+                    />
+                  </LoadingBackdrop>
+                  <ModalImage
+                    key={imageSrc}
+                    $loaded={isFullImageLoaded}
+                    src={imageSrc}
+                    alt={selectedPhoto.title}
+                    initial={{ scale: 1.04 }}
+                    animate={{ scale: 1 }}
+                    transition={{ duration: 0.35 }}
+                    onLoad={() => {
+                      markFullImageLoaded();
+                    }}
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = LOCAL_IMAGE_FALLBACK;
+                      setIsFullImageLoaded(true);
+                    }}
+                  />
+                </MobileImageSlide>
+                <MobileInfoSlide>
+                  <PhotoModalDetails
+                    photo={selectedPhoto}
+                    canDownload={canDownload}
+                    downloadSrc={downloadSrc}
+                    galleryModalOpen={galleryModalOpen}
+                    actions={actions}
+                    handleLocationClick={handleLocationClick}
+                    handleTagClick={handleTagClick}
+                    formatDate={formatDate}
+                    formatResolution={formatResolution}
+                    withMotion={false}
+                  />
+                </MobileInfoSlide>
+              </PhotoModalMobilePager>
             )}
 
-            {!isMobileLayout && <InfoPanel>{renderInfoContent(true)}</InfoPanel>}
+            {!isMobileLayout && (
+              <InfoPanel>
+                <PhotoModalDetails
+                  photo={selectedPhoto}
+                  canDownload={canDownload}
+                  downloadSrc={downloadSrc}
+                  galleryModalOpen={galleryModalOpen}
+                  actions={actions}
+                  handleLocationClick={handleLocationClick}
+                  handleTagClick={handleTagClick}
+                  formatDate={formatDate}
+                  formatResolution={formatResolution}
+                  withMotion
+                />
+              </InfoPanel>
+            )}
             </ModalContent>
             </ModalOverlay>
         )}
