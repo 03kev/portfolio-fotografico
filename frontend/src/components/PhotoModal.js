@@ -282,11 +282,11 @@ const MetadataGrid = styled.div`
   gap: var(--spacing-md);
 
   @media (max-width: 768px) {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
   }
 
-  @media (max-width: 480px) {
+  @media (max-width: 360px) {
     grid-template-columns: 1fr;
   }
 `;
@@ -296,6 +296,10 @@ const MetadataItem = styled.div`
   padding: 13px 14px;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.06);
+
+  &.wide {
+    grid-column: 1 / -1;
+  }
 
   .label {
     color: rgba(255, 255, 255, 0.5);
@@ -451,12 +455,24 @@ const MobileInfoSlide = styled(InfoPanel)`
   min-width: 0;
   border-top: 0;
   padding: 22px 18px 18px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
 `;
 
 const MobileIndicatorBar = styled.div`
   display: flex;
   justify-content: center;
-  padding: 0 0 14px;
+  padding: 10px 0 14px;
+  margin-top: 4px;
+  background: linear-gradient(
+    180deg,
+    rgba(10, 12, 18, 0) 0%,
+    rgba(10, 12, 18, 0.34) 100%
+  );
   pointer-events: none;
 `;
 
@@ -656,19 +672,19 @@ const PhotoModal = () => {
             <MetadataTitle>Dati Tecnici</MetadataTitle>
             <MetadataGrid>
               {selectedPhoto.camera && (
-                <MetadataItem>
+                <MetadataItem className="wide">
                   <div className="label">Camera</div>
                   <div className="value">{selectedPhoto.camera}</div>
                 </MetadataItem>
               )}
               {selectedPhoto.lens && (
-                <MetadataItem>
+                <MetadataItem className="wide">
                   <div className="label">Obiettivo</div>
                   <div className="value">{selectedPhoto.lens}</div>
                 </MetadataItem>
               )}
               {selectedPhoto.resolution && (
-                <MetadataItem>
+                <MetadataItem className="wide">
                   <div className="label">Risoluzione</div>
                   <div className="value">{formatResolution(selectedPhoto.resolution)}</div>
                 </MetadataItem>
@@ -702,7 +718,7 @@ const PhotoModal = () => {
                 </>
               )}
               {selectedPhoto.date && (
-                <MetadataItem>
+                <MetadataItem className="wide">
                   <div className="label">Data</div>
                   <div className="value">{formatDate(selectedPhoto.date)}</div>
                 </MetadataItem>
