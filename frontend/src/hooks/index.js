@@ -221,3 +221,7 @@ export const useMediaQuery = (query) => {
 
   return matches;
 };
+
+export { useMobileDeviceLayout } from './useMobileDeviceLayout';
+export { useMeasuredLayoutMode } from './useMeasuredLayoutMode';
+export { useTouchLongPressReveal } from './useTouchLongPressReveal';
