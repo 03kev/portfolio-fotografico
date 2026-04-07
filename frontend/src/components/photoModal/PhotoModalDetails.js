@@ -1,7 +1,15 @@
 import React from 'react';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
-import { Download, Map, MapPin } from 'lucide-react';
+import { Download, MapPin } from 'lucide-react';
+
+const HeaderIntro = styled.div`
+  padding-right: 72px;
+
+  @media (max-width: 768px) {
+    padding-right: 56px;
+  }
+`;
 
 const PhotoTitle = styled(motion.h2)`
   color: var(--color-white);
@@ -263,18 +271,20 @@ const PhotoModalDetails = ({
 
   return (
     <>
-      <PhotoTitle {...getAnimationProps(withMotion, 0.1)}>{photo.title}</PhotoTitle>
+      <HeaderIntro>
+        <PhotoTitle {...getAnimationProps(withMotion, 0.1)}>{photo.title}</PhotoTitle>
 
-      <PhotoLocation {...getAnimationProps(withMotion, 0.2)} onClick={handleLocationClick}>
-        <MapPin size={16} />
-        {photo.location}
-      </PhotoLocation>
+        <PhotoLocation {...getAnimationProps(withMotion, 0.2)} onClick={handleLocationClick}>
+          <MapPin size={16} />
+          {photo.location}
+        </PhotoLocation>
 
-      {photo.description && (
-        <PhotoDescription {...getAnimationProps(withMotion, 0.3)}>
-          {photo.description}
-        </PhotoDescription>
-      )}
+        {photo.description && (
+          <PhotoDescription {...getAnimationProps(withMotion, 0.3)}>
+            {photo.description}
+          </PhotoDescription>
+        )}
+      </HeaderIntro>
 
       {hasTechnicalData && (
         <MetadataSection {...getAnimationProps(withMotion, 0.4)}>
@@ -352,10 +362,6 @@ const PhotoModalDetails = ({
       )}
 
       <ActionButtons {...getAnimationProps(withMotion, 0.6)}>
-        <ActionButton onClick={handleLocationClick} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-          <Map size={16} />
-          Vai alla Mappa
-        </ActionButton>
         <ActionButton
           className="primary"
           disabled={!canDownload}
