@@ -160,6 +160,8 @@ const InfoPanel = styled.div`
   max-width: ${({ $detailsExpanded }) => ($detailsExpanded ? '560px' : '400px')};
   padding: ${({ $detailsExpanded }) => ($detailsExpanded ? '28px 28px 24px' : 'var(--spacing-2xl)')};
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(214, 181, 102, 0.42) rgba(255, 255, 255, 0.05);
   background:
     linear-gradient(180deg, rgba(8, 10, 16, 0.96) 0%, rgba(4, 5, 10, 0.94) 100%);
   backdrop-filter: blur(22px);
@@ -180,17 +182,30 @@ const InfoPanel = styled.div`
 
   /* Custom scrollbar */
   &::-webkit-scrollbar {
-    width: 6px;
+    width: 10px;
   }
 
   &::-webkit-scrollbar-track {
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
   }
 
   &::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.3);
-    border-radius: 3px;
+    background:
+      linear-gradient(180deg, rgba(214, 181, 102, 0.52) 0%, rgba(176, 144, 77, 0.56) 100%);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      0 0 0 1px rgba(214, 181, 102, 0.1);
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background:
+      linear-gradient(180deg, rgba(224, 191, 111, 0.72) 0%, rgba(190, 156, 82, 0.76) 100%);
   }
 `;
 
