@@ -169,6 +169,15 @@ const GlobalStyles = createGlobalStyle`
     --shell-footer-gap: 18px;
     --shell-footer-pad: 18px 30px calc(18px + env(safe-area-inset-bottom));
     --shell-action-min-height: 52px;
+
+    /* Shared scrollbar tokens */
+    --scrollbar-size: 10px;
+    --scrollbar-radius: 999px;
+    --scrollbar-track: rgba(255, 255, 255, 0.04);
+    --scrollbar-track-border: rgba(255, 255, 255, 0.02);
+    --scrollbar-thumb: linear-gradient(180deg, rgba(214, 181, 102, 0.48) 0%, rgba(176, 144, 77, 0.5) 100%);
+    --scrollbar-thumb-hover: linear-gradient(180deg, rgba(224, 191, 111, 0.68) 0%, rgba(190, 156, 82, 0.72) 100%);
+    --scrollbar-thumb-ring: rgba(214, 181, 102, 0.08);
   }
 
   /* Reset */
@@ -188,6 +197,8 @@ const GlobalStyles = createGlobalStyle`
     scrollbar-gutter: stable;
     -webkit-text-size-adjust: 100%;
     -ms-text-size-adjust: 100%;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(214, 181, 102, 0.42) rgba(255, 255, 255, 0.05);
   }
 
   body {
@@ -201,6 +212,38 @@ const GlobalStyles = createGlobalStyle`
     line-height: 1.65;
     overflow-x: hidden;
     overflow-y: scroll;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(214, 181, 102, 0.42) rgba(255, 255, 255, 0.05);
+  }
+
+  *::-webkit-scrollbar {
+    width: var(--scrollbar-size);
+    height: var(--scrollbar-size);
+  }
+
+  *::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+    border-radius: var(--scrollbar-radius);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    box-shadow: inset 0 0 0 1px var(--scrollbar-track-border);
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: var(--scrollbar-radius);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.1),
+      0 0 0 1px var(--scrollbar-thumb-ring);
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
   }
 
   html.home-surface {
