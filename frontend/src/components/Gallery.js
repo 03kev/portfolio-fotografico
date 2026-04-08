@@ -875,6 +875,7 @@ const GalleryCard = React.memo(function GalleryCard({
       initial="hidden"
       animate="visible"
       exit="exit"
+      data-mobile-gallery-card-id={photo.id}
       {...touchRevealBind}
       onContextMenu={(event) => {
         if (compactMobile) {
@@ -1093,9 +1094,14 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   }, [compactMobile, mobileAdminPhotoId, mobileTouchPhotoId]);
 
   useEffect(() => {
-    if (!compactMobile || mobileAdminPhotoId === null) return undefined;
+    if (!compactMobile || (mobileAdminPhotoId === null && mobileTouchPhotoId === null)) return undefined;
 
-    const handlePointerDownOutsideAdmin = (event) => {
+    const activeCardId = mobileAdminPhotoId ?? mobileTouchPhotoId;
+    const activeCardSelector = activeCardId !== null
+      ? `[data-mobile-gallery-card-id="${String(activeCardId)}"]`
+      : null;
+
+    const handlePointerDownOutsideMobileCard = (event) => {
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
 
@@ -1106,12 +1112,17 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
         return;
       }
 
+      if (activeCardSelector && target.closest(activeCardSelector)) {
+        return;
+      }
+
       setMobileAdminPhotoId(null);
+      setMobileTouchPhotoId(null);
     };
 
-    document.addEventListener('pointerdown', handlePointerDownOutsideAdmin);
-    return () => document.removeEventListener('pointerdown', handlePointerDownOutsideAdmin);
-  }, [compactMobile, mobileAdminPhotoId]);
+    document.addEventListener('pointerdown', handlePointerDownOutsideMobileCard);
+    return () => document.removeEventListener('pointerdown', handlePointerDownOutsideMobileCard);
+  }, [compactMobile, mobileAdminPhotoId, mobileTouchPhotoId]);
 
   const allTags = useMemo(() =>
     [...new Set(photos.flatMap(photo => Array.isArray(photo.tags) ? photo.tags : []))],
