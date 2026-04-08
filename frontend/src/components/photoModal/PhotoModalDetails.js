@@ -4,31 +4,35 @@ import { motion } from 'framer-motion';
 import { Download, MapPin } from 'lucide-react';
 
 const HeaderIntro = styled.div`
-  padding-right: 72px;
+  padding-right: 78px;
+  margin-bottom: 8px;
 
   @media (max-width: 768px) {
     padding-right: 56px;
+    margin-bottom: 2px;
   }
 `;
 
 const PhotoTitle = styled(motion.h2)`
   color: var(--color-white);
-  font-size: var(--font-size-2xl);
+  font-size: clamp(2rem, 2vw + 1rem, 2.65rem);
   font-weight: var(--font-weight-bold);
-  margin-bottom: var(--spacing-sm);
-  line-height: 1.2;
+  margin-bottom: 10px;
+  line-height: 1.08;
+  letter-spacing: -0.04em;
 
   @media (max-width: 768px) {
-    font-size: var(--font-size-xl);
+    font-size: 2rem;
     margin-bottom: 10px;
+    line-height: 1.06;
   }
 `;
 
 const PhotoLocation = styled(motion.p)`
   color: var(--color-accent);
-  font-size: var(--font-size-lg);
+  font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
-  margin-bottom: var(--spacing-lg);
+  margin-bottom: 16px;
   cursor: pointer;
   transition: all var(--transition-normal);
   display: inline-flex;
@@ -46,20 +50,20 @@ const PhotoLocation = styled(motion.p)`
 `;
 
 const PhotoDescription = styled(motion.p)`
-  color: rgba(255, 255, 255, 0.8);
-  font-size: var(--font-size-base);
-  line-height: 1.6;
-  margin-bottom: var(--spacing-xl);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 1rem;
+  line-height: 1.72;
+  margin-bottom: 20px;
 
   @media (max-width: 768px) {
     font-size: var(--font-size-sm);
-    line-height: 1.55;
+    line-height: 1.6;
     margin-bottom: 14px;
   }
 `;
 
 const MetadataSection = styled(motion.div)`
-  margin-bottom: var(--spacing-xl);
+  margin-bottom: 20px;
 
   @media (max-width: 768px) {
     margin-bottom: 16px;
@@ -68,14 +72,16 @@ const MetadataSection = styled(motion.div)`
 
 const MetadataTitle = styled.h3`
   color: var(--color-white);
-  font-size: var(--font-size-lg);
+  font-size: 0.92rem;
   font-weight: var(--font-weight-semibold);
-  margin-bottom: var(--spacing-md);
-  padding-bottom: var(--spacing-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 
   @media (max-width: 768px) {
-    font-size: var(--font-size-base);
+    font-size: 0.88rem;
     margin-bottom: 10px;
     padding-bottom: 8px;
   }
@@ -90,39 +96,39 @@ const MetadataGrid = styled.div`
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
   }
-
-  @media (max-width: 360px) {
-    grid-template-columns: 1fr;
-  }
 `;
 
 const MetadataItem = styled.div`
-  background: rgba(255, 255, 255, 0.02);
-  padding: 13px 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.015) 100%);
+  padding: 14px 15px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
 
   &.wide {
     grid-column: 1 / -1;
   }
 
   .label {
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 0.78rem;
+    color: rgba(255, 255, 255, 0.44);
+    font-size: 0.73rem;
     font-weight: var(--font-weight-medium);
-    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 7px;
   }
 
   .value {
     color: var(--color-white);
-    font-size: 0.98rem;
+    font-size: 1rem;
     font-weight: var(--font-weight-medium);
     line-height: 1.35;
   }
 `;
 
 const TagsContainer = styled(motion.div)`
-  margin-bottom: var(--spacing-xl);
+  margin-bottom: 20px;
 `;
 
 const TagsGrid = styled.div`
@@ -136,25 +142,28 @@ const TagsGrid = styled.div`
 `;
 
 const Tag = styled(motion.span)`
-  background: var(--accent-gradient);
-  color: var(--color-white);
-  padding: var(--spacing-xs) var(--spacing-md);
+  background: rgba(214, 181, 102, 0.14);
+  color: var(--color-accent);
+  padding: 8px 14px;
   border-radius: var(--border-radius-full);
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   cursor: pointer;
+  border: 1px solid rgba(214, 181, 102, 0.18);
   transition: all var(--transition-normal);
 
   &:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(79, 172, 254, 0.3);
+    color: var(--color-white);
+    background: rgba(214, 181, 102, 0.2);
+    border-color: rgba(214, 181, 102, 0.26);
   }
 `;
 
 const ActionButtons = styled(motion.div)`
   display: flex;
   gap: var(--spacing-md);
-  margin-top: var(--spacing-xl);
+  margin-top: 18px;
 
   @media (max-width: 768px) {
     flex-direction: row;
@@ -170,29 +179,32 @@ const ActionButton = styled(motion.button)`
   justify-content: center;
   gap: 8px;
   padding: var(--spacing-md) var(--spacing-lg);
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.055);
   color: var(--color-white);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: var(--border-radius);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   cursor: pointer;
   transition: all var(--transition-normal);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(14px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
 
   &:hover {
-    background: var(--accent-gradient);
-    border-color: transparent;
+    background: rgba(255, 255, 255, 0.09);
+    border-color: rgba(255, 255, 255, 0.14);
     transform: translateY(-2px);
   }
 
   &.primary {
-    background: var(--primary-gradient);
-    border-color: transparent;
+    background: linear-gradient(135deg, rgba(214, 181, 102, 0.95) 0%, rgba(190, 156, 82, 0.94) 100%);
+    border-color: rgba(214, 181, 102, 0.2);
+    color: rgba(15, 14, 10, 0.95);
 
     &:hover {
       transform: translateY(-2px);
-      box-shadow: 0 8px 20px rgba(103, 126, 234, 0.4);
+      background: linear-gradient(135deg, rgba(224, 191, 111, 0.98) 0%, rgba(200, 165, 88, 0.98) 100%);
+      box-shadow: 0 14px 28px rgba(214, 181, 102, 0.22);
     }
   }
 

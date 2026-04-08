@@ -6,7 +6,7 @@ const MobileViewport = styled.div`
   flex: 1;
   min-height: 0;
   flex-direction: column;
-  background: rgba(0, 0, 0, 0.9);
+  background: rgba(6, 8, 14, 0.96);
 `;
 
 const MobileCarousel = styled.div`
@@ -36,12 +36,12 @@ const MobileSlide = styled.section`
 const MobileIndicatorBar = styled.div`
   display: flex;
   justify-content: center;
-  padding: 10px 0 14px;
-  margin-top: 4px;
+  padding: 14px 0 18px;
+  margin-top: 2px;
   background: linear-gradient(
     180deg,
     rgba(10, 12, 18, 0) 0%,
-    rgba(10, 12, 18, 0.34) 100%
+    rgba(10, 12, 18, 0.42) 100%
   );
   pointer-events: none;
 `;
@@ -50,12 +50,14 @@ const MobileIndicatorPill = styled.div`
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 11px;
+  padding: 8px 12px;
   border-radius: 999px;
-  background: rgba(8, 10, 16, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(14px);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.26);
+  background: rgba(11, 13, 20, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(16px);
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
 `;
 
 const MobileIndicatorDot = styled.span`

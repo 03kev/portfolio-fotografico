@@ -16,9 +16,12 @@ const ModalOverlay = styled(motion.div)`
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.9);
+  background:
+    radial-gradient(circle at 20% 12%, rgba(214, 181, 102, 0.08) 0%, rgba(214, 181, 102, 0) 28%),
+    radial-gradient(circle at 82% 18%, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0) 22%),
+    rgba(2, 4, 10, 0.88);
   z-index: var(--z-modal);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(16px) saturate(1.05);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -33,11 +36,14 @@ const ModalContent = styled(motion.div)`
   position: relative;
   max-width: 90vw;
   max-height: 90vh;
-  background: rgba(0, 0, 0, 0.8);
+  background:
+    linear-gradient(180deg, rgba(14, 17, 26, 0.98) 0%, rgba(8, 10, 16, 0.96) 100%);
   border-radius: var(--border-radius-xl);
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: var(--shadow-2xl);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 26px 80px rgba(0, 0, 0, 0.52),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
   display: flex;
   flex-direction: row;
 
@@ -62,17 +68,22 @@ const ImageContainer = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-dark);
+  padding: clamp(14px, 1.9vw, 22px);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0) 32%),
+    linear-gradient(180deg, rgba(13, 16, 25, 0.98) 0%, rgba(7, 9, 15, 0.98) 100%);
   overflow: hidden;
 
   @media (max-width: 1024px) {
     flex: 0 0 auto;
     min-height: 0;
     height: clamp(260px, 46vh, 420px);
+    padding: 14px;
   }
 
   @media (max-width: 768px) {
     height: clamp(300px, 52dvh, 440px);
+    padding: 12px 12px 0;
   }
 `;
 
@@ -125,9 +136,13 @@ const ModalImage = styled(motion.img)`
   height: auto;
   object-fit: contain;
   display: block;
+  border-radius: 22px;
   opacity: ${({ $loaded }) => ($loaded ? 1 : 0)};
   transition: opacity 0.28s ease, filter 0.28s ease;
   filter: ${({ $loaded }) => ($loaded ? 'none' : 'blur(6px)')};
+  box-shadow:
+    0 18px 50px rgba(0, 0, 0, 0.34),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
 
   @media (max-width: 1024px) {
     max-height: 100%;
@@ -141,8 +156,9 @@ const InfoPanel = styled.div`
   max-width: 400px;
   padding: var(--spacing-2xl);
   overflow-y: auto;
-  background: rgba(0, 0, 0, 0.9);
-  backdrop-filter: blur(20px);
+  background:
+    linear-gradient(180deg, rgba(8, 10, 16, 0.96) 0%, rgba(4, 5, 10, 0.94) 100%);
+  backdrop-filter: blur(22px);
 
   @media (max-width: 1024px) {
     flex: 1 1 auto;
@@ -180,9 +196,9 @@ const CloseButton = styled(motion.button)`
   right: var(--spacing-lg);
   width: 48px;
   height: 48px;
-  background: rgba(0, 0, 0, 0.8);
+  background: rgba(10, 12, 18, 0.76);
   color: var(--color-white);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 50%;
   cursor: pointer;
   font-size: var(--font-size-xl);
@@ -190,12 +206,14 @@ const CloseButton = styled(motion.button)`
   align-items: center;
   justify-content: center;
   z-index: 10;
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(18px);
   transition: all var(--transition-normal);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
 
   &:hover {
-    background: rgba(245, 87, 108, 0.8);
-    border-color: var(--color-secondary);
+    background: rgba(21, 24, 35, 0.92);
+    border-color: rgba(214, 181, 102, 0.34);
+    transform: translateY(-1px);
   }
 
   @media (max-width: 768px) {
@@ -211,7 +229,8 @@ const MobileImageSlide = styled(ImageContainer)`
   height: 100%;
   min-height: 0;
   flex: none;
-  background: rgba(0, 0, 0, 0.94);
+  background:
+    linear-gradient(180deg, rgba(10, 12, 18, 0.98) 0%, rgba(4, 6, 10, 0.98) 100%);
 `;
 
 const MobileInfoSlide = styled(InfoPanel)`
@@ -220,7 +239,7 @@ const MobileInfoSlide = styled(InfoPanel)`
   max-width: none;
   min-width: 0;
   border-top: 0;
-  padding: 22px 18px 18px;
+  padding: 18px 18px 18px;
   scrollbar-width: none;
   -ms-overflow-style: none;
 
