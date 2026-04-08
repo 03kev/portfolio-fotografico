@@ -3,7 +3,7 @@ import styled from 'styled-components';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Camera, Ellipsis, House, Images, KeyRound, Mail, Map, PanelsTopLeft, UserRound } from 'lucide-react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { useMeasuredLayoutMode, useMobileDeviceLayout } from '../hooks';
+import { useAutoHideOnScroll, useMeasuredLayoutMode, useMobileDeviceLayout } from '../hooks';
 
 const HeaderContainer = styled(motion.header)`
   position: fixed;
@@ -345,7 +345,6 @@ const MobileBottomNavDock = styled.div`
     display: block;
     position: fixed;
     left: 50%;
-    transform: translateX(-50%);
     width: min(calc(100vw - 20px), 460px);
     bottom: max(10px, env(safe-area-inset-bottom));
     z-index: var(--z-fixed);
@@ -359,6 +358,11 @@ const MobileBottomNavDock = styled.div`
     --mobile-nav-pad-bottom: calc(8px + env(safe-area-inset-bottom));
     --mobile-nav-slot-width: calc(((100% - (var(--mobile-nav-pad-x) * 2)) - ((var(--mobile-nav-columns) - 1) * var(--mobile-nav-gap))) / var(--mobile-nav-columns));
   `}
+
+  transform: translateX(-50%) translateY(${({ $hidden }) => ($hidden ? 'calc(100% + 16px)' : '0')});
+  opacity: ${({ $hidden }) => ($hidden ? 0 : 1)};
+  pointer-events: ${({ $hidden }) => ($hidden ? 'none' : 'auto')};
+  transition: transform 0.26s ease, opacity 0.22s ease;
 `;
 
 const MobileBottomNav = styled.nav`
@@ -602,6 +606,12 @@ const Header = ({
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const location = useLocation();
   const useMobileNav = useMobileDeviceLayout();
+  const mobileBottomNavVisible = useAutoHideOnScroll({
+    enabled: useMobileNav && !mobileMoreOpen,
+    topVisibleOffset: 12,
+    hideDelta: 18,
+    showDelta: 10
+  });
   const navRef = useRef(null);
   const mobileMoreSheetRef = useRef(null);
   const mobileMoreButtonRef = useRef(null);
@@ -886,7 +896,7 @@ const Header = ({
         </HeaderInner>
       </HeaderContainer>
 
-      <MobileBottomNavDock $visible={useMobileNav}>
+      <MobileBottomNavDock $visible={useMobileNav} $hidden={!mobileBottomNavVisible && !mobileMoreOpen}>
         <AnimatePresence>
           {useMobileNav && mobileMoreOpen && (
             <MobileMoreSheet
