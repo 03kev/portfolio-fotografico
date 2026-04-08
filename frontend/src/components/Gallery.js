@@ -1064,6 +1064,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const sourceFileInputRef = useRef(null);
   const searchInputRef = useRef(null);
   const filterRailRef = useRef(null);
+  const filterButtonRefs = useRef(new Map());
   const [editingPhoto, setEditingPhoto] = useState(null);
   const [croppingPhoto, setCroppingPhoto] = useState(null);
   const [reuploadSourcePhoto, setReuploadSourcePhoto] = useState(null);
@@ -1140,6 +1141,26 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       window.removeEventListener('resize', updateRailFade);
     };
   }, [allTags.length, compactMobile]);
+
+  useEffect(() => {
+    if (!compactMobile) return;
+
+    const railNode = filterRailRef.current;
+    const activeButton = filterButtonRefs.current.get(activeFilter);
+    if (!railNode || !activeButton) return;
+
+    const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        activeButton.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest',
+          inline: 'center'
+        });
+      });
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [activeFilter, compactMobile, allTags.length]);
 
   const filterOptions = useMemo(() => ['all', ...allTags], [allTags]);
   const hasActivePhotoOp = useMemo(
@@ -1614,6 +1635,13 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
               {filterOptions.map((filter) => (
                 <FilterButton
                   key={filter}
+                  ref={(node) => {
+                    if (node) {
+                      filterButtonRefs.current.set(filter, node);
+                    } else {
+                      filterButtonRefs.current.delete(filter);
+                    }
+                  }}
                   active={activeFilter === filter}
                   onClick={() => handleFilterClick(filter)}
                   whileTap={{ scale: 0.98 }}
