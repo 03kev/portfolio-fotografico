@@ -2,12 +2,13 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Download, Map, MapPin } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { LOCAL_IMAGE_FALLBACK, resolveAssetUrl, resolveVersionedAssetUrl } from '../utils/imageUrl';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useSharedImageLoadState } from '../hooks/useSharedImageLoadState';
-import { useMobileDeviceLayout } from '../hooks';
+import { useCompactViewportLayout, useMobileDeviceLayout, useTouchImageZoom } from '../hooks';
+import PhotoModalDetails from './photoModal/PhotoModalDetails';
+import PhotoModalMobilePager from './photoModal/PhotoModalMobilePager';
 
 const ModalOverlay = styled(motion.div)`
   position: fixed;
@@ -15,9 +16,12 @@ const ModalOverlay = styled(motion.div)`
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.9);
+  background:
+    radial-gradient(circle at 20% 12%, rgba(214, 181, 102, 0.08) 0%, rgba(214, 181, 102, 0) 28%),
+    radial-gradient(circle at 82% 18%, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0) 22%),
+    rgba(2, 4, 10, 0.88);
   z-index: var(--z-modal);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(16px) saturate(1.05);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -30,13 +34,17 @@ const ModalOverlay = styled(motion.div)`
 
 const ModalContent = styled(motion.div)`
   position: relative;
-  max-width: 90vw;
-  max-height: 90vh;
-  background: rgba(0, 0, 0, 0.8);
+  max-width: ${({ $compactLayout }) => ($compactLayout ? 'min(94vw, 980px)' : '90vw')};
+  max-height: ${({ $compactLayout }) => ($compactLayout ? 'min(92vh, 920px)' : '90vh')};
+  width: ${({ $compactLayout }) => ($compactLayout ? 'min(94vw, 980px)' : 'auto')};
+  background:
+    linear-gradient(180deg, rgba(14, 17, 26, 0.98) 0%, rgba(8, 10, 16, 0.96) 100%);
   border-radius: var(--border-radius-xl);
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: var(--shadow-2xl);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 26px 80px rgba(0, 0, 0, 0.52),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
   display: flex;
   flex-direction: row;
 
@@ -56,22 +64,30 @@ const ModalContent = styled(motion.div)`
 `;
 
 const ImageContainer = styled.div`
-  flex: 2;
+  flex: ${({ $detailsExpanded }) => ($detailsExpanded ? '1.35' : '2')};
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-dark);
+  padding: ${({ $portraitDesktop, $detailsExpanded }) => {
+    if ($portraitDesktop) return '0';
+    return $detailsExpanded ? 'clamp(12px, 1.4vw, 18px)' : 'clamp(14px, 1.9vw, 22px)';
+  }};
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0) 32%),
+    linear-gradient(180deg, rgba(13, 16, 25, 0.98) 0%, rgba(7, 9, 15, 0.98) 100%);
   overflow: hidden;
 
   @media (max-width: 1024px) {
     flex: 0 0 auto;
     min-height: 0;
     height: clamp(260px, 46vh, 420px);
+    padding: 14px;
   }
 
   @media (max-width: 768px) {
     height: clamp(300px, 52dvh, 440px);
+    padding: 12px 12px 0;
   }
 `;
 
@@ -124,9 +140,13 @@ const ModalImage = styled(motion.img)`
   height: auto;
   object-fit: contain;
   display: block;
+  border-radius: 22px;
   opacity: ${({ $loaded }) => ($loaded ? 1 : 0)};
   transition: opacity 0.28s ease, filter 0.28s ease;
   filter: ${({ $loaded }) => ($loaded ? 'none' : 'blur(6px)')};
+  box-shadow:
+    0 18px 50px rgba(0, 0, 0, 0.34),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
 
   @media (max-width: 1024px) {
     max-height: 100%;
@@ -136,12 +156,15 @@ const ModalImage = styled(motion.img)`
 
 const InfoPanel = styled.div`
   flex: 1;
-  min-width: 350px;
-  max-width: 400px;
-  padding: var(--spacing-2xl);
+  min-width: ${({ $detailsExpanded }) => ($detailsExpanded ? '440px' : '350px')};
+  max-width: ${({ $detailsExpanded }) => ($detailsExpanded ? '560px' : '400px')};
+  padding: ${({ $detailsExpanded }) => ($detailsExpanded ? '28px 28px 24px' : 'var(--spacing-2xl)')};
   overflow-y: auto;
-  background: rgba(0, 0, 0, 0.9);
-  backdrop-filter: blur(20px);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(214, 181, 102, 0.42) rgba(255, 255, 255, 0.05);
+  background:
+    linear-gradient(180deg, rgba(8, 10, 16, 0.96) 0%, rgba(4, 5, 10, 0.94) 100%);
+  backdrop-filter: blur(22px);
 
   @media (max-width: 1024px) {
     flex: 1 1 auto;
@@ -159,17 +182,30 @@ const InfoPanel = styled.div`
 
   /* Custom scrollbar */
   &::-webkit-scrollbar {
-    width: 6px;
+    width: 10px;
   }
 
   &::-webkit-scrollbar-track {
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
   }
 
   &::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.3);
-    border-radius: 3px;
+    background:
+      linear-gradient(180deg, rgba(214, 181, 102, 0.52) 0%, rgba(176, 144, 77, 0.56) 100%);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      0 0 0 1px rgba(214, 181, 102, 0.1);
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background:
+      linear-gradient(180deg, rgba(224, 191, 111, 0.72) 0%, rgba(190, 156, 82, 0.76) 100%);
   }
 `;
 
@@ -179,9 +215,9 @@ const CloseButton = styled(motion.button)`
   right: var(--spacing-lg);
   width: 48px;
   height: 48px;
-  background: rgba(0, 0, 0, 0.8);
+  background: rgba(10, 12, 18, 0.76);
   color: var(--color-white);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 50%;
   cursor: pointer;
   font-size: var(--font-size-xl);
@@ -189,12 +225,14 @@ const CloseButton = styled(motion.button)`
   align-items: center;
   justify-content: center;
   z-index: 10;
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(18px);
   transition: all var(--transition-normal);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
 
   &:hover {
-    background: rgba(245, 87, 108, 0.8);
-    border-color: var(--color-secondary);
+    background: rgba(21, 24, 35, 0.92);
+    border-color: rgba(214, 181, 102, 0.34);
+    transform: translateY(-1px);
   }
 
   @media (max-width: 768px) {
@@ -206,242 +244,30 @@ const CloseButton = styled(motion.button)`
   }
 `;
 
-const PhotoTitle = styled(motion.h2)`
-  color: var(--color-white);
-  font-size: var(--font-size-2xl);
-  font-weight: var(--font-weight-bold);
-  margin-bottom: var(--spacing-sm);
-  line-height: 1.2;
-
-  @media (max-width: 768px) {
-    font-size: var(--font-size-xl);
-    margin-bottom: 10px;
-  }
-`;
-
-const PhotoLocation = styled(motion.p)`
-  color: var(--color-accent);
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-medium);
-  margin-bottom: var(--spacing-lg);
-  cursor: pointer;
-  transition: all var(--transition-normal);
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-
-  &:hover {
-    color: var(--color-white);
-  }
-
-  @media (max-width: 768px) {
-    font-size: var(--font-size-base);
-    margin-bottom: 12px;
-  }
-`;
-
-const PhotoDescription = styled(motion.p)`
-  color: rgba(255, 255, 255, 0.8);
-  font-size: var(--font-size-base);
-  line-height: 1.6;
-  margin-bottom: var(--spacing-xl);
-
-  @media (max-width: 768px) {
-    font-size: var(--font-size-sm);
-    line-height: 1.55;
-    margin-bottom: 14px;
-  }
-`;
-
-const MetadataSection = styled(motion.div)`
-  margin-bottom: var(--spacing-xl);
-
-  @media (max-width: 768px) {
-    margin-bottom: 16px;
-  }
-`;
-
-const MetadataTitle = styled.h3`
-  color: var(--color-white);
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-semibold);
-  margin-bottom: var(--spacing-md);
-  padding-bottom: var(--spacing-sm);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-
-  @media (max-width: 768px) {
-    font-size: var(--font-size-base);
-    margin-bottom: 10px;
-    padding-bottom: 8px;
-  }
-`;
-
-const MetadataGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--spacing-md);
-
-  @media (max-width: 768px) {
-    grid-template-columns: 1fr;
-    gap: 12px;
-  }
-
-  @media (max-width: 480px) {
-    grid-template-columns: 1fr;
-  }
-`;
-
-const MetadataItem = styled.div`
-  background: rgba(255, 255, 255, 0.02);
-  padding: 13px 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-
-  .label {
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 0.78rem;
-    font-weight: var(--font-weight-medium);
-    margin-bottom: 6px;
-  }
-
-  .value {
-    color: var(--color-white);
-    font-size: 0.98rem;
-    font-weight: var(--font-weight-medium);
-    line-height: 1.35;
-  }
-`;
-
-const TagsContainer = styled(motion.div)`
-  margin-bottom: var(--spacing-xl);
-`;
-
-const TagsGrid = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-sm);
-
-  @media (max-width: 768px) {
-    gap: 8px;
-  }
-`;
-
-const Tag = styled(motion.span)`
-  background: var(--accent-gradient);
-  color: var(--color-white);
-  padding: var(--spacing-xs) var(--spacing-md);
-  border-radius: var(--border-radius-full);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  cursor: pointer;
-  transition: all var(--transition-normal);
-
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(79, 172, 254, 0.3);
-  }
-`;
-
-const ActionButtons = styled(motion.div)`
-  display: flex;
-  gap: var(--spacing-md);
-  margin-top: var(--spacing-xl);
-
-  @media (max-width: 768px) {
-    flex-direction: row;
-    gap: 10px;
-    margin-top: 16px;
-  }
-`;
-
-const ActionButton = styled(motion.button)`
-  flex: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: var(--spacing-md) var(--spacing-lg);
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--color-white);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: var(--border-radius);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  cursor: pointer;
-  transition: all var(--transition-normal);
-  backdrop-filter: blur(10px);
-
-  &:hover {
-    background: var(--accent-gradient);
-    border-color: transparent;
-    transform: translateY(-2px);
-  }
-
-  &.primary {
-    background: var(--primary-gradient);
-    border-color: transparent;
-
-    &:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 20px rgba(103, 126, 234, 0.4);
-    }
-  }
-
-  @media (max-width: 768px) {
-    min-width: 0;
-    padding: 14px 12px;
-    font-size: 0.95rem;
-    gap: 6px;
-  }
-
-  @media (max-width: 420px) {
-    font-size: 0.88rem;
-    padding: 13px 10px;
-
-    svg {
-      width: 15px;
-      height: 15px;
-    }
-  }
-`;
-
-const MobileViewport = styled.div`
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  flex-direction: column;
-  background: rgba(0, 0, 0, 0.9);
-`;
-
-const MobileCarousel = styled.div`
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scroll-snap-type: x mandatory;
-  scroll-behavior: smooth;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-
-  &::-webkit-scrollbar {
-    display: none;
-  }
-`;
-
-const MobileSlide = styled.section`
-  flex: 0 0 100%;
-  min-width: 100%;
-  min-height: 0;
-  scroll-snap-align: start;
-  scroll-snap-stop: always;
-`;
-
 const MobileImageSlide = styled(ImageContainer)`
   height: 100%;
   min-height: 0;
   flex: none;
-  background: rgba(0, 0, 0, 0.94);
+  background:
+    linear-gradient(180deg, rgba(10, 12, 18, 0.98) 0%, rgba(4, 6, 10, 0.98) 100%);
+`;
+
+const ZoomGestureFrame = styled.div`
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  touch-action: ${({ $zoomed }) => ($zoomed ? 'none' : 'manipulation')};
+`;
+
+const ZoomTransformLayer = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  will-change: transform;
 `;
 
 const MobileInfoSlide = styled(InfoPanel)`
@@ -450,36 +276,13 @@ const MobileInfoSlide = styled(InfoPanel)`
   max-width: none;
   min-width: 0;
   border-top: 0;
-  padding: 22px 18px 18px;
-`;
+  padding: 18px 18px 18px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 
-const MobileIndicatorBar = styled.div`
-  display: flex;
-  justify-content: center;
-  padding: 0 0 14px;
-  pointer-events: none;
-`;
-
-const MobileIndicatorPill = styled.div`
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 11px;
-  border-radius: 999px;
-  background: rgba(8, 10, 16, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(14px);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.26);
-`;
-
-const MobileIndicatorDot = styled.span`
-  width: ${({ $active }) => ($active ? '18px' : '7px')};
-  height: 7px;
-  border-radius: 999px;
-  background: ${({ $active }) =>
-    $active ? 'var(--color-accent)' : 'rgba(255, 255, 255, 0.25)'};
-  transition: width 0.22s ease, background 0.22s ease, opacity 0.22s ease;
-  opacity: ${({ $active }) => ($active ? 1 : 0.9)};
+  &::-webkit-scrollbar {
+    display: none;
+  }
 `;
 
 const PhotoModal = () => {
@@ -487,9 +290,13 @@ const PhotoModal = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const isMobileLayout = useMobileDeviceLayout({ maxWidth: 768 });
+    const isTouchZoomLayout = useMobileDeviceLayout({ maxWidth: 1024 });
+    const isCompactViewport = useCompactViewportLayout({ maxWidth: 1120, maxHeight: 860 });
     const originalBodyOverflowRef = React.useRef(null);
     const mobileCarouselRef = useRef(null);
+    const infoPanelRef = useRef(null);
     const [activeMobileSlide, setActiveMobileSlide] = useState(0);
+    const [detailsExpanded, setDetailsExpanded] = useState(false);
     const selectedPhotoId = selectedPhoto?.id;
     const version = selectedPhoto?.derivativesVersion || selectedPhoto?.updatedAt || selectedPhoto?.id;
     const imageSrc = resolveVersionedAssetUrl(selectedPhoto?.image, version);
@@ -573,8 +380,8 @@ const PhotoModal = () => {
         actions.setFilter({ search: '', tags: [tag], location: '' });
         actions.closePhotoModal();
         
-        // Naviga alla pagina della galleria
-        navigate('/gallery');
+        // Naviga alla pagina della galleria mantenendo sincronizzati filtro applicato e UI attiva.
+        navigate(`/gallery?tag=${encodeURIComponent(tag)}`);
 
       // Se eri già su /gallery, il pathname non cambia: forza comunque lo scroll in cima.
       scrollToTopNow();
@@ -596,179 +403,97 @@ const PhotoModal = () => {
         return `${match[1]} × ${match[2]} px`;
     };
 
+    const parsedResolution = (() => {
+        const raw = String(selectedPhoto?.resolution || '').trim();
+        const match = raw.match(/^(\d+)\s*x\s*(\d+)$/i);
+        if (!match) return null;
+        const width = Number(match[1]);
+        const height = Number(match[2]);
+        if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
+        return { width, height };
+    })();
+
+    const useCompactPagerLayout = isMobileLayout || isCompactViewport;
+    const isPortraitPhoto = Boolean(parsedResolution && parsedResolution.height > parsedResolution.width);
+    const {
+      bind: touchZoomBind,
+      containerRef: touchZoomContainerRef,
+      imageRef: touchZoomImageRef,
+      isZoomed: isTouchImageZoomed,
+      resetZoom: resetTouchZoom,
+      style: touchZoomStyle
+    } = useTouchImageZoom({
+      enabled: modalOpen && useCompactPagerLayout && isTouchZoomLayout && activeMobileSlide === 0,
+      maxScale: 3,
+      doubleTapScale: 2.2
+    });
+
     useEffect(() => {
-        if (!modalOpen || !isMobileLayout) return;
+        if (!modalOpen || !(isMobileLayout || isCompactViewport)) return;
         setActiveMobileSlide(0);
+        resetTouchZoom();
         if (mobileCarouselRef.current) {
             mobileCarouselRef.current.scrollTo({ left: 0, behavior: 'auto' });
         }
-    }, [isMobileLayout, modalOpen, selectedPhotoId]);
+    }, [isCompactViewport, isMobileLayout, modalOpen, resetTouchZoom, selectedPhotoId]);
+
+    const handlePagerSelectSlide = useCallback((index) => {
+      const carouselNode = mobileCarouselRef.current;
+      if (!carouselNode) return;
+
+      if (index !== 0) {
+        resetTouchZoom();
+      }
+
+      const nextLeft = index * carouselNode.clientWidth;
+      carouselNode.scrollTo({ left: nextLeft, behavior: 'smooth' });
+      setActiveMobileSlide(index);
+    }, [resetTouchZoom]);
+
+    useEffect(() => {
+      if (activeMobileSlide !== 0) {
+        resetTouchZoom();
+      }
+    }, [activeMobileSlide, resetTouchZoom]);
+
+    useEffect(() => {
+      if (!modalOpen || useCompactPagerLayout) {
+        setDetailsExpanded(false);
+        return;
+      }
+
+      const panel = infoPanelRef.current;
+      if (!panel) return;
+
+      let frameId = null;
+
+      const evaluate = () => {
+        frameId = null;
+        const nextOverflowing = panel.scrollHeight > panel.clientHeight + 8;
+        setDetailsExpanded((prev) => (prev || nextOverflowing ? (prev || nextOverflowing) : false));
+      };
+
+      const scheduleEvaluate = () => {
+        if (frameId !== null) cancelAnimationFrame(frameId);
+        frameId = requestAnimationFrame(evaluate);
+      };
+
+      scheduleEvaluate();
+
+      const observer = new ResizeObserver(scheduleEvaluate);
+      observer.observe(panel);
+
+      window.addEventListener('resize', scheduleEvaluate);
+
+      return () => {
+        if (frameId !== null) cancelAnimationFrame(frameId);
+        observer.disconnect();
+        window.removeEventListener('resize', scheduleEvaluate);
+      };
+    }, [modalOpen, selectedPhotoId, useCompactPagerLayout]);
 
     if (!selectedPhoto) return null;
     const canDownload = Boolean(downloadSrc);
-    const hasTechnicalData = Boolean(
-        selectedPhoto.camera ||
-        selectedPhoto.lens ||
-        selectedPhoto.resolution ||
-        selectedPhoto.settings?.aperture ||
-        selectedPhoto.settings?.shutter ||
-        selectedPhoto.settings?.iso ||
-        selectedPhoto.settings?.focal ||
-        selectedPhoto.date
-    );
-
-    const renderInfoContent = (withMotion = true) => (
-      <>
-        <PhotoTitle
-          initial={withMotion ? { opacity: 0, y: 20 } : false}
-          animate={withMotion ? { opacity: 1, y: 0 } : false}
-          transition={withMotion ? { duration: 0.4, delay: 0.1 } : undefined}
-        >
-          {selectedPhoto.title}
-        </PhotoTitle>
-
-        <PhotoLocation
-          initial={withMotion ? { opacity: 0, y: 20 } : false}
-          animate={withMotion ? { opacity: 1, y: 0 } : false}
-          transition={withMotion ? { duration: 0.4, delay: 0.2 } : undefined}
-          onClick={handleLocationClick}
-        >
-          <MapPin size={16} />
-          {selectedPhoto.location}
-        </PhotoLocation>
-
-        {selectedPhoto.description && (
-          <PhotoDescription
-            initial={withMotion ? { opacity: 0, y: 20 } : false}
-            animate={withMotion ? { opacity: 1, y: 0 } : false}
-            transition={withMotion ? { duration: 0.4, delay: 0.3 } : undefined}
-          >
-            {selectedPhoto.description}
-          </PhotoDescription>
-        )}
-
-        {hasTechnicalData && (
-          <MetadataSection
-            initial={withMotion ? { opacity: 0, y: 20 } : false}
-            animate={withMotion ? { opacity: 1, y: 0 } : false}
-            transition={withMotion ? { duration: 0.4, delay: 0.4 } : undefined}
-          >
-            <MetadataTitle>Dati Tecnici</MetadataTitle>
-            <MetadataGrid>
-              {selectedPhoto.camera && (
-                <MetadataItem>
-                  <div className="label">Camera</div>
-                  <div className="value">{selectedPhoto.camera}</div>
-                </MetadataItem>
-              )}
-              {selectedPhoto.lens && (
-                <MetadataItem>
-                  <div className="label">Obiettivo</div>
-                  <div className="value">{selectedPhoto.lens}</div>
-                </MetadataItem>
-              )}
-              {selectedPhoto.resolution && (
-                <MetadataItem>
-                  <div className="label">Risoluzione</div>
-                  <div className="value">{formatResolution(selectedPhoto.resolution)}</div>
-                </MetadataItem>
-              )}
-              {selectedPhoto.settings && (
-                <>
-                  {selectedPhoto.settings.aperture && (
-                    <MetadataItem>
-                      <div className="label">Apertura</div>
-                      <div className="value">{selectedPhoto.settings.aperture}</div>
-                    </MetadataItem>
-                  )}
-                  {selectedPhoto.settings.shutter && (
-                    <MetadataItem>
-                      <div className="label">Tempo</div>
-                      <div className="value">{selectedPhoto.settings.shutter}</div>
-                    </MetadataItem>
-                  )}
-                  {selectedPhoto.settings.iso && (
-                    <MetadataItem>
-                      <div className="label">ISO</div>
-                      <div className="value">{selectedPhoto.settings.iso}</div>
-                    </MetadataItem>
-                  )}
-                  {selectedPhoto.settings.focal && (
-                    <MetadataItem>
-                      <div className="label">Focale</div>
-                      <div className="value">{selectedPhoto.settings.focal}</div>
-                    </MetadataItem>
-                  )}
-                </>
-              )}
-              {selectedPhoto.date && (
-                <MetadataItem>
-                  <div className="label">Data</div>
-                  <div className="value">{formatDate(selectedPhoto.date)}</div>
-                </MetadataItem>
-              )}
-            </MetadataGrid>
-          </MetadataSection>
-        )}
-
-        {selectedPhoto.tags && selectedPhoto.tags.length > 0 && (
-          <TagsContainer
-            initial={withMotion ? { opacity: 0, y: 20 } : false}
-            animate={withMotion ? { opacity: 1, y: 0 } : false}
-            transition={withMotion ? { duration: 0.4, delay: 0.5 } : undefined}
-          >
-            <MetadataTitle>Tag</MetadataTitle>
-            <TagsGrid>
-              {selectedPhoto.tags.map((tag, index) => (
-                <Tag
-                  key={tag}
-                  onClick={() => handleTagClick(tag)}
-                  initial={withMotion ? { opacity: 0, scale: 0.8 } : false}
-                  animate={withMotion ? { opacity: 1, scale: 1 } : false}
-                  transition={withMotion ? { duration: 0.3, delay: 0.1 * index } : undefined}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  {tag}
-                </Tag>
-              ))}
-            </TagsGrid>
-          </TagsContainer>
-        )}
-
-        <ActionButtons
-          initial={withMotion ? { opacity: 0, y: 20 } : false}
-          animate={withMotion ? { opacity: 1, y: 0 } : false}
-          transition={withMotion ? { duration: 0.4, delay: 0.6 } : undefined}
-        >
-          <ActionButton
-            onClick={handleLocationClick}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-          >
-            <Map size={16} />
-            Vai alla Mappa
-          </ActionButton>
-          <ActionButton
-            className="primary"
-            disabled={!canDownload}
-            onClick={() => {
-              if (!canDownload) return;
-              if (galleryModalOpen) actions.closeGalleryModal();
-              const link = document.createElement('a');
-              link.href = downloadSrc;
-              link.download = `${selectedPhoto.title}.jpg`;
-              link.click();
-            }}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-          >
-            <Download size={16} />
-            Download
-          </ActionButton>
-        </ActionButtons>
-      </>
-    );
     
     return (
         <AnimatePresence>
@@ -780,6 +505,7 @@ const PhotoModal = () => {
             onClick={handleOverlayClick}
             >
             <ModalContent
+            $compactLayout={useCompactPagerLayout}
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.8, opacity: 0 }}
@@ -794,8 +520,11 @@ const PhotoModal = () => {
             ×
             </CloseButton>
             
-            {!isMobileLayout ? (
-            <ImageContainer>
+            {!useCompactPagerLayout ? (
+            <ImageContainer
+            $portraitDesktop={isPortraitPhoto}
+            $detailsExpanded={detailsExpanded}
+            >
             {previewSrc && (
               <ImagePreview
                 src={previewSrc}
@@ -833,39 +562,47 @@ const PhotoModal = () => {
             />
             </ImageContainer>
             ) : (
-              <MobileViewport>
-                <MobileCarousel
-                  ref={mobileCarouselRef}
-                  onScroll={handleMobileCarouselScroll}
-                >
-                  <MobileSlide aria-label="Foto">
-                    <MobileImageSlide>
-                      {previewSrc && (
-                        <ImagePreview
-                          src={previewSrc}
-                          alt=""
-                          aria-hidden="true"
-                          $loaded={isFullImageLoaded}
-                        />
-                      )}
-                      <LoadingBackdrop
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: isFullImageLoaded ? 0 : 1 }}
-                        transition={{ duration: 0.2, ease: 'easeOut' }}
-                      >
-                        <LoadingSpinner
-                          animate={{ opacity: isFullImageLoaded ? 0 : 1, scale: isFullImageLoaded ? 0.96 : 1 }}
-                          transition={{ duration: 0.18, ease: 'easeOut' }}
-                        />
-                      </LoadingBackdrop>
+              <PhotoModalMobilePager
+                activeSlide={activeMobileSlide}
+                carouselRef={mobileCarouselRef}
+                locked={isTouchImageZoomed}
+                onScroll={handleMobileCarouselScroll}
+                onSelectSlide={handlePagerSelectSlide}
+              >
+                <MobileImageSlide>
+                  {previewSrc && (
+                    <ImagePreview
+                      src={previewSrc}
+                      alt=""
+                      aria-hidden="true"
+                      $loaded={isFullImageLoaded}
+                    />
+                  )}
+                  <LoadingBackdrop
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: isFullImageLoaded ? 0 : 1 }}
+                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                  >
+                    <LoadingSpinner
+                      animate={{ opacity: isFullImageLoaded ? 0 : 1, scale: isFullImageLoaded ? 0.96 : 1 }}
+                      transition={{ duration: 0.18, ease: 'easeOut' }}
+                    />
+                  </LoadingBackdrop>
+                  <ZoomGestureFrame
+                    ref={touchZoomContainerRef}
+                    $zoomed={isTouchImageZoomed}
+                    {...touchZoomBind}
+                  >
+                    <ZoomTransformLayer style={touchZoomStyle}>
                       <ModalImage
+                        ref={touchZoomImageRef}
                         key={imageSrc}
                         $loaded={isFullImageLoaded}
                         src={imageSrc}
                         alt={selectedPhoto.title}
-                        initial={{ scale: 1.04 }}
-                        animate={{ scale: 1 }}
-                        transition={{ duration: 0.35 }}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.28 }}
                         onLoad={() => {
                           markFullImageLoaded();
                         }}
@@ -875,22 +612,44 @@ const PhotoModal = () => {
                           setIsFullImageLoaded(true);
                         }}
                       />
-                    </MobileImageSlide>
-                  </MobileSlide>
-                  <MobileSlide aria-label="Dettagli">
-                    <MobileInfoSlide>{renderInfoContent(false)}</MobileInfoSlide>
-                  </MobileSlide>
-                </MobileCarousel>
-                <MobileIndicatorBar>
-                  <MobileIndicatorPill aria-hidden="true">
-                    <MobileIndicatorDot $active={activeMobileSlide === 0} />
-                    <MobileIndicatorDot $active={activeMobileSlide === 1} />
-                  </MobileIndicatorPill>
-                </MobileIndicatorBar>
-              </MobileViewport>
+                    </ZoomTransformLayer>
+                  </ZoomGestureFrame>
+                </MobileImageSlide>
+                <MobileInfoSlide>
+                  <PhotoModalDetails
+                    photo={selectedPhoto}
+                    canDownload={canDownload}
+                    downloadSrc={downloadSrc}
+                    galleryModalOpen={galleryModalOpen}
+                    actions={actions}
+                    handleLocationClick={handleLocationClick}
+                    handleTagClick={handleTagClick}
+                    formatDate={formatDate}
+                    formatResolution={formatResolution}
+                    withMotion={false}
+                    compactDesktop={isCompactViewport && !isMobileLayout}
+                  />
+                </MobileInfoSlide>
+              </PhotoModalMobilePager>
             )}
 
-            {!isMobileLayout && <InfoPanel>{renderInfoContent(true)}</InfoPanel>}
+            {!useCompactPagerLayout && (
+              <InfoPanel ref={infoPanelRef} $detailsExpanded={detailsExpanded}>
+                <PhotoModalDetails
+                  photo={selectedPhoto}
+                  canDownload={canDownload}
+                  downloadSrc={downloadSrc}
+                  galleryModalOpen={galleryModalOpen}
+                  actions={actions}
+                  handleLocationClick={handleLocationClick}
+                  handleTagClick={handleTagClick}
+                  formatDate={formatDate}
+                  formatResolution={formatResolution}
+                  withMotion
+                  compactDesktop={false}
+                />
+              </InfoPanel>
+            )}
             </ModalContent>
             </ModalOverlay>
         )}

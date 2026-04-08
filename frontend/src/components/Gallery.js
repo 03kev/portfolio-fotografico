@@ -229,6 +229,9 @@ const PhotoCard = styled(motion.div)`
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: var(--shadow-medium);
   transition: transform var(--transition-normal), box-shadow var(--transition-normal), border-color var(--transition-normal);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 
   &:hover {
     transform: translateY(-4px);
@@ -261,6 +264,11 @@ const PhotoImage = styled(motion.img)`
   color: transparent;
   font-size: 0;
   transition: transform 0.45s ease;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  pointer-events: none;
 
   ${PhotoCard}:hover & {
     transform: scale(1.03);
@@ -397,10 +405,10 @@ const ReplaceSourceButton = styled(motion.button)`
 
 const MobileManageButton = styled.button`
   position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 38px;
-  height: 38px;
+  top: 6px;
+  right: 6px;
+  width: 32px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -415,13 +423,14 @@ const MobileManageButton = styled.button`
 
 const MobileAdminPanel = styled.div`
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 6px;
+  right: 6px;
   display: grid;
-  grid-template-columns: repeat(2, 42px);
-  gap: 8px;
-  padding: 10px;
-  border-radius: 18px;
+  width: min(84px, calc(100% - 12px));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 6px;
+  border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(10, 12, 18, 0.9);
   backdrop-filter: blur(16px);
@@ -430,12 +439,13 @@ const MobileAdminPanel = styled.div`
 `;
 
 const MobileAdminAction = styled.button`
-  width: 42px;
-  height: 42px;
+  width: 100%;
+  aspect-ratio: 1;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 14px;
+  border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: ${({ $tone }) => {
     if ($tone === 'purple') return 'rgba(123, 107, 255, 0.18)';
@@ -451,6 +461,7 @@ const MobileAdminAction = styled.button`
     if ($tone === 'danger') return 'rgba(255, 211, 211, 0.98)';
     return 'rgba(255, 255, 255, 0.94)';
   }};
+  padding: 0;
 `;
 
 const MobileCaptionBar = styled.div`
@@ -864,7 +875,13 @@ const GalleryCard = React.memo(function GalleryCard({
       initial="hidden"
       animate="visible"
       exit="exit"
+      data-mobile-gallery-card-id={photo.id}
       {...touchRevealBind}
+      onContextMenu={(event) => {
+        if (compactMobile) {
+          event.preventDefault();
+        }
+      }}
       onClick={() => {
         if (compactMobile && (isTouchCardActive || isMobileAdminOpen || consumeTrigger())) {
           onCloseMobileAdmin();
@@ -884,6 +901,7 @@ const GalleryCard = React.memo(function GalleryCard({
         {isAdmin && compactMobile && !isPendingCard && !hasActivePhotoOp && !isCardOpActive && isMobileUiVisible && (
           <>
             <MobileManageButton
+              data-mobile-admin-manage-button="true"
               type="button"
               onClick={(event) => {
                 event.stopPropagation();
@@ -895,7 +913,10 @@ const GalleryCard = React.memo(function GalleryCard({
               <Edit3 size={18} />
             </MobileManageButton>
             {isMobileAdminOpen && (
-              <MobileAdminPanel onClick={(event) => event.stopPropagation()}>
+              <MobileAdminPanel
+                data-mobile-admin-panel="true"
+                onClick={(event) => event.stopPropagation()}
+              >
                 {mobileAdminActions.map((action) => {
                   const ActionIcon = action.icon;
 
@@ -912,7 +933,7 @@ const GalleryCard = React.memo(function GalleryCard({
                       title={action.title}
                       aria-label={action.title}
                     >
-                      <ActionIcon size={18} />
+                      <ActionIcon size={16} />
                     </MobileAdminAction>
                   );
                 })}
@@ -1044,6 +1065,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const sourceFileInputRef = useRef(null);
   const searchInputRef = useRef(null);
   const filterRailRef = useRef(null);
+  const filterButtonRefs = useRef(new Map());
   const [editingPhoto, setEditingPhoto] = useState(null);
   const [croppingPhoto, setCroppingPhoto] = useState(null);
   const [reuploadSourcePhoto, setReuploadSourcePhoto] = useState(null);
@@ -1069,6 +1091,37 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     if (!compactMobile && mobileTouchPhotoId !== null) {
       setMobileTouchPhotoId(null);
     }
+  }, [compactMobile, mobileAdminPhotoId, mobileTouchPhotoId]);
+
+  useEffect(() => {
+    if (!compactMobile || (mobileAdminPhotoId === null && mobileTouchPhotoId === null)) return undefined;
+
+    const activeCardId = mobileAdminPhotoId ?? mobileTouchPhotoId;
+    const activeCardSelector = activeCardId !== null
+      ? `[data-mobile-gallery-card-id="${String(activeCardId)}"]`
+      : null;
+
+    const handlePointerDownOutsideMobileCard = (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+
+      if (
+        target.closest('[data-mobile-admin-panel="true"]')
+        || target.closest('[data-mobile-admin-manage-button="true"]')
+      ) {
+        return;
+      }
+
+      if (activeCardSelector && target.closest(activeCardSelector)) {
+        return;
+      }
+
+      setMobileAdminPhotoId(null);
+      setMobileTouchPhotoId(null);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDownOutsideMobileCard);
+    return () => document.removeEventListener('pointerdown', handlePointerDownOutsideMobileCard);
   }, [compactMobile, mobileAdminPhotoId, mobileTouchPhotoId]);
 
   const allTags = useMemo(() =>
@@ -1099,6 +1152,26 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       window.removeEventListener('resize', updateRailFade);
     };
   }, [allTags.length, compactMobile]);
+
+  useEffect(() => {
+    if (!compactMobile) return;
+
+    const railNode = filterRailRef.current;
+    const activeButton = filterButtonRefs.current.get(activeFilter);
+    if (!railNode || !activeButton) return;
+
+    const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        activeButton.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest',
+          inline: 'center'
+        });
+      });
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [activeFilter, compactMobile, allTags.length]);
 
   const filterOptions = useMemo(() => ['all', ...allTags], [allTags]);
   const hasActivePhotoOp = useMemo(
@@ -1573,6 +1646,13 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
               {filterOptions.map((filter) => (
                 <FilterButton
                   key={filter}
+                  ref={(node) => {
+                    if (node) {
+                      filterButtonRefs.current.set(filter, node);
+                    } else {
+                      filterButtonRefs.current.delete(filter);
+                    }
+                  }}
                   active={activeFilter === filter}
                   onClick={() => handleFilterClick(filter)}
                   whileTap={{ scale: 0.98 }}

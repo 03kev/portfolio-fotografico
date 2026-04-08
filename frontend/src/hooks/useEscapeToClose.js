@@ -1,19 +1,29 @@
 import { useEffect, useRef } from 'react';
 
 const escapeStack = [];
+let suppressPopstateCount = 0;
+let modalTokenCounter = 0;
 
 export const useEscapeToClose = ({
   enabled = true,
   onClose,
   canClose = true,
-  target = typeof document !== 'undefined' ? document : null
+  target = typeof document !== 'undefined' ? document : null,
+  handleBrowserBack = true
 }) => {
   const stackTokenRef = useRef(null);
+  const historyTokenRef = useRef(null);
   const onCloseRef = useRef(onClose);
   const canCloseRef = useRef(canClose);
+  const consumedByPopstateRef = useRef(false);
 
   if (!stackTokenRef.current) {
     stackTokenRef.current = Symbol('escape-modal');
+  }
+
+  if (!historyTokenRef.current) {
+    modalTokenCounter += 1;
+    historyTokenRef.current = `modal-${modalTokenCounter}`;
   }
 
   useEffect(() => {
@@ -50,4 +60,51 @@ export const useEscapeToClose = ({
       }
     };
   }, [enabled, target]);
+
+  useEffect(() => {
+    if (!enabled || !handleBrowserBack || typeof window === 'undefined' || !window.history) {
+      consumedByPopstateRef.current = false;
+      return undefined;
+    }
+
+    const token = stackTokenRef.current;
+    const historyToken = historyTokenRef.current;
+    consumedByPopstateRef.current = false;
+
+    window.history.pushState(
+      {
+        ...(window.history.state || {}),
+        __modalToken: historyToken
+      },
+      ''
+    );
+
+    const handlePopstate = () => {
+      if (suppressPopstateCount > 0) {
+        suppressPopstateCount -= 1;
+        return;
+      }
+
+      if (escapeStack[escapeStack.length - 1] !== token) return;
+      consumedByPopstateRef.current = true;
+      if (!canCloseRef.current) return;
+      onCloseRef.current?.();
+    };
+
+    window.addEventListener('popstate', handlePopstate);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopstate);
+
+      if (consumedByPopstateRef.current) {
+        consumedByPopstateRef.current = false;
+        return;
+      }
+
+      if (window.history.state?.__modalToken !== historyToken) return;
+
+      suppressPopstateCount += 1;
+      window.history.back();
+    };
+  }, [enabled, handleBrowserBack]);
 };
