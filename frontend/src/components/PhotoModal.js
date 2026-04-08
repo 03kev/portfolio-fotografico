@@ -6,7 +6,7 @@ import { usePhotos } from '../contexts/PhotoContext';
 import { LOCAL_IMAGE_FALLBACK, resolveAssetUrl, resolveVersionedAssetUrl } from '../utils/imageUrl';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useSharedImageLoadState } from '../hooks/useSharedImageLoadState';
-import { useMobileDeviceLayout } from '../hooks';
+import { useCompactViewportLayout, useMobileDeviceLayout } from '../hooks';
 import PhotoModalDetails from './photoModal/PhotoModalDetails';
 import PhotoModalMobilePager from './photoModal/PhotoModalMobilePager';
 
@@ -34,8 +34,9 @@ const ModalOverlay = styled(motion.div)`
 
 const ModalContent = styled(motion.div)`
   position: relative;
-  max-width: 90vw;
-  max-height: 90vh;
+  max-width: ${({ $compactLayout }) => ($compactLayout ? 'min(94vw, 980px)' : '90vw')};
+  max-height: ${({ $compactLayout }) => ($compactLayout ? 'min(92vh, 920px)' : '90vh')};
+  width: ${({ $compactLayout }) => ($compactLayout ? 'min(94vw, 980px)' : 'auto')};
   background:
     linear-gradient(180deg, rgba(14, 17, 26, 0.98) 0%, rgba(8, 10, 16, 0.96) 100%);
   border-radius: var(--border-radius-xl);
@@ -253,6 +254,7 @@ const PhotoModal = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const isMobileLayout = useMobileDeviceLayout({ maxWidth: 768 });
+    const isCompactViewport = useCompactViewportLayout({ maxWidth: 1120, maxHeight: 860 });
     const originalBodyOverflowRef = React.useRef(null);
     const mobileCarouselRef = useRef(null);
     const [activeMobileSlide, setActiveMobileSlide] = useState(0);
@@ -372,12 +374,23 @@ const PhotoModal = () => {
     })();
 
     useEffect(() => {
-        if (!modalOpen || !isMobileLayout) return;
+        if (!modalOpen || !(isMobileLayout || isCompactViewport)) return;
         setActiveMobileSlide(0);
         if (mobileCarouselRef.current) {
             mobileCarouselRef.current.scrollTo({ left: 0, behavior: 'auto' });
         }
-    }, [isMobileLayout, modalOpen, selectedPhotoId]);
+    }, [isCompactViewport, isMobileLayout, modalOpen, selectedPhotoId]);
+
+    const useCompactPagerLayout = isMobileLayout || isCompactViewport;
+
+    const handlePagerSelectSlide = useCallback((index) => {
+      const carouselNode = mobileCarouselRef.current;
+      if (!carouselNode) return;
+
+      const nextLeft = index * carouselNode.clientWidth;
+      carouselNode.scrollTo({ left: nextLeft, behavior: 'smooth' });
+      setActiveMobileSlide(index);
+    }, []);
 
     if (!selectedPhoto) return null;
     const canDownload = Boolean(downloadSrc);
@@ -392,6 +405,7 @@ const PhotoModal = () => {
             onClick={handleOverlayClick}
             >
             <ModalContent
+            $compactLayout={useCompactPagerLayout}
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.8, opacity: 0 }}
@@ -406,7 +420,7 @@ const PhotoModal = () => {
             ×
             </CloseButton>
             
-            {!isMobileLayout ? (
+            {!useCompactPagerLayout ? (
             <ImageContainer $portraitDesktop={isPortraitPhoto}>
             {previewSrc && (
               <ImagePreview
@@ -449,6 +463,7 @@ const PhotoModal = () => {
                 activeSlide={activeMobileSlide}
                 carouselRef={mobileCarouselRef}
                 onScroll={handleMobileCarouselScroll}
+                onSelectSlide={handlePagerSelectSlide}
               >
                 <MobileImageSlide>
                   {previewSrc && (
@@ -504,7 +519,7 @@ const PhotoModal = () => {
               </PhotoModalMobilePager>
             )}
 
-            {!isMobileLayout && (
+            {!useCompactPagerLayout && (
               <InfoPanel>
                 <PhotoModalDetails
                   photo={selectedPhoto}

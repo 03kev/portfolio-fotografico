@@ -206,6 +206,8 @@ export const useImageLoader = (src) => {
   return { loading, error };
 };
 
+export { useCompactViewportLayout } from './useCompactViewportLayout';
+
 export const useMediaQuery = (query) => {
   const [matches, setMatches] = useState(false);
 

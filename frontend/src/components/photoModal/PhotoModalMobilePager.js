@@ -43,7 +43,6 @@ const MobileIndicatorBar = styled.div`
     rgba(10, 12, 18, 0) 0%,
     rgba(10, 12, 18, 0.42) 100%
   );
-  pointer-events: none;
 `;
 
 const MobileIndicatorPill = styled.div`
@@ -60,7 +59,7 @@ const MobileIndicatorPill = styled.div`
     inset 0 1px 0 rgba(255, 255, 255, 0.03);
 `;
 
-const MobileIndicatorDot = styled.span`
+const MobileIndicatorDot = styled.button`
   width: ${({ $active }) => ($active ? '18px' : '7px')};
   height: 7px;
   border-radius: 999px;
@@ -68,13 +67,17 @@ const MobileIndicatorDot = styled.span`
     $active ? 'var(--color-accent)' : 'rgba(255, 255, 255, 0.25)'};
   transition: width 0.22s ease, background 0.22s ease, opacity 0.22s ease;
   opacity: ${({ $active }) => ($active ? 1 : 0.9)};
+  border: 0;
+  padding: 0;
+  cursor: pointer;
 `;
 
 const PhotoModalMobilePager = ({
   activeSlide,
   carouselRef,
   children,
-  onScroll
+  onScroll,
+  onSelectSlide
 }) => (
   <MobileViewport>
     <MobileCarousel ref={carouselRef} onScroll={onScroll}>
@@ -84,8 +87,8 @@ const PhotoModalMobilePager = ({
     </MobileCarousel>
     <MobileIndicatorBar>
       <MobileIndicatorPill aria-hidden="true">
-        <MobileIndicatorDot $active={activeSlide === 0} />
-        <MobileIndicatorDot $active={activeSlide === 1} />
+        <MobileIndicatorDot type="button" $active={activeSlide === 0} onClick={() => onSelectSlide?.(0)} />
+        <MobileIndicatorDot type="button" $active={activeSlide === 1} onClick={() => onSelectSlide?.(1)} />
       </MobileIndicatorPill>
     </MobileIndicatorBar>
   </MobileViewport>
