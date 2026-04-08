@@ -339,8 +339,8 @@ const PhotoModal = () => {
         actions.setFilter({ search: '', tags: [tag], location: '' });
         actions.closePhotoModal();
         
-        // Naviga alla pagina della galleria
-        navigate('/gallery');
+        // Naviga alla pagina della galleria mantenendo sincronizzati filtro applicato e UI attiva.
+        navigate(`/gallery?tag=${encodeURIComponent(tag)}`);
 
       // Se eri già su /gallery, il pathname non cambia: forza comunque lo scroll in cima.
       scrollToTopNow();
