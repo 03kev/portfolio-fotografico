@@ -64,12 +64,15 @@ const ModalContent = styled(motion.div)`
 `;
 
 const ImageContainer = styled.div`
-  flex: 2;
+  flex: ${({ $detailsExpanded }) => ($detailsExpanded ? '1.35' : '2')};
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: ${({ $portraitDesktop }) => ($portraitDesktop ? '0' : 'clamp(14px, 1.9vw, 22px)')};
+  padding: ${({ $portraitDesktop, $detailsExpanded }) => {
+    if ($portraitDesktop) return '0';
+    return $detailsExpanded ? 'clamp(12px, 1.4vw, 18px)' : 'clamp(14px, 1.9vw, 22px)';
+  }};
   background:
     radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0) 32%),
     linear-gradient(180deg, rgba(13, 16, 25, 0.98) 0%, rgba(7, 9, 15, 0.98) 100%);
@@ -153,9 +156,9 @@ const ModalImage = styled(motion.img)`
 
 const InfoPanel = styled.div`
   flex: 1;
-  min-width: 350px;
-  max-width: 400px;
-  padding: var(--spacing-2xl);
+  min-width: ${({ $detailsExpanded }) => ($detailsExpanded ? '440px' : '350px')};
+  max-width: ${({ $detailsExpanded }) => ($detailsExpanded ? '560px' : '400px')};
+  padding: ${({ $detailsExpanded }) => ($detailsExpanded ? '28px 28px 24px' : 'var(--spacing-2xl)')};
   overflow-y: auto;
   background:
     linear-gradient(180deg, rgba(8, 10, 16, 0.96) 0%, rgba(4, 5, 10, 0.94) 100%);
@@ -257,7 +260,9 @@ const PhotoModal = () => {
     const isCompactViewport = useCompactViewportLayout({ maxWidth: 1120, maxHeight: 860 });
     const originalBodyOverflowRef = React.useRef(null);
     const mobileCarouselRef = useRef(null);
+    const infoPanelRef = useRef(null);
     const [activeMobileSlide, setActiveMobileSlide] = useState(0);
+    const [detailsExpanded, setDetailsExpanded] = useState(false);
     const selectedPhotoId = selectedPhoto?.id;
     const version = selectedPhoto?.derivativesVersion || selectedPhoto?.updatedAt || selectedPhoto?.id;
     const imageSrc = resolveVersionedAssetUrl(selectedPhoto?.image, version);
@@ -364,14 +369,18 @@ const PhotoModal = () => {
         return `${match[1]} × ${match[2]} px`;
     };
 
-    const isPortraitPhoto = (() => {
+    const parsedResolution = (() => {
         const raw = String(selectedPhoto?.resolution || '').trim();
         const match = raw.match(/^(\d+)\s*x\s*(\d+)$/i);
-        if (!match) return false;
+        if (!match) return null;
         const width = Number(match[1]);
         const height = Number(match[2]);
-        return Number.isFinite(width) && Number.isFinite(height) && height > width;
+        if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
+        return { width, height };
     })();
+
+    const useCompactPagerLayout = isMobileLayout || isCompactViewport;
+    const isPortraitPhoto = Boolean(parsedResolution && parsedResolution.height > parsedResolution.width);
 
     useEffect(() => {
         if (!modalOpen || !(isMobileLayout || isCompactViewport)) return;
@@ -381,8 +390,6 @@ const PhotoModal = () => {
         }
     }, [isCompactViewport, isMobileLayout, modalOpen, selectedPhotoId]);
 
-    const useCompactPagerLayout = isMobileLayout || isCompactViewport;
-
     const handlePagerSelectSlide = useCallback((index) => {
       const carouselNode = mobileCarouselRef.current;
       if (!carouselNode) return;
@@ -391,6 +398,42 @@ const PhotoModal = () => {
       carouselNode.scrollTo({ left: nextLeft, behavior: 'smooth' });
       setActiveMobileSlide(index);
     }, []);
+
+    useEffect(() => {
+      if (!modalOpen || useCompactPagerLayout) {
+        setDetailsExpanded(false);
+        return;
+      }
+
+      const panel = infoPanelRef.current;
+      if (!panel) return;
+
+      let frameId = null;
+
+      const evaluate = () => {
+        frameId = null;
+        const nextOverflowing = panel.scrollHeight > panel.clientHeight + 8;
+        setDetailsExpanded((prev) => (prev || nextOverflowing ? (prev || nextOverflowing) : false));
+      };
+
+      const scheduleEvaluate = () => {
+        if (frameId !== null) cancelAnimationFrame(frameId);
+        frameId = requestAnimationFrame(evaluate);
+      };
+
+      scheduleEvaluate();
+
+      const observer = new ResizeObserver(scheduleEvaluate);
+      observer.observe(panel);
+
+      window.addEventListener('resize', scheduleEvaluate);
+
+      return () => {
+        if (frameId !== null) cancelAnimationFrame(frameId);
+        observer.disconnect();
+        window.removeEventListener('resize', scheduleEvaluate);
+      };
+    }, [modalOpen, selectedPhotoId, useCompactPagerLayout]);
 
     if (!selectedPhoto) return null;
     const canDownload = Boolean(downloadSrc);
@@ -421,7 +464,10 @@ const PhotoModal = () => {
             </CloseButton>
             
             {!useCompactPagerLayout ? (
-            <ImageContainer $portraitDesktop={isPortraitPhoto}>
+            <ImageContainer
+            $portraitDesktop={isPortraitPhoto}
+            $detailsExpanded={detailsExpanded}
+            >
             {previewSrc && (
               <ImagePreview
                 src={previewSrc}
@@ -521,7 +567,7 @@ const PhotoModal = () => {
             )}
 
             {!useCompactPagerLayout && (
-              <InfoPanel>
+              <InfoPanel ref={infoPanelRef} $detailsExpanded={detailsExpanded}>
                 <PhotoModalDetails
                   photo={selectedPhoto}
                   canDownload={canDownload}
