@@ -68,7 +68,7 @@ const ImageContainer = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: clamp(14px, 1.9vw, 22px);
+  padding: ${({ $portraitDesktop }) => ($portraitDesktop ? '0' : 'clamp(14px, 1.9vw, 22px)')};
   background:
     radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0) 32%),
     linear-gradient(180deg, rgba(13, 16, 25, 0.98) 0%, rgba(7, 9, 15, 0.98) 100%);
@@ -362,6 +362,15 @@ const PhotoModal = () => {
         return `${match[1]} × ${match[2]} px`;
     };
 
+    const isPortraitPhoto = (() => {
+        const raw = String(selectedPhoto?.resolution || '').trim();
+        const match = raw.match(/^(\d+)\s*x\s*(\d+)$/i);
+        if (!match) return false;
+        const width = Number(match[1]);
+        const height = Number(match[2]);
+        return Number.isFinite(width) && Number.isFinite(height) && height > width;
+    })();
+
     useEffect(() => {
         if (!modalOpen || !isMobileLayout) return;
         setActiveMobileSlide(0);
@@ -398,7 +407,7 @@ const PhotoModal = () => {
             </CloseButton>
             
             {!isMobileLayout ? (
-            <ImageContainer>
+            <ImageContainer $portraitDesktop={isPortraitPhoto}>
             {previewSrc && (
               <ImagePreview
                 src={previewSrc}

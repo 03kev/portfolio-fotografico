@@ -5,7 +5,7 @@ import { Download, MapPin } from 'lucide-react';
 
 const HeaderIntro = styled.div`
   padding-right: 78px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 
   @media (max-width: 768px) {
     padding-right: 56px;
@@ -22,9 +22,9 @@ const PhotoTitle = styled(motion.h2)`
   letter-spacing: -0.04em;
 
   @media (max-width: 768px) {
-    font-size: 2rem;
-    margin-bottom: 10px;
-    line-height: 1.06;
+    font-size: 1.65rem;
+    margin-bottom: 8px;
+    line-height: 1.08;
   }
 `;
 
@@ -54,6 +54,7 @@ const PhotoDescription = styled(motion.p)`
   font-size: 1rem;
   line-height: 1.72;
   margin-bottom: 20px;
+  max-width: none;
 
   @media (max-width: 768px) {
     font-size: var(--font-size-sm);
@@ -290,13 +291,13 @@ const PhotoModalDetails = ({
           <MapPin size={16} />
           {photo.location}
         </PhotoLocation>
-
-        {photo.description && (
-          <PhotoDescription {...getAnimationProps(withMotion, 0.3)}>
-            {photo.description}
-          </PhotoDescription>
-        )}
       </HeaderIntro>
+
+      {photo.description && (
+        <PhotoDescription {...getAnimationProps(withMotion, 0.3)}>
+          {photo.description}
+        </PhotoDescription>
+      )}
 
       {hasTechnicalData && (
         <MetadataSection {...getAnimationProps(withMotion, 0.4)}>
