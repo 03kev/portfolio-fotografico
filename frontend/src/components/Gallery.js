@@ -229,6 +229,9 @@ const PhotoCard = styled(motion.div)`
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: var(--shadow-medium);
   transition: transform var(--transition-normal), box-shadow var(--transition-normal), border-color var(--transition-normal);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 
   &:hover {
     transform: translateY(-4px);
@@ -261,6 +264,11 @@ const PhotoImage = styled(motion.img)`
   color: transparent;
   font-size: 0;
   transition: transform 0.45s ease;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  pointer-events: none;
 
   ${PhotoCard}:hover & {
     transform: scale(1.03);
@@ -868,6 +876,11 @@ const GalleryCard = React.memo(function GalleryCard({
       animate="visible"
       exit="exit"
       {...touchRevealBind}
+      onContextMenu={(event) => {
+        if (compactMobile) {
+          event.preventDefault();
+        }
+      }}
       onClick={() => {
         if (compactMobile && (isTouchCardActive || isMobileAdminOpen || consumeTrigger())) {
           onCloseMobileAdmin();
