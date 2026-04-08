@@ -514,6 +514,7 @@ const PhotoModal = () => {
                     formatDate={formatDate}
                     formatResolution={formatResolution}
                     withMotion={false}
+                    compactDesktop={isCompactViewport && !isMobileLayout}
                   />
                 </MobileInfoSlide>
               </PhotoModalMobilePager>
@@ -532,6 +533,7 @@ const PhotoModal = () => {
                   formatDate={formatDate}
                   formatResolution={formatResolution}
                   withMotion
+                  compactDesktop={false}
                 />
               </InfoPanel>
             )}

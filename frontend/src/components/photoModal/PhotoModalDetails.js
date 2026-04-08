@@ -4,13 +4,20 @@ import { motion } from 'framer-motion';
 import { Download, MapPin } from 'lucide-react';
 
 const HeaderIntro = styled.div`
-  padding-right: 78px;
+  max-width: 100%;
+  padding-right: 92px;
   margin-bottom: 6px;
 
   @media (max-width: 768px) {
-    padding-right: 56px;
+    padding-right: 64px;
     margin-bottom: 2px;
   }
+`;
+
+const DetailsContent = styled.div`
+  width: 100%;
+  max-width: ${({ $compactDesktop }) => ($compactDesktop ? '680px' : '100%')};
+  margin: 0 auto;
 `;
 
 const PhotoTitle = styled(motion.h2)`
@@ -269,7 +276,8 @@ const PhotoModalDetails = ({
   handleTagClick,
   formatDate,
   formatResolution,
-  withMotion = true
+  withMotion = true,
+  compactDesktop = false
 }) => {
   const hasTechnicalData = Boolean(
     photo.camera ||
@@ -283,7 +291,7 @@ const PhotoModalDetails = ({
   );
 
   return (
-    <>
+    <DetailsContent $compactDesktop={compactDesktop}>
       <HeaderIntro>
         <PhotoTitle {...getAnimationProps(withMotion, 0.1)}>{photo.title}</PhotoTitle>
 
@@ -393,7 +401,7 @@ const PhotoModalDetails = ({
           Download
         </ActionButton>
       </ActionButtons>
-    </>
+    </DetailsContent>
   );
 };
 
