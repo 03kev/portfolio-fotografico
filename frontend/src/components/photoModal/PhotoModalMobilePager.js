@@ -13,9 +13,9 @@ const MobileCarousel = styled.div`
   flex: 1;
   min-height: 0;
   display: flex;
-  overflow-x: ${({ $locked }) => ($locked ? 'hidden' : 'auto')};
+  overflow-x: auto;
   overflow-y: hidden;
-  scroll-snap-type: ${({ $locked }) => ($locked ? 'none' : 'x mandatory')};
+  scroll-snap-type: x mandatory;
   scroll-behavior: smooth;
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -76,12 +76,11 @@ const PhotoModalMobilePager = ({
   activeSlide,
   carouselRef,
   children,
-  locked = false,
   onScroll,
   onSelectSlide
 }) => (
   <MobileViewport>
-    <MobileCarousel ref={carouselRef} onScroll={onScroll} $locked={locked}>
+    <MobileCarousel ref={carouselRef} onScroll={onScroll}>
       {React.Children.map(children, (child, index) => (
         <MobileSlide aria-label={index === 0 ? 'Foto' : 'Dettagli'}>{child}</MobileSlide>
       ))}

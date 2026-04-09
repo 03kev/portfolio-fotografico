@@ -208,7 +208,6 @@ export const useImageLoader = (src) => {
 
 export { useCompactViewportLayout } from './useCompactViewportLayout';
 export { useAutoHideOnScroll } from './useAutoHideOnScroll';
-export { useTouchImageZoom } from './useTouchImageZoom';
 
 export const useMediaQuery = (query) => {
   const [matches, setMatches] = useState(false);

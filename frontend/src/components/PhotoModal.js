@@ -6,7 +6,7 @@ import { usePhotos } from '../contexts/PhotoContext';
 import { LOCAL_IMAGE_FALLBACK, resolveAssetUrl, resolveVersionedAssetUrl } from '../utils/imageUrl';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useSharedImageLoadState } from '../hooks/useSharedImageLoadState';
-import { useCompactViewportLayout, useMobileDeviceLayout, useTouchImageZoom } from '../hooks';
+import { useCompactViewportLayout, useMobileDeviceLayout } from '../hooks';
 import PhotoModalDetails from './photoModal/PhotoModalDetails';
 import PhotoModalMobilePager from './photoModal/PhotoModalMobilePager';
 
@@ -252,24 +252,6 @@ const MobileImageSlide = styled(ImageContainer)`
     linear-gradient(180deg, rgba(10, 12, 18, 0.98) 0%, rgba(4, 6, 10, 0.98) 100%);
 `;
 
-const ZoomGestureFrame = styled.div`
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  touch-action: ${({ $zoomed }) => ($zoomed ? 'none' : 'manipulation')};
-`;
-
-const ZoomTransformLayer = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  will-change: transform;
-`;
-
 const MobileInfoSlide = styled(InfoPanel)`
   height: 100%;
   min-height: 0;
@@ -290,7 +272,6 @@ const PhotoModal = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const isMobileLayout = useMobileDeviceLayout({ maxWidth: 768 });
-    const isTouchZoomLayout = useMobileDeviceLayout({ maxWidth: 1024 });
     const isCompactViewport = useCompactViewportLayout({ maxWidth: 1120, maxHeight: 860 });
     const originalBodyOverflowRef = React.useRef(null);
     const mobileCarouselRef = useRef(null);
@@ -415,46 +396,23 @@ const PhotoModal = () => {
 
     const useCompactPagerLayout = isMobileLayout || isCompactViewport;
     const isPortraitPhoto = Boolean(parsedResolution && parsedResolution.height > parsedResolution.width);
-    const {
-      bind: touchZoomBind,
-      containerRef: touchZoomContainerRef,
-      imageRef: touchZoomImageRef,
-      isZoomed: isTouchImageZoomed,
-      resetZoom: resetTouchZoom,
-      style: touchZoomStyle
-    } = useTouchImageZoom({
-      enabled: modalOpen && useCompactPagerLayout && isTouchZoomLayout && activeMobileSlide === 0,
-      maxScale: 3,
-      doubleTapScale: 2.2
-    });
 
     useEffect(() => {
         if (!modalOpen || !(isMobileLayout || isCompactViewport)) return;
         setActiveMobileSlide(0);
-        resetTouchZoom();
         if (mobileCarouselRef.current) {
             mobileCarouselRef.current.scrollTo({ left: 0, behavior: 'auto' });
         }
-    }, [isCompactViewport, isMobileLayout, modalOpen, resetTouchZoom, selectedPhotoId]);
+    }, [isCompactViewport, isMobileLayout, modalOpen, selectedPhotoId]);
 
     const handlePagerSelectSlide = useCallback((index) => {
       const carouselNode = mobileCarouselRef.current;
       if (!carouselNode) return;
 
-      if (index !== 0) {
-        resetTouchZoom();
-      }
-
       const nextLeft = index * carouselNode.clientWidth;
       carouselNode.scrollTo({ left: nextLeft, behavior: 'smooth' });
       setActiveMobileSlide(index);
-    }, [resetTouchZoom]);
-
-    useEffect(() => {
-      if (activeMobileSlide !== 0) {
-        resetTouchZoom();
-      }
-    }, [activeMobileSlide, resetTouchZoom]);
+    }, []);
 
     useEffect(() => {
       if (!modalOpen || useCompactPagerLayout) {
@@ -565,7 +523,6 @@ const PhotoModal = () => {
               <PhotoModalMobilePager
                 activeSlide={activeMobileSlide}
                 carouselRef={mobileCarouselRef}
-                locked={isTouchImageZoomed}
                 onScroll={handleMobileCarouselScroll}
                 onSelectSlide={handlePagerSelectSlide}
               >
@@ -588,32 +545,23 @@ const PhotoModal = () => {
                       transition={{ duration: 0.18, ease: 'easeOut' }}
                     />
                   </LoadingBackdrop>
-                  <ZoomGestureFrame
-                    ref={touchZoomContainerRef}
-                    $zoomed={isTouchImageZoomed}
-                    {...touchZoomBind}
-                  >
-                    <ZoomTransformLayer style={touchZoomStyle}>
-                      <ModalImage
-                        ref={touchZoomImageRef}
-                        key={imageSrc}
-                        $loaded={isFullImageLoaded}
-                        src={imageSrc}
-                        alt={selectedPhoto.title}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ duration: 0.28 }}
-                        onLoad={() => {
-                          markFullImageLoaded();
-                        }}
-                        onError={(e) => {
-                          e.currentTarget.onerror = null;
-                          e.currentTarget.src = LOCAL_IMAGE_FALLBACK;
-                          setIsFullImageLoaded(true);
-                        }}
-                      />
-                    </ZoomTransformLayer>
-                  </ZoomGestureFrame>
+                  <ModalImage
+                    key={imageSrc}
+                    $loaded={isFullImageLoaded}
+                    src={imageSrc}
+                    alt={selectedPhoto.title}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.28 }}
+                    onLoad={() => {
+                      markFullImageLoaded();
+                    }}
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = LOCAL_IMAGE_FALLBACK;
+                      setIsFullImageLoaded(true);
+                    }}
+                  />
                 </MobileImageSlide>
                 <MobileInfoSlide>
                   <PhotoModalDetails
