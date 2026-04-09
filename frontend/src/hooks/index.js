@@ -228,3 +228,6 @@ export const useMediaQuery = (query) => {
 export { useMobileDeviceLayout } from './useMobileDeviceLayout';
 export { useMeasuredLayoutMode } from './useMeasuredLayoutMode';
 export { useTouchLongPressReveal } from './useTouchLongPressReveal';
+export { useHeaderDesktopLayoutMode, HEADER_LAYOUT_MODE } from './useHeaderDesktopLayoutMode';
+export { useGalleryMobileCardState } from './useGalleryMobileCardState';
+export { useScrollableRail } from './useScrollableRail';
