@@ -219,6 +219,14 @@ const GalleryGrid = styled(motion.div).attrs({ layout: true })`
   }
 `;
 
+const CardInteractionLayer = styled(motion.div)`
+  display: block;
+  -webkit-tap-highlight-color: transparent;
+  tap-highlight-color: transparent;
+  touch-action: manipulation;
+  outline: none;
+`;
+
 const PhotoCard = styled(motion.div)`
   position: relative;
   border-radius: var(--border-radius-2xl);
@@ -232,6 +240,9 @@ const PhotoCard = styled(motion.div)`
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  tap-highlight-color: transparent;
+  touch-action: manipulation;
 
   &:hover {
     transform: translateY(-4px);
@@ -419,6 +430,8 @@ const MobileManageButton = styled.button`
   color: rgba(255, 255, 255, 0.96);
   box-shadow: 0 14px 26px rgba(0, 0, 0, 0.22);
   z-index: 14;
+  -webkit-tap-highlight-color: transparent;
+  tap-highlight-color: transparent;
 `;
 
 const MobileAdminPanel = styled.div`
@@ -462,6 +475,8 @@ const MobileAdminAction = styled.button`
     return 'rgba(255, 255, 255, 0.94)';
   }};
   padding: 0;
+  -webkit-tap-highlight-color: transparent;
+  tap-highlight-color: transparent;
 `;
 
 const MobileCaptionBar = styled.div`
@@ -869,7 +884,7 @@ const GalleryCard = React.memo(function GalleryCard({
   });
 
   return (
-    <motion.div
+    <CardInteractionLayer
       layout
       variants={cardVariants}
       initial="hidden"
@@ -1038,7 +1053,7 @@ const GalleryCard = React.memo(function GalleryCard({
           </MobileCaptionBar>
         )}
       </PhotoCard>
-    </motion.div>
+    </CardInteractionLayer>
   );
 });
 
