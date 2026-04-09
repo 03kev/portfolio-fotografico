@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -12,8 +12,6 @@ import { useGalleryMobileCardState, useMobileDeviceLayout, useScrollableRail } f
 import {
   buildOperationErrorMessage
 } from '../utils/operationErrors';
-import PhotoUpload from './PhotoUpload';
-import PhotoCropModal from './PhotoCropModal';
 import { GalleryCard } from './gallery/GalleryCard';
 
 const DEBOUNCE_DELAY_FILTER = 200;
@@ -30,10 +28,17 @@ const CROP_STEP_LABELS = {
   regenerate: 'rigenerazione derivate'
 };
 
-const SKELETON_CARD_COUNT = 9;
-const INITIAL_VISIBLE_CARDS = 24;
-const VISIBLE_CARDS_BATCH = 24;
-const LOAD_MORE_ROOT_MARGIN = '900px 0px';
+const SKELETON_CARD_COUNT_DESKTOP = 9;
+const SKELETON_CARD_COUNT_MOBILE = 4;
+const INITIAL_VISIBLE_CARDS_DESKTOP = 18;
+const INITIAL_VISIBLE_CARDS_MOBILE = 8;
+const VISIBLE_CARDS_BATCH_DESKTOP = 18;
+const VISIBLE_CARDS_BATCH_MOBILE = 8;
+const LOAD_MORE_ROOT_MARGIN_DESKTOP = '700px 0px';
+const LOAD_MORE_ROOT_MARGIN_MOBILE = '350px 0px';
+
+const PhotoUpload = lazy(() => import('./PhotoUpload'));
+const PhotoCropModal = lazy(() => import('./PhotoCropModal'));
 
 const GallerySection = styled(motion.section)`
   padding: var(--spacing-4xl) 0;
@@ -199,7 +204,7 @@ const FilterButton = styled(motion.button)`
   }
 `;
 
-const GalleryGrid = styled(motion.div).attrs({ layout: true })`
+const GalleryGrid = styled(motion.div)`
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: var(--spacing-xl);
@@ -446,10 +451,15 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const activeReuploadPhotoIdRef = useRef(null);
   const isMountedRef = useRef(true);
   const loadMoreTriggerRef = useRef(null);
-  const [visibleCardsCount, setVisibleCardsCount] = useState(INITIAL_VISIBLE_CARDS);
+  const [visibleCardsCount, setVisibleCardsCount] = useState(INITIAL_VISIBLE_CARDS_DESKTOP);
   const lastRevealKeyRef = useRef(null);
   const previousGalleryLengthRef = useRef(0);
   const compactMobile = useMobileDeviceLayout({ maxWidth: 900 });
+  const initialVisibleCards = compactMobile ? INITIAL_VISIBLE_CARDS_MOBILE : INITIAL_VISIBLE_CARDS_DESKTOP;
+  const visibleCardsBatch = compactMobile ? VISIBLE_CARDS_BATCH_MOBILE : VISIBLE_CARDS_BATCH_DESKTOP;
+  const loadMoreRootMargin = compactMobile ? LOAD_MORE_ROOT_MARGIN_MOBILE : LOAD_MORE_ROOT_MARGIN_DESKTOP;
+  const skeletonCardCount = compactMobile ? SKELETON_CARD_COUNT_MOBILE : SKELETON_CARD_COUNT_DESKTOP;
+  const priorityImageCount = compactMobile ? 1 : 2;
   const {
     activeCardId: mobileTouchPhotoId,
     activeAdminCardId: mobileAdminPhotoId,
@@ -523,7 +533,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
 
     if (lastRevealKeyRef.current !== revealKey) {
       lastRevealKeyRef.current = revealKey;
-      setVisibleCardsCount(Math.min(nextLength, INITIAL_VISIBLE_CARDS));
+      setVisibleCardsCount(Math.min(nextLength, initialVisibleCards));
     } else if (allCardsWereVisible) {
       // Keep live updates snappy: if the grid was already fully visible,
       // show newly inserted cards immediately instead of re-running the reveal.
@@ -533,7 +543,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     }
 
     previousGalleryLengthRef.current = nextLength;
-  }, [galleryCards.length, activeFilter, debouncedSearchTerm, visibleCardsCount]);
+  }, [galleryCards.length, activeFilter, debouncedSearchTerm, visibleCardsCount, initialVisibleCards]);
 
   useEffect(() => {
     if (loading || waitingForForcedModal) return;
@@ -544,11 +554,11 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       (entries) => {
         const entry = entries[0];
         if (!entry?.isIntersecting) return;
-        setVisibleCardsCount((previous) => Math.min(galleryCards.length, previous + VISIBLE_CARDS_BATCH));
+        setVisibleCardsCount((previous) => Math.min(galleryCards.length, previous + visibleCardsBatch));
       },
       {
         root: null,
-        rootMargin: LOAD_MORE_ROOT_MARGIN,
+        rootMargin: loadMoreRootMargin,
         threshold: 0
       }
     );
@@ -556,7 +566,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     observer.observe(loadMoreTriggerRef.current);
 
     return () => observer.disconnect();
-  }, [loading, waitingForForcedModal, visibleCardsCount, galleryCards.length]);
+  }, [loading, waitingForForcedModal, visibleCardsCount, galleryCards.length, visibleCardsBatch, loadMoreRootMargin]);
 
   useEffect(() => {
     if (!resolvedPhotoId) {
@@ -887,7 +897,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
             </SkeletonFilterRow>
           </ControlsRow>
           <SkeletonGrid>
-            {Array.from({ length: SKELETON_CARD_COUNT }).map((_, idx) => (
+            {Array.from({ length: skeletonCardCount }).map((_, idx) => (
               <SkeletonCard key={`gallery-skeleton-${idx}`} />
             ))}
           </SkeletonGrid>
@@ -973,7 +983,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
           </NoResults>
         ) : (
           <>
-            <GalleryGrid key="gallery-grid">
+            <GalleryGrid key="gallery-grid" layout={!compactMobile}>
               <AnimatePresence mode="popLayout" initial={false}>
                 {visibleGalleryCards.map((photo, index) => {
                   return (
@@ -992,6 +1002,8 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                       getPhotoAltText={getPhotoAltText}
                       getThumbImageUrl={getThumbImageUrl}
                       fallbackImageSrc={LOCAL_IMAGE_FALLBACK}
+                      prioritizeImage={index < priorityImageCount}
+                      motionEnabled={!compactMobile}
                       onOpen={handlePhotoClick}
                       onDelete={handleDelete}
                       onEdit={handleEdit}
@@ -1013,32 +1025,34 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
           </>
         )}
 
-        {isAdmin && editingPhoto && (
-          <PhotoUpload
-            photoToEdit={editingPhoto}
-            onClose={() => setEditingPhoto(null)}
-            onUploadSuccess={(updatedPhoto) => {
-              actions.applyPhotoUpdate?.(updatedPhoto);
-              setEditingPhoto(null);
-            }}
-            onUploadError={(error) => {
-              notify?.error?.(
-                error?.message || buildOperationErrorMessage(error, 'aggiornamento foto'),
-                6000
-              );
+        <Suspense fallback={null}>
+          {isAdmin && editingPhoto && (
+            <PhotoUpload
+              photoToEdit={editingPhoto}
+              onClose={() => setEditingPhoto(null)}
+              onUploadSuccess={(updatedPhoto) => {
+                actions.applyPhotoUpdate?.(updatedPhoto);
+                setEditingPhoto(null);
+              }}
+              onUploadError={(error) => {
+                notify?.error?.(
+                  error?.message || buildOperationErrorMessage(error, 'aggiornamento foto'),
+                  6000
+                );
+              }}
+            />
+          )}
+
+          <PhotoCropModal
+            photo={croppingPhoto}
+            isOpen={isAdmin && Boolean(croppingPhoto)}
+            onClose={() => setCroppingPhoto(null)}
+            onApply={({ photoId, photoTitle, nextSettings }) => {
+              setCroppingPhoto(null);
+              handleApplyCropInBackground({ photoId, photoTitle, nextSettings });
             }}
           />
-        )}
-
-        <PhotoCropModal
-          photo={croppingPhoto}
-          isOpen={isAdmin && Boolean(croppingPhoto)}
-          onClose={() => setCroppingPhoto(null)}
-          onApply={({ photoId, photoTitle, nextSettings }) => {
-            setCroppingPhoto(null);
-            handleApplyCropInBackground({ photoId, photoTitle, nextSettings });
-          }}
-        />
+        </Suspense>
 
         <AnimatePresence>
           {photoPendingDelete && (

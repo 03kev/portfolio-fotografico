@@ -446,6 +446,8 @@ const Tag = styled.span`
 export const GalleryCard = React.memo(function GalleryCard({
   photo,
   index,
+  prioritizeImage,
+  motionEnabled,
   isAdmin,
   compactMobile,
   isTouchCardActive,
@@ -500,11 +502,11 @@ export const GalleryCard = React.memo(function GalleryCard({
 
   return (
     <CardInteractionLayer
-      layout
-      variants={cardVariants}
-      initial="hidden"
-      animate="visible"
-      exit="exit"
+      layout={motionEnabled}
+      variants={motionEnabled ? cardVariants : undefined}
+      initial={motionEnabled ? 'hidden' : false}
+      animate={motionEnabled ? 'visible' : false}
+      exit={motionEnabled ? 'exit' : undefined}
       data-mobile-gallery-card-id={photo.id}
       {...touchRevealBind}
       onContextMenu={(event) => {
@@ -594,8 +596,8 @@ export const GalleryCard = React.memo(function GalleryCard({
         <PhotoImage
           src={cardImageSrc}
           alt={getPhotoAltText(photo)}
-          loading={index < 3 ? 'eager' : 'lazy'}
-          fetchPriority={index < 3 ? 'high' : 'auto'}
+          loading={prioritizeImage ? 'eager' : 'lazy'}
+          fetchPriority={prioritizeImage ? 'high' : 'auto'}
           decoding="async"
           onError={(event) => {
             event.currentTarget.onerror = null;
