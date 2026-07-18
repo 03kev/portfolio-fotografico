@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { Suspense, useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -13,6 +13,7 @@ import {
   buildOperationErrorMessage
 } from '../utils/operationErrors';
 import { GalleryCard } from './gallery/GalleryCard';
+import { LazyPhotoCropModal, LazyPhotoUpload } from './lazyAdminComponents';
 
 const DEBOUNCE_DELAY_FILTER = 200;
 const SOURCE_REUPLOAD_ACCEPT = 'image/jpeg,image/jpg,image/png,image/webp';
@@ -53,9 +54,6 @@ const getPhotoAltText = (photo) => {
   if (location) return `${title} - ${location}`;
   return title;
 };
-
-const PhotoUpload = lazy(() => import('./PhotoUpload'));
-const PhotoCropModal = lazy(() => import('./PhotoCropModal'));
 
 const GallerySection = styled(motion.section)`
   padding: var(--spacing-4xl) 0;
@@ -1033,7 +1031,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
 
         <Suspense fallback={null}>
           {isAdmin && editingPhoto && (
-            <PhotoUpload
+            <LazyPhotoUpload
               photoToEdit={editingPhoto}
               onClose={() => setEditingPhoto(null)}
               onUploadSuccess={(updatedPhoto) => {
@@ -1049,15 +1047,17 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
             />
           )}
 
-          <PhotoCropModal
-            photo={croppingPhoto}
-            isOpen={isAdmin && Boolean(croppingPhoto)}
-            onClose={() => setCroppingPhoto(null)}
-            onApply={({ photoId, photoTitle, nextSettings }) => {
-              setCroppingPhoto(null);
-              handleApplyCropInBackground({ photoId, photoTitle, nextSettings });
-            }}
-          />
+          {isAdmin && croppingPhoto && (
+            <LazyPhotoCropModal
+              photo={croppingPhoto}
+              isOpen
+              onClose={() => setCroppingPhoto(null)}
+              onApply={({ photoId, photoTitle, nextSettings }) => {
+                setCroppingPhoto(null);
+                handleApplyCropInBackground({ photoId, photoTitle, nextSettings });
+              }}
+            />
+          )}
         </Suspense>
 
         <AnimatePresence>
