@@ -4,11 +4,26 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { usePhotos } from '../contexts/PhotoContext';
 import { LOCAL_IMAGE_FALLBACK, resolveAssetUrl, resolveVersionedAssetUrl } from '../utils/imageUrl';
+import { markImageSourceLoaded } from '../utils/imageLoadCache';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useSharedImageLoadState } from '../hooks/useSharedImageLoadState';
 import { useCompactViewportLayout, useMobileDeviceLayout } from '../hooks';
 import PhotoModalDetails from './photoModal/PhotoModalDetails';
 import PhotoModalMobilePager from './photoModal/PhotoModalMobilePager';
+
+const prefetchedMobileImageSources = new Set();
+
+const getMobileImageSource = (photo) => {
+  if (!photo?.mobileImage) return '';
+  const version = photo.derivativesVersion || photo.updatedAt || photo.id;
+  return resolveVersionedAssetUrl(photo.mobileImage, version, '');
+};
+
+const canPrefetchMobileImages = () => {
+  if (typeof navigator === 'undefined') return false;
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  return !connection?.saveData && !String(connection?.effectiveType || '').includes('2g');
+};
 
 const ModalOverlay = styled(motion.div)`
   position: fixed;
@@ -304,7 +319,7 @@ const MobileInfoSlide = styled(InfoPanel)`
 `;
 
 const PhotoModal = () => {
-    const { modalOpen, selectedPhoto, actions, galleryModalOpen } = usePhotos();
+    const { modalOpen, photos, selectedPhoto, actions, galleryModalOpen } = usePhotos();
     const navigate = useNavigate();
     const location = useLocation();
     const isMobileLayout = useMobileDeviceLayout({ maxWidth: 768 });
@@ -333,6 +348,62 @@ const PhotoModal = () => {
       setUseFullImageFallback(false);
       setShowFullResolution(false);
     }, [selectedPhotoId, mobileImageSrc]);
+
+    useEffect(() => {
+      if (
+        !modalOpen ||
+        !isMobileLayout ||
+        !isFullImageLoaded ||
+        showFullResolution ||
+        !selectedPhotoId ||
+        !canPrefetchMobileImages()
+      ) {
+        return undefined;
+      }
+
+      const currentIndex = photos.findIndex((photo) => String(photo.id) === String(selectedPhotoId));
+      if (currentIndex < 0) return undefined;
+
+      const sources = [photos[currentIndex - 1], photos[currentIndex + 1]]
+        .map(getMobileImageSource)
+        .filter(Boolean);
+      if (sources.length === 0) return undefined;
+
+      let cancelled = false;
+      const prefetch = () => {
+        if (cancelled) return;
+
+        sources.forEach((source) => {
+          if (prefetchedMobileImageSources.has(source)) return;
+          prefetchedMobileImageSources.add(source);
+
+          const image = new Image();
+          image.decoding = 'async';
+          if ('fetchPriority' in image) image.fetchPriority = 'low';
+          image.onload = () => {
+            markImageSourceLoaded(source);
+          };
+          image.onerror = () => {
+            prefetchedMobileImageSources.delete(source);
+          };
+          image.src = source;
+        });
+      };
+
+      if (typeof window.requestIdleCallback === 'function') {
+        const idleCallbackId = window.requestIdleCallback(prefetch, { timeout: 1200 });
+        return () => {
+          cancelled = true;
+          window.cancelIdleCallback(idleCallbackId);
+        };
+      }
+
+      const timeoutId = window.setTimeout(prefetch, 250);
+      return () => {
+        cancelled = true;
+        window.clearTimeout(timeoutId);
+      };
+    }, [isFullImageLoaded, isMobileLayout, modalOpen, photos, selectedPhotoId, showFullResolution]);
 
     const handleImageError = useCallback((event) => {
       if (imageSrc === mobileImageSrc && fullImageSrc && !useFullImageFallback) {
