@@ -71,8 +71,9 @@ export default function PhotoPage() {
 
   const seoDescription = buildPhotoDescription(photo);
 
-  const photoVersion = photo?.derivativesVersion || photo?.updatedAt || photo?.id;
-  const seoImage = photo ? toAbsoluteImageUrl(photo.socialImage, photoVersion) : '';
+  const rightsUrl = toAbsoluteSiteUrl('/rights');
+  const acquireLicensePage = toAbsoluteSiteUrl('/contact');
+  const seoImage = photo ? toAbsoluteImageUrl(photo.socialImage) : '';
   const keywords = React.useMemo(
     () => (Array.isArray(photo?.tags) ? photo.tags.filter(Boolean) : []),
     [photo]
@@ -87,8 +88,13 @@ export default function PhotoPage() {
       '@type': 'ImageObject',
       name: photo.title || 'Fotografia',
       description: buildPhotoDescription(photo),
-      contentUrl: toAbsoluteImageUrl(photo.socialImage, photoVersion),
+      contentUrl: toAbsoluteImageUrl(photo.image),
       url: canonicalUrl,
+      creator: { '@type': 'Person', name: 'Kevin Muka' },
+      creditText: 'Kevin Muka',
+      copyrightNotice: '© Kevin Muka. Tutti i diritti riservati.',
+      license: rightsUrl,
+      acquireLicensePage,
     };
 
     if (keywordsCsv) {
@@ -100,7 +106,7 @@ export default function PhotoPage() {
     }
 
     return data;
-  }, [photo, photoVersion, canonicalUrl, keywordsCsv]);
+  }, [photo, canonicalUrl, keywordsCsv, rightsUrl, acquireLicensePage]);
 
   useSeo({
     title: seoTitle,

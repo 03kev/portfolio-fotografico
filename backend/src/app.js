@@ -265,17 +265,21 @@ function toAbsoluteSiteUrl(value, siteBaseUrl) {
     return `${siteBaseUrl}/${src}`;
 }
 
-function resolvePhotoImageUrl(photo, siteBaseUrl) {
+function resolvePhotoImageUrl(photo, siteBaseUrl, assetKey = 'socialImagePath') {
     const photoId = String(photo?.id || '').trim();
     if (!photoId) return '';
-    const raw = buildPhotoAssetPaths(photoId).socialImagePath;
+    const raw = buildPhotoAssetPaths(photoId)[assetKey];
     if (!raw) return '';
 
     const normalized = buildPublicAssetUrl(raw);
     return toAbsoluteSiteUrl(normalized, siteBaseUrl);
 }
 
-function renderPhotoSeoHtml({ title, description, canonicalUrl, imageUrl, noindex = false }) {
+function serializeJsonForHtml(value) {
+    return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
+function renderPhotoSeoHtml({ title, description, canonicalUrl, imageUrl, structuredData = null, noindex = false }) {
     const safeTitle = escapeXml(title || 'Foto - Kevin Muka');
     const safeDescription = escapeXml(description || 'Dettaglio foto del portfolio di Kevin Muka.');
     const safeCanonical = escapeXml(canonicalUrl || '');
@@ -287,6 +291,9 @@ function renderPhotoSeoHtml({ title, description, canonicalUrl, imageUrl, noinde
             `<meta property="og:image" content="${safeImage}" />`,
             `<meta name="twitter:image" content="${safeImage}" />`
         ].join('\n')
+        : '';
+    const structuredDataBlock = structuredData
+        ? `<script type="application/ld+json">${serializeJsonForHtml(structuredData)}</script>`
         : '';
 
     return [
@@ -308,6 +315,7 @@ function renderPhotoSeoHtml({ title, description, canonicalUrl, imageUrl, noinde
         `  <meta name="twitter:title" content="${safeTitle}" />`,
         `  <meta name="twitter:description" content="${safeDescription}" />`,
         `  ${ogImageBlock}`,
+        `  ${structuredDataBlock}`,
         '</head>',
         '<body>',
         `  <h1>${safeTitle}</h1>`,
@@ -345,11 +353,27 @@ async function handlePhotoSeoPage(req, res, next) {
         const title = `${photoTitle} - Kevin Muka`;
         const description = buildPhotoCaption(photo);
         const imageUrl = resolvePhotoImageUrl(photo, siteBaseUrl);
+        const contentUrl = resolvePhotoImageUrl(photo, siteBaseUrl, 'imagePath');
+        const rightsUrl = `${siteBaseUrl}/rights`;
+        const structuredData = {
+            '@context': 'https://schema.org',
+            '@type': 'ImageObject',
+            name: photoTitle,
+            description,
+            contentUrl,
+            url: canonicalUrl,
+            creator: { '@type': 'Person', name: 'Kevin Muka' },
+            creditText: 'Kevin Muka',
+            copyrightNotice: '© Kevin Muka. Tutti i diritti riservati.',
+            license: rightsUrl,
+            acquireLicensePage: `${siteBaseUrl}/contact`
+        };
         const html = renderPhotoSeoHtml({
             title,
             description,
             canonicalUrl,
-            imageUrl
+            imageUrl,
+            structuredData
         });
 
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -363,7 +387,7 @@ async function handlePhotoSeoPage(req, res, next) {
 async function handleSitemapPages(req, res) {
     try {
         const siteBaseUrl = getSiteBaseUrl();
-        const pages = ['/', '/series', '/gallery', '/map', '/about', '/contact'];
+        const pages = ['/', '/series', '/gallery', '/map', '/about', '/contact', '/rights'];
         const entries = pages
             .map((path) => {
                 const pageUrl = `${siteBaseUrl}${path === '/' ? '/' : path}`;
@@ -433,6 +457,10 @@ async function handleSitemapImages(req, res) {
                 }
 
                 const landingUrl = `${siteBaseUrl}/photo/${encodeURIComponent(photoId)}`;
+                const derivativesVersion = Number(photo.derivativesVersion || 0);
+                const lastmod = Number.isFinite(derivativesVersion) && derivativesVersion > 0
+                    ? new Date(derivativesVersion).toISOString()
+                    : '';
 
                 const title = escapeXml(photo.title || 'Foto');
                 const caption = escapeXml(buildPhotoCaption(photo));
@@ -440,6 +468,7 @@ async function handleSitemapImages(req, res) {
                 return [
                     '<url>',
                     `<loc>${escapeXml(landingUrl)}</loc>`,
+                    lastmod ? `<lastmod>${escapeXml(lastmod)}</lastmod>` : '',
                     '<image:image>',
                     `<image:loc>${escapeXml(fullImage)}</image:loc>`,
                     `<image:title>${title}</image:title>`,

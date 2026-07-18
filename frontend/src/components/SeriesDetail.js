@@ -1125,7 +1125,7 @@ function SeriesDetail() {
     const images = seriesPhotos
       .slice(0, 120)
       .map((photo) => {
-        const full = toAbsoluteImageUrl(photo.image, photo.derivativesVersion || photo.updatedAt || photo.id);
+        const full = toAbsoluteImageUrl(photo.image);
         if (!full) return null;
         const imageData = {
           '@type': 'ImageObject',

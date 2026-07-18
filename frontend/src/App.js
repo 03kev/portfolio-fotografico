@@ -18,6 +18,7 @@ const PhotoPage = lazy(() => import('./pages/PhotoPage'));
 const MapPage = lazy(() => import('./pages/MapPage'));
 const AboutPage = lazy(() => import('./pages/AboutPage'));
 const ContactPage = lazy(() => import('./pages/ContactPage'));
+const RightsPage = lazy(() => import('./pages/RightsPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 const AdminAccessPage = lazy(() => import('./pages/AdminAccessPage'));
 const SeriesDetail = lazy(() => import('./components/SeriesDetail'));
@@ -45,6 +46,7 @@ export default function App() {
                   <Route path="/map" element={<MapPage />} />
                   <Route path="/about" element={<AboutPage />} />
                   <Route path="/contact" element={<ContactPage />} />
+                  <Route path="/rights" element={<RightsPage />} />
                   <Route path="*" element={<NotFoundPage />} />
                 </Route>
               </Routes>
