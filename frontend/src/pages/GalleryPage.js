@@ -11,7 +11,7 @@ export default function GalleryPage() {
     const galleryImages = photos
       .slice(0, 120)
       .map((photo) => {
-        const full = toAbsoluteImageUrl(photo.image);
+        const full = toAbsoluteImageUrl(photo.image, photo.derivativesVersion || photo.updatedAt || photo.id);
         if (!full) return null;
 
         const landingUrl = toAbsoluteSiteUrl(`/photo/${encodeURIComponent(String(photo.id))}`);

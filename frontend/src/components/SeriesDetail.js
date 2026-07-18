@@ -10,7 +10,7 @@ import { useSeries } from '../contexts/SeriesContext';
 import { usePhotos } from '../contexts/PhotoContext';
 import SeriesEditor from './SeriesEditor';
 import { useToast } from './Toast';
-import { IMAGES_BASE_URL } from '../utils/constants';
+import { resolveVersionedAssetUrl } from '../utils/imageUrl';
 import { toAbsoluteImageUrl, toAbsoluteSiteUrl } from '../utils/siteUrl';
 import useSeo from '../seo/useSeo';
 
@@ -1125,7 +1125,7 @@ function SeriesDetail() {
     const images = seriesPhotos
       .slice(0, 120)
       .map((photo) => {
-        const full = toAbsoluteImageUrl(photo.image);
+        const full = toAbsoluteImageUrl(photo.image, photo.derivativesVersion || photo.updatedAt || photo.id);
         if (!full) return null;
         const imageData = {
           '@type': 'ImageObject',
@@ -1697,7 +1697,7 @@ function SeriesDetail() {
     if (!interactive) {
       return (
         <ThumbImage
-          src={`${IMAGES_BASE_URL}${photo.image}`}
+          src={resolveVersionedAssetUrl(photo.image, photo.derivativesVersion || photo.updatedAt || photo.id)}
           alt={photo.title}
           loading="lazy"
         />
@@ -1733,7 +1733,7 @@ function SeriesDetail() {
         title={photo.title || ''}
       >
         <ThumbImage
-          src={`${IMAGES_BASE_URL}${photo.image}`}
+          src={resolveVersionedAssetUrl(photo.image, photo.derivativesVersion || photo.updatedAt || photo.id)}
           alt={photo.title}
           loading="lazy"
         />
@@ -2103,7 +2103,7 @@ function SeriesDetail() {
         <HeroSection>
           {coverPhoto && (
             <CoverImage
-              src={`${IMAGES_BASE_URL}${coverPhoto.image}`}
+              src={resolveVersionedAssetUrl(coverPhoto.image, coverPhoto.derivativesVersion || coverPhoto.updatedAt || coverPhoto.id)}
               initial={{ scale: 1.2 }}
               animate={{ scale: 1 }}
               transition={{ duration: 1.5 }}
@@ -2370,7 +2370,7 @@ function SeriesDetail() {
                               title={p.title || ''}
                             >
                               <InspectorImg
-                                src={p.thumbnail43 ? `${IMAGES_BASE_URL}${p.thumbnail43}` : '/photo-fallback.svg'}
+                                src={p.thumbnail43 ? resolveVersionedAssetUrl(p.thumbnail43, p.derivativesVersion || p.updatedAt || p.id) : '/photo-fallback.svg'}
                                 alt={p.title}
                                 loading="lazy"
                               />
@@ -2498,7 +2498,7 @@ function SeriesDetail() {
                             <PhotoFrame>
                               <PhotoMedia>
                                 <CanvasPhoto
-                                  src={`${IMAGES_BASE_URL}${photo.image}`}
+                                  src={resolveVersionedAssetUrl(photo.image, photo.derivativesVersion || photo.updatedAt || photo.id)}
                                   alt={photo.title}
                                   loading="lazy"
                                 />
@@ -2749,7 +2749,7 @@ function SeriesDetail() {
                   {seriesPhotos.map(photo => (
                     <ClassicFigure key={photo.id} style={{ marginBottom: "var(--spacing-4xl)" }}>
                       <img
-                        src={`${IMAGES_BASE_URL}${photo.image}`}
+                        src={resolveVersionedAssetUrl(photo.image, photo.derivativesVersion || photo.updatedAt || photo.id)}
                         alt={photo.title}
                         loading="lazy"
                         onClick={() => handlePhotoClick(photo)}
@@ -2790,7 +2790,7 @@ function SeriesDetail() {
               ✕
             </LightboxClose>
             <LightboxImage
-              src={`${IMAGES_BASE_URL}${lightboxPhoto.image}`}
+              src={resolveVersionedAssetUrl(lightboxPhoto.image, lightboxPhoto.derivativesVersion || lightboxPhoto.updatedAt || lightboxPhoto.id)}
               alt={lightboxPhoto.title}
               onClick={(e) => e.stopPropagation()}
             />

@@ -13,8 +13,7 @@ const DEFAULTS = Object.freeze({
 
     jsonBodyLimit: '2mb',
     urlencodedBodyLimit: '2mb',
-    publicAssetCacheControl: 'public, max-age=300, stale-while-revalidate=86400',
-    versionedImageCacheControl: 'public, max-age=31536000, immutable',
+    publicAssetCacheControl: 'public, max-age=31536000, immutable',
     r2SignedUploadUrlExpiresSeconds: 600, // 10 minuti
 
     r2MetadataPrefix: 'data'

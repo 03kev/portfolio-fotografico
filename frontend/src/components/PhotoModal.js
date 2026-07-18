@@ -3,7 +3,7 @@ import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { usePhotos } from '../contexts/PhotoContext';
-import { LOCAL_IMAGE_FALLBACK, resolveAssetUrl, resolveVersionedAssetUrl } from '../utils/imageUrl';
+import { LOCAL_IMAGE_FALLBACK, resolveVersionedAssetUrl } from '../utils/imageUrl';
 import { markImageSourceLoaded } from '../utils/imageLoadCache';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useSharedImageLoadState } from '../hooks/useSharedImageLoadState';
@@ -341,7 +341,11 @@ const PhotoModal = () => {
       ? mobileImageSrc
       : fullImageSrc;
     const downloadSrc = resolveVersionedAssetUrl(selectedPhoto?.image, version, '');
-    const previewSrc = resolveAssetUrl(selectedPhoto?.thumbnail43 || selectedPhoto?.thumbnail11 || '');
+    const previewSrc = resolveVersionedAssetUrl(
+      selectedPhoto?.thumbnail43 || selectedPhoto?.thumbnail11 || '',
+      version,
+      ''
+    );
     const { isLoaded: isFullImageLoaded, setIsLoaded: setIsFullImageLoaded, markLoaded: markFullImageLoaded } = useSharedImageLoadState(imageSrc, modalOpen && Boolean(selectedPhotoId));
 
     useEffect(() => {

@@ -92,7 +92,7 @@ async function main() {
                 const assetBuffer = await readStreamToBuffer(asset.stream);
                 await putUploadObject(assetPath, assetBuffer, {
                     contentType: asset.contentType || 'image/webp',
-                    cacheControl: DEFAULTS.versionedImageCacheControl
+                    cacheControl: DEFAULTS.publicAssetCacheControl
                 });
                 summary.refreshed += 1;
                 console.log(`[ok] cache photo ${photoId}`);
@@ -110,7 +110,7 @@ async function main() {
             const mobileImage = await generateMobileImageDerivative(sourceBuffer);
             await putUploadObject(assetPath, mobileImage, {
                 contentType: 'image/webp',
-                cacheControl: DEFAULTS.versionedImageCacheControl
+                cacheControl: DEFAULTS.publicAssetCacheControl
             });
 
             photo.mobileImage = true;

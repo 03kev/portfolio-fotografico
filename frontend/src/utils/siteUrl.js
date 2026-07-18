@@ -22,12 +22,17 @@ export function toAbsoluteSiteUrl(path = '') {
   return `${base}${value.startsWith('/') ? value : `/${value}`}`;
 }
 
-export function toAbsoluteImageUrl(value) {
+export function toAbsoluteImageUrl(value, version = '') {
   const src = String(value || '').trim();
   if (!src) return '';
-  if (/^https?:\/\//i.test(src)) return src;
+  const appendVersion = (url) => {
+    if (!version) return url;
+    return `${url}${url.includes('?') ? '&' : '?'}v=${encodeURIComponent(String(version))}`;
+  };
+
+  if (/^https?:\/\//i.test(src)) return appendVersion(src);
 
   const resolved = `${IMAGES_BASE_URL}${src}`;
-  if (/^https?:\/\//i.test(resolved)) return resolved;
-  return toAbsoluteSiteUrl(resolved);
+  if (/^https?:\/\//i.test(resolved)) return appendVersion(resolved);
+  return appendVersion(toAbsoluteSiteUrl(resolved));
 }

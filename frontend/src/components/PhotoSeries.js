@@ -7,7 +7,7 @@ import { Camera, FileText, Plus } from 'lucide-react';
 import { useSeries } from '../contexts/SeriesContext';
 import { usePhotos } from '../contexts/PhotoContext';
 import SeriesEditor from './SeriesEditor';
-import { IMAGES_BASE_URL } from '../utils/constants';
+import { resolveVersionedAssetUrl } from '../utils/imageUrl';
 
 const SectionRoot = styled(motion.section)`
   padding: var(--spacing-4xl) 0;
@@ -333,7 +333,7 @@ export default function PhotoSeries({
                     <Cover>
                       {cover?.thumbnail43 && (
                         <CoverImage
-                          src={`${IMAGES_BASE_URL}${cover.thumbnail43}?t=${cover.id}`}
+                          src={resolveVersionedAssetUrl(cover.thumbnail43, cover.derivativesVersion || cover.updatedAt || cover.id)}
                           alt={s.title}
                           loading="lazy"
                         />
@@ -394,7 +394,7 @@ export default function PhotoSeries({
                         <Cover>
                           {cover?.thumbnail43 && (
                             <CoverImage
-                              src={`${IMAGES_BASE_URL}${cover.thumbnail43}?t=${cover.id}`}
+                              src={resolveVersionedAssetUrl(cover.thumbnail43, cover.derivativesVersion || cover.updatedAt || cover.id)}
                               alt={s.title}
                               loading="lazy"
                             />
