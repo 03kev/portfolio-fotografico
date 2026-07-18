@@ -17,6 +17,7 @@ const args = new Set(process.argv.slice(2));
 const applyChanges = args.has('--apply');
 const force = args.has('--force');
 const verifyAssets = args.has('--verify');
+const refreshCacheControl = args.has('--refresh-cache-control');
 const limitArgument = [...args].find((argument) => argument.startsWith('--limit='));
 const limit = limitArgument ? Number.parseInt(limitArgument.slice('--limit='.length), 10) : null;
 
@@ -41,7 +42,7 @@ async function main() {
             assetIsMissing = !asset;
         }
 
-        if (force || !photo.mobileImage || assetIsMissing) {
+        if (refreshCacheControl ? photo.mobileImage && !assetIsMissing : force || !photo.mobileImage || assetIsMissing) {
             candidates.push(photo);
         }
     }
@@ -49,9 +50,11 @@ async function main() {
     const summary = {
         mode: applyChanges ? 'apply' : 'dry-run',
         verifiedAssets: verifyAssets,
+        refreshCacheControl,
         totalPhotos: photos.length,
         candidates: selected.length,
         generated: 0,
+        refreshed: 0,
         skipped: photos.length - candidates.length,
         missingSource: 0,
         failed: 0
@@ -59,7 +62,10 @@ async function main() {
 
     if (!applyChanges) {
         console.log(JSON.stringify(summary, null, 2));
-        console.log('Dry-run completato. Per scrivere su R2 usa: npm run backfill:mobile -- --apply');
+        const command = refreshCacheControl
+            ? 'npm run backfill:mobile -- --refresh-cache-control --apply'
+            : 'npm run backfill:mobile -- --apply';
+        console.log(`Dry-run completato. Per scrivere su R2 usa: ${command}`);
         return;
     }
 
@@ -74,6 +80,25 @@ async function main() {
         }
 
         try {
+            const assetPath = buildPhotoAssetPaths(photoId).mobileImagePath;
+            if (refreshCacheControl) {
+                const asset = await getUploadObject(assetPath);
+                if (!asset?.stream) {
+                    summary.failed += 1;
+                    console.warn(`[skip] photo ${photoId}: derivata mobile non trovata`);
+                    continue;
+                }
+
+                const assetBuffer = await readStreamToBuffer(asset.stream);
+                await putUploadObject(assetPath, assetBuffer, {
+                    contentType: asset.contentType || 'image/webp',
+                    cacheControl: DEFAULTS.versionedImageCacheControl
+                });
+                summary.refreshed += 1;
+                console.log(`[ok] cache photo ${photoId}`);
+                continue;
+            }
+
             const source = await getPrivateObject(sourcePath);
             if (!source?.stream) {
                 summary.missingSource += 1;
@@ -83,11 +108,9 @@ async function main() {
 
             const sourceBuffer = await readStreamToBuffer(source.stream);
             const mobileImage = await generateMobileImageDerivative(sourceBuffer);
-            const assetPath = buildPhotoAssetPaths(photoId).mobileImagePath;
-
             await putUploadObject(assetPath, mobileImage, {
                 contentType: 'image/webp',
-                cacheControl: DEFAULTS.publicAssetCacheControl
+                cacheControl: DEFAULTS.versionedImageCacheControl
             });
 
             photo.mobileImage = true;

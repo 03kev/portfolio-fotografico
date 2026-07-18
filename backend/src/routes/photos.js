@@ -278,7 +278,7 @@ router.post('/', upload.single('image'), async (req, res) => {
         const derivatives = await generatePhotoDerivatives(sourceBuffer, cropProfiles);
         await Promise.all([
             writePublicObject(assets.imagePath, derivatives.image, 'image/webp'),
-            writePublicObject(assets.mobileImagePath, derivatives.mobileImage, 'image/webp'),
+            writePublicObject(assets.mobileImagePath, derivatives.mobileImage, 'image/webp', DEFAULTS.versionedImageCacheControl),
             writePublicObject(assets.thumbnail43Path, derivatives.thumbnail43, 'image/webp'),
             writePublicObject(assets.thumbnail11Path, derivatives.thumbnail11, 'image/webp'),
             writePublicObject(assets.socialImagePath, derivatives.socialImage, 'image/jpeg')
@@ -393,7 +393,7 @@ router.post('/:id/replace-source', async (req, res) => {
 
         await Promise.all([
             writePublicObject(publicAssets.image, derivatives.image, 'image/webp'),
-            writePublicObject(mobileImagePath, derivatives.mobileImage, 'image/webp'),
+            writePublicObject(mobileImagePath, derivatives.mobileImage, 'image/webp', DEFAULTS.versionedImageCacheControl),
             writePublicObject(publicAssets.thumbnail43, derivatives.thumbnail43, 'image/webp'),
             writePublicObject(publicAssets.thumbnail11, derivatives.thumbnail11, 'image/webp'),
             writePublicObject(publicAssets.socialImage, derivatives.socialImage, 'image/jpeg')
@@ -516,7 +516,7 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
         timer.mark('generate_derivatives');
         await Promise.all([
             writePublicObject(publicAssets.image, derivatives.image, 'image/webp'),
-            writePublicObject(mobileImagePath, derivatives.mobileImage, 'image/webp'),
+            writePublicObject(mobileImagePath, derivatives.mobileImage, 'image/webp', DEFAULTS.versionedImageCacheControl),
             writePublicObject(publicAssets.thumbnail43, derivatives.thumbnail43, 'image/webp'),
             writePublicObject(publicAssets.thumbnail11, derivatives.thumbnail11, 'image/webp'),
             writePublicObject(publicAssets.socialImage, derivatives.socialImage, 'image/jpeg')

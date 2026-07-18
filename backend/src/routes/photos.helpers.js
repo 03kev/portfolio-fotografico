@@ -241,10 +241,10 @@ function getImageExtensionFromMimeType(mimetype) {
     return subtype.replace(/[^a-z0-9]/g, '') || 'bin';
 }
 
-async function writePublicObject(uploadPath, buffer, contentType) {
+async function writePublicObject(uploadPath, buffer, contentType, cacheControl = PUBLIC_ASSET_CACHE_CONTROL) {
     await putUploadObject(uploadPath, buffer, {
         contentType,
-        cacheControl: PUBLIC_ASSET_CACHE_CONTROL
+        cacheControl
     });
 }
 
