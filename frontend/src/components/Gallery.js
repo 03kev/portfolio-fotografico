@@ -37,6 +37,23 @@ const VISIBLE_CARDS_BATCH_MOBILE = 8;
 const LOAD_MORE_ROOT_MARGIN_DESKTOP = '700px 0px';
 const LOAD_MORE_ROOT_MARGIN_MOBILE = '350px 0px';
 
+const getThumbImageUrl = (photo) => {
+  const version = photo?.derivativesVersion || photo?.updatedAt || photo?.id;
+  return resolveVersionedAssetUrl(photo.thumbnail43, version);
+};
+
+const getPhotoCardUrl = (photo) => `/photo/${encodeURIComponent(String(photo.id))}`;
+
+const getPhotoAltText = (photo) => {
+  const title = String(photo?.title || 'Foto').trim() || 'Foto';
+  const description = String(photo?.description || '').trim();
+  const location = String(photo?.location || '').trim();
+
+  if (description) return `${title} - ${description}`;
+  if (location) return `${title} - ${location}`;
+  return title;
+};
+
 const PhotoUpload = lazy(() => import('./PhotoUpload'));
 const PhotoCropModal = lazy(() => import('./PhotoCropModal'));
 
@@ -424,6 +441,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const outletContext = useOutletContext();
   const isAdmin = Boolean(outletContext?.isAdmin);
   const notify = outletContext?.notify || null;
+  const openPhotoModalRef = useRef(actions.openPhotoModal);
   const {
     activeFilter,
     searchTerm,
@@ -506,6 +524,10 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     () => galleryCards.slice(0, Math.max(0, visibleCardsCount)),
     [galleryCards, visibleCardsCount]
   );
+
+  useEffect(() => {
+    openPhotoModalRef.current = actions.openPhotoModal;
+  }, [actions.openPhotoModal]);
 
   useEffect(() => {
     const nextSearch = debouncedSearchTerm.trim();
@@ -620,23 +642,8 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   }, [searchTerm, clearSearch]);
 
   const handlePhotoClick = useCallback((photo) => {
-    actions.openPhotoModal(photo);
-  }, [actions]);
-
-  const getThumbImageUrl = (photo) => {
-    const version = photo?.derivativesVersion || photo?.updatedAt || photo?.id;
-    return resolveVersionedAssetUrl(photo.thumbnail43, version);
-  };
-  const getPhotoCardUrl = (photo) => `/photo/${encodeURIComponent(String(photo.id))}`;
-  const getPhotoAltText = (photo) => {
-    const title = String(photo?.title || 'Foto').trim() || 'Foto';
-    const description = String(photo?.description || '').trim();
-    const location = String(photo?.location || '').trim();
-
-    if (description) return `${title} - ${description}`;
-    if (location) return `${title} - ${location}`;
-    return title;
-  };
+    openPhotoModalRef.current(photo);
+  }, []);
 
   const handleFilterButtonClick = useCallback((filter) => {
     handleFilterClick(filter);
@@ -728,12 +735,12 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     };
   }, [stopSoftProgress]);
 
-  const handleAbortReuploadUpload = (event, photoId, step) => {
+  const handleAbortReuploadUpload = useCallback((event, photoId, step) => {
     event.stopPropagation();
     if (step !== 'upload') return;
     if (activeReuploadPhotoIdRef.current !== photoId) return;
     reuploadUploadAbortControllerRef.current?.abort();
-  };
+  }, []);
 
   const handleReuploadSourceSelected = async (event) => {
     const file = event.target.files?.[0];
@@ -990,7 +997,6 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                     <GalleryCard
                       key={photo.id}
                       photo={photo}
-                      index={index}
                       isAdmin={isAdmin}
                       compactMobile={compactMobile}
                       isTouchCardActive={mobileTouchPhotoId === photo.id}

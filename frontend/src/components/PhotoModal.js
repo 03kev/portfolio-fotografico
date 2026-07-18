@@ -29,6 +29,8 @@ const ModalOverlay = styled(motion.div)`
 
   @media (max-width: 768px) {
     padding: var(--spacing-md);
+    background: rgba(2, 4, 10, 0.98);
+    backdrop-filter: none;
   }
 `;
 
@@ -60,6 +62,7 @@ const ModalContent = styled(motion.div)`
     max-width: 100%;
     max-height: calc(100dvh - 24px);
     height: min(calc(100dvh - 24px), 820px);
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.34);
   }
 `;
 
@@ -102,6 +105,13 @@ const ImagePreview = styled.img`
   opacity: ${({ $loaded }) => ($loaded ? 0 : 0.72)};
   transition: opacity 0.32s ease;
   pointer-events: none;
+
+  @media (max-width: 768px) {
+    filter: none;
+    transform: none;
+    opacity: ${({ $loaded }) => ($loaded ? 0 : 0.38)};
+    transition-duration: 0.18s;
+  }
 `;
 
 const LoadingBackdrop = styled(motion.div)`
@@ -152,6 +162,12 @@ const ModalImage = styled(motion.img)`
     max-height: 100%;
     width: 100%;
   }
+
+  @media (max-width: 768px) {
+    filter: none;
+    transition: opacity 0.18s ease;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
+  }
 `;
 
 const InfoPanel = styled.div`
@@ -178,6 +194,7 @@ const InfoPanel = styled.div`
 
   @media (max-width: 768px) {
     padding: 16px 16px 18px;
+    backdrop-filter: none;
   }
 
   /* Custom scrollbar */
@@ -241,6 +258,8 @@ const CloseButton = styled(motion.button)`
     width: 40px;
     height: 40px;
     font-size: var(--font-size-lg);
+    backdrop-filter: none;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
   }
 `;
 
@@ -502,14 +521,15 @@ const PhotoModal = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            transition={{ duration: isMobileLayout ? 0.16 : 0.25 }}
             onClick={handleOverlayClick}
             >
             <ModalContent
             $compactLayout={useCompactPagerLayout}
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.8, opacity: 0 }}
-            transition={{ duration: 0.3 }}
+            initial={isMobileLayout ? { opacity: 0, y: 8 } : { scale: 0.8, opacity: 0 }}
+            animate={isMobileLayout ? { opacity: 1, y: 0 } : { scale: 1, opacity: 1 }}
+            exit={isMobileLayout ? { opacity: 0, y: 8 } : { scale: 0.8, opacity: 0 }}
+            transition={{ duration: isMobileLayout ? 0.18 : 0.3 }}
             onClick={(e) => e.stopPropagation()}
             >
             <CloseButton
@@ -579,11 +599,13 @@ const PhotoModal = () => {
                   <LoadingBackdrop
                     initial={{ opacity: 0 }}
                     animate={{ opacity: isFullImageLoaded ? 0 : 1 }}
-                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                    transition={{ duration: isMobileLayout ? 0.12 : 0.2, ease: 'easeOut' }}
                   >
                     <LoadingSpinner
-                      animate={{ opacity: isFullImageLoaded ? 0 : 1, scale: isFullImageLoaded ? 0.96 : 1 }}
-                      transition={{ duration: 0.18, ease: 'easeOut' }}
+                      animate={isMobileLayout
+                        ? { opacity: isFullImageLoaded ? 0 : 1 }
+                        : { opacity: isFullImageLoaded ? 0 : 1, scale: isFullImageLoaded ? 0.96 : 1 }}
+                      transition={{ duration: isMobileLayout ? 0.12 : 0.18, ease: 'easeOut' }}
                     />
                   </LoadingBackdrop>
                   {mobileImageSrc && !useFullImageFallback && (
@@ -606,7 +628,7 @@ const PhotoModal = () => {
                     decoding="async"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    transition={{ duration: 0.28 }}
+                    transition={{ duration: isMobileLayout ? 0.18 : 0.28 }}
                     onLoad={() => {
                       markFullImageLoaded();
                     }}

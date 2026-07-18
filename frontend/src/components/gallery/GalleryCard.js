@@ -445,7 +445,6 @@ const Tag = styled.span`
 
 export const GalleryCard = React.memo(function GalleryCard({
   photo,
-  index,
   prioritizeImage,
   motionEnabled,
   isAdmin,

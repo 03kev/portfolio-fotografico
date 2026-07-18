@@ -51,12 +51,9 @@ const MobileIndicatorPill = styled.div`
   gap: 8px;
   padding: 8px 12px;
   border-radius: 999px;
-  background: rgba(11, 13, 20, 0.78);
+  background: rgba(11, 13, 20, 0.94);
   border: 1px solid rgba(255, 255, 255, 0.07);
-  backdrop-filter: blur(16px);
-  box-shadow:
-    0 12px 30px rgba(0, 0, 0, 0.25),
-    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
 `;
 
 const MobileIndicatorDot = styled.button`

@@ -12,7 +12,9 @@ export const useScrollableRail = ({
   useEffect(() => {
     const railNode = railRef.current;
     if (!enabled || !railNode) {
-      setFadeState({ left: false, right: false });
+      setFadeState((current) => (
+        current.left || current.right ? { left: false, right: false } : current
+      ));
       return undefined;
     }
 
@@ -20,19 +22,34 @@ export const useScrollableRail = ({
       const { scrollLeft, clientWidth, scrollWidth } = railNode;
       const maxScrollLeft = Math.max(0, scrollWidth - clientWidth);
       const threshold = 6;
-
-      setFadeState({
+      const nextFadeState = {
         left: scrollLeft > threshold,
         right: scrollLeft < maxScrollLeft - threshold
+      };
+
+      setFadeState((current) => (
+        current.left === nextFadeState.left && current.right === nextFadeState.right
+          ? current
+          : nextFadeState
+      ));
+    };
+
+    let scrollFrame = null;
+    const scheduleRailFadeUpdate = () => {
+      if (scrollFrame !== null) return;
+      scrollFrame = requestAnimationFrame(() => {
+        scrollFrame = null;
+        updateRailFade();
       });
     };
 
     updateRailFade();
-    railNode.addEventListener('scroll', updateRailFade, { passive: true });
+    railNode.addEventListener('scroll', scheduleRailFadeUpdate, { passive: true });
     window.addEventListener('resize', updateRailFade);
 
     return () => {
-      railNode.removeEventListener('scroll', updateRailFade);
+      if (scrollFrame !== null) cancelAnimationFrame(scrollFrame);
+      railNode.removeEventListener('scroll', scheduleRailFadeUpdate);
       window.removeEventListener('resize', updateRailFade);
     };
   }, [enabled, itemCount]);
