@@ -82,6 +82,7 @@ function toRuntimePhoto(record) {
         tags: normalizeTags(record.tags),
         sourcePath: pickFirstNonEmpty(sourceObject.path),
         sourceContentType: pickFirstNonEmpty(sourceObject.contentType),
+        mobileImage: Boolean(record.mobileImage),
         derivativesVersion: Number.isFinite(Number(record.derivativesVersion))
             ? Number(record.derivativesVersion)
             : Date.now()
@@ -123,6 +124,7 @@ function toStoragePhoto(runtimePhoto) {
         tags: normalizeTags(runtimePhoto.tags),
         sourcePath: toTrimmedString(runtimePhoto.sourcePath),
         sourceContentType: toTrimmedString(runtimePhoto.sourceContentType),
+        mobileImage: Boolean(runtimePhoto.mobileImage),
         derivativesVersion: Number.isFinite(Number(runtimePhoto.derivativesVersion))
             ? Number(runtimePhoto.derivativesVersion)
             : Date.now()
@@ -158,6 +160,7 @@ function toStoragePhoto(runtimePhoto) {
         ...(cropProfiles ? { composition: { cropProfiles } } : {}),
         tags: normalizeTags(photo.tags),
         ...(Object.keys(source).length ? { source } : {}),
+        ...(photo.mobileImage ? { mobileImage: true } : {}),
         derivativesVersion: Number.isFinite(Number(photo.derivativesVersion))
             ? Number(photo.derivativesVersion)
             : Date.now()

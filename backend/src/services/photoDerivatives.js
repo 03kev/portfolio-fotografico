@@ -3,6 +3,7 @@ const {
     PRIVATE_PREFIX,
     PRIVATE_SOURCE_PREFIX,
     PUBLIC_UPLOADS_PREFIX,
+    MOBILE_PREFIX,
     SOCIAL_PREFIX,
     THUMBNAIL_11_PREFIX,
     THUMBNAIL_43_PREFIX
@@ -93,6 +94,7 @@ function buildPhotoAssetPaths(photoId, sourceExtension = 'bin') {
     return {
         sourcePath: `${PRIVATE_SOURCE_PREFIX}/${baseName}.${cleanSourceExtension}`,
         imagePath: `${PUBLIC_UPLOADS_PREFIX}/${baseName}.webp`,
+        mobileImagePath: `${MOBILE_PREFIX}/${baseName}.webp`,
         thumbnail43Path: `${THUMBNAIL_43_PREFIX}/${baseName}.webp`,
         thumbnail11Path: `${THUMBNAIL_11_PREFIX}/${baseName}.webp`,
         socialImagePath: `${SOCIAL_PREFIX}/${baseName}.jpg`
@@ -211,6 +213,16 @@ function computeCoverCropRegion(sourceWidth, sourceHeight, targetWidth, targetHe
     };
 }
 
+// Keep this standalone so maintenance jobs can create only the mobile asset
+// without regenerating the desktop image, thumbnails and social card.
+function generateMobileImageDerivative(sourceBuffer) {
+    return sharp(sourceBuffer)
+        .rotate()
+        .resize(1280, 1280, { fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 82, effort: 5 })
+        .toBuffer();
+}
+
 async function generatePhotoDerivatives(sourceBuffer, cropProfiles = null) {
     const base = sharp(sourceBuffer).rotate();
     const metadata = await base.metadata();
@@ -253,6 +265,10 @@ async function generatePhotoDerivatives(sourceBuffer, cropProfiles = null) {
         .webp({ quality: 92, effort: 6 })
         .toBuffer();
 
+    // 1280px covers a 420px mobile viewport even at 3x DPR, without forcing
+    // phones to transfer and decode the 4K desktop derivative in the modal.
+    const mobileImagePromise = generateMobileImageDerivative(sourceBuffer);
+
     const thumbnail43Promise = createCoverDerivative(
         400,
         300,
@@ -277,8 +293,9 @@ async function generatePhotoDerivatives(sourceBuffer, cropProfiles = null) {
         pipeline.jpeg({ quality: 84, mozjpeg: true, progressive: true }).toBuffer()
     ));
 
-    const [image, thumbnail43, thumbnail11, socialImage] = await Promise.all([
+    const [image, mobileImage, thumbnail43, thumbnail11, socialImage] = await Promise.all([
         imagePromise,
+        mobileImagePromise,
         thumbnail43Promise,
         thumbnail11Promise,
         socialImagePromise
@@ -289,6 +306,7 @@ async function generatePhotoDerivatives(sourceBuffer, cropProfiles = null) {
 
     return {
         image,
+        mobileImage,
         thumbnail43,
         thumbnail11,
         socialImage,
@@ -301,6 +319,7 @@ async function generatePhotoDerivatives(sourceBuffer, cropProfiles = null) {
 module.exports = {
     buildPhotoAssetPaths,
     buildDefaultCropProfiles,
+    generateMobileImageDerivative,
     generatePhotoDerivatives,
     getCropProfilesFromSettings,
     normalizePrivateSourcePath,

@@ -22,6 +22,9 @@ function withDefaultPhotoVariants(photo) {
     const photoId = String(photo?.id || '').trim();
     const assets = photoId ? buildPhotoAssetPaths(photoId) : null;
     const imagePath = assets ? normalizeUploadsPath(assets.imagePath) : '';
+    const mobileImagePath = photo?.mobileImage && assets
+        ? normalizeUploadsPath(assets.mobileImagePath)
+        : '';
     const thumbnail43Path = assets ? normalizeUploadsPath(assets.thumbnail43Path) : '';
     const thumbnail11Path = assets ? normalizeUploadsPath(assets.thumbnail11Path) : '';
     const socialImagePath = assets ? normalizeUploadsPath(assets.socialImagePath) : '';
@@ -29,6 +32,7 @@ function withDefaultPhotoVariants(photo) {
     return {
         ...photo,
         image: imagePath,
+        mobileImage: mobileImagePath,
         thumbnail43: thumbnail43Path,
         thumbnail11: thumbnail11Path,
         socialImage: socialImagePath,
@@ -39,6 +43,7 @@ function withDefaultPhotoVariants(photo) {
 function presentPhoto(photo) {
     const normalized = withDefaultPhotoVariants(photo);
     const image = buildPublicAssetUrl(normalized.image, { preferRelativeInDevelopment: true });
+    const mobileImage = buildPublicAssetUrl(normalized.mobileImage, { preferRelativeInDevelopment: true });
     const thumbnail43 = buildPublicAssetUrl(normalized.thumbnail43, { preferRelativeInDevelopment: true });
     const thumbnail11 = buildPublicAssetUrl(normalized.thumbnail11, { preferRelativeInDevelopment: true });
     const socialImage = buildPublicAssetUrl(normalized.socialImage, { preferRelativeInDevelopment: true });
@@ -47,6 +52,7 @@ function presentPhoto(photo) {
     return {
         ...publicPhoto,
         image,
+        mobileImage,
         thumbnail43,
         thumbnail11,
         socialImage,

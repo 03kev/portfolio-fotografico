@@ -278,6 +278,7 @@ router.post('/', upload.single('image'), async (req, res) => {
         const derivatives = await generatePhotoDerivatives(sourceBuffer, cropProfiles);
         await Promise.all([
             writePublicObject(assets.imagePath, derivatives.image, 'image/webp'),
+            writePublicObject(assets.mobileImagePath, derivatives.mobileImage, 'image/webp'),
             writePublicObject(assets.thumbnail43Path, derivatives.thumbnail43, 'image/webp'),
             writePublicObject(assets.thumbnail11Path, derivatives.thumbnail11, 'image/webp'),
             writePublicObject(assets.socialImagePath, derivatives.socialImage, 'image/jpeg')
@@ -292,6 +293,7 @@ router.post('/', upload.single('image'), async (req, res) => {
             lng: parsedLng ?? 0,
             sourcePath,
             sourceContentType: sourceContentType || '',
+            mobileImage: true,
             derivativesVersion: Date.now(),
             description: sanitized.description,
             date: sanitized.date,
@@ -307,7 +309,7 @@ router.post('/', upload.single('image'), async (req, res) => {
         await writePhotosDB(photos);
 
         await purgePublicAssetsBestEffort(
-            [assets.imagePath, assets.thumbnail43Path, assets.thumbnail11Path, assets.socialImagePath],
+            [assets.imagePath, assets.mobileImagePath, assets.thumbnail43Path, assets.thumbnail11Path, assets.socialImagePath],
             'photo_create'
         );
         
@@ -383,6 +385,7 @@ router.post('/:id/replace-source', async (req, res) => {
 
         const currentPhoto = photos[photoIndex];
         const publicAssets = withDefaultPhotoVariants(currentPhoto);
+        const mobileImagePath = buildPhotoAssetPaths(photoId).mobileImagePath;
         const cropProfiles = getCropProfilesFromSettings(currentPhoto.settings);
 
         const derivatives = await generatePhotoDerivatives(sourceObject.buffer, cropProfiles);
@@ -390,6 +393,7 @@ router.post('/:id/replace-source', async (req, res) => {
 
         await Promise.all([
             writePublicObject(publicAssets.image, derivatives.image, 'image/webp'),
+            writePublicObject(mobileImagePath, derivatives.mobileImage, 'image/webp'),
             writePublicObject(publicAssets.thumbnail43, derivatives.thumbnail43, 'image/webp'),
             writePublicObject(publicAssets.thumbnail11, derivatives.thumbnail11, 'image/webp'),
             writePublicObject(publicAssets.socialImage, derivatives.socialImage, 'image/jpeg')
@@ -405,6 +409,7 @@ router.post('/:id/replace-source', async (req, res) => {
             sourcePath: nextSourcePath,
             sourceContentType: nextSourceContentType,
             resolution: derivatives.resolution,
+            mobileImage: true,
             derivativesVersion: Date.now()
         };
 
@@ -426,7 +431,7 @@ router.post('/:id/replace-source', async (req, res) => {
         }
 
         await purgePublicAssetsBestEffort(
-            [publicAssets.image, publicAssets.thumbnail43, publicAssets.thumbnail11, publicAssets.socialImage],
+            [publicAssets.image, mobileImagePath, publicAssets.thumbnail43, publicAssets.thumbnail11, publicAssets.socialImage],
             'photo_replace_source'
         );
         timer.mark('purge_public_cache');
@@ -504,12 +509,14 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
         }
 
         const publicAssets = withDefaultPhotoVariants(photo);
+        const mobileImagePath = buildPhotoAssetPaths(photoId).mobileImagePath;
 
         const cropProfiles = getCropProfilesFromSettings(photo.settings);
         const derivatives = await generatePhotoDerivatives(sourceBuffer, cropProfiles);
         timer.mark('generate_derivatives');
         await Promise.all([
             writePublicObject(publicAssets.image, derivatives.image, 'image/webp'),
+            writePublicObject(mobileImagePath, derivatives.mobileImage, 'image/webp'),
             writePublicObject(publicAssets.thumbnail43, derivatives.thumbnail43, 'image/webp'),
             writePublicObject(publicAssets.thumbnail11, derivatives.thumbnail11, 'image/webp'),
             writePublicObject(publicAssets.socialImage, derivatives.socialImage, 'image/jpeg')
@@ -519,6 +526,7 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
         const updatedPhoto = {
             ...photo,
             resolution: derivatives.resolution,
+            mobileImage: true,
             derivativesVersion: Date.now()
         };
 
@@ -527,7 +535,7 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
         timer.mark('write_photo_metadata');
 
         await purgePublicAssetsBestEffort(
-            [publicAssets.image, publicAssets.thumbnail43, publicAssets.thumbnail11, publicAssets.socialImage],
+            [publicAssets.image, mobileImagePath, publicAssets.thumbnail43, publicAssets.thumbnail11, publicAssets.socialImage],
             'photo_regenerate_derivatives'
         );
         timer.mark('purge_public_cache');
@@ -630,6 +638,7 @@ router.delete('/:id', async (req, res) => {
         const publicAssets = withDefaultPhotoVariants(deletedPhoto);
         const publicPathsToDelete = [
             publicAssets.image,
+            publicAssets.mobileImage,
             publicAssets.thumbnail43,
             publicAssets.thumbnail11,
             publicAssets.socialImage

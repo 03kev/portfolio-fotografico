@@ -244,6 +244,23 @@ const CloseButton = styled(motion.button)`
   }
 `;
 
+const MobileQualityButton = styled.button`
+  position: absolute;
+  left: var(--spacing-md);
+  bottom: var(--spacing-md);
+  z-index: 6;
+  border: 1px solid ${({ $active }) => ($active ? 'rgba(214, 179, 106, 0.68)' : 'rgba(255, 255, 255, 0.22)')};
+  border-radius: var(--border-radius-full);
+  padding: 7px 10px;
+  background: ${({ $active }) => ($active ? 'rgba(214, 179, 106, 0.2)' : 'rgba(10, 12, 18, 0.88)')};
+  color: ${({ $active }) => ($active ? 'rgb(255, 231, 174)' : 'rgba(255, 255, 255, 0.92)')};
+  font-size: 0.74rem;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+`;
+
 const MobileImageSlide = styled(ImageContainer)`
   height: 100%;
   min-height: 0;
@@ -278,12 +295,37 @@ const PhotoModal = () => {
     const infoPanelRef = useRef(null);
     const [activeMobileSlide, setActiveMobileSlide] = useState(0);
     const [detailsExpanded, setDetailsExpanded] = useState(false);
+    const [useFullImageFallback, setUseFullImageFallback] = useState(false);
+    const [showFullResolution, setShowFullResolution] = useState(false);
     const selectedPhotoId = selectedPhoto?.id;
     const version = selectedPhoto?.derivativesVersion || selectedPhoto?.updatedAt || selectedPhoto?.id;
-    const imageSrc = resolveVersionedAssetUrl(selectedPhoto?.image, version);
+    const fullImageSrc = resolveVersionedAssetUrl(selectedPhoto?.image, version);
+    const mobileImageSrc = selectedPhoto?.mobileImage
+      ? resolveVersionedAssetUrl(selectedPhoto.mobileImage, version, '')
+      : '';
+    const imageSrc = isMobileLayout && mobileImageSrc && !showFullResolution && !useFullImageFallback
+      ? mobileImageSrc
+      : fullImageSrc;
     const downloadSrc = resolveVersionedAssetUrl(selectedPhoto?.image, version, '');
     const previewSrc = resolveAssetUrl(selectedPhoto?.thumbnail43 || selectedPhoto?.thumbnail11 || '');
     const { isLoaded: isFullImageLoaded, setIsLoaded: setIsFullImageLoaded, markLoaded: markFullImageLoaded } = useSharedImageLoadState(imageSrc, modalOpen && Boolean(selectedPhotoId));
+
+    useEffect(() => {
+      setUseFullImageFallback(false);
+      setShowFullResolution(false);
+    }, [selectedPhotoId, mobileImageSrc]);
+
+    const handleImageError = useCallback((event) => {
+      if (imageSrc === mobileImageSrc && fullImageSrc && !useFullImageFallback) {
+        setUseFullImageFallback(true);
+        setShowFullResolution(true);
+        return;
+      }
+
+      event.currentTarget.onerror = null;
+      event.currentTarget.src = LOCAL_IMAGE_FALLBACK;
+      setIsFullImageLoaded(true);
+    }, [fullImageSrc, imageSrc, mobileImageSrc, setIsFullImageLoaded, useFullImageFallback]);
 
     const closeModalWithRouteHandling = React.useCallback(() => {
         actions.closePhotoModal();
@@ -506,17 +548,16 @@ const PhotoModal = () => {
             $loaded={isFullImageLoaded}
             src={imageSrc}
             alt={selectedPhoto.title}
+            loading="eager"
+            fetchPriority="high"
+            decoding="async"
             initial={{ scale: 1.1 }}
             animate={{ scale: 1 }}
             transition={{ duration: 0.4 }}
             onLoad={() => {
                 markFullImageLoaded();
             }}
-            onError={(e) => {
-                e.currentTarget.onerror = null;
-                e.currentTarget.src = LOCAL_IMAGE_FALLBACK;
-                setIsFullImageLoaded(true);
-            }}
+            onError={handleImageError}
             />
             </ImageContainer>
             ) : (
@@ -545,22 +586,31 @@ const PhotoModal = () => {
                       transition={{ duration: 0.18, ease: 'easeOut' }}
                     />
                   </LoadingBackdrop>
+                  {mobileImageSrc && !useFullImageFallback && (
+                    <MobileQualityButton
+                      type="button"
+                      $active={showFullResolution}
+                      aria-pressed={showFullResolution}
+                      onClick={() => setShowFullResolution((current) => !current)}
+                    >
+                      {showFullResolution ? 'Qualità mobile' : 'Qualità originale'}
+                    </MobileQualityButton>
+                  )}
                   <ModalImage
                     key={imageSrc}
                     $loaded={isFullImageLoaded}
                     src={imageSrc}
                     alt={selectedPhoto.title}
+                    loading="eager"
+                    fetchPriority="high"
+                    decoding="async"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ duration: 0.28 }}
                     onLoad={() => {
                       markFullImageLoaded();
                     }}
-                    onError={(e) => {
-                      e.currentTarget.onerror = null;
-                      e.currentTarget.src = LOCAL_IMAGE_FALLBACK;
-                      setIsFullImageLoaded(true);
-                    }}
+                    onError={handleImageError}
                   />
                 </MobileImageSlide>
                 <MobileInfoSlide>
