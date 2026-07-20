@@ -1,9 +1,11 @@
 const express = require('express');
 const multer = require('multer');
+const { pipeline } = require('stream/promises');
 const {
     createPrivateUploadPresignedPutUrl,
     deletePrivateObject,
-    deleteUploadObject
+    deleteUploadObject,
+    getUploadObject
 } = require('../services/r2Storage');
 const {
     buildPhotoAssetPaths,
@@ -96,6 +98,30 @@ function createPhotoOperationTimer(operation, photoId) {
     };
 }
 
+function getDownloadExtension(contentType) {
+    const subtype = String(contentType || '')
+        .split('/')[1]
+        ?.split(';')[0]
+        ?.trim()
+        .toLowerCase();
+    if (subtype === 'jpeg') return 'jpg';
+    return String(subtype || 'webp').replace(/[^a-z0-9]/g, '') || 'webp';
+}
+
+function buildDownloadFilename(photo, contentType) {
+    const extension = getDownloadExtension(contentType);
+    const title = String(photo?.title || `photo-${photo?.id || 'download'}`)
+        .normalize('NFKD')
+        .replace(/[^\p{L}\p{N} _-]/gu, '')
+        .trim()
+        .replace(/\s+/g, '-');
+    const filename = `${(title || `photo-${photo?.id || 'download'}`).slice(0, 96)}.${extension}`;
+    return {
+        fallback: `photo-${photo?.id || 'download'}.${extension}`,
+        filename
+    };
+}
+
 // Configurazione multer per upload immagini
 const storage = multer.memoryStorage();
 const uploadMaxSize = DEFAULTS.uploadMaxSize;
@@ -134,6 +160,46 @@ router.get('/', async (req, res) => {
         console.error('Errore nel recupero foto:', error);
         return sendRouteError(res, error, {
             fallbackMessage: 'Errore nel recupero delle foto'
+        });
+    }
+});
+
+// GET - Scarica la variante full senza aprire l'URL raw dell'immagine.
+router.get('/:id/download', async (req, res) => {
+    try {
+        const photoId = parseNumericIdOrThrow(req.params.id, 'ID foto');
+        const photos = await readPhotosDB();
+        const photo = photos.find((item) => Number(item.id) === photoId);
+        if (!photo) {
+            return res.status(404).json({
+                success: false,
+                message: 'Foto non trovata'
+            });
+        }
+
+        const publicPhoto = withDefaultPhotoVariants(photo);
+        const object = await getUploadObject(publicPhoto.image);
+        if (!object?.stream) {
+            return res.status(404).json({
+                success: false,
+                message: 'File immagine non trovato'
+            });
+        }
+
+        const { fallback, filename } = buildDownloadFilename(photo, object.contentType);
+        res.setHeader('Content-Type', object.contentType || 'application/octet-stream');
+        res.setHeader(
+            'Content-Disposition',
+            `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`
+        );
+        res.setHeader('Cache-Control', 'private, no-store');
+        if (object.contentLength != null) res.setHeader('Content-Length', String(object.contentLength));
+
+        await pipeline(object.stream, res);
+    } catch (error) {
+        console.error('Errore download foto:', error);
+        return sendRouteError(res, error, {
+            fallbackMessage: 'Errore durante il download della foto'
         });
     }
 });

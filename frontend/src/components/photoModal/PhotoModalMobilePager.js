@@ -1,5 +1,6 @@
 import React from 'react';
 import styled from 'styled-components';
+import { AnimatePresence, motion } from 'framer-motion';
 
 const MobileViewport = styled.div`
   display: flex;
@@ -34,6 +35,7 @@ const MobileSlide = styled.section`
 `;
 
 const MobileIndicatorBar = styled.div`
+  position: relative;
   display: flex;
   justify-content: center;
   padding: 14px 0 18px;
@@ -43,6 +45,18 @@ const MobileIndicatorBar = styled.div`
     rgba(10, 12, 18, 0) 0%,
     rgba(10, 12, 18, 0.42) 100%
   );
+`;
+
+const MobileIndicatorAction = styled(motion.div)`
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  margin-top: -19px;
+`;
+
+const MobileIndicatorEndAction = styled(MobileIndicatorAction)`
+  left: auto;
+  right: 16px;
 `;
 
 const MobileIndicatorPill = styled.div`
@@ -74,7 +88,9 @@ const PhotoModalMobilePager = ({
   carouselRef,
   children,
   onScroll,
-  onSelectSlide
+  onSelectSlide,
+  footerAction = null,
+  footerEndAction = null
 }) => (
   <MobileViewport>
     <MobileCarousel ref={carouselRef} onScroll={onScroll}>
@@ -83,6 +99,30 @@ const PhotoModalMobilePager = ({
       ))}
     </MobileCarousel>
     <MobileIndicatorBar>
+      <AnimatePresence initial={false}>
+        {footerAction && (
+          <MobileIndicatorAction
+            key="photo-start-action"
+            initial={{ opacity: 0, x: -8, scale: 0.9 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: -5, scale: 0.92 }}
+            transition={{ duration: 0.16, ease: 'easeOut' }}
+          >
+            {footerAction}
+          </MobileIndicatorAction>
+        )}
+        {footerEndAction && (
+          <MobileIndicatorEndAction
+            key="photo-end-action"
+            initial={{ opacity: 0, x: 8, scale: 0.9 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: 5, scale: 0.92 }}
+            transition={{ duration: 0.16, ease: 'easeOut' }}
+          >
+            {footerEndAction}
+          </MobileIndicatorEndAction>
+        )}
+      </AnimatePresence>
       <MobileIndicatorPill aria-hidden="true">
         <MobileIndicatorDot type="button" $active={activeSlide === 0} onClick={() => onSelectSlide?.(0)} />
         <MobileIndicatorDot type="button" $active={activeSlide === 1} onClick={() => onSelectSlide?.(1)} />

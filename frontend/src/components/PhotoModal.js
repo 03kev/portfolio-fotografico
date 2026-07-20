@@ -2,11 +2,14 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { LoaderCircle, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { LOCAL_IMAGE_FALLBACK, resolveVersionedAssetUrl } from '../utils/imageUrl';
 import { markImageSourceLoaded } from '../utils/imageLoadCache';
+import { API_BASE_URL } from '../utils/constants';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useSharedImageLoadState } from '../hooks/useSharedImageLoadState';
+import { useImagePinchZoom } from '../hooks/useImagePinchZoom';
 import { useCompactViewportLayout, useMobileDeviceLayout } from '../hooks';
 import PhotoModalDetails from './photoModal/PhotoModalDetails';
 import PhotoModalMobilePager from './photoModal/PhotoModalMobilePager';
@@ -182,6 +185,13 @@ const ModalImage = styled(motion.img)`
     filter: none;
     transition: opacity 0.18s ease;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
+    touch-action: ${({ $zoomable, $zoomed }) => {
+      if (!$zoomable) return 'auto';
+      return $zoomed ? 'none' : 'pan-x';
+    }};
+    user-select: none;
+    -webkit-user-drag: none;
+    will-change: ${({ $zoomable }) => ($zoomable ? 'transform' : 'auto')};
   }
 `;
 
@@ -279,20 +289,32 @@ const CloseButton = styled(motion.button)`
 `;
 
 const MobileQualityButton = styled.button`
-  position: absolute;
-  left: var(--spacing-md);
-  bottom: var(--spacing-md);
-  z-index: 6;
   border: 1px solid ${({ $active }) => ($active ? 'rgba(214, 179, 106, 0.68)' : 'rgba(255, 255, 255, 0.22)')};
   border-radius: var(--border-radius-full);
-  padding: 7px 10px;
+  width: 38px;
+  height: 38px;
+  padding: 0;
   background: ${({ $active }) => ($active ? 'rgba(214, 179, 106, 0.2)' : 'rgba(10, 12, 18, 0.88)')};
   color: ${({ $active }) => ($active ? 'rgb(255, 231, 174)' : 'rgba(255, 255, 255, 0.92)')};
-  font-size: 0.74rem;
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: 0.01em;
   cursor: pointer;
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+  display: inline-grid;
+  place-items: center;
+  cursor: ${({ $loading }) => ($loading ? 'progress' : 'pointer')};
+
+  &:disabled {
+    opacity: 0.82;
+  }
+`;
+
+const MobileQualityLoader = styled(LoaderCircle)`
+  animation: photo-modal-quality-spin 0.8s linear infinite;
+
+  @keyframes photo-modal-quality-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
 `;
 
 const MobileImageSlide = styled(ImageContainer)`
@@ -326,11 +348,13 @@ const PhotoModal = () => {
     const isCompactViewport = useCompactViewportLayout({ maxWidth: 1120, maxHeight: 860 });
     const originalBodyOverflowRef = React.useRef(null);
     const mobileCarouselRef = useRef(null);
+    const qualityRequestIdRef = useRef(0);
     const infoPanelRef = useRef(null);
     const [activeMobileSlide, setActiveMobileSlide] = useState(0);
     const [detailsExpanded, setDetailsExpanded] = useState(false);
     const [useFullImageFallback, setUseFullImageFallback] = useState(false);
     const [showFullResolution, setShowFullResolution] = useState(false);
+    const [isQualitySwitching, setIsQualitySwitching] = useState(false);
     const selectedPhotoId = selectedPhoto?.id;
     const version = selectedPhoto?.derivativesVersion || selectedPhoto?.updatedAt || selectedPhoto?.id;
     const fullImageSrc = resolveVersionedAssetUrl(selectedPhoto?.image, version);
@@ -340,17 +364,26 @@ const PhotoModal = () => {
     const imageSrc = isMobileLayout && mobileImageSrc && !showFullResolution && !useFullImageFallback
       ? mobileImageSrc
       : fullImageSrc;
-    const downloadSrc = resolveVersionedAssetUrl(selectedPhoto?.image, version, '');
+    const downloadSrc = selectedPhotoId
+      ? `${API_BASE_URL}/photos/${encodeURIComponent(String(selectedPhotoId))}/download`
+      : '';
     const previewSrc = resolveVersionedAssetUrl(
       selectedPhoto?.thumbnail43 || selectedPhoto?.thumbnail11 || '',
       version,
       ''
     );
     const { isLoaded: isFullImageLoaded, setIsLoaded: setIsFullImageLoaded, markLoaded: markFullImageLoaded } = useSharedImageLoadState(imageSrc, modalOpen && Boolean(selectedPhotoId));
+    const isImageDisplayReady = isFullImageLoaded || isQualitySwitching;
+    const mobileImageZoom = useImagePinchZoom({
+      enabled: modalOpen && isMobileLayout && isFullImageLoaded,
+      resetKey: `${modalOpen ? 'open' : 'closed'}:${selectedPhotoId || ''}`
+    });
 
     useEffect(() => {
+      qualityRequestIdRef.current += 1;
       setUseFullImageFallback(false);
       setShowFullResolution(false);
+      setIsQualitySwitching(false);
     }, [selectedPhotoId, mobileImageSrc]);
 
     useEffect(() => {
@@ -410,6 +443,7 @@ const PhotoModal = () => {
     }, [isFullImageLoaded, isMobileLayout, modalOpen, photos, selectedPhotoId, showFullResolution]);
 
     const handleImageError = useCallback((event) => {
+      setIsQualitySwitching(false);
       if (imageSrc === mobileImageSrc && fullImageSrc && !useFullImageFallback) {
         setUseFullImageFallback(true);
         setShowFullResolution(true);
@@ -420,6 +454,40 @@ const PhotoModal = () => {
       event.currentTarget.src = LOCAL_IMAGE_FALLBACK;
       setIsFullImageLoaded(true);
     }, [fullImageSrc, imageSrc, mobileImageSrc, setIsFullImageLoaded, useFullImageFallback]);
+
+    const handleQualityToggle = useCallback(() => {
+      if (isQualitySwitching) return;
+
+      const nextShowFullResolution = !showFullResolution;
+      const nextImageSrc = nextShowFullResolution ? fullImageSrc : mobileImageSrc;
+      if (!nextImageSrc || nextImageSrc === imageSrc || !isFullImageLoaded) {
+        setShowFullResolution(nextShowFullResolution);
+        return;
+      }
+
+      const requestId = qualityRequestIdRef.current + 1;
+      qualityRequestIdRef.current = requestId;
+      setIsQualitySwitching(true);
+
+      const image = new Image();
+      image.decoding = 'async';
+      if ('fetchPriority' in image) image.fetchPriority = 'high';
+      image.onload = async () => {
+        try {
+          await image.decode?.();
+        } catch {
+          // Alcuni browser rifiutano decode() per immagini già decodificate: il file è comunque pronto.
+        }
+
+        if (qualityRequestIdRef.current !== requestId) return;
+        markImageSourceLoaded(nextImageSrc);
+        setShowFullResolution(nextShowFullResolution);
+      };
+      image.onerror = () => {
+        if (qualityRequestIdRef.current === requestId) setIsQualitySwitching(false);
+      };
+      image.src = nextImageSrc;
+    }, [fullImageSrc, imageSrc, isFullImageLoaded, isQualitySwitching, mobileImageSrc, showFullResolution]);
 
     const closeModalWithRouteHandling = React.useCallback(() => {
         actions.closePhotoModal();
@@ -661,41 +729,68 @@ const PhotoModal = () => {
                 carouselRef={mobileCarouselRef}
                 onScroll={handleMobileCarouselScroll}
                 onSelectSlide={handlePagerSelectSlide}
+                footerAction={activeMobileSlide === 0 && mobileImageSrc && !useFullImageFallback ? (
+                  <MobileQualityButton
+                    type="button"
+                    $active={showFullResolution}
+                    $loading={isQualitySwitching}
+                    disabled={isQualitySwitching}
+                    aria-busy={isQualitySwitching}
+                    aria-pressed={showFullResolution}
+                    aria-label={showFullResolution ? 'Usa qualità mobile' : 'Carica qualità originale'}
+                    title={showFullResolution ? 'Usa qualità mobile' : 'Carica qualità originale'}
+                    onClick={handleQualityToggle}
+                  >
+                    {isQualitySwitching
+                      ? <MobileQualityLoader size={17} strokeWidth={2.25} aria-hidden="true" />
+                      : <Maximize2 size={17} strokeWidth={2.25} aria-hidden="true" />}
+                  </MobileQualityButton>
+                ) : null}
+                footerEndAction={activeMobileSlide === 0 && isFullImageLoaded ? (
+                  <MobileQualityButton
+                    type="button"
+                    $active={mobileImageZoom.isZoomed}
+                    aria-pressed={mobileImageZoom.isZoomed}
+                    aria-label={mobileImageZoom.isZoomed ? 'Riduci foto' : 'Ingrandisci foto'}
+                    title={mobileImageZoom.isZoomed ? 'Riduci foto' : 'Ingrandisci foto'}
+                    onClick={mobileImageZoom.toggle}
+                  >
+                    {mobileImageZoom.isZoomed
+                      ? <ZoomOut size={18} strokeWidth={2.25} aria-hidden="true" />
+                      : <ZoomIn size={18} strokeWidth={2.25} aria-hidden="true" />}
+                  </MobileQualityButton>
+                ) : null}
               >
-                <MobileImageSlide>
+                <MobileImageSlide
+                  ref={mobileImageZoom.containerRef}
+                  {...mobileImageZoom.handlers}
+                >
                   {previewSrc && (
                     <ImagePreview
                       src={previewSrc}
                       alt=""
                       aria-hidden="true"
-                      $loaded={isFullImageLoaded}
+                      $loaded={isImageDisplayReady}
                     />
                   )}
                   <LoadingBackdrop
                     initial={{ opacity: 0 }}
-                    animate={{ opacity: isFullImageLoaded ? 0 : 1 }}
+                    animate={{ opacity: isImageDisplayReady ? 0 : 1 }}
                     transition={{ duration: isMobileLayout ? 0.12 : 0.2, ease: 'easeOut' }}
                   >
                     <LoadingSpinner
                       animate={isMobileLayout
-                        ? { opacity: isFullImageLoaded ? 0 : 1 }
-                        : { opacity: isFullImageLoaded ? 0 : 1, scale: isFullImageLoaded ? 0.96 : 1 }}
+                        ? { opacity: isImageDisplayReady ? 0 : 1 }
+                        : { opacity: isImageDisplayReady ? 0 : 1, scale: isImageDisplayReady ? 0.96 : 1 }}
                       transition={{ duration: isMobileLayout ? 0.12 : 0.18, ease: 'easeOut' }}
                     />
                   </LoadingBackdrop>
-                  {mobileImageSrc && !useFullImageFallback && (
-                    <MobileQualityButton
-                      type="button"
-                      $active={showFullResolution}
-                      aria-pressed={showFullResolution}
-                      onClick={() => setShowFullResolution((current) => !current)}
-                    >
-                      {showFullResolution ? 'Qualità mobile' : 'Qualità originale'}
-                    </MobileQualityButton>
-                  )}
                   <ModalImage
-                    key={imageSrc}
-                    $loaded={isFullImageLoaded}
+                    as="img"
+                    ref={mobileImageZoom.imageRef}
+                    $zoomable
+                    $zoomed={mobileImageZoom.isZoomed}
+                    $loaded={isImageDisplayReady}
                     src={imageSrc}
                     alt={selectedPhoto.title}
                     loading="eager"
@@ -706,6 +801,7 @@ const PhotoModal = () => {
                     transition={{ duration: isMobileLayout ? 0.18 : 0.28 }}
                     onLoad={() => {
                       markFullImageLoaded();
+                      setIsQualitySwitching(false);
                     }}
                     onError={handleImageError}
                   />
