@@ -186,11 +186,13 @@ const ActionButtons = styled(motion.div)`
 `
 
 const ActionButton = styled(motion.button)`
-    flex: 1;
+    flex: 1 1 0;
+    min-width: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
+    white-space: nowrap;
     padding: var(--spacing-md) var(--spacing-lg);
     background: rgba(255, 255, 255, 0.055);
     color: var(--color-white);
@@ -230,7 +232,6 @@ const ActionButton = styled(motion.button)`
     }
 
     @media (max-width: 768px) {
-        min-width: 0;
         padding: 14px 12px;
         font-size: 0.95rem;
         gap: 6px;
@@ -315,8 +316,13 @@ const PhotoModalDetails = ({
         const mobileUserAgent = /Android|iPhone|iPad|iPod|Mobile/i.test(
             navigator.userAgent || ''
         )
+        const hasTouchInput = Number(navigator.maxTouchPoints || 0) > 0
+        const hasCoarsePointer = Boolean(
+            window.matchMedia?.('(pointer: coarse)').matches
+        )
         const useNativeMobileShare =
-            mobileUserAgent && typeof navigator.share === 'function'
+            typeof navigator.share === 'function' &&
+            (mobileUserAgent || (hasTouchInput && hasCoarsePointer))
 
         if (useNativeMobileShare) {
             try {
