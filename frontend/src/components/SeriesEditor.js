@@ -90,7 +90,7 @@ const Input = styled.input`
 
   &:focus {
     outline: none;
-    border-color: var(--color-primary);
+    border-color: var(--color-accent);
     background: rgba(255, 255, 255, 0.08);
   }
 
@@ -114,7 +114,7 @@ const TextArea = styled.textarea`
 
   &:focus {
     outline: none;
-    border-color: var(--color-primary);
+    border-color: var(--color-accent);
     background: rgba(255, 255, 255, 0.08);
   }
 
@@ -287,7 +287,7 @@ const AddBlockButtons = styled.div`
 `;
 
 const AddBlockButton = styled(motion.button)`
-  background: var(--primary-gradient);
+  background: var(--accent-gradient);
   border: none;
   color: var(--color-white);
   padding: var(--spacing-md) var(--spacing-lg);
@@ -339,10 +339,10 @@ const PhotoOption = styled(motion.div)`
   border-radius: var(--border-radius);
   overflow: hidden;
   cursor: pointer;
-  border: 2px solid ${props => props.selected ? 'var(--color-primary)' : 'transparent'};
+  border: 2px solid ${props => props.selected ? 'var(--color-accent)' : 'transparent'};
 
   &:hover {
-    border-color: var(--color-primary);
+    border-color: var(--color-accent);
   }
 
   img {
@@ -356,7 +356,7 @@ const SelectedBadge = styled.div`
   position: absolute;
   top: 4px;
   right: 4px;
-  background: var(--color-primary);
+  background: var(--color-accent);
   color: white;
   width: 24px;
   height: 24px;
@@ -396,7 +396,7 @@ const CancelButton = styled(Button)`
 `;
 
 const SaveButton = styled(Button)`
-  background: var(--primary-gradient);
+  background: var(--accent-gradient);
   color: var(--color-white);
 
   &:hover {

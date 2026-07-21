@@ -106,48 +106,10 @@ const SeriesDescription = styled(motion.p)`
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
 `;
 
-const HeroMetaRow = styled.div`
-  display: flex;
-  gap: var(--spacing-sm);
-  flex-wrap: wrap;
-  margin-top: var(--spacing-md);
-`;
-
-const Pill = styled.div`
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 999px;
-  font-size: var(--font-size-sm);
-  color: var(--color-white);
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-`;
-
 const ContentSection = styled.div`
   max-width: 1200px;
   margin: 0 auto;
   padding: ${p => (p.$isAdmin ? 'var(--spacing-2xl)' : 'var(--spacing-4xl)')} var(--spacing-xl) var(--spacing-4xl);
-`;
-
-const ContentBlock = styled(motion.div)`
-  margin-bottom: var(--spacing-4xl);
-`;
-
-const TextBlock = styled.div`
-  background: rgba(255, 255, 255, 0.03);
-  border-left: 4px solid var(--color-primary);
-  padding: var(--spacing-2xl);
-  border-radius: var(--border-radius-lg);
-  margin: var(--spacing-2xl) 0;
-
-  p {
-    font-size: var(--font-size-lg);
-    color: rgba(255, 255, 255, 0.9);
-    line-height: 1.8;
-    white-space: pre-wrap;
-  }
 `;
 
 const AdminBar = styled.div`
@@ -186,7 +148,7 @@ const AdminBarButton = styled(motion.button)`
 `;
 
 const PrimaryAdminButton = styled(AdminBarButton)`
-  background: var(--primary-gradient);
+  background: var(--accent-gradient);
   border-color: transparent;
 
   &:hover {
@@ -781,62 +743,6 @@ const ThumbImage = styled.img`
   transition: filter 0.18s ease, transform 0.18s ease;
 `;
 
-const ClassicFigure = styled.figure`
-  margin: 0;
-
-  img {
-    width: 100%;
-    height: auto;
-    display: block;
-    border-radius: var(--border-radius-xl);
-    background: transparent;
-  }
-∏
-  figcaption {
-    margin-top: var(--spacing-sm);
-    color: rgba(255, 255, 255, 0.6);
-    font-size: var(--font-size-xs);
-    text-align: center;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-`;
-
-const PhotoGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: var(--spacing-xl);
-  margin: var(--spacing-2xl) 0;
-
-  @media (max-width: 768px) {
-    grid-template-columns: 1fr;
-    gap: var(--spacing-lg);
-  }
-`;
-
-const PhotoCard = styled(motion.button)`
-  appearance: none;
-  width: 100%;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(0, 0, 0, 0.25);
-  border-radius: var(--border-radius-xl);
-  padding: 0;
-  cursor: pointer;
-  overflow: hidden;
-  text-align: left;
-
-  &:hover {
-    border-color: rgba(255, 255, 255, 0.22);
-  }
-`;
-
-const PhotoImage = styled.img`
-  width: 100%;
-  height: auto;
-  display: block;
-  background: rgba(255, 255, 255, 0.04);
-`;
-
 const LightboxOverlay = styled(motion.div)`
   position: fixed;
   inset: 0;
@@ -1009,7 +915,7 @@ const ErrorText = styled.h2`
 `;
 
 const ErrorButton = styled(motion.button)`
-  background: var(--primary-gradient);
+  background: var(--accent-gradient);
   border: none;
   color: var(--color-white);
   padding: var(--spacing-md) var(--spacing-xl);
@@ -1022,6 +928,15 @@ const ErrorButton = styled(motion.button)`
     opacity: 0.9;
   }
 `;
+
+const buildDefaultPhotoContent = (photos = []) =>
+  photos.map((photo) => ({
+    id: `photo-${photo.id}`,
+    type: 'photo',
+    content: photo.id,
+    showTitle: true,
+    showLightbox: true,
+  }));
 
 function SeriesDetail() {
   const { slug } = useParams();
@@ -1196,13 +1111,19 @@ function SeriesDetail() {
     }
   }, [currentSeries, photos]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!currentSeries) return;
 
-    const prepared = prepareContent(currentSeries.content || [], true);
+    const persistedContent = Array.isArray(currentSeries.content) ? currentSeries.content : [];
+    const sourceContent = persistedContent.length > 0
+      ? persistedContent
+      : buildDefaultPhotoContent(seriesPhotos);
+    const prepared = prepareContent(sourceContent, true);
     setDraftContent(prepared);
-  }, [currentSeries]);
+    // prepareContent intentionally follows the current canvas geometry; this
+    // initialization runs only when the source series or its photos change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSeries, seriesPhotos]);
 
   useEffect(() => {
     if (!savedContentPreview || !currentSeries) return;
@@ -2018,7 +1939,12 @@ function SeriesDetail() {
     return seriesPhotos[0] || null;
   };
 
-  const viewContent = prepareContent(savedContentPreview || currentSeries?.content || [], false);
+  const rawViewContent = savedContentPreview || currentSeries?.content;
+  const persistedViewContent = Array.isArray(rawViewContent) ? rawViewContent : [];
+  const viewSourceContent = persistedViewContent.length > 0
+    ? persistedViewContent
+    : buildDefaultPhotoContent(seriesPhotos);
+  const viewContent = prepareContent(viewSourceContent, false);
   const renderContent = layoutMode ? draftContent : viewContent;
   const selectedIndex = selectedId !== null
     ? draftContent.findIndex(block => String(block.id) === String(selectedId))
@@ -2082,10 +2008,6 @@ function SeriesDetail() {
       </ErrorContainer>
     );
   }
-
-  const hasSavedLayout =
-    Array.isArray(currentSeries?.content) &&
-    currentSeries.content.some(b => b?.layout);
 
   const coverPhoto = getCoverPhoto();
 
@@ -2192,8 +2114,7 @@ function SeriesDetail() {
             </AdminBar>
           )}
 
-          {layoutMode || hasSavedLayout ? (
-            <LayoutStage
+          <LayoutStage
               ref={stageRef}
               $editing={layoutMode}
               onPointerDown={(e) => {
@@ -2728,40 +2649,7 @@ function SeriesDetail() {
                   </GridLayout>
                 </Canvas>
               </CanvasFrame>
-            </LayoutStage>
-          ) : (
-            // fallback: la tua view classica attuale
-            <>
-              {currentSeries.content && currentSeries.content.length > 0 ? (
-                currentSeries.content.map((block, index) => (
-                  <ContentBlock
-                    key={index}
-                    initial={{ opacity: 0, y: 30 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ duration: 0.6, delay: index * 0.1 }}
-                  >
-                    {/* ...tuo rendering classico... */}
-                  </ContentBlock>
-                ))
-              ) : (
-                <>
-                  {seriesPhotos.map(photo => (
-                    <ClassicFigure key={photo.id} style={{ marginBottom: "var(--spacing-4xl)" }}>
-                      <img
-                        src={resolveVersionedPhotoAssetUrl(photo, 'image')}
-                        alt={photo.title}
-                        loading="lazy"
-                        onClick={() => handlePhotoClick(photo)}
-                        style={{ cursor: "pointer" }}
-                      />
-                      {photo.title && <figcaption>{photo.title}</figcaption>}
-                    </ClassicFigure>
-                  ))}
-                </>
-              )}
-            </>
-          )}
+          </LayoutStage>
         </ContentSection>
       </PageContainer>
 

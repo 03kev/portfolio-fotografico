@@ -93,7 +93,7 @@ const CloseButton = styled(motion.button)`
 
   &:hover {
     background: rgba(245, 87, 108, 0.8);
-    border-color: var(--color-secondary);
+    border-color: rgba(255, 255, 255, 0.78);
   }
 
   @media (max-width: 768px) {

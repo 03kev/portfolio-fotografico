@@ -30,21 +30,12 @@ const GlobalStyles = createGlobalStyle`
     --color-warning: #fbbf24;
     --color-error: #fb7185;
 
-    /* Legacy vars (kept for components) */
-    --color-primary: var(--color-accent);
-    --color-secondary: rgba(255, 255, 255, 0.78);
-    --color-dark: var(--color-bg);
-    --color-dark-light: var(--color-bg-elev);
-    --color-dark-lighter: #171824;
-    --color-gray: rgba(255, 255, 255, 0.35);
-    --color-gray-light: rgba(255, 255, 255, 0.45);
-    --color-light: #f9fafb;
+    /* Exact white for controls rendered over imagery */
     --color-white: #ffffff;
 
     /* Gradients (muted) */
-    --primary-gradient: linear-gradient(135deg, rgba(214, 179, 106, 0.95) 0%, rgba(214, 179, 106, 0.65) 100%);
+    --accent-gradient: linear-gradient(135deg, rgba(214, 179, 106, 0.95) 0%, rgba(214, 179, 106, 0.65) 100%);
     --secondary-gradient: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.55) 100%);
-    --accent-gradient: var(--primary-gradient);
     --dark-gradient: radial-gradient(1200px 700px at 50% -10%, rgba(214, 179, 106, 0.10) 0%, rgba(11, 11, 13, 0) 55%), var(--color-bg);
     --home-surface-bg: radial-gradient(900px 520px at 20% 12%, rgba(214, 179, 106, 0.16) 0%, rgba(214, 179, 106, 0) 60%),
       radial-gradient(900px 520px at 80% 18%, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0) 62%),
