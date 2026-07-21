@@ -1,8 +1,20 @@
 import { useEffect, useRef } from 'react';
 
 const escapeStack = [];
-let suppressPopstateCount = 0;
 let modalTokenCounter = 0;
+let pendingProgrammaticBackCount = 0;
+
+// Il popstate generato per rimuovere l'entry di un modal chiuso tramite UI può
+// arrivare dopo che il suo listener è stato smontato. Questo listener globale
+// lo consuma prima dei listener dei modal successivi, evitando che il loro
+// primo tasto Indietro venga ignorato o chiuda un modal sottostante.
+if (typeof window !== 'undefined') {
+  window.addEventListener('popstate', (event) => {
+    if (pendingProgrammaticBackCount <= 0) return;
+    pendingProgrammaticBackCount -= 1;
+    event.stopImmediatePropagation?.();
+  });
+}
 
 export const useEscapeToClose = ({
   enabled = true,
@@ -80,11 +92,6 @@ export const useEscapeToClose = ({
     );
 
     const handlePopstate = () => {
-      if (suppressPopstateCount > 0) {
-        suppressPopstateCount -= 1;
-        return;
-      }
-
       if (escapeStack[escapeStack.length - 1] !== token) return;
       consumedByPopstateRef.current = true;
       if (!canCloseRef.current) return;
@@ -103,7 +110,7 @@ export const useEscapeToClose = ({
 
       if (window.history.state?.__modalToken !== historyToken) return;
 
-      suppressPopstateCount += 1;
+      pendingProgrammaticBackCount += 1;
       window.history.back();
     };
   }, [enabled, handleBrowserBack]);

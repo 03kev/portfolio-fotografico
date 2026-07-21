@@ -17,7 +17,16 @@ const UploadStep = ({
       </div>
       <div
         className={`upload-area ${selectedFile ? 'has-file' : ''}`}
+        role="button"
+        tabIndex={loading ? -1 : 0}
+        aria-label={selectedFile ? 'Cambia immagine selezionata' : "Seleziona un'immagine"}
+        aria-disabled={loading}
         onClick={() => !loading && fileInputRef.current?.click()}
+        onKeyDown={(event) => {
+          if (loading || (event.key !== 'Enter' && event.key !== ' ')) return;
+          event.preventDefault();
+          fileInputRef.current?.click();
+        }}
       >
         {preview ? (
           <div className="preview-container">
