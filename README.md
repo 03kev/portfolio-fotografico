@@ -398,6 +398,21 @@ Nel JSON di storage non vengono salvati i path pubblici finali come campi canoni
 
 Questo evita ridondanza e rende stabile il naming pubblico.
 
+### Schema canonico delle serie
+
+Il backend normalizza `data/series.json` sia in lettura sia prima di ogni scrittura:
+
+- titoli e slug devono essere unici anche tra le bozze
+- `photos` contiene ID numerici unici
+- `coverImage` deve appartenere a `photos`
+- i blocchi sono ordinati per posizione visiva (`layout.y`, poi `layout.x`)
+- `order` non viene salvato: l'ordine canonico e' quello dell'array
+- tutti i layout usano `unit: "grid"` su una griglia da 24 colonne
+- i riferimenti foto nei blocchi devono appartenere alla serie
+- se una serie contiene foto ma `content` e' vuoto, vengono creati blocchi foto espliciti
+
+Le bozze sono restituite da `GET /api/series?all=true` e aperte per ID solo con una sessione admin valida. Le richieste anonime vedono esclusivamente le serie pubblicate.
+
 ### Source e derivate
 
 - la source originale vive nel bucket privato
@@ -436,6 +451,7 @@ Foto:
 Serie:
 
 - `GET /api/series?all=false`
+- `GET /api/series?all=true` (solo sessione admin)
 - `GET /api/series/:identifier`
 - `POST /api/series`
 - `PUT /api/series/:id`

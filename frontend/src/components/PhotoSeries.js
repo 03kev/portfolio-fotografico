@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -241,13 +241,17 @@ export default function PhotoSeries({
   headingLevel = 'h2'
 }) {
   const navigate = useNavigate();
-  const { series, loading } = useSeries();
+  const { series, loading, fetchSeries } = useSeries();
   const { photos } = usePhotos();
   const [showEditor, setShowEditor] = useState(false);
   const [showDrafts, setShowDrafts] = useState(false);
 
   const publishedSeries = useMemo(() => series.filter(s => s.published), [series]);
   const draftSeries = useMemo(() => series.filter(s => !s.published), [series]);
+
+  useEffect(() => {
+    fetchSeries(showAdmin);
+  }, [fetchSeries, showAdmin]);
 
   const getSeriesPhotos = (seriesItem) => {
     const ids = seriesItem.photos || [];
@@ -274,7 +278,8 @@ export default function PhotoSeries({
   };
 
   const handleSeriesClick = (seriesItem) => {
-    navigate(`/series/${seriesItem.slug || seriesItem.id}`);
+    const identifier = seriesItem.published ? (seriesItem.slug || seriesItem.id) : seriesItem.id;
+    navigate(`/series/${identifier}`);
   };
 
   return (

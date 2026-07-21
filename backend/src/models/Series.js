@@ -1,3 +1,5 @@
+const { createSeriesSlug } = require('../services/seriesRecord');
+
 // Modello Series per le serie fotografiche
 class Series {
     constructor({
@@ -14,7 +16,7 @@ class Series {
     }) {
         this.id = id;
         this.title = title;
-        this.slug = slug || this.createSlug(title);
+        this.slug = slug || createSeriesSlug(title);
         this.description = description;
         this.coverImage = coverImage; // ID della foto di copertina
         this.photos = photos || []; // Array di ID foto
@@ -22,15 +24,6 @@ class Series {
         this.published = published !== undefined ? published : false;
         this.createdAt = createdAt || new Date().toISOString();
         this.updatedAt = updatedAt || new Date().toISOString();
-    }
-
-    createSlug(title) {
-        return title
-            .toLowerCase()
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/(^-|-$)/g, '');
     }
 
     // Validazione

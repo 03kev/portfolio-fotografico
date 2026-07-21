@@ -929,15 +929,6 @@ const ErrorButton = styled(motion.button)`
   }
 `;
 
-const buildDefaultPhotoContent = (photos = []) =>
-  photos.map((photo) => ({
-    id: `photo-${photo.id}`,
-    type: 'photo',
-    content: photo.id,
-    showTitle: true,
-    showLightbox: true,
-  }));
-
 function SeriesDetail() {
   const { slug } = useParams();
   const navigate = useNavigate();
@@ -958,7 +949,6 @@ function SeriesDetail() {
   const [gridRowsOverride, setGridRowsOverride] = useState(null);
   const CANVAS_MAX_WIDTH = 1200;
   const [canvasWidth, setCanvasWidth] = useState(CANVAS_MAX_WIDTH);
-  const GRID_VERSION = 2;
   const GRID_COLS = 24;
   const ROW_HEIGHT = 16;
   const GRID_GUTTER = 8;
@@ -1003,28 +993,16 @@ function SeriesDetail() {
     { id: 'textUnderline', icon: Underline, label: 'Sottolineato' },
     { id: 'textMono', icon: Code, label: 'Monospace' },
   ];
-  const GROUP_GRID_VERSION = 2;
-  const LEGACY_GROUP_COLS = 6;
-  const LEGACY_GROUP_ROW_HEIGHT = 70;
-  const LEGACY_GROUP_GUTTER = 8;
+  const DEFAULT_GROUP_COLS = 6;
   const GROUP_MIN_W = 1;
   const GROUP_MIN_H = 1;
   const GROUP_DEFAULT_W = 2;
   const GROUP_DEFAULT_H = 2;
-  const LEGACY_GRID_COLS = 12;
-  const LEGACY_ROW_HEIGHT = 24;
-  const LEGACY_GRID_GUTTER = 12;
   const MIN_W = 240;
   const MIN_H = 140;
   const COL_WIDTH = (canvasWidth - GRID_GUTTER * (GRID_COLS - 1)) / GRID_COLS;
   const GRID_STEP_X = COL_WIDTH + GRID_GUTTER;
   const GRID_STEP_Y = ROW_HEIGHT + GRID_GUTTER;
-  const LEGACY_COL_WIDTH =
-    (canvasWidth - LEGACY_GRID_GUTTER * (LEGACY_GRID_COLS - 1)) / LEGACY_GRID_COLS;
-  const LEGACY_STEP_X = LEGACY_COL_WIDTH + LEGACY_GRID_GUTTER;
-  const LEGACY_STEP_Y = LEGACY_ROW_HEIGHT + LEGACY_GRID_GUTTER;
-  const GRID_SCALE_X = LEGACY_STEP_X / GRID_STEP_X;
-  const GRID_SCALE_Y = LEGACY_STEP_Y / GRID_STEP_Y;
   const MIN_W_COLS = Math.max(1, Math.round((MIN_W + GRID_GUTTER) / GRID_STEP_X));
   const MIN_H_ROWS = Math.max(1, Math.round((MIN_H + GRID_GUTTER) / GRID_STEP_Y));
 
@@ -1114,16 +1092,12 @@ function SeriesDetail() {
   useEffect(() => {
     if (!currentSeries) return;
 
-    const persistedContent = Array.isArray(currentSeries.content) ? currentSeries.content : [];
-    const sourceContent = persistedContent.length > 0
-      ? persistedContent
-      : buildDefaultPhotoContent(seriesPhotos);
-    const prepared = prepareContent(sourceContent, true);
+    const prepared = prepareContent(currentSeries.content || [], true);
     setDraftContent(prepared);
     // prepareContent intentionally follows the current canvas geometry; this
-    // initialization runs only when the source series or its photos change.
+    // initialization runs only when the source series changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSeries, seriesPhotos]);
+  }, [currentSeries]);
 
   useEffect(() => {
     if (!savedContentPreview || !currentSeries) return;
@@ -1179,29 +1153,14 @@ function SeriesDetail() {
 
   const getBlockMinRows = (type) => (type === 'text' ? TEXT_MIN_H_ROWS : MIN_H_ROWS);
 
-  const scaleGridLayout = (layout, scaleX, scaleY) => ({
-    x: Math.max(0, Math.round((layout.x ?? 0) * scaleX)),
-    y: Math.max(0, Math.round((layout.y ?? 0) * scaleY)),
-    w: Math.max(1, Math.round((layout.w ?? MIN_W_COLS) * scaleX)),
-    h: Math.max(1, Math.round((layout.h ?? MIN_H_ROWS) * scaleY)),
-  });
-
   const createBlockId = () =>
     `block-${Math.random().toString(16).slice(2)}-${Date.now().toString(36)}`;
 
   const getBlockId = (block, index, assignNew) => {
     if (block.id) return block.id;
-    if (block._id) return block._id;
-    if (block.uid) return block.uid;
     if (assignNew) return createBlockId();
     return `block-${index}`;
   };
-
-  const isGridLayout = (layout) => (
-    layout &&
-    (layout.unit === 'grid' ||
-      (Number.isFinite(layout.w) && layout.w <= GRID_COLS && Number.isFinite(layout.x) && layout.x <= GRID_COLS))
-  );
 
   const getDefaultPxSize = (type) => {
     if (type === 'text') return { w: 720, h: 220 };
@@ -1217,8 +1176,6 @@ function SeriesDetail() {
     };
   };
 
-  const pxToColPos = (px) => Math.max(0, Math.round(px / GRID_STEP_X));
-  const pxToRowPos = (px) => Math.max(0, Math.round(px / GRID_STEP_Y));
   const pxToColSpan = (px) => Math.max(1, Math.round((px + GRID_GUTTER) / GRID_STEP_X));
   const pxToRowSpan = (px) => Math.max(1, Math.round((px + GRID_GUTTER) / GRID_STEP_Y));
 
@@ -1227,7 +1184,7 @@ function SeriesDetail() {
     const h = Math.max(layout.h || minRows, minRows);
     const x = clamp(layout.x || 0, 0, GRID_COLS - w);
     const y = Math.max(layout.y || 0, 0);
-    return { x, y, w, h, unit: 'grid', gridVersion: GRID_VERSION };
+    return { x, y, w, h, unit: 'grid' };
   };
 
   const prepareContent = (content = [], assignIds = false) => {
@@ -1237,35 +1194,15 @@ function SeriesDetail() {
     (content || []).forEach((block, index) => {
       const id = getBlockId(block, index, assignIds);
       const defaults = getDefaultGridSize(block.type);
-      const fallbackPx = getDefaultPxSize(block.type);
       const baseLayout = block.layout;
-      let layout;
-
-      if (baseLayout && isGridLayout(baseLayout)) {
-        const base = {
+      const layout = baseLayout
+        ? {
           x: baseLayout.x ?? 0,
           y: baseLayout.y ?? yCursor,
           w: baseLayout.w ?? defaults.w,
           h: baseLayout.h ?? defaults.h,
-        };
-        const version = baseLayout.gridVersion ?? 1;
-        layout = version === GRID_VERSION
-          ? base
-          : scaleGridLayout(base, GRID_SCALE_X, GRID_SCALE_Y);
-      } else if (baseLayout) {
-        const xPx = typeof baseLayout.x === 'number' ? baseLayout.x : 24;
-        const yPx = typeof baseLayout.y === 'number' ? baseLayout.y : yCursor * GRID_STEP_Y;
-        const wPx = typeof baseLayout.w === 'number' ? baseLayout.w : fallbackPx.w;
-        const hPx = typeof baseLayout.h === 'number' ? baseLayout.h : fallbackPx.h;
-        layout = {
-          x: pxToColPos(xPx),
-          y: pxToRowPos(yPx),
-          w: pxToColSpan(wPx),
-          h: pxToRowSpan(hPx),
-        };
-      } else {
-        layout = { x: 0, y: yCursor, w: defaults.w, h: defaults.h };
-      }
+        }
+        : { x: 0, y: yCursor, w: defaults.w, h: defaults.h };
 
       const clamped = clampGridLayout(layout, getBlockMinRows(block.type));
       const placed = findAvailablePosition(clamped, nextContent, id);
@@ -1352,13 +1289,13 @@ function SeriesDetail() {
   };
 
   const getGroupCols = (layout) =>
-    Math.max(GROUP_MIN_W, layout?.w ?? LEGACY_GROUP_COLS);
+    Math.max(GROUP_MIN_W, layout?.w ?? DEFAULT_GROUP_COLS);
 
   const getGroupRows = (layout) =>
     Math.max(GROUP_MIN_H, layout?.h ?? GROUP_DEFAULT_H);
 
   const getGroupMinCols = (groupCols) =>
-    Math.max(GROUP_MIN_W, Math.min(groupCols || LEGACY_GROUP_COLS, MIN_W_COLS));
+    Math.max(GROUP_MIN_W, Math.min(groupCols || DEFAULT_GROUP_COLS, MIN_W_COLS));
 
   const getGroupMinRows = (groupRows) =>
     Math.max(GROUP_MIN_H, Math.min(groupRows || GROUP_DEFAULT_H, MIN_H_ROWS));
@@ -1379,27 +1316,6 @@ function SeriesDetail() {
     });
 
     return { minCols: maxCols, minRows: maxRows };
-  };
-
-  const getLegacyGroupColWidth = (width) =>
-    (width - LEGACY_GROUP_GUTTER * (LEGACY_GROUP_COLS - 1)) / LEGACY_GROUP_COLS;
-
-  const scaleLegacyGroupLayout = (layout, groupWidth) => {
-    const legacyColWidth = getLegacyGroupColWidth(groupWidth);
-    const legacyStepX = legacyColWidth + LEGACY_GROUP_GUTTER;
-    const legacyStepY = LEGACY_GROUP_ROW_HEIGHT + LEGACY_GROUP_GUTTER;
-    const xPx = (layout.x ?? 0) * legacyStepX;
-    const yPx = (layout.y ?? 0) * legacyStepY;
-    const wPx = (layout.w ?? GROUP_DEFAULT_W) * legacyStepX - LEGACY_GROUP_GUTTER;
-    const hPx = (layout.h ?? GROUP_DEFAULT_H) * legacyStepY - LEGACY_GROUP_GUTTER;
-
-    return {
-      x: Math.max(0, Math.round(xPx / GRID_STEP_X)),
-      y: Math.max(0, Math.round(yPx / GRID_STEP_Y)),
-      w: Math.max(1, Math.round((wPx + GRID_GUTTER) / GRID_STEP_X)),
-      h: Math.max(1, Math.round((hPx + GRID_GUTTER) / GRID_STEP_Y)),
-      gridVersion: GROUP_GRID_VERSION,
-    };
   };
 
   const buildGroupLayout = (items = [], groupCols, groupRows) =>
@@ -1475,7 +1391,7 @@ function SeriesDetail() {
   };
 
   const clampGroupLayout = (layout, groupCols, groupRows) => {
-    const maxCols = Math.max(GROUP_MIN_W, groupCols || LEGACY_GROUP_COLS);
+    const maxCols = Math.max(GROUP_MIN_W, groupCols || DEFAULT_GROUP_COLS);
     const maxRows = Math.max(GROUP_MIN_H, groupRows || GROUP_DEFAULT_H);
     const minCols = getGroupMinCols(maxCols);
     const minRows = getGroupMinRows(maxRows);
@@ -1484,7 +1400,7 @@ function SeriesDetail() {
     const x = clamp(layout.x || 0, 0, maxCols - w);
     const maxRow = typeof maxRows === 'number' ? Math.max(0, maxRows - h) : null;
     const y = maxRow === null ? Math.max(layout.y || 0, 0) : clamp(layout.y || 0, 0, maxRow);
-    return { x, y, w, h, gridVersion: GROUP_GRID_VERSION };
+    return { x, y, w, h, unit: 'grid' };
   };
 
   const hasGroupOverlap = (layout, items, ignoreId) => {
@@ -1503,7 +1419,7 @@ function SeriesDetail() {
 
   const findAvailableGroupPosition = (layout, items, ignoreId, groupCols = null, groupRows = null, startFromTop = false) => {
     const next = { ...layout };
-    const maxCols = Math.max(GROUP_MIN_W, groupCols || LEGACY_GROUP_COLS);
+    const maxCols = Math.max(GROUP_MIN_W, groupCols || DEFAULT_GROUP_COLS);
     const maxRows = Math.max(GROUP_MIN_H, groupRows || GROUP_DEFAULT_H);
     const maxX = Math.max(0, maxCols - next.w);
     const maxY = Math.max(0, maxRows - next.h);
@@ -1531,7 +1447,6 @@ function SeriesDetail() {
   const prepareGroupItems = (content = [], blockLayout) => {
     const groupCols = getGroupCols(blockLayout);
     const groupRows = getGroupRows(blockLayout);
-    const groupWidth = getBlockPixelWidth(blockLayout);
     let yCursor = 0;
     const items = [];
 
@@ -1552,14 +1467,10 @@ function SeriesDetail() {
           y: baseLayout.y ?? yCursor,
           w: baseLayout.w ?? GROUP_DEFAULT_W,
           h: baseLayout.h ?? GROUP_DEFAULT_H,
-          gridVersion: baseLayout.gridVersion,
         }
         : fallbackLayout;
-      const normalized = baseLayout && layout.gridVersion !== GROUP_GRID_VERSION
-        ? scaleLegacyGroupLayout(layout, groupWidth)
-        : layout;
 
-      const clamped = clampGroupLayout(normalized, groupCols, groupRows);
+      const clamped = clampGroupLayout(layout, groupCols, groupRows);
       const placed = findAvailableGroupPosition(clamped, items, id, groupCols, groupRows, false) || clamped;
       yCursor = Math.max(yCursor, placed.y + placed.h + 1);
       items.push({ ...base, id, layout: placed });
@@ -1848,7 +1759,6 @@ function SeriesDetail() {
       const block = {
         id,
         type,
-        order: prev.length,
         content:
           type === 'text'
             ? ''
@@ -1939,12 +1849,7 @@ function SeriesDetail() {
     return seriesPhotos[0] || null;
   };
 
-  const rawViewContent = savedContentPreview || currentSeries?.content;
-  const persistedViewContent = Array.isArray(rawViewContent) ? rawViewContent : [];
-  const viewSourceContent = persistedViewContent.length > 0
-    ? persistedViewContent
-    : buildDefaultPhotoContent(seriesPhotos);
-  const viewContent = prepareContent(viewSourceContent, false);
+  const viewContent = prepareContent(savedContentPreview || currentSeries?.content || [], false);
   const renderContent = layoutMode ? draftContent : viewContent;
   const selectedIndex = selectedId !== null
     ? draftContent.findIndex(block => String(block.id) === String(selectedId))

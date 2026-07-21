@@ -78,6 +78,12 @@ const Label = styled.label`
   font-size: var(--font-size-base);
 `;
 
+const FieldError = styled.p`
+  margin: var(--spacing-xs) 0 0;
+  color: var(--color-error);
+  font-size: var(--font-size-sm);
+`;
+
 const Input = styled.input`
   width: 100%;
   padding: var(--spacing-md);
@@ -463,7 +469,12 @@ const StatValue = styled.span`
 `;
 
 function SeriesEditor({ series, onClose }) {
-  const { createSeries, updateSeries, deleteSeries } = useSeries();
+  const {
+    series: existingSeries,
+    createSeries,
+    updateSeries,
+    deleteSeries
+  } = useSeries();
   const { photos } = usePhotos();
   const toast = useToast();
 
@@ -516,6 +527,12 @@ function SeriesEditor({ series, onClose }) {
     [filteredPhotos, formData.photos]
   );
 
+  const normalizedTitle = formData.title.replace(/\s+/g, ' ').trim().toLocaleLowerCase('it-IT');
+  const titleConflict = useMemo(() => existingSeries.some((item) => (
+    String(item.id) !== String(series?.id ?? '')
+    && String(item.title || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase('it-IT') === normalizedTitle
+  )), [existingSeries, normalizedTitle, series?.id]);
+
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData(prev => ({
@@ -541,8 +558,7 @@ function SeriesEditor({ series, onClose }) {
   const addContentBlock = (type) => {
     const newBlock = {
       type,
-      content: type === 'text' ? '' : type === 'photo' ? '' : [],
-      order: formData.content.length
+      content: type === 'text' ? '' : type === 'photo' ? '' : []
     };
     setFormData(prev => ({
       ...prev,
@@ -581,6 +597,11 @@ function SeriesEditor({ series, onClose }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (titleConflict) {
+      toast.error('Esiste già una serie con questo titolo, anche tra le bozze.');
+      return;
+    }
     
     try {
       if (series) {
@@ -673,8 +694,15 @@ function SeriesEditor({ series, onClose }) {
                       value={formData.title}
                       onChange={handleInputChange}
                       placeholder="Es: Paesaggi Islandesi"
+                      aria-invalid={titleConflict}
+                      aria-describedby={titleConflict ? 'series-title-error' : undefined}
                       required
                     />
+                    {titleConflict && (
+                      <FieldError id="series-title-error">
+                        Titolo già utilizzato da un’altra serie o bozza.
+                      </FieldError>
+                    )}
                   </FormGroup>
 
                   <FormGroup>
@@ -988,7 +1016,7 @@ function SeriesEditor({ series, onClose }) {
             </CancelButton>
             <SaveButton
               type="submit"
-              disabled={!formData.title || !formData.description}
+              disabled={!formData.title || !formData.description || titleConflict}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
             >

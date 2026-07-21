@@ -57,31 +57,28 @@ function clampNumber(value, min, max, fallback = min) {
     return Math.max(min, Math.min(max, parsed));
 }
 
-function sanitizeLayout(layout, { maxCols = 48, minW = 1, minH = 1 } = {}) {
+function sanitizeLayout(layout, { maxCols = 24, maxRows = 5500, minW = 1, minH = 1 } = {}) {
     if (!isPlainObject(layout)) {
         return {
             x: 0,
             y: 0,
             w: minW,
             h: minH,
-            unit: 'grid',
-            gridVersion: 2
+            unit: 'grid'
         };
     }
 
-    const w = clampNumber(layout.w, minW, maxCols, minW);
-    const h = clampNumber(layout.h, minH, 500, minH);
+    const w = Math.round(clampNumber(layout.w, minW, maxCols, minW));
+    const h = Math.round(clampNumber(layout.h, minH, maxRows, minH));
     const maxX = Math.max(0, maxCols - w);
+    const maxY = Math.max(0, maxRows - h);
 
     return {
-        x: clampNumber(layout.x, 0, maxX, 0),
-        y: clampNumber(layout.y, 0, 5000, 0),
+        x: Math.round(clampNumber(layout.x, 0, maxX, 0)),
+        y: Math.round(clampNumber(layout.y, 0, maxY, 0)),
         w,
         h,
-        unit: 'grid',
-        gridVersion: Number.isFinite(Number(layout.gridVersion))
-            ? Number(layout.gridVersion)
-            : 2
+        unit: 'grid'
     };
 }
 
@@ -182,7 +179,7 @@ function sanitizeSeriesContent(value) {
     const maxBlocks = 200;
     return value.slice(0, maxBlocks).map((block, index) => {
         if (!isPlainObject(block)) {
-            return { type: 'text', content: '', order: index, layout: sanitizeLayout(null) };
+            return { id: `block-${index}`, type: 'text', content: '', layout: sanitizeLayout(null) };
         }
 
         const rawType = sanitizeString(block.type, {
@@ -191,7 +188,6 @@ function sanitizeSeriesContent(value) {
             fieldName: 'content.type'
         }).toLowerCase();
         const type = rawType === 'image' ? 'photo' : rawType;
-        const order = Number.isFinite(Number(block.order)) ? Number(block.order) : index;
         const safeType = ['text', 'photo', 'photos'].includes(type) ? type : 'text';
         const safeLayout = sanitizeLayout(block.layout);
         const safeId = block.id !== undefined && block.id !== null
@@ -203,7 +199,6 @@ function sanitizeSeriesContent(value) {
             return {
                 id: safeId,
                 type: 'photo',
-                order,
                 content: photoId,
                 layout: safeLayout,
                 showTitle: parseBooleanLike(block.showTitle),
@@ -221,7 +216,12 @@ function sanitizeSeriesContent(value) {
                         if (!id) return null;
                         return {
                             id,
-                            layout: sanitizeLayout(item.layout, { maxCols: Math.max(4, safeLayout.w), minW: 1, minH: 1 })
+                            layout: sanitizeLayout(item.layout, {
+                                maxCols: Math.max(4, safeLayout.w),
+                                maxRows: Math.max(1, safeLayout.h),
+                                minW: 1,
+                                minH: 1
+                            })
                         };
                     }
 
@@ -234,7 +234,6 @@ function sanitizeSeriesContent(value) {
             return {
                 id: safeId,
                 type: 'photos',
-                order,
                 content,
                 layout: safeLayout
             };
@@ -243,10 +242,9 @@ function sanitizeSeriesContent(value) {
         return {
             id: safeId,
             type: 'text',
-            order,
             content: sanitizeString(block.content, { maxLength: 8000, fallback: '', fieldName: 'content.text' }),
             layout: sanitizeLayout(block.layout, { minW: 2, minH: 2 }),
-            textAlign: ['left', 'center', 'right', 'justify'].includes(String(block.textAlign || '').toLowerCase())
+            textAlign: ['left', 'center', 'right', 'justify', 'justify-center', 'justify-right'].includes(String(block.textAlign || '').toLowerCase())
                 ? String(block.textAlign).toLowerCase()
                 : 'left',
             textSize: sanitizeOptionalString(block.textSize, { maxLength: 20, fieldName: 'textSize' }) || 'base',
@@ -340,5 +338,6 @@ function sanitizeSeriesPayload(body = {}, { partial = false } = {}) {
 
 module.exports = {
     sanitizePhotoPayload,
+    sanitizeSeriesContent,
     sanitizeSeriesPayload
 };

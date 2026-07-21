@@ -4,18 +4,28 @@ const Series = require('../models/Series');
 const { readMetadataFile, writeMetadataFile } = require('../services/metadataStorage');
 const { parseNumericIdOrThrow } = require('../utils/ids');
 const { sanitizeSeriesPayload } = require('../utils/inputSanitizers');
-const { protectWriteMethods } = require('../middleware/auth');
+const { canAccessAdminData, protectWriteMethods } = require('../middleware/auth');
+const {
+    assertUniqueSeriesIdentity,
+    createSeriesSlug,
+    normalizeSeriesCollection,
+    normalizeSeriesRecord,
+    normalizeSeriesTitleKey
+} = require('../services/seriesRecord');
 
 router.use(protectWriteMethods);
 
 // Helper per leggere le serie
 async function readSeries() {
-    return readMetadataFile('series.json', []);
+    const records = await readMetadataFile('series.json', []);
+    return normalizeSeriesCollection(records);
 }
 
 // Helper per scrivere le serie
 async function writeSeries(series) {
-    await writeMetadataFile('series.json', series);
+    const normalized = normalizeSeriesCollection(series);
+    await writeMetadataFile('series.json', normalized);
+    return normalized;
 }
 
 function sendSuccess(res, data, extra = {}, status = 200) {
@@ -39,7 +49,7 @@ router.get('/', async (req, res) => {
         const series = await readSeries();
 
         // Filtra solo le serie pubblicate se non specificato diversamente
-        const showAll = req.query.all === 'true';
+        const showAll = req.query.all === 'true' && canAccessAdminData(req);
         const filteredSeries = showAll ? series : series.filter(s => s.published);
 
         return sendSuccess(res, filteredSeries, { total: filteredSeries.length });
@@ -55,8 +65,10 @@ router.get('/:identifier', async (req, res) => {
         const { identifier } = req.params;
         const allSeries = await readSeries();
 
+        const canReadDrafts = canAccessAdminData(req);
         const series = allSeries.find(s =>
-            String(s.id) === identifier || s.slug === identifier
+            (String(s.id) === identifier || s.slug === identifier)
+            && (s.published || canReadDrafts)
         );
 
         if (!series) {
@@ -84,17 +96,20 @@ router.post('/', async (req, res) => {
         const id = Date.now().toString();
 
         // Crea nuova serie
-        const newSeries = new Series({
+        const newSeries = normalizeSeriesRecord(new Series({
             ...seriesData,
             id
-        });
+        }).toJSON());
 
-        allSeries.push(newSeries.toJSON());
-        await writeSeries(allSeries);
+        assertUniqueSeriesIdentity(allSeries, newSeries);
+
+        allSeries.push(newSeries);
+        const persistedSeries = await writeSeries(allSeries);
+        const persistedNewSeries = persistedSeries.find((item) => String(item.id) === id);
 
         return sendSuccess(
             res,
-            newSeries.toJSON(),
+            persistedNewSeries,
             { message: 'Serie creata con successo' },
             201
         );
@@ -119,18 +134,30 @@ router.put('/:id', async (req, res) => {
         }
 
         // Mantieni ID e date di creazione
-        const updatedSeries = new Series({
+        const existingSeries = allSeries[index];
+        const titleChanged = updateData.title !== undefined
+            && normalizeSeriesTitleKey(updateData.title) !== normalizeSeriesTitleKey(existingSeries.title);
+        const nextSlug = updateData.slug !== undefined
+            ? updateData.slug
+            : titleChanged
+                ? createSeriesSlug(updateData.title)
+                : existingSeries.slug;
+        const updatedSeries = normalizeSeriesRecord(new Series({
             ...allSeries[index],
             ...updateData,
+            slug: nextSlug,
             id: allSeries[index].id,
             createdAt: allSeries[index].createdAt,
             updatedAt: new Date().toISOString()
-        });
+        }).toJSON());
 
-        allSeries[index] = updatedSeries.toJSON();
-        await writeSeries(allSeries);
+        assertUniqueSeriesIdentity(allSeries, updatedSeries, id);
 
-        return sendSuccess(res, updatedSeries.toJSON(), { message: 'Serie aggiornata con successo' });
+        allSeries[index] = updatedSeries;
+        const persistedSeries = await writeSeries(allSeries);
+        const persistedUpdatedSeries = persistedSeries[index];
+
+        return sendSuccess(res, persistedUpdatedSeries, { message: 'Serie aggiornata con successo' });
     } catch (error) {
         console.error('Errore nell\'aggiornamento della serie:', error);
         const status = error.status || 400;
@@ -178,9 +205,10 @@ router.post('/:id/photos/:photoId', async (req, res) => {
 
         const index = allSeries.findIndex(s => String(s.id) === id);
         allSeries[index] = seriesInstance.toJSON();
-        await writeSeries(allSeries);
+        const persistedSeries = await writeSeries(allSeries);
+        const persistedUpdatedSeries = persistedSeries[index];
 
-        return sendSuccess(res, seriesInstance.toJSON(), { message: 'Foto aggiunta alla serie' });
+        return sendSuccess(res, persistedUpdatedSeries, { message: 'Foto aggiunta alla serie' });
     } catch (error) {
         console.error('Errore nell\'aggiunta della foto:', error);
         return sendError(res, error.message || 'Errore nell\'aggiunta della foto', error.status || 500);
@@ -205,9 +233,10 @@ router.delete('/:id/photos/:photoId', async (req, res) => {
 
         const index = allSeries.findIndex(s => String(s.id) === id);
         allSeries[index] = seriesInstance.toJSON();
-        await writeSeries(allSeries);
+        const persistedSeries = await writeSeries(allSeries);
+        const persistedUpdatedSeries = persistedSeries[index];
 
-        return sendSuccess(res, seriesInstance.toJSON(), { message: 'Foto rimossa dalla serie' });
+        return sendSuccess(res, persistedUpdatedSeries, { message: 'Foto rimossa dalla serie' });
     } catch (error) {
         console.error('Errore nella rimozione della foto:', error);
         return sendError(res, error.message || 'Errore nella rimozione della foto', error.status || 500);
