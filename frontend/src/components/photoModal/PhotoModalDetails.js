@@ -42,6 +42,7 @@ const PhotoLocation = styled(motion.p)`
     font-weight: var(--font-weight-medium);
     margin-bottom: 16px;
     cursor: pointer;
+    white-space: nowrap;
     transition: all var(--transition-normal);
     display: inline-flex;
     align-items: center;
@@ -302,6 +303,7 @@ const PhotoModalDetails = ({
 
     useEffect(() => {
         setShareFeedback(false)
+        setDownloadError(false)
     }, [photo.id])
 
     const handleShare = async () => {
@@ -310,12 +312,12 @@ const PhotoModalDetails = ({
             text: photo.description || photo.title,
             url: shareUrl,
         }
-
         const mobileUserAgent = /Android|iPhone|iPad|iPod|Mobile/i.test(
             navigator.userAgent || ''
         )
         const useNativeMobileShare =
             mobileUserAgent && typeof navigator.share === 'function'
+
         if (useNativeMobileShare) {
             try {
                 await navigator.share(shareData)
@@ -379,6 +381,8 @@ const PhotoModalDetails = ({
             const link = document.createElement('a')
             link.href = objectUrl
             link.download = filename
+            link.target = '_self'
+            link.rel = 'noopener'
             document.body.appendChild(link)
             link.click()
             link.remove()
@@ -517,9 +521,14 @@ const PhotoModalDetails = ({
 
             <ActionButtons {...getAnimationProps(withMotion, 0.6)}>
                 <ActionButton
+                    type="button"
                     className="primary"
                     disabled={!canDownload || isDownloading}
-                    onClick={handleDownload}
+                    onClick={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        handleDownload()
+                    }}
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                 >
