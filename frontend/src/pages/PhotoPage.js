@@ -56,14 +56,27 @@ const PhotoDescription = styled.p`
 
 export default function PhotoPage() {
   const { id } = useParams();
-  const { photos, loading } = usePhotos();
+  const { photos, loading, modalOpen, selectedPhoto, actions } = usePhotos();
   const photoId = String(id || '').trim();
+  const openedPhotoIdRef = React.useRef(null);
   const canonicalUrl = toAbsoluteSiteUrl(`/photo/${encodeURIComponent(photoId)}`);
 
   const photo = React.useMemo(
     () => photos.find((item) => String(item.id) === photoId) || null,
     [photos, photoId]
   );
+
+  React.useEffect(() => {
+    if (loading || !photo) return;
+    if (modalOpen && String(selectedPhoto?.id) === photoId) {
+      openedPhotoIdRef.current = photoId;
+      return;
+    }
+    if (openedPhotoIdRef.current === photoId) return;
+
+    actions.openPhotoModal(photo);
+    openedPhotoIdRef.current = photoId;
+  }, [actions, loading, modalOpen, photo, photoId, selectedPhoto]);
 
   const seoTitle = photo?.title
     ? `${photo.title} - Kevin Muka`
@@ -135,7 +148,6 @@ export default function PhotoPage() {
       </SeoOnlyIntro>
       <Gallery
         headingLevel="h2"
-        forcedPhotoId={photoId}
         hideCardDescriptions
       />
     </>
