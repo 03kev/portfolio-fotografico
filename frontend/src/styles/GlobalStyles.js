@@ -192,6 +192,18 @@ const GlobalStyles = createGlobalStyle`
     box-sizing: border-box;
   }
 
+  /* I controlli non devono attivare il riquadro di tap/selezione del browser
+     su touch. Il testo dei contenuti e i campi di input restano selezionabili. */
+  button,
+  a,
+  [role='button'],
+  summary {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
   html {
     scroll-behavior: smooth;
     scrollbar-gutter: stable;
