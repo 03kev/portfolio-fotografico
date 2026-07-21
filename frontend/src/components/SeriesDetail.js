@@ -9,9 +9,11 @@ import 'react-resizable/css/styles.css';
 import { useSeries } from '../contexts/SeriesContext';
 import { usePhotos } from '../contexts/PhotoContext';
 import SeriesEditor from './SeriesEditor';
+import ResponsiveSeriesContent from './series/ResponsiveSeriesContent';
 import { useToast } from './Toast';
 import { resolveVersionedPhotoAssetUrl } from '../utils/imageUrl';
 import { toAbsoluteImageUrl, toAbsoluteSiteUrl } from '../utils/siteUrl';
+import useMediaQuery from '../hooks/useMediaQuery';
 import useSeo from '../seo/useSeo';
 
 const PageContainer = styled.div`
@@ -36,6 +38,11 @@ const HeroSection = styled(motion.div)`
     background: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.72) 70%, rgba(0,0,0,0.95) 100%);
     z-index: 1;
   }
+
+  @media (max-width: 768px) {
+    height: clamp(360px, 58svh, 560px);
+    min-height: 360px;
+  }
 `;
 
 const CoverImage = styled(motion.div)`
@@ -47,6 +54,10 @@ const CoverImage = styled(motion.div)`
   background-image: url(${props => props.src});
   background-size: cover;
   background-position: center;
+
+  @media (max-width: 1024px) {
+    background-image: url(${props => props.$mobileSrc || props.src});
+  }
 `;
 
 const HeroContent = styled.div`
@@ -59,6 +70,10 @@ const HeroContent = styled.div`
   max-width: 1200px;
   margin: 0 auto;
   width: 100%;
+
+  @media (max-width: 768px) {
+    padding: var(--spacing-3xl) var(--spacing-lg) var(--spacing-2xl);
+  }
 `;
 
 const FloatingBackButton = styled(motion.button)`
@@ -84,7 +99,8 @@ const FloatingBackButton = styled(motion.button)`
   }
 
   @media (max-width: 768px) {
-    top: calc(70px + 12px);
+    top: calc(70px + 12px + env(safe-area-inset-top, 0px));
+    left: 12px;
     width: 40px;
     height: 40px;
   }
@@ -96,6 +112,12 @@ const SeriesTitle = styled(motion.h1)`
   color: var(--color-white);
   margin-bottom: var(--spacing-md);
   text-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+
+  @media (max-width: 768px) {
+    font-size: clamp(2rem, 10vw, 3rem);
+    line-height: 1.05;
+    overflow-wrap: anywhere;
+  }
 `;
 
 const SeriesDescription = styled(motion.p)`
@@ -104,12 +126,26 @@ const SeriesDescription = styled(motion.p)`
   max-width: 800px;
   line-height: 1.6;
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+
+  @media (max-width: 768px) {
+    font-size: var(--font-size-base);
+    line-height: 1.55;
+  }
 `;
 
 const ContentSection = styled.div`
   max-width: 1200px;
   margin: 0 auto;
   padding: ${p => (p.$isAdmin ? 'var(--spacing-2xl)' : 'var(--spacing-4xl)')} var(--spacing-xl) var(--spacing-4xl);
+
+  @media (max-width: 1024px) {
+    padding: ${p => (p.$isAdmin ? 'var(--spacing-xl)' : 'var(--spacing-3xl)')} var(--spacing-lg) var(--spacing-3xl);
+  }
+
+  @media (max-width: 520px) {
+    padding-left: var(--spacing-md);
+    padding-right: var(--spacing-md);
+  }
 `;
 
 const AdminBar = styled.div`
@@ -125,6 +161,9 @@ const AdminBar = styled.div`
 
   @media (max-width: 768px) {
     top: calc(70px + 12px);
+    justify-content: flex-start;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-xl);
   }
 `;
 
@@ -144,6 +183,12 @@ const AdminBarButton = styled(motion.button)`
   &:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  @media (max-width: 520px) {
+    flex: 1 1 auto;
+    min-height: 42px;
+    padding: var(--spacing-sm) var(--spacing-md);
   }
 `;
 
@@ -166,13 +211,15 @@ const LayoutStage = styled.div`
   min-height: ${props => (props.$editing ? '70vh' : 'auto')};
   border-radius: ${props => (props.$editing ? 'var(--border-radius-xl)' : '0')};
   background: ${props => (props.$editing ? 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.02) 100%)' : 'transparent')};
-  overflow-x: hidden;
+  overflow-x: ${props => (props.$editing ? 'auto' : 'hidden')};
   overflow-y: visible;
   padding: 0;
   border: none;
   box-shadow: ${props => (props.$editing ? '0 0 0 1px rgba(255,255,255,0.06), 0 18px 36px rgba(0,0,0,0.28)' : 'none')};
   transition: background 0.2s ease, box-shadow 0.2s ease;
-  touch-action: pan-y;
+  touch-action: ${props => (props.$editing ? 'pan-x pan-y' : 'pan-y')};
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
 `;
 
 const CanvasFrame = styled.div`
@@ -182,12 +229,18 @@ const CanvasFrame = styled.div`
   border-radius: var(--border-radius-xl);
   box-shadow: ${props => (props.$showBorder ? '0 0 0 1px rgba(255,255,255,0.08)' : 'none')};
   transition: box-shadow 0.2s ease;
+
+  @media (max-width: 1024px) {
+    padding: ${props => (props.$showBorder ? 'var(--spacing-md)' : '0')};
+    width: ${props => (props.$showBorder ? 'max-content' : '100%')};
+    min-width: ${props => (props.$showBorder ? '100%' : '0')};
+  }
 `;
 
 const Canvas = styled.div`
   position: relative;
   width: var(--canvas-width, 1200px);
-  max-width: 100%;
+  max-width: ${props => (props.$editing ? 'none' : '100%')};
   margin: 0 auto;
   border-radius: var(--border-radius-xl);
   background: transparent;
@@ -335,6 +388,17 @@ const Inspector = styled.div`
   backdrop-filter: blur(14px);
   box-shadow: 0 18px 46px rgba(0,0,0,0.38);
   padding: var(--spacing-lg);
+
+  @media (max-width: 768px) {
+    top: auto;
+    right: max(10px, env(safe-area-inset-right, 0px));
+    bottom: max(10px, env(safe-area-inset-bottom, 0px));
+    left: max(10px, env(safe-area-inset-left, 0px));
+    width: auto;
+    max-height: min(58svh, 520px);
+    border-radius: var(--border-radius-xl);
+    padding: var(--spacing-md);
+  }
 `;
 
 const InspectorTitle = styled.div`
@@ -366,6 +430,11 @@ const InspectorClose = styled.button`
   margin-right: -10px;
 
   &:hover { background: rgba(255,255,255,0.12); }
+
+  @media (max-width: 768px) {
+    margin-top: 0;
+    margin-right: 0;
+  }
 `;
 
 const InspectorGrid = styled.div`
@@ -520,6 +589,11 @@ const FloatingLayoutTools = styled.div`
   display: flex;
   flex-direction: column;
   align-items: flex-end;
+
+  @media (max-width: 768px) {
+    right: max(14px, env(safe-area-inset-right, 0px));
+    bottom: max(14px, env(safe-area-inset-bottom, 0px));
+  }
 `;
 
 const EmptyState = styled.div`
@@ -752,6 +826,10 @@ const LightboxOverlay = styled(motion.div)`
   align-items: center;
   justify-content: center;
   padding: var(--spacing-2xl);
+
+  @media (max-width: 768px) {
+    padding: var(--spacing-md);
+  }
 `;
 
 const LightboxImage = styled.img`
@@ -762,6 +840,12 @@ const LightboxImage = styled.img`
   object-fit: contain;
   border-radius: var(--border-radius-xl);
   background: rgba(255, 255, 255, 0.04);
+
+  @media (max-width: 768px) {
+    max-width: 100%;
+    max-height: 90svh;
+    border-radius: var(--border-radius-lg);
+  }
 `;
 
 const LightboxClose = styled(motion.button)`
@@ -779,6 +863,13 @@ const LightboxClose = styled(motion.button)`
 
   &:hover {
     background: rgba(0, 0, 0, 0.72);
+  }
+
+  @media (max-width: 768px) {
+    top: max(12px, env(safe-area-inset-top, 0px));
+    right: max(12px, env(safe-area-inset-right, 0px));
+    width: 40px;
+    height: 40px;
   }
 `;
 
@@ -821,6 +912,11 @@ const LoadingHero = styled.div`
   min-height: 400px;
   overflow: hidden;
   margin-bottom: 0;
+
+  @media (max-width: 768px) {
+    height: clamp(360px, 58svh, 560px);
+    min-height: 360px;
+  }
 `;
 
 const LoadingHeroImage = styled(SkeletonBlock)`
@@ -842,6 +938,10 @@ const LoadingHeroContent = styled.div`
   display: grid;
   gap: 12px;
   z-index: 1;
+
+  @media (max-width: 768px) {
+    padding: var(--spacing-3xl) var(--spacing-lg) var(--spacing-2xl);
+  }
 `;
 
 const LoadingStatus = styled.div`
@@ -948,7 +1048,9 @@ function SeriesDetail() {
   const [selectedId, setSelectedId] = useState(null);
   const [gridRowsOverride, setGridRowsOverride] = useState(null);
   const CANVAS_MAX_WIDTH = 1200;
+  const EDITOR_MIN_CANVAS_WIDTH = 960;
   const [canvasWidth, setCanvasWidth] = useState(CANVAS_MAX_WIDTH);
+  const isCompactSeriesLayout = useMediaQuery('(max-width: 1024px)');
   const GRID_COLS = 24;
   const ROW_HEIGHT = 16;
   const GRID_GUTTER = 8;
@@ -998,13 +1100,11 @@ function SeriesDetail() {
   const GROUP_MIN_H = 1;
   const GROUP_DEFAULT_W = 2;
   const GROUP_DEFAULT_H = 2;
-  const MIN_W = 240;
-  const MIN_H = 140;
+  const MIN_W_COLS = 5;
+  const MIN_H_ROWS = 6;
   const COL_WIDTH = (canvasWidth - GRID_GUTTER * (GRID_COLS - 1)) / GRID_COLS;
   const GRID_STEP_X = COL_WIDTH + GRID_GUTTER;
   const GRID_STEP_Y = ROW_HEIGHT + GRID_GUTTER;
-  const MIN_W_COLS = Math.max(1, Math.round((MIN_W + GRID_GUTTER) / GRID_STEP_X));
-  const MIN_H_ROWS = Math.max(1, Math.round((MIN_H + GRID_GUTTER) / GRID_STEP_Y));
 
   const outletContext = useOutletContext();
   const isAdmin = Boolean(outletContext?.isAdmin);
@@ -1130,7 +1230,10 @@ function SeriesDetail() {
         parseFloat(styles.paddingLeft || '0') + parseFloat(styles.paddingRight || '0');
       const innerWidth = container.clientWidth - paddingX;
       if (Number.isFinite(innerWidth) && innerWidth > 0) {
-        setCanvasWidth(Math.min(CANVAS_MAX_WIDTH, innerWidth));
+        const nextWidth = layoutMode
+          ? Math.min(CANVAS_MAX_WIDTH, Math.max(EDITOR_MIN_CANVAS_WIDTH, innerWidth))
+          : Math.min(CANVAS_MAX_WIDTH, innerWidth);
+        setCanvasWidth(nextWidth);
       }
     };
 
@@ -1151,7 +1254,7 @@ function SeriesDetail() {
         window.removeEventListener('resize', updateWidth);
       }
     };
-  }, [layoutMode, CANVAS_MAX_WIDTH, currentSeries]);
+  }, [layoutMode, CANVAS_MAX_WIDTH, EDITOR_MIN_CANVAS_WIDTH, currentSeries]);
 
   useLayoutEffect(() => {
     if (layoutMode) {
@@ -1159,6 +1262,21 @@ function SeriesDetail() {
       setQuickAddOpen(false);
     }
   }, [layoutMode]);
+
+  useEffect(() => {
+    if (!lightboxPhoto) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setLightboxPhoto(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [lightboxPhoto]);
 
   const clamp = (v, min, max) => Math.max(min, Math.min(v, max));
 
@@ -1173,22 +1291,11 @@ function SeriesDetail() {
     return `block-${index}`;
   };
 
-  const getDefaultPxSize = (type) => {
-    if (type === 'text') return { w: 720, h: 220 };
-    if (type === 'photo') return { w: 720, h: 520 };
-    return { w: 760, h: 420 };
-  };
-
   const getDefaultGridSize = (type) => {
-    const fallbackPx = getDefaultPxSize(type);
-    return {
-      w: Math.max(MIN_W_COLS, pxToColSpan(fallbackPx.w)),
-      h: Math.max(MIN_H_ROWS, pxToRowSpan(fallbackPx.h)),
-    };
+    if (type === 'text') return { w: 15, h: 9 };
+    if (type === 'photo') return { w: 15, h: 22 };
+    return { w: 16, h: 18 };
   };
-
-  const pxToColSpan = (px) => Math.max(1, Math.round((px + GRID_GUTTER) / GRID_STEP_X));
-  const pxToRowSpan = (px) => Math.max(1, Math.round((px + GRID_GUTTER) / GRID_STEP_Y));
 
   const clampGridLayout = (layout, minRows = MIN_H_ROWS) => {
     const w = clamp(layout.w || MIN_W_COLS, MIN_W_COLS, GRID_COLS);
@@ -1942,6 +2049,9 @@ function SeriesDetail() {
           {coverPhoto && (
             <CoverImage
               src={resolveVersionedPhotoAssetUrl(coverPhoto, 'image')}
+              $mobileSrc={coverPhoto.mobileImage
+                ? resolveVersionedPhotoAssetUrl(coverPhoto, 'mobileImage')
+                : undefined}
               initial={{ scale: 1.2 }}
               animate={{ scale: 1 }}
               transition={{ duration: 1.5 }}
@@ -2226,9 +2336,19 @@ function SeriesDetail() {
                 </Inspector>
               )}
 
+              {!layoutMode && isCompactSeriesLayout ? (
+                <ResponsiveSeriesContent
+                  content={viewContent}
+                  photos={photos}
+                  onPhotoClick={handlePhotoClick}
+                  textSizeMap={TEXT_SIZE_MAP}
+                  textFontMap={TEXT_FONT_MAP}
+                />
+              ) : (
               <CanvasFrame ref={canvasFrameRef} $showBorder={layoutMode}>
                 <Canvas
                   $showGrid={layoutMode}
+                  $editing={layoutMode}
                   style={{
                     '--canvas-width': `${canvasWidth}px`,
                     '--grid-step-x': `${GRID_STEP_X}px`,
@@ -2565,6 +2685,7 @@ function SeriesDetail() {
                   </GridLayout>
                 </Canvas>
               </CanvasFrame>
+              )}
           </LayoutStage>
         </ContentSection>
       </PageContainer>

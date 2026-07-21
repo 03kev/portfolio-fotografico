@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Camera, FileText, Plus } from 'lucide-react';
@@ -11,6 +11,10 @@ import { resolveVersionedPhotoAssetUrl } from '../utils/imageUrl';
 
 const SectionRoot = styled(motion.section)`
   padding: var(--spacing-4xl) 0;
+
+  @media (max-width: 768px) {
+    padding: var(--spacing-3xl) 0;
+  }
 `;
 
 const Container = styled.div`
@@ -24,8 +28,9 @@ const Container = styled.div`
   align-items: start;
 
   @media (max-width: 768px) {
-    padding: 0 var(--spacing-lg);
+    padding: 0 var(--spacing-md);
     grid-template-columns: 1fr;
+    row-gap: var(--spacing-xl);
   }
 `;
 
@@ -63,6 +68,13 @@ const CreateButton = styled(motion.button)`
     background: rgba(214, 179, 106, 0.18);
     box-shadow: var(--shadow-small);
     transform: translateY(-1px);
+  }
+
+  @media (max-width: 520px) {
+    flex: 1 1 0;
+    justify-content: center;
+    min-height: 44px;
+    padding: 10px 12px;
   }
 `;
 
@@ -107,6 +119,7 @@ const StickyCreate = styled.div`
     top: calc(70px + 12px);
     grid-column: 1;
     justify-self: start;
+    width: 100%;
   }
 `;
 
@@ -118,10 +131,12 @@ const Grid = styled(motion.div)`
 
   @media (max-width: 768px) {
     grid-template-columns: 1fr;
+    gap: var(--spacing-lg);
   }
 `;
 
-const Card = styled(motion.div)`
+const Card = styled(motion(Link))`
+  display: block;
   border-radius: var(--border-radius-2xl);
   overflow: hidden;
   cursor: pointer;
@@ -134,12 +149,21 @@ const Card = styled(motion.div)`
     border-color: rgba(214, 179, 106, 0.35);
     box-shadow: var(--shadow-medium);
   }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 4px;
+  }
 `;
 
 const Cover = styled.div`
   position: relative;
   aspect-ratio: 16 / 10;
   background: rgba(255, 255, 255, 0.03);
+
+  @media (max-width: 520px) {
+    aspect-ratio: 4 / 3;
+  }
 `;
 
 const CoverImage = styled.img`
@@ -221,6 +245,12 @@ const DraftHeader = styled.div`
   align-items: baseline;
   justify-content: space-between;
   gap: var(--spacing-md);
+
+  @media (max-width: 520px) {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+  }
 `;
 
 const DraftTitle = styled.h3`
@@ -240,7 +270,6 @@ export default function PhotoSeries({
   subtitle = "Progetti coerenti: un filo narrativo, un luogo, un'idea.",
   headingLevel = 'h2'
 }) {
-  const navigate = useNavigate();
   const { series, loading, fetchSeries } = useSeries();
   const { photos } = usePhotos();
   const [showEditor, setShowEditor] = useState(false);
@@ -277,9 +306,9 @@ export default function PhotoSeries({
     return [...new Set(locs)].slice(0, 3);
   };
 
-  const handleSeriesClick = (seriesItem) => {
+  const getSeriesPath = (seriesItem) => {
     const identifier = seriesItem.published ? (seriesItem.slug || seriesItem.id) : seriesItem.id;
-    navigate(`/series/${identifier}`);
+    return `/series/${identifier}`;
   };
 
   return (
@@ -328,7 +357,7 @@ export default function PhotoSeries({
                 return (
                   <Card
                     key={s.id}
-                    onClick={() => handleSeriesClick(s)}
+                    to={getSeriesPath(s)}
                     initial={{ opacity: 0, y: 10 }}
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true, margin: '-120px' }}
@@ -389,7 +418,7 @@ export default function PhotoSeries({
                     return (
                       <Card
                         key={s.id}
-                        onClick={() => handleSeriesClick(s)}
+                        to={getSeriesPath(s)}
                         initial={{ opacity: 0, y: 10 }}
                         whileInView={{ opacity: 1, y: 0 }}
                         viewport={{ once: true, margin: '-120px' }}

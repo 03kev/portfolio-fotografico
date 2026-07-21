@@ -18,6 +18,11 @@ const EditorOverlay = styled(motion.div)`
   z-index: var(--z-modal);
   overflow-y: auto;
   padding: var(--spacing-xl);
+
+  @media (max-width: 640px) {
+    padding: 0;
+    overscroll-behavior: contain;
+  }
 `;
 
 const EditorContainer = styled(motion.div)`
@@ -27,6 +32,12 @@ const EditorContainer = styled(motion.div)`
   border-radius: var(--border-radius-2xl);
   border: 1px solid rgba(255, 255, 255, 0.1);
   overflow: hidden;
+
+  @media (max-width: 640px) {
+    min-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
 `;
 
 const EditorHeader = styled.div`
@@ -36,12 +47,26 @@ const EditorHeader = styled.div`
   justify-content: space-between;
   align-items: center;
   background: rgba(0, 0, 0, 0.5);
+
+  @media (max-width: 640px) {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    padding: calc(var(--spacing-lg) + env(safe-area-inset-top, 0px)) var(--spacing-md) var(--spacing-md);
+    backdrop-filter: blur(14px);
+  }
 `;
 
 const EditorTitle = styled.h2`
   font-size: var(--font-size-3xl);
   font-weight: var(--font-weight-bold);
   color: var(--color-white);
+
+  @media (max-width: 640px) {
+    min-width: 0;
+    font-size: var(--font-size-xl);
+    line-height: 1.2;
+  }
 `;
 
 const CloseButton = styled(motion.button)`
@@ -64,6 +89,10 @@ const CloseButton = styled(motion.button)`
 
 const EditorBody = styled.div`
   padding: var(--spacing-xl);
+
+  @media (max-width: 640px) {
+    padding: var(--spacing-md);
+  }
 `;
 
 const FormGroup = styled.div`
@@ -138,12 +167,20 @@ const EditorGrid = styled.div`
   @media (max-width: 980px) {
     grid-template-columns: 1fr;
   }
+
+  @media (max-width: 640px) {
+    gap: var(--spacing-md);
+  }
 `;
 
 const Column = styled.div`
   display: flex;
   flex-direction: column;
   gap: var(--spacing-lg);
+
+  @media (max-width: 640px) {
+    gap: var(--spacing-md);
+  }
 `;
 
 const Panel = styled.div`
@@ -152,6 +189,11 @@ const Panel = styled.div`
   border-radius: var(--border-radius-xl);
   padding: var(--spacing-lg);
   box-shadow: var(--shadow-small);
+
+  @media (max-width: 640px) {
+    padding: var(--spacing-md);
+    border-radius: var(--border-radius-lg);
+  }
 `;
 
 const PanelHeader = styled.div`
@@ -240,6 +282,11 @@ const BlockHeader = styled.div`
   align-items: center;
   gap: var(--spacing-sm);
   cursor: pointer;
+
+  @media (max-width: 480px) {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: var(--spacing-xs);
+  }
 `;
 
 const BlockType = styled.span`
@@ -290,6 +337,12 @@ const AddBlockButtons = styled.div`
   gap: var(--spacing-md);
   margin-top: var(--spacing-lg);
   flex-wrap: wrap;
+
+  @media (max-width: 640px) {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--spacing-sm);
+  }
 `;
 
 const AddBlockButton = styled(motion.button)`
@@ -306,6 +359,11 @@ const AddBlockButton = styled(motion.button)`
 
   &:hover {
     opacity: 0.9;
+  }
+
+  @media (max-width: 640px) {
+    justify-content: center;
+    min-height: 44px;
   }
 `;
 
@@ -337,6 +395,11 @@ const PhotoSelector = styled.div`
   background: rgba(0, 0, 0, 0.25);
   border-radius: var(--border-radius);
   border: 1px solid rgba(255, 255, 255, 0.08);
+
+  @media (max-width: 480px) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    max-height: 300px;
+  }
 `;
 
 const PhotoOption = styled(motion.div)`
@@ -380,6 +443,15 @@ const EditorFooter = styled.div`
   gap: var(--spacing-md);
   justify-content: flex-end;
   background: rgba(0, 0, 0, 0.5);
+
+  @media (max-width: 640px) {
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+    padding: var(--spacing-md) var(--spacing-md) calc(var(--spacing-md) + env(safe-area-inset-bottom, 0px));
+    flex-wrap: wrap;
+    backdrop-filter: blur(14px);
+  }
 `;
 
 const Button = styled(motion.button)`
@@ -390,6 +462,12 @@ const Button = styled(motion.button)`
   cursor: pointer;
   border: none;
   transition: all var(--transition-normal);
+
+  @media (max-width: 640px) {
+    flex: 1 1 calc(50% - var(--spacing-sm));
+    min-height: 44px;
+    padding: var(--spacing-sm) var(--spacing-md);
+  }
 `;
 
 const CancelButton = styled(Button)`
@@ -424,6 +502,12 @@ const DeleteButton = styled(Button)`
   &:hover {
     background: rgba(239, 68, 68, 0.3);
   }
+
+  @media (max-width: 640px) {
+    flex-basis: 100%;
+    margin-right: 0;
+    order: 3;
+  }
 `;
 
 const Checkbox = styled.input`
@@ -445,6 +529,11 @@ const MetaBar = styled.div`
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: var(--spacing-md);
   margin-bottom: var(--spacing-lg);
+
+  @media (max-width: 480px) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--spacing-sm);
+  }
 `;
 
 const StatCard = styled.div`
@@ -490,6 +579,20 @@ function SeriesEditor({ series, onClose }) {
   const [showAdvancedContent, setShowAdvancedContent] = useState(false);
   const [photoQuery, setPhotoQuery] = useState('');
   const [expandedBlockIndex, setExpandedBlockIndex] = useState(null);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose]);
 
   useEffect(() => {
     if (series) {

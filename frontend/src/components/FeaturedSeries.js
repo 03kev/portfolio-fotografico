@@ -11,6 +11,11 @@ const Grid = styled(motion.div)`
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: var(--spacing-xl);
+
+  @media (max-width: 640px) {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--spacing-lg);
+  }
 `;
 
 const Card = styled(motion(Link))`
@@ -32,6 +37,10 @@ const Cover = styled.div`
   position: relative;
   aspect-ratio: 16 / 10;
   background: rgba(255, 255, 255, 0.03);
+
+  @media (max-width: 480px) {
+    aspect-ratio: 4 / 3;
+  }
 `;
 
 const Img = styled.img`

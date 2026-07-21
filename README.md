@@ -415,6 +415,14 @@ Il backend normalizza `data/series.json` sia in lettura sia prima di ogni scritt
 - i riferimenti foto nei blocchi devono appartenere alla serie
 - se una serie contiene foto ma `content` e' vuoto, vengono creati blocchi foto espliciti
 
+La griglia salvata descrive la composizione artistica desktop e non viene
+ricalcolata in base alla finestra. Nella vista pubblica, fino a 1024 px, i
+blocchi vengono proiettati in un flusso responsive ordinato per posizione:
+testi ad altezza naturale, immagini senza crop e gruppi fotografici adattivi.
+L'editor mantiene invece la tela desktop tramite scorrimento orizzontale, così
+un accesso da tablet o telefono non può alterare involontariamente le coordinate
+canoniche.
+
 Le bozze sono restituite da `GET /api/series?all=true` e aperte per ID solo con una sessione admin valida. Le richieste anonime vedono esclusivamente le serie pubblicate.
 
 ### Source e derivate
