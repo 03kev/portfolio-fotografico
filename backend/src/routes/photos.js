@@ -360,6 +360,7 @@ router.post('/', upload.single('image'), async (req, res) => {
             sourcePath,
             sourceContentType: sourceContentType || '',
             mobileImage: true,
+            updatedAt: Date.now(),
             derivativesVersion: Date.now(),
             description: sanitized.description,
             date: sanitized.date,
@@ -476,6 +477,7 @@ router.post('/:id/replace-source', async (req, res) => {
             sourceContentType: nextSourceContentType,
             resolution: derivatives.resolution,
             mobileImage: true,
+            updatedAt: Date.now(),
             derivativesVersion: Date.now()
         };
 
@@ -593,6 +595,7 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
             ...photo,
             resolution: derivatives.resolution,
             mobileImage: true,
+            updatedAt: Date.now(),
             derivativesVersion: Date.now()
         };
 
@@ -657,6 +660,7 @@ router.put('/:id', async (req, res) => {
             ...sanitized,
             lat: nextLat ?? photos[photoIndex].lat,
             lng: nextLng ?? photos[photoIndex].lng,
+            updatedAt: Date.now(),
         };
         
         photos[photoIndex] = updatedPhoto;

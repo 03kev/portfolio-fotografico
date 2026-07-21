@@ -279,11 +279,20 @@ function serializeJsonForHtml(value) {
     return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
-function renderPhotoSeoHtml({ title, description, canonicalUrl, imageUrl, structuredData = null, noindex = false }) {
+function renderPhotoSeoHtml({
+    title,
+    description,
+    canonicalUrl,
+    imageUrl,
+    contentUrl = '',
+    structuredData = null,
+    noindex = false
+}) {
     const safeTitle = escapeXml(title || 'Foto - Kevin Muka');
     const safeDescription = escapeXml(description || 'Dettaglio foto del portfolio di Kevin Muka.');
     const safeCanonical = escapeXml(canonicalUrl || '');
     const safeImage = escapeXml(imageUrl || '');
+    const safeContentImage = escapeXml(contentUrl || imageUrl || '');
     const robotsContent = noindex ? 'noindex, nofollow' : 'index, follow';
     const twitterCard = imageUrl ? 'summary_large_image' : 'summary';
     const ogImageBlock = imageUrl
@@ -294,6 +303,14 @@ function renderPhotoSeoHtml({ title, description, canonicalUrl, imageUrl, struct
         : '';
     const structuredDataBlock = structuredData
         ? `<script type="application/ld+json">${serializeJsonForHtml(structuredData)}</script>`
+        : '';
+    const imageContentBlock = safeContentImage
+        ? [
+            '  <figure>',
+            `    <img src="${safeContentImage}" alt="${safeTitle}" />`,
+            `    <figcaption>${safeDescription}</figcaption>`,
+            '  </figure>'
+        ].join('\n')
         : '';
 
     return [
@@ -320,6 +337,7 @@ function renderPhotoSeoHtml({ title, description, canonicalUrl, imageUrl, struct
         '<body>',
         `  <h1>${safeTitle}</h1>`,
         `  <p>${safeDescription}</p>`,
+        imageContentBlock,
         '</body>',
         '</html>'
     ].join('\n');
@@ -341,6 +359,7 @@ async function handlePhotoSeoPage(req, res, next) {
                 description: 'La foto richiesta non è disponibile.',
                 canonicalUrl,
                 imageUrl: '',
+                contentUrl: '',
                 noindex: true
             });
 
@@ -355,24 +374,39 @@ async function handlePhotoSeoPage(req, res, next) {
         const imageUrl = resolvePhotoImageUrl(photo, siteBaseUrl);
         const contentUrl = resolvePhotoImageUrl(photo, siteBaseUrl, 'imagePath');
         const rightsUrl = `${siteBaseUrl}/rights`;
+        const imageObjectId = `${canonicalUrl}#primary-image`;
         const structuredData = {
             '@context': 'https://schema.org',
-            '@type': 'ImageObject',
-            name: photoTitle,
-            description,
-            contentUrl,
-            url: canonicalUrl,
-            creator: { '@type': 'Person', name: 'Kevin Muka' },
-            creditText: 'Kevin Muka',
-            copyrightNotice: '© Kevin Muka. Tutti i diritti riservati.',
-            license: rightsUrl,
-            acquireLicensePage: `${siteBaseUrl}/contact`
+            '@graph': [
+                {
+                    '@type': 'WebPage',
+                    '@id': canonicalUrl,
+                    url: canonicalUrl,
+                    name: title,
+                    description,
+                    primaryImageOfPage: { '@id': imageObjectId }
+                },
+                {
+                    '@type': 'ImageObject',
+                    '@id': imageObjectId,
+                    name: photoTitle,
+                    description,
+                    contentUrl,
+                    url: canonicalUrl,
+                    creator: { '@type': 'Person', name: 'Kevin Muka' },
+                    creditText: 'Kevin Muka',
+                    copyrightNotice: '© Kevin Muka. Tutti i diritti riservati.',
+                    license: rightsUrl,
+                    acquireLicensePage: `${siteBaseUrl}/contact`
+                }
+            ]
         };
         const html = renderPhotoSeoHtml({
             title,
             description,
             canonicalUrl,
             imageUrl,
+            contentUrl,
             structuredData
         });
 
@@ -457,9 +491,9 @@ async function handleSitemapImages(req, res) {
                 }
 
                 const landingUrl = `${siteBaseUrl}/photo/${encodeURIComponent(photoId)}`;
-                const derivativesVersion = Number(photo.derivativesVersion || 0);
-                const lastmod = Number.isFinite(derivativesVersion) && derivativesVersion > 0
-                    ? new Date(derivativesVersion).toISOString()
+                const updatedAt = Number(photo.updatedAt || photo.derivativesVersion || 0);
+                const lastmod = Number.isFinite(updatedAt) && updatedAt > 0
+                    ? new Date(updatedAt).toISOString()
                     : '';
 
                 const title = escapeXml(photo.title || 'Foto');
