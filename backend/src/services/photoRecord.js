@@ -88,7 +88,7 @@ function toRuntimePhoto(record) {
             : 0,
         derivativesVersion: Number.isFinite(Number(record.derivativesVersion))
             ? Number(record.derivativesVersion)
-            : Date.now()
+            : (Number.isFinite(Number(record.id)) ? Number(record.id) : 0)
     };
 
     return runtimePhoto;

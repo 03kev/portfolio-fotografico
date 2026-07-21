@@ -3,7 +3,7 @@ import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapPin, Camera } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
-import { resolveVersionedAssetUrl } from '../utils/imageUrl';
+import { resolveVersionedPhotoAssetUrl } from '../utils/imageUrl';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 const ModalOverlay = styled(motion.div)`
@@ -284,8 +284,7 @@ const GalleryModal = () => {
   };
 
   const getPhotoSrc = (photo) => {
-    const version = photo?.derivativesVersion || photo?.updatedAt || photo?.id;
-    return resolveVersionedAssetUrl(photo.image, version);
+    return resolveVersionedPhotoAssetUrl(photo, 'image');
   };
 
   if (!galleryPhotos || galleryPhotos.length === 0) {

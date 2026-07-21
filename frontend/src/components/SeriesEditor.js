@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useSeries } from '../contexts/SeriesContext';
 import { usePhotos } from '../contexts/PhotoContext';
 import { useToast } from './Toast';
-import { resolveVersionedAssetUrl } from '../utils/imageUrl';
+import { resolveVersionedPhotoAssetUrl } from '../utils/imageUrl';
 
 const EditorOverlay = styled(motion.div)`
   position: fixed;
@@ -734,7 +734,7 @@ function SeriesEditor({ series, onClose }) {
                           whileTap={{ scale: 0.95 }}
                         >
                           <img 
-                            src={photo.thumbnail43 ? resolveVersionedAssetUrl(photo.thumbnail43, photo.derivativesVersion || photo.updatedAt || photo.id) : '/photo-fallback.svg'}
+                            src={photo.thumbnail43 ? resolveVersionedPhotoAssetUrl(photo, 'thumbnail43') : '/photo-fallback.svg'}
                             alt={photo.title}
                           />
                           {formData.photos.includes(photo.id) && (
@@ -768,7 +768,7 @@ function SeriesEditor({ series, onClose }) {
                             whileTap={{ scale: 0.95 }}
                           >
                             <img 
-                              src={photo.thumbnail43 ? resolveVersionedAssetUrl(photo.thumbnail43, photo.derivativesVersion || photo.updatedAt || photo.id) : '/photo-fallback.svg'}
+                              src={photo.thumbnail43 ? resolveVersionedPhotoAssetUrl(photo, 'thumbnail43') : '/photo-fallback.svg'}
                               alt={photo.title}
                             />
                             {formData.coverImage === photo.id && (
@@ -872,7 +872,7 @@ function SeriesEditor({ series, onClose }) {
                                               whileTap={{ scale: 0.95 }}
                                             >
                                               <img 
-                                                src={photo.thumbnail43 ? resolveVersionedAssetUrl(photo.thumbnail43, photo.derivativesVersion || photo.updatedAt || photo.id) : '/photo-fallback.svg'}
+                                                src={photo.thumbnail43 ? resolveVersionedPhotoAssetUrl(photo, 'thumbnail43') : '/photo-fallback.svg'}
                                                 alt={photo.title}
                                               />
                                               {block.content === photo.id && (
@@ -904,7 +904,7 @@ function SeriesEditor({ series, onClose }) {
                                               whileTap={{ scale: 0.95 }}
                                             >
                                               <img 
-                                                src={photo.thumbnail43 ? resolveVersionedAssetUrl(photo.thumbnail43, photo.derivativesVersion || photo.updatedAt || photo.id) : '/photo-fallback.svg'}
+                                                src={photo.thumbnail43 ? resolveVersionedPhotoAssetUrl(photo, 'thumbnail43') : '/photo-fallback.svg'}
                                                 alt={photo.title}
                                               />
                                               {block.content.includes(photo.id) && (

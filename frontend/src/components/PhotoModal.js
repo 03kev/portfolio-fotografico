@@ -4,7 +4,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { LoaderCircle, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
-import { LOCAL_IMAGE_FALLBACK, resolveVersionedAssetUrl } from '../utils/imageUrl';
+import {
+  getPhotoAssetVersion,
+  LOCAL_IMAGE_FALLBACK,
+  resolveVersionedAssetUrl,
+  resolveVersionedPhotoAssetUrl
+} from '../utils/imageUrl';
 import { markImageSourceLoaded } from '../utils/imageLoadCache';
 import { API_BASE_URL } from '../utils/constants';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
@@ -18,8 +23,7 @@ const prefetchedMobileImageSources = new Set();
 
 const getMobileImageSource = (photo) => {
   if (!photo?.mobileImage) return '';
-  const version = photo.derivativesVersion || photo.updatedAt || photo.id;
-  return resolveVersionedAssetUrl(photo.mobileImage, version, '');
+  return resolveVersionedPhotoAssetUrl(photo, 'mobileImage', '');
 };
 
 const canPrefetchMobileImages = () => {
@@ -356,10 +360,10 @@ const PhotoModal = () => {
     const [showFullResolution, setShowFullResolution] = useState(false);
     const [isQualitySwitching, setIsQualitySwitching] = useState(false);
     const selectedPhotoId = selectedPhoto?.id;
-    const version = selectedPhoto?.derivativesVersion || selectedPhoto?.updatedAt || selectedPhoto?.id;
-    const fullImageSrc = resolveVersionedAssetUrl(selectedPhoto?.image, version);
+    const version = getPhotoAssetVersion(selectedPhoto);
+    const fullImageSrc = resolveVersionedPhotoAssetUrl(selectedPhoto, 'image');
     const mobileImageSrc = selectedPhoto?.mobileImage
-      ? resolveVersionedAssetUrl(selectedPhoto.mobileImage, version, '')
+      ? resolveVersionedPhotoAssetUrl(selectedPhoto, 'mobileImage', '')
       : '';
     const imageSrc = isMobileLayout && mobileImageSrc && !showFullResolution && !useFullImageFallback
       ? mobileImageSrc

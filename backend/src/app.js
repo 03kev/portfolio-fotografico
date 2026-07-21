@@ -279,6 +279,14 @@ function serializeJsonForHtml(value) {
     return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
+function getPhotoLastModifiedIso(photo) {
+    const timestamp = Number(photo?.updatedAt || photo?.derivativesVersion || 0);
+    if (!Number.isFinite(timestamp) || timestamp <= 0) return '';
+
+    const date = new Date(timestamp);
+    return Number.isNaN(date.getTime()) ? '' : date.toISOString();
+}
+
 function renderPhotoSeoHtml({
     title,
     description,
@@ -422,7 +430,7 @@ async function handleSitemapPages(req, res) {
     try {
         const siteBaseUrl = getSiteBaseUrl();
         const pages = ['/', '/series', '/gallery', '/map', '/about', '/contact', '/rights'];
-        const entries = pages
+        const pageEntries = pages
             .map((path) => {
                 const pageUrl = `${siteBaseUrl}${path === '/' ? '/' : path}`;
                 return [
@@ -434,10 +442,28 @@ async function handleSitemapPages(req, res) {
                 ].join('');
             })
             .join('');
+        const rawPhotos = await readMetadataFile('photos.json', []);
+        const photos = Array.isArray(rawPhotos) ? rawPhotos.map((item) => toRuntimePhoto(item)) : [];
+        const photoEntries = photos
+            .map((photo) => {
+                const photoId = String(photo?.id || '').trim();
+                if (!photoId) return '';
+
+                const photoUrl = `${siteBaseUrl}/photo/${encodeURIComponent(photoId)}`;
+                const lastmod = getPhotoLastModifiedIso(photo);
+                return [
+                    '<url>',
+                    `<loc>${escapeXml(photoUrl)}</loc>`,
+                    lastmod ? `<lastmod>${escapeXml(lastmod)}</lastmod>` : '',
+                    '</url>'
+                ].join('');
+            })
+            .filter(Boolean)
+            .join('');
 
         const xml = `<?xml version="1.0" encoding="UTF-8"?>`
             + `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">`
-            + `${entries}`
+            + `${pageEntries}${photoEntries}`
             + `</urlset>`;
 
         res.setHeader('Content-Type', 'application/xml; charset=utf-8');
@@ -491,10 +517,7 @@ async function handleSitemapImages(req, res) {
                 }
 
                 const landingUrl = `${siteBaseUrl}/photo/${encodeURIComponent(photoId)}`;
-                const updatedAt = Number(photo.updatedAt || photo.derivativesVersion || 0);
-                const lastmod = Number.isFinite(updatedAt) && updatedAt > 0
-                    ? new Date(updatedAt).toISOString()
-                    : '';
+                const lastmod = getPhotoLastModifiedIso(photo);
 
                 const title = escapeXml(photo.title || 'Foto');
                 const caption = escapeXml(buildPhotoCaption(photo));

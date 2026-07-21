@@ -96,9 +96,10 @@ export default function PhotoPage() {
   const structuredData = React.useMemo(() => {
     if (!photo) return null;
 
-    const data = {
-      '@context': 'https://schema.org',
+    const imageObjectId = `${canonicalUrl}#primary-image`;
+    const imageObject = {
       '@type': 'ImageObject',
+      '@id': imageObjectId,
       name: photo.title || 'Fotografia',
       description: buildPhotoDescription(photo),
       contentUrl: toAbsoluteImageUrl(photo.image),
@@ -111,15 +112,28 @@ export default function PhotoPage() {
     };
 
     if (keywordsCsv) {
-      data.keywords = keywordsCsv;
+      imageObject.keywords = keywordsCsv;
     }
 
     if (photo.date) {
-      data.datePublished = photo.date;
+      imageObject.datePublished = photo.date;
     }
 
-    return data;
-  }, [photo, canonicalUrl, keywordsCsv, rightsUrl, acquireLicensePage]);
+    return {
+      '@context': 'https://schema.org',
+      '@graph': [
+        {
+          '@type': 'WebPage',
+          '@id': canonicalUrl,
+          url: canonicalUrl,
+          name: seoTitle,
+          description: seoDescription,
+          primaryImageOfPage: { '@id': imageObjectId }
+        },
+        imageObject
+      ]
+    };
+  }, [photo, canonicalUrl, keywordsCsv, rightsUrl, acquireLicensePage, seoDescription, seoTitle]);
 
   useSeo({
     title: seoTitle,

@@ -10,7 +10,7 @@ import { useSeries } from '../contexts/SeriesContext';
 import { usePhotos } from '../contexts/PhotoContext';
 import SeriesEditor from './SeriesEditor';
 import { useToast } from './Toast';
-import { resolveVersionedAssetUrl } from '../utils/imageUrl';
+import { resolveVersionedPhotoAssetUrl } from '../utils/imageUrl';
 import { toAbsoluteImageUrl, toAbsoluteSiteUrl } from '../utils/siteUrl';
 import useSeo from '../seo/useSeo';
 
@@ -1697,7 +1697,7 @@ function SeriesDetail() {
     if (!interactive) {
       return (
         <ThumbImage
-          src={resolveVersionedAssetUrl(photo.image, photo.derivativesVersion || photo.updatedAt || photo.id)}
+          src={resolveVersionedPhotoAssetUrl(photo, 'image')}
           alt={photo.title}
           loading="lazy"
         />
@@ -1733,7 +1733,7 @@ function SeriesDetail() {
         title={photo.title || ''}
       >
         <ThumbImage
-          src={resolveVersionedAssetUrl(photo.image, photo.derivativesVersion || photo.updatedAt || photo.id)}
+          src={resolveVersionedPhotoAssetUrl(photo, 'image')}
           alt={photo.title}
           loading="lazy"
         />
@@ -2103,7 +2103,7 @@ function SeriesDetail() {
         <HeroSection>
           {coverPhoto && (
             <CoverImage
-              src={resolveVersionedAssetUrl(coverPhoto.image, coverPhoto.derivativesVersion || coverPhoto.updatedAt || coverPhoto.id)}
+              src={resolveVersionedPhotoAssetUrl(coverPhoto, 'image')}
               initial={{ scale: 1.2 }}
               animate={{ scale: 1 }}
               transition={{ duration: 1.5 }}
@@ -2370,7 +2370,7 @@ function SeriesDetail() {
                               title={p.title || ''}
                             >
                               <InspectorImg
-                                src={p.thumbnail43 ? resolveVersionedAssetUrl(p.thumbnail43, p.derivativesVersion || p.updatedAt || p.id) : '/photo-fallback.svg'}
+                                src={p.thumbnail43 ? resolveVersionedPhotoAssetUrl(p, 'thumbnail43') : '/photo-fallback.svg'}
                                 alt={p.title}
                                 loading="lazy"
                               />
@@ -2498,7 +2498,7 @@ function SeriesDetail() {
                             <PhotoFrame>
                               <PhotoMedia>
                                 <CanvasPhoto
-                                  src={resolveVersionedAssetUrl(photo.image, photo.derivativesVersion || photo.updatedAt || photo.id)}
+                                  src={resolveVersionedPhotoAssetUrl(photo, 'image')}
                                   alt={photo.title}
                                   loading="lazy"
                                 />
@@ -2749,7 +2749,7 @@ function SeriesDetail() {
                   {seriesPhotos.map(photo => (
                     <ClassicFigure key={photo.id} style={{ marginBottom: "var(--spacing-4xl)" }}>
                       <img
-                        src={resolveVersionedAssetUrl(photo.image, photo.derivativesVersion || photo.updatedAt || photo.id)}
+                        src={resolveVersionedPhotoAssetUrl(photo, 'image')}
                         alt={photo.title}
                         loading="lazy"
                         onClick={() => handlePhotoClick(photo)}
@@ -2790,7 +2790,7 @@ function SeriesDetail() {
               ✕
             </LightboxClose>
             <LightboxImage
-              src={resolveVersionedAssetUrl(lightboxPhoto.image, lightboxPhoto.derivativesVersion || lightboxPhoto.updatedAt || lightboxPhoto.id)}
+              src={resolveVersionedPhotoAssetUrl(lightboxPhoto, 'image')}
               alt={lightboxPhoto.title}
               onClick={(e) => e.stopPropagation()}
             />

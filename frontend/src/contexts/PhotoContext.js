@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useMemo, useRef } from 'react';
 import { photoService } from '../utils/api';
 
 const PhotoContext = createContext();
@@ -283,7 +283,7 @@ export function PhotoProvider({ children }) {
     const lastFetchTimeRef = useRef(0);
     
     // Actions
-    const actions = {
+    const actions = useMemo(() => ({
         // Fetch photos from API with debouncing
         fetchPhotos: async ({ force = false } = {}) => {
             // Evita fetch multipli troppo ravvicinati
@@ -506,16 +506,15 @@ export function PhotoProvider({ children }) {
                 payload: id
             });
         }
-    };
+    }), []);
     
     // Load photos on mount
     useEffect(() => {
         actions.fetchPhotos({ force: true });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [actions]);
     
     // Filtered photos based on current filters
-    const filteredPhotos = state.photos.filter(photo => {
+    const filteredPhotos = useMemo(() => state.photos.filter(photo => {
         const { search, tags, location } = state.filters;
         
         // Assicurati che photo abbia le proprietà essenziali (ma description può essere vuota)
@@ -544,13 +543,13 @@ export function PhotoProvider({ children }) {
         }
         
         return true;
-    });
+    }), [state.photos, state.filters]);
     
-    const value = {
+    const value = useMemo(() => ({
         ...state,
         filteredPhotos,
         actions
-    };
+    }), [state, filteredPhotos, actions]);
     
     return (
         <PhotoContext.Provider value={value}>
