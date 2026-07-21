@@ -77,8 +77,8 @@ export const usePhotoUploadWizard = ({
       );
 
       if (!isTypingTarget && ['1', '2', '3'].includes(e.key)) {
-        const targetStep = Number(e.key);
-        if (steps.some((step) => step.id === targetStep) && targetStep !== currentStep) {
+        const targetStep = steps[Number(e.key) - 1]?.id;
+        if (targetStep && targetStep !== currentStep) {
           e.preventDefault();
           selectStep(targetStep);
         }
