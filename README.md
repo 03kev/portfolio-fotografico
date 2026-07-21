@@ -334,8 +334,12 @@ In `vercel.json`:
 - `/api/:path*` -> backend
 - `/uploads/:path*` -> backend
 - `/robots.txt`, `/sitemap.xml`, `/sitemap-images.xml` -> backend
-- `/photo/:id` per bot social -> backend SEO page
+- `/photo/:id`, `/series` e `/series/:slug` per crawler e bot social -> backend SEO page
 - tutto il resto -> `index.html`
+
+La sitemap include automaticamente tutte le foto e le serie pubblicate con il
+relativo `lastmod`. Le serie sono esposte come pagine hub prima delle singole
+foto; le bozze non compaiono né nella sitemap né nelle pagine SEO server-side.
 
 ## Dati su R2
 

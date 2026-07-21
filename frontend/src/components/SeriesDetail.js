@@ -1009,6 +1009,10 @@ function SeriesDetail() {
   const outletContext = useOutletContext();
   const isAdmin = Boolean(outletContext?.isAdmin);
   const toast = useToast();
+  const seriesSeoCover = React.useMemo(() => {
+    if (!currentSeries || seriesPhotos.length === 0) return null;
+    return seriesPhotos.find((photo) => photo.id === currentSeries.coverImage) || seriesPhotos[0];
+  }, [currentSeries, seriesPhotos]);
 
   const seriesStructuredData = React.useMemo(() => {
     if (!currentSeries) return null;
@@ -1025,7 +1029,12 @@ function SeriesDetail() {
           contentUrl: full,
           url: toAbsoluteSiteUrl(`/photo/${encodeURIComponent(String(photo.id))}`),
           name: photo.title || currentSeries.title || 'Fotografia',
-          description: photo.description || currentSeries.description || 'Scatto fotografico'
+          description: photo.description || currentSeries.description || 'Scatto fotografico',
+          creator: { '@type': 'Person', name: 'Kevin Muka' },
+          creditText: 'Kevin Muka',
+          copyrightNotice: '© Kevin Muka. Tutti i diritti riservati.',
+          license: toAbsoluteSiteUrl('/rights'),
+          acquireLicensePage: toAbsoluteSiteUrl('/contact')
         };
 
         if (Array.isArray(photo.tags) && photo.tags.length > 0) {
@@ -1050,9 +1059,11 @@ function SeriesDetail() {
     title: currentSeries?.title ? `Serie: ${currentSeries.title}` : 'Dettaglio Serie',
     description: currentSeries?.description
       || (currentSeries?.title
-        ? `Dettaglio della serie fotografica "${currentSeries.title}" di Kevin Muka.`
+        ? `Serie fotografica "${currentSeries.title}" di Kevin Muka.`
         : 'Dettaglio serie fotografica di Kevin Muka.'),
-    ogType: 'article',
+    ogType: 'website',
+    image: seriesSeoCover ? toAbsoluteImageUrl(seriesSeoCover.socialImage) : '',
+    noindex: detailFetchState === 'error' || currentSeries?.published === false,
     structuredData: seriesStructuredData,
   });
 
