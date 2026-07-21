@@ -94,6 +94,10 @@ const ResponsiveImage = styled.img`
   object-fit: contain;
   object-position: center;
   background: transparent;
+  border-radius: clamp(12px, 2vw, 18px);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.07),
+    0 18px 42px rgba(0, 0, 0, 0.2);
 `;
 
 const Caption = styled.figcaption`

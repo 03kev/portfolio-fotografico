@@ -143,8 +143,8 @@ const ContentSection = styled.div`
   }
 
   @media (max-width: 520px) {
-    padding-left: var(--spacing-md);
-    padding-right: var(--spacing-md);
+    padding-left: clamp(1.25rem, 6vw, 1.75rem);
+    padding-right: clamp(1.25rem, 6vw, 1.75rem);
   }
 `;
 
