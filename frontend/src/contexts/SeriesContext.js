@@ -100,23 +100,22 @@ function seriesReducer(state, action) {
 // Provider Component
 export function SeriesProvider({ children }) {
     const [state, dispatch] = useReducer(seriesReducer, initialState);
-    const lastFetchTimeRef = useRef(0);
+    const includeUnpublishedRef = useRef(false);
+    const fetchRequestIdRef = useRef(0);
 
-    const fetchSeries = useCallback(async (includeUnpublished = false) => {
-        // Evita fetch multipli troppo ravvicinati
-        const now = Date.now();
-        if (now - lastFetchTimeRef.current < 500) {
-            console.log('Series fetch troppo ravvicinato, ignorato');
-            return;
-        }
-        
-        lastFetchTimeRef.current = now;
-        
+    const fetchSeries = useCallback(async (includeUnpublished = includeUnpublishedRef.current) => {
+        const requestedScope = Boolean(includeUnpublished);
+        const requestId = fetchRequestIdRef.current + 1;
+        includeUnpublishedRef.current = requestedScope;
+        fetchRequestIdRef.current = requestId;
+
         try {
             dispatch({ type: ACTIONS.SET_LOADING, payload: true });
-            const response = await seriesService.getAll(includeUnpublished);
+            const response = await seriesService.getAll(requestedScope);
+            if (requestId !== fetchRequestIdRef.current) return;
             dispatch({ type: ACTIONS.SET_SERIES, payload: unwrapApiData(response, []) });
         } catch (error) {
+            if (requestId !== fetchRequestIdRef.current) return;
             console.error('Errore nel caricamento delle serie:', error);
             dispatch({ type: ACTIONS.SET_ERROR, payload: error.message || 'Errore nel caricamento delle serie' });
         }
@@ -158,7 +157,7 @@ export function SeriesProvider({ children }) {
 
     // Carica tutte le serie all'avvio
     useEffect(() => {
-        fetchSeries();
+        fetchSeries(false);
     }, [fetchSeries]);
 
     const createSeries = useCallback(async (seriesData) => {

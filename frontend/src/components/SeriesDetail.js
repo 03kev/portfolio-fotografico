@@ -9,9 +9,11 @@ import 'react-resizable/css/styles.css';
 import { useSeries } from '../contexts/SeriesContext';
 import { usePhotos } from '../contexts/PhotoContext';
 import SeriesEditor from './SeriesEditor';
+import ResponsiveSeriesContent from './series/ResponsiveSeriesContent';
 import { useToast } from './Toast';
-import { IMAGES_BASE_URL } from '../utils/constants';
+import { resolveVersionedPhotoAssetUrl } from '../utils/imageUrl';
 import { toAbsoluteImageUrl, toAbsoluteSiteUrl } from '../utils/siteUrl';
+import useMediaQuery from '../hooks/useMediaQuery';
 import useSeo from '../seo/useSeo';
 
 const PageContainer = styled.div`
@@ -36,6 +38,11 @@ const HeroSection = styled(motion.div)`
     background: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.72) 70%, rgba(0,0,0,0.95) 100%);
     z-index: 1;
   }
+
+  @media (max-width: 768px) {
+    height: clamp(360px, 58svh, 560px);
+    min-height: 360px;
+  }
 `;
 
 const CoverImage = styled(motion.div)`
@@ -47,6 +54,10 @@ const CoverImage = styled(motion.div)`
   background-image: url(${props => props.src});
   background-size: cover;
   background-position: center;
+
+  @media (max-width: 1024px) {
+    background-image: url(${props => props.$mobileSrc || props.src});
+  }
 `;
 
 const HeroContent = styled.div`
@@ -59,6 +70,10 @@ const HeroContent = styled.div`
   max-width: 1200px;
   margin: 0 auto;
   width: 100%;
+
+  @media (max-width: 768px) {
+    padding: var(--spacing-3xl) var(--spacing-lg) var(--spacing-2xl);
+  }
 `;
 
 const FloatingBackButton = styled(motion.button)`
@@ -84,7 +99,8 @@ const FloatingBackButton = styled(motion.button)`
   }
 
   @media (max-width: 768px) {
-    top: calc(70px + 12px);
+    top: calc(70px + 12px + env(safe-area-inset-top, 0px));
+    left: 12px;
     width: 40px;
     height: 40px;
   }
@@ -96,6 +112,12 @@ const SeriesTitle = styled(motion.h1)`
   color: var(--color-white);
   margin-bottom: var(--spacing-md);
   text-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+
+  @media (max-width: 768px) {
+    font-size: clamp(2rem, 10vw, 3rem);
+    line-height: 1.05;
+    overflow-wrap: anywhere;
+  }
 `;
 
 const SeriesDescription = styled(motion.p)`
@@ -104,49 +126,25 @@ const SeriesDescription = styled(motion.p)`
   max-width: 800px;
   line-height: 1.6;
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
-`;
 
-const HeroMetaRow = styled.div`
-  display: flex;
-  gap: var(--spacing-sm);
-  flex-wrap: wrap;
-  margin-top: var(--spacing-md);
-`;
-
-const Pill = styled.div`
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 999px;
-  font-size: var(--font-size-sm);
-  color: var(--color-white);
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  @media (max-width: 768px) {
+    font-size: var(--font-size-base);
+    line-height: 1.55;
+  }
 `;
 
 const ContentSection = styled.div`
   max-width: 1200px;
   margin: 0 auto;
   padding: ${p => (p.$isAdmin ? 'var(--spacing-2xl)' : 'var(--spacing-4xl)')} var(--spacing-xl) var(--spacing-4xl);
-`;
 
-const ContentBlock = styled(motion.div)`
-  margin-bottom: var(--spacing-4xl);
-`;
+  @media (max-width: 1024px) {
+    padding: ${p => (p.$isAdmin ? 'var(--spacing-xl)' : 'var(--spacing-3xl)')} var(--spacing-lg) var(--spacing-3xl);
+  }
 
-const TextBlock = styled.div`
-  background: rgba(255, 255, 255, 0.03);
-  border-left: 4px solid var(--color-primary);
-  padding: var(--spacing-2xl);
-  border-radius: var(--border-radius-lg);
-  margin: var(--spacing-2xl) 0;
-
-  p {
-    font-size: var(--font-size-lg);
-    color: rgba(255, 255, 255, 0.9);
-    line-height: 1.8;
-    white-space: pre-wrap;
+  @media (max-width: 520px) {
+    padding-left: clamp(1.25rem, 6vw, 1.75rem);
+    padding-right: clamp(1.25rem, 6vw, 1.75rem);
   }
 `;
 
@@ -161,8 +159,16 @@ const AdminBar = styled.div`
   top: calc(78px + 12px);
   z-index: var(--z-sticky);
 
+  @media (max-width: 1024px) {
+    position: static;
+    top: auto;
+    z-index: auto;
+    justify-content: flex-start;
+  }
+
   @media (max-width: 768px) {
-    top: calc(70px + 12px);
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-xl);
   }
 `;
 
@@ -183,10 +189,16 @@ const AdminBarButton = styled(motion.button)`
     opacity: 0.6;
     cursor: not-allowed;
   }
+
+  @media (max-width: 520px) {
+    flex: 1 1 auto;
+    min-height: 42px;
+    padding: var(--spacing-sm) var(--spacing-md);
+  }
 `;
 
 const PrimaryAdminButton = styled(AdminBarButton)`
-  background: var(--primary-gradient);
+  background: var(--accent-gradient);
   border-color: transparent;
 
   &:hover {
@@ -204,13 +216,15 @@ const LayoutStage = styled.div`
   min-height: ${props => (props.$editing ? '70vh' : 'auto')};
   border-radius: ${props => (props.$editing ? 'var(--border-radius-xl)' : '0')};
   background: ${props => (props.$editing ? 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.02) 100%)' : 'transparent')};
-  overflow-x: hidden;
+  overflow-x: ${props => (props.$editing ? 'auto' : 'hidden')};
   overflow-y: visible;
   padding: 0;
   border: none;
   box-shadow: ${props => (props.$editing ? '0 0 0 1px rgba(255,255,255,0.06), 0 18px 36px rgba(0,0,0,0.28)' : 'none')};
   transition: background 0.2s ease, box-shadow 0.2s ease;
-  touch-action: pan-y;
+  touch-action: ${props => (props.$editing ? 'pan-x pan-y' : 'pan-y')};
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
 `;
 
 const CanvasFrame = styled.div`
@@ -220,12 +234,18 @@ const CanvasFrame = styled.div`
   border-radius: var(--border-radius-xl);
   box-shadow: ${props => (props.$showBorder ? '0 0 0 1px rgba(255,255,255,0.08)' : 'none')};
   transition: box-shadow 0.2s ease;
+
+  @media (max-width: 1024px) {
+    padding: ${props => (props.$showBorder ? 'var(--spacing-md)' : '0')};
+    width: ${props => (props.$showBorder ? 'max-content' : '100%')};
+    min-width: ${props => (props.$showBorder ? '100%' : '0')};
+  }
 `;
 
 const Canvas = styled.div`
   position: relative;
   width: var(--canvas-width, 1200px);
-  max-width: 100%;
+  max-width: ${props => (props.$editing ? 'none' : '100%')};
   margin: 0 auto;
   border-radius: var(--border-radius-xl);
   background: transparent;
@@ -373,6 +393,17 @@ const Inspector = styled.div`
   backdrop-filter: blur(14px);
   box-shadow: 0 18px 46px rgba(0,0,0,0.38);
   padding: var(--spacing-lg);
+
+  @media (max-width: 768px) {
+    top: auto;
+    right: max(10px, env(safe-area-inset-right, 0px));
+    bottom: max(10px, env(safe-area-inset-bottom, 0px));
+    left: max(10px, env(safe-area-inset-left, 0px));
+    width: auto;
+    max-height: min(58svh, 520px);
+    border-radius: var(--border-radius-xl);
+    padding: var(--spacing-md);
+  }
 `;
 
 const InspectorTitle = styled.div`
@@ -404,6 +435,11 @@ const InspectorClose = styled.button`
   margin-right: -10px;
 
   &:hover { background: rgba(255,255,255,0.12); }
+
+  @media (max-width: 768px) {
+    margin-top: 0;
+    margin-right: 0;
+  }
 `;
 
 const InspectorGrid = styled.div`
@@ -558,6 +594,11 @@ const FloatingLayoutTools = styled.div`
   display: flex;
   flex-direction: column;
   align-items: flex-end;
+
+  @media (max-width: 768px) {
+    right: max(14px, env(safe-area-inset-right, 0px));
+    bottom: max(14px, env(safe-area-inset-bottom, 0px));
+  }
 `;
 
 const EmptyState = styled.div`
@@ -781,62 +822,6 @@ const ThumbImage = styled.img`
   transition: filter 0.18s ease, transform 0.18s ease;
 `;
 
-const ClassicFigure = styled.figure`
-  margin: 0;
-
-  img {
-    width: 100%;
-    height: auto;
-    display: block;
-    border-radius: var(--border-radius-xl);
-    background: transparent;
-  }
-∏
-  figcaption {
-    margin-top: var(--spacing-sm);
-    color: rgba(255, 255, 255, 0.6);
-    font-size: var(--font-size-xs);
-    text-align: center;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-`;
-
-const PhotoGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: var(--spacing-xl);
-  margin: var(--spacing-2xl) 0;
-
-  @media (max-width: 768px) {
-    grid-template-columns: 1fr;
-    gap: var(--spacing-lg);
-  }
-`;
-
-const PhotoCard = styled(motion.button)`
-  appearance: none;
-  width: 100%;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(0, 0, 0, 0.25);
-  border-radius: var(--border-radius-xl);
-  padding: 0;
-  cursor: pointer;
-  overflow: hidden;
-  text-align: left;
-
-  &:hover {
-    border-color: rgba(255, 255, 255, 0.22);
-  }
-`;
-
-const PhotoImage = styled.img`
-  width: 100%;
-  height: auto;
-  display: block;
-  background: rgba(255, 255, 255, 0.04);
-`;
-
 const LightboxOverlay = styled(motion.div)`
   position: fixed;
   inset: 0;
@@ -846,6 +831,10 @@ const LightboxOverlay = styled(motion.div)`
   align-items: center;
   justify-content: center;
   padding: var(--spacing-2xl);
+
+  @media (max-width: 768px) {
+    padding: var(--spacing-md);
+  }
 `;
 
 const LightboxImage = styled.img`
@@ -856,6 +845,12 @@ const LightboxImage = styled.img`
   object-fit: contain;
   border-radius: var(--border-radius-xl);
   background: rgba(255, 255, 255, 0.04);
+
+  @media (max-width: 768px) {
+    max-width: 100%;
+    max-height: 90svh;
+    border-radius: var(--border-radius-lg);
+  }
 `;
 
 const LightboxClose = styled(motion.button)`
@@ -873,6 +868,13 @@ const LightboxClose = styled(motion.button)`
 
   &:hover {
     background: rgba(0, 0, 0, 0.72);
+  }
+
+  @media (max-width: 768px) {
+    top: max(12px, env(safe-area-inset-top, 0px));
+    right: max(12px, env(safe-area-inset-right, 0px));
+    width: 40px;
+    height: 40px;
   }
 `;
 
@@ -915,6 +917,11 @@ const LoadingHero = styled.div`
   min-height: 400px;
   overflow: hidden;
   margin-bottom: 0;
+
+  @media (max-width: 768px) {
+    height: clamp(360px, 58svh, 560px);
+    min-height: 360px;
+  }
 `;
 
 const LoadingHeroImage = styled(SkeletonBlock)`
@@ -936,6 +943,10 @@ const LoadingHeroContent = styled.div`
   display: grid;
   gap: 12px;
   z-index: 1;
+
+  @media (max-width: 768px) {
+    padding: var(--spacing-3xl) var(--spacing-lg) var(--spacing-2xl);
+  }
 `;
 
 const LoadingStatus = styled.div`
@@ -1009,7 +1020,7 @@ const ErrorText = styled.h2`
 `;
 
 const ErrorButton = styled(motion.button)`
-  background: var(--primary-gradient);
+  background: var(--accent-gradient);
   border: none;
   color: var(--color-white);
   padding: var(--spacing-md) var(--spacing-xl);
@@ -1042,8 +1053,9 @@ function SeriesDetail() {
   const [selectedId, setSelectedId] = useState(null);
   const [gridRowsOverride, setGridRowsOverride] = useState(null);
   const CANVAS_MAX_WIDTH = 1200;
+  const EDITOR_MIN_CANVAS_WIDTH = 960;
   const [canvasWidth, setCanvasWidth] = useState(CANVAS_MAX_WIDTH);
-  const GRID_VERSION = 2;
+  const isCompactSeriesLayout = useMediaQuery('(max-width: 1024px)');
   const GRID_COLS = 24;
   const ROW_HEIGHT = 16;
   const GRID_GUTTER = 8;
@@ -1088,34 +1100,34 @@ function SeriesDetail() {
     { id: 'textUnderline', icon: Underline, label: 'Sottolineato' },
     { id: 'textMono', icon: Code, label: 'Monospace' },
   ];
-  const GROUP_GRID_VERSION = 2;
-  const LEGACY_GROUP_COLS = 6;
-  const LEGACY_GROUP_ROW_HEIGHT = 70;
-  const LEGACY_GROUP_GUTTER = 8;
+  const DEFAULT_GROUP_COLS = 6;
   const GROUP_MIN_W = 1;
   const GROUP_MIN_H = 1;
   const GROUP_DEFAULT_W = 2;
   const GROUP_DEFAULT_H = 2;
-  const LEGACY_GRID_COLS = 12;
-  const LEGACY_ROW_HEIGHT = 24;
-  const LEGACY_GRID_GUTTER = 12;
-  const MIN_W = 240;
-  const MIN_H = 140;
+  const MIN_W_COLS = 5;
+  const MIN_H_ROWS = 6;
   const COL_WIDTH = (canvasWidth - GRID_GUTTER * (GRID_COLS - 1)) / GRID_COLS;
   const GRID_STEP_X = COL_WIDTH + GRID_GUTTER;
   const GRID_STEP_Y = ROW_HEIGHT + GRID_GUTTER;
-  const LEGACY_COL_WIDTH =
-    (canvasWidth - LEGACY_GRID_GUTTER * (LEGACY_GRID_COLS - 1)) / LEGACY_GRID_COLS;
-  const LEGACY_STEP_X = LEGACY_COL_WIDTH + LEGACY_GRID_GUTTER;
-  const LEGACY_STEP_Y = LEGACY_ROW_HEIGHT + LEGACY_GRID_GUTTER;
-  const GRID_SCALE_X = LEGACY_STEP_X / GRID_STEP_X;
-  const GRID_SCALE_Y = LEGACY_STEP_Y / GRID_STEP_Y;
-  const MIN_W_COLS = Math.max(1, Math.round((MIN_W + GRID_GUTTER) / GRID_STEP_X));
-  const MIN_H_ROWS = Math.max(1, Math.round((MIN_H + GRID_GUTTER) / GRID_STEP_Y));
 
   const outletContext = useOutletContext();
   const isAdmin = Boolean(outletContext?.isAdmin);
   const toast = useToast();
+  const handleBack = () => {
+    const historyIndex = window.history.state?.idx;
+
+    if (Number.isInteger(historyIndex) && historyIndex > 0) {
+      navigate(-1);
+      return;
+    }
+
+    navigate('/series', { replace: true });
+  };
+  const seriesSeoCover = React.useMemo(() => {
+    if (!currentSeries || seriesPhotos.length === 0) return null;
+    return seriesPhotos.find((photo) => photo.id === currentSeries.coverImage) || seriesPhotos[0];
+  }, [currentSeries, seriesPhotos]);
 
   const seriesStructuredData = React.useMemo(() => {
     if (!currentSeries) return null;
@@ -1132,7 +1144,12 @@ function SeriesDetail() {
           contentUrl: full,
           url: toAbsoluteSiteUrl(`/photo/${encodeURIComponent(String(photo.id))}`),
           name: photo.title || currentSeries.title || 'Fotografia',
-          description: photo.description || currentSeries.description || 'Scatto fotografico'
+          description: photo.description || currentSeries.description || 'Scatto fotografico',
+          creator: { '@type': 'Person', name: 'Kevin Muka' },
+          creditText: 'Kevin Muka',
+          copyrightNotice: '© Kevin Muka. Tutti i diritti riservati.',
+          license: toAbsoluteSiteUrl('/rights'),
+          acquireLicensePage: toAbsoluteSiteUrl('/contact')
         };
 
         if (Array.isArray(photo.tags) && photo.tags.length > 0) {
@@ -1157,9 +1174,11 @@ function SeriesDetail() {
     title: currentSeries?.title ? `Serie: ${currentSeries.title}` : 'Dettaglio Serie',
     description: currentSeries?.description
       || (currentSeries?.title
-        ? `Dettaglio della serie fotografica "${currentSeries.title}" di Kevin Muka.`
+        ? `Serie fotografica "${currentSeries.title}" di Kevin Muka.`
         : 'Dettaglio serie fotografica di Kevin Muka.'),
-    ogType: 'article',
+    ogType: 'website',
+    image: seriesSeoCover ? toAbsoluteImageUrl(seriesSeoCover.socialImage) : '',
+    noindex: detailFetchState === 'error' || currentSeries?.published === false,
     structuredData: seriesStructuredData,
   });
 
@@ -1196,12 +1215,14 @@ function SeriesDetail() {
     }
   }, [currentSeries, photos]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!currentSeries) return;
 
     const prepared = prepareContent(currentSeries.content || [], true);
     setDraftContent(prepared);
+    // prepareContent intentionally follows the current canvas geometry; this
+    // initialization runs only when the source series changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSeries]);
 
   useEffect(() => {
@@ -1224,7 +1245,10 @@ function SeriesDetail() {
         parseFloat(styles.paddingLeft || '0') + parseFloat(styles.paddingRight || '0');
       const innerWidth = container.clientWidth - paddingX;
       if (Number.isFinite(innerWidth) && innerWidth > 0) {
-        setCanvasWidth(Math.min(CANVAS_MAX_WIDTH, innerWidth));
+        const nextWidth = layoutMode
+          ? Math.min(CANVAS_MAX_WIDTH, Math.max(EDITOR_MIN_CANVAS_WIDTH, innerWidth))
+          : Math.min(CANVAS_MAX_WIDTH, innerWidth);
+        setCanvasWidth(nextWidth);
       }
     };
 
@@ -1245,7 +1269,7 @@ function SeriesDetail() {
         window.removeEventListener('resize', updateWidth);
       }
     };
-  }, [layoutMode, CANVAS_MAX_WIDTH, currentSeries]);
+  }, [layoutMode, CANVAS_MAX_WIDTH, EDITOR_MIN_CANVAS_WIDTH, currentSeries]);
 
   useLayoutEffect(() => {
     if (layoutMode) {
@@ -1254,59 +1278,57 @@ function SeriesDetail() {
     }
   }, [layoutMode]);
 
+  useEffect(() => {
+    if (!isCompactSeriesLayout || !layoutMode) return;
+
+    // The compact renderer is a projection of the authored desktop grid, not
+    // a second layout to edit. Keep spatial editing on a sufficiently wide
+    // canvas and leave content editing available through the regular editor.
+    setLayoutMode(false);
+    setSelectedId(null);
+    setQuickAddOpen(false);
+  }, [isCompactSeriesLayout, layoutMode]);
+
+  useEffect(() => {
+    if (!lightboxPhoto) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setLightboxPhoto(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [lightboxPhoto]);
+
   const clamp = (v, min, max) => Math.max(min, Math.min(v, max));
 
   const getBlockMinRows = (type) => (type === 'text' ? TEXT_MIN_H_ROWS : MIN_H_ROWS);
-
-  const scaleGridLayout = (layout, scaleX, scaleY) => ({
-    x: Math.max(0, Math.round((layout.x ?? 0) * scaleX)),
-    y: Math.max(0, Math.round((layout.y ?? 0) * scaleY)),
-    w: Math.max(1, Math.round((layout.w ?? MIN_W_COLS) * scaleX)),
-    h: Math.max(1, Math.round((layout.h ?? MIN_H_ROWS) * scaleY)),
-  });
 
   const createBlockId = () =>
     `block-${Math.random().toString(16).slice(2)}-${Date.now().toString(36)}`;
 
   const getBlockId = (block, index, assignNew) => {
     if (block.id) return block.id;
-    if (block._id) return block._id;
-    if (block.uid) return block.uid;
     if (assignNew) return createBlockId();
     return `block-${index}`;
   };
 
-  const isGridLayout = (layout) => (
-    layout &&
-    (layout.unit === 'grid' ||
-      (Number.isFinite(layout.w) && layout.w <= GRID_COLS && Number.isFinite(layout.x) && layout.x <= GRID_COLS))
-  );
-
-  const getDefaultPxSize = (type) => {
-    if (type === 'text') return { w: 720, h: 220 };
-    if (type === 'photo') return { w: 720, h: 520 };
-    return { w: 760, h: 420 };
-  };
-
   const getDefaultGridSize = (type) => {
-    const fallbackPx = getDefaultPxSize(type);
-    return {
-      w: Math.max(MIN_W_COLS, pxToColSpan(fallbackPx.w)),
-      h: Math.max(MIN_H_ROWS, pxToRowSpan(fallbackPx.h)),
-    };
+    if (type === 'text') return { w: 15, h: 9 };
+    if (type === 'photo') return { w: 15, h: 22 };
+    return { w: 16, h: 18 };
   };
-
-  const pxToColPos = (px) => Math.max(0, Math.round(px / GRID_STEP_X));
-  const pxToRowPos = (px) => Math.max(0, Math.round(px / GRID_STEP_Y));
-  const pxToColSpan = (px) => Math.max(1, Math.round((px + GRID_GUTTER) / GRID_STEP_X));
-  const pxToRowSpan = (px) => Math.max(1, Math.round((px + GRID_GUTTER) / GRID_STEP_Y));
 
   const clampGridLayout = (layout, minRows = MIN_H_ROWS) => {
     const w = clamp(layout.w || MIN_W_COLS, MIN_W_COLS, GRID_COLS);
     const h = Math.max(layout.h || minRows, minRows);
     const x = clamp(layout.x || 0, 0, GRID_COLS - w);
     const y = Math.max(layout.y || 0, 0);
-    return { x, y, w, h, unit: 'grid', gridVersion: GRID_VERSION };
+    return { x, y, w, h, unit: 'grid' };
   };
 
   const prepareContent = (content = [], assignIds = false) => {
@@ -1316,35 +1338,15 @@ function SeriesDetail() {
     (content || []).forEach((block, index) => {
       const id = getBlockId(block, index, assignIds);
       const defaults = getDefaultGridSize(block.type);
-      const fallbackPx = getDefaultPxSize(block.type);
       const baseLayout = block.layout;
-      let layout;
-
-      if (baseLayout && isGridLayout(baseLayout)) {
-        const base = {
+      const layout = baseLayout
+        ? {
           x: baseLayout.x ?? 0,
           y: baseLayout.y ?? yCursor,
           w: baseLayout.w ?? defaults.w,
           h: baseLayout.h ?? defaults.h,
-        };
-        const version = baseLayout.gridVersion ?? 1;
-        layout = version === GRID_VERSION
-          ? base
-          : scaleGridLayout(base, GRID_SCALE_X, GRID_SCALE_Y);
-      } else if (baseLayout) {
-        const xPx = typeof baseLayout.x === 'number' ? baseLayout.x : 24;
-        const yPx = typeof baseLayout.y === 'number' ? baseLayout.y : yCursor * GRID_STEP_Y;
-        const wPx = typeof baseLayout.w === 'number' ? baseLayout.w : fallbackPx.w;
-        const hPx = typeof baseLayout.h === 'number' ? baseLayout.h : fallbackPx.h;
-        layout = {
-          x: pxToColPos(xPx),
-          y: pxToRowPos(yPx),
-          w: pxToColSpan(wPx),
-          h: pxToRowSpan(hPx),
-        };
-      } else {
-        layout = { x: 0, y: yCursor, w: defaults.w, h: defaults.h };
-      }
+        }
+        : { x: 0, y: yCursor, w: defaults.w, h: defaults.h };
 
       const clamped = clampGridLayout(layout, getBlockMinRows(block.type));
       const placed = findAvailablePosition(clamped, nextContent, id);
@@ -1431,13 +1433,13 @@ function SeriesDetail() {
   };
 
   const getGroupCols = (layout) =>
-    Math.max(GROUP_MIN_W, layout?.w ?? LEGACY_GROUP_COLS);
+    Math.max(GROUP_MIN_W, layout?.w ?? DEFAULT_GROUP_COLS);
 
   const getGroupRows = (layout) =>
     Math.max(GROUP_MIN_H, layout?.h ?? GROUP_DEFAULT_H);
 
   const getGroupMinCols = (groupCols) =>
-    Math.max(GROUP_MIN_W, Math.min(groupCols || LEGACY_GROUP_COLS, MIN_W_COLS));
+    Math.max(GROUP_MIN_W, Math.min(groupCols || DEFAULT_GROUP_COLS, MIN_W_COLS));
 
   const getGroupMinRows = (groupRows) =>
     Math.max(GROUP_MIN_H, Math.min(groupRows || GROUP_DEFAULT_H, MIN_H_ROWS));
@@ -1458,27 +1460,6 @@ function SeriesDetail() {
     });
 
     return { minCols: maxCols, minRows: maxRows };
-  };
-
-  const getLegacyGroupColWidth = (width) =>
-    (width - LEGACY_GROUP_GUTTER * (LEGACY_GROUP_COLS - 1)) / LEGACY_GROUP_COLS;
-
-  const scaleLegacyGroupLayout = (layout, groupWidth) => {
-    const legacyColWidth = getLegacyGroupColWidth(groupWidth);
-    const legacyStepX = legacyColWidth + LEGACY_GROUP_GUTTER;
-    const legacyStepY = LEGACY_GROUP_ROW_HEIGHT + LEGACY_GROUP_GUTTER;
-    const xPx = (layout.x ?? 0) * legacyStepX;
-    const yPx = (layout.y ?? 0) * legacyStepY;
-    const wPx = (layout.w ?? GROUP_DEFAULT_W) * legacyStepX - LEGACY_GROUP_GUTTER;
-    const hPx = (layout.h ?? GROUP_DEFAULT_H) * legacyStepY - LEGACY_GROUP_GUTTER;
-
-    return {
-      x: Math.max(0, Math.round(xPx / GRID_STEP_X)),
-      y: Math.max(0, Math.round(yPx / GRID_STEP_Y)),
-      w: Math.max(1, Math.round((wPx + GRID_GUTTER) / GRID_STEP_X)),
-      h: Math.max(1, Math.round((hPx + GRID_GUTTER) / GRID_STEP_Y)),
-      gridVersion: GROUP_GRID_VERSION,
-    };
   };
 
   const buildGroupLayout = (items = [], groupCols, groupRows) =>
@@ -1554,7 +1535,7 @@ function SeriesDetail() {
   };
 
   const clampGroupLayout = (layout, groupCols, groupRows) => {
-    const maxCols = Math.max(GROUP_MIN_W, groupCols || LEGACY_GROUP_COLS);
+    const maxCols = Math.max(GROUP_MIN_W, groupCols || DEFAULT_GROUP_COLS);
     const maxRows = Math.max(GROUP_MIN_H, groupRows || GROUP_DEFAULT_H);
     const minCols = getGroupMinCols(maxCols);
     const minRows = getGroupMinRows(maxRows);
@@ -1563,7 +1544,7 @@ function SeriesDetail() {
     const x = clamp(layout.x || 0, 0, maxCols - w);
     const maxRow = typeof maxRows === 'number' ? Math.max(0, maxRows - h) : null;
     const y = maxRow === null ? Math.max(layout.y || 0, 0) : clamp(layout.y || 0, 0, maxRow);
-    return { x, y, w, h, gridVersion: GROUP_GRID_VERSION };
+    return { x, y, w, h, unit: 'grid' };
   };
 
   const hasGroupOverlap = (layout, items, ignoreId) => {
@@ -1582,7 +1563,7 @@ function SeriesDetail() {
 
   const findAvailableGroupPosition = (layout, items, ignoreId, groupCols = null, groupRows = null, startFromTop = false) => {
     const next = { ...layout };
-    const maxCols = Math.max(GROUP_MIN_W, groupCols || LEGACY_GROUP_COLS);
+    const maxCols = Math.max(GROUP_MIN_W, groupCols || DEFAULT_GROUP_COLS);
     const maxRows = Math.max(GROUP_MIN_H, groupRows || GROUP_DEFAULT_H);
     const maxX = Math.max(0, maxCols - next.w);
     const maxY = Math.max(0, maxRows - next.h);
@@ -1610,7 +1591,6 @@ function SeriesDetail() {
   const prepareGroupItems = (content = [], blockLayout) => {
     const groupCols = getGroupCols(blockLayout);
     const groupRows = getGroupRows(blockLayout);
-    const groupWidth = getBlockPixelWidth(blockLayout);
     let yCursor = 0;
     const items = [];
 
@@ -1631,14 +1611,10 @@ function SeriesDetail() {
           y: baseLayout.y ?? yCursor,
           w: baseLayout.w ?? GROUP_DEFAULT_W,
           h: baseLayout.h ?? GROUP_DEFAULT_H,
-          gridVersion: baseLayout.gridVersion,
         }
         : fallbackLayout;
-      const normalized = baseLayout && layout.gridVersion !== GROUP_GRID_VERSION
-        ? scaleLegacyGroupLayout(layout, groupWidth)
-        : layout;
 
-      const clamped = clampGroupLayout(normalized, groupCols, groupRows);
+      const clamped = clampGroupLayout(layout, groupCols, groupRows);
       const placed = findAvailableGroupPosition(clamped, items, id, groupCols, groupRows, false) || clamped;
       yCursor = Math.max(yCursor, placed.y + placed.h + 1);
       items.push({ ...base, id, layout: placed });
@@ -1697,7 +1673,7 @@ function SeriesDetail() {
     if (!interactive) {
       return (
         <ThumbImage
-          src={`${IMAGES_BASE_URL}${photo.image}`}
+          src={resolveVersionedPhotoAssetUrl(photo, 'image')}
           alt={photo.title}
           loading="lazy"
         />
@@ -1733,7 +1709,7 @@ function SeriesDetail() {
         title={photo.title || ''}
       >
         <ThumbImage
-          src={`${IMAGES_BASE_URL}${photo.image}`}
+          src={resolveVersionedPhotoAssetUrl(photo, 'image')}
           alt={photo.title}
           loading="lazy"
         />
@@ -1927,7 +1903,6 @@ function SeriesDetail() {
       const block = {
         id,
         type,
-        order: prev.length,
         content:
           type === 'text'
             ? ''
@@ -2083,17 +2058,13 @@ function SeriesDetail() {
     );
   }
 
-  const hasSavedLayout =
-    Array.isArray(currentSeries?.content) &&
-    currentSeries.content.some(b => b?.layout);
-
   const coverPhoto = getCoverPhoto();
 
   return (
     <>
       <PageContainer>
         <FloatingBackButton
-          onClick={() => navigate('/')}
+          onClick={handleBack}
           whileHover={{ scale: 1.03 }}
           whileTap={{ scale: 0.97 }}
           aria-label="Torna indietro"
@@ -2103,7 +2074,10 @@ function SeriesDetail() {
         <HeroSection>
           {coverPhoto && (
             <CoverImage
-              src={`${IMAGES_BASE_URL}${coverPhoto.image}`}
+              src={resolveVersionedPhotoAssetUrl(coverPhoto, 'image')}
+              $mobileSrc={coverPhoto.mobileImage
+                ? resolveVersionedPhotoAssetUrl(coverPhoto, 'mobileImage')
+                : undefined}
               initial={{ scale: 1.2 }}
               animate={{ scale: 1 }}
               transition={{ duration: 1.5 }}
@@ -2143,26 +2117,28 @@ function SeriesDetail() {
                 </span>
               </AdminBarButton>
 
-              <AdminBarButton
-                type="button"
-                onClick={() => {
-                  if (isSavingLayout) return;
-                  if (!layoutMode) {
-                    setSelectedId(null);
-                    setQuickAddOpen(false);
-                  }
-                  setLayoutMode(v => !v);
-                }}
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-              >
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                  {layoutMode ? <X size={16} /> : <LayoutGrid size={16} />}
-                  {layoutMode ? 'Esci layout' : 'Layout'}
-                </span>
-              </AdminBarButton>
+              {!isCompactSeriesLayout && (
+                <AdminBarButton
+                  type="button"
+                  onClick={() => {
+                    if (isSavingLayout) return;
+                    if (!layoutMode) {
+                      setSelectedId(null);
+                      setQuickAddOpen(false);
+                    }
+                    setLayoutMode(v => !v);
+                  }}
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                    {layoutMode ? <X size={16} /> : <LayoutGrid size={16} />}
+                    {layoutMode ? 'Esci layout' : 'Layout'}
+                  </span>
+                </AdminBarButton>
+              )}
 
-              {layoutMode && (
+              {layoutMode && !isCompactSeriesLayout && (
                 <>
                   <PrimaryAdminButton
                     type="button"
@@ -2192,8 +2168,7 @@ function SeriesDetail() {
             </AdminBar>
           )}
 
-          {layoutMode || hasSavedLayout ? (
-            <LayoutStage
+          <LayoutStage
               ref={stageRef}
               $editing={layoutMode}
               onPointerDown={(e) => {
@@ -2370,7 +2345,7 @@ function SeriesDetail() {
                               title={p.title || ''}
                             >
                               <InspectorImg
-                                src={p.thumbnail43 ? `${IMAGES_BASE_URL}${p.thumbnail43}` : '/photo-fallback.svg'}
+                                src={p.thumbnail43 ? resolveVersionedPhotoAssetUrl(p, 'thumbnail43') : '/photo-fallback.svg'}
                                 alt={p.title}
                                 loading="lazy"
                               />
@@ -2389,9 +2364,19 @@ function SeriesDetail() {
                 </Inspector>
               )}
 
+              {!layoutMode && isCompactSeriesLayout ? (
+                <ResponsiveSeriesContent
+                  content={viewContent}
+                  photos={photos}
+                  onPhotoClick={handlePhotoClick}
+                  textSizeMap={TEXT_SIZE_MAP}
+                  textFontMap={TEXT_FONT_MAP}
+                />
+              ) : (
               <CanvasFrame ref={canvasFrameRef} $showBorder={layoutMode}>
                 <Canvas
                   $showGrid={layoutMode}
+                  $editing={layoutMode}
                   style={{
                     '--canvas-width': `${canvasWidth}px`,
                     '--grid-step-x': `${GRID_STEP_X}px`,
@@ -2498,7 +2483,7 @@ function SeriesDetail() {
                             <PhotoFrame>
                               <PhotoMedia>
                                 <CanvasPhoto
-                                  src={`${IMAGES_BASE_URL}${photo.image}`}
+                                  src={resolveVersionedPhotoAssetUrl(photo, 'image')}
                                   alt={photo.title}
                                   loading="lazy"
                                 />
@@ -2728,40 +2713,8 @@ function SeriesDetail() {
                   </GridLayout>
                 </Canvas>
               </CanvasFrame>
-            </LayoutStage>
-          ) : (
-            // fallback: la tua view classica attuale
-            <>
-              {currentSeries.content && currentSeries.content.length > 0 ? (
-                currentSeries.content.map((block, index) => (
-                  <ContentBlock
-                    key={index}
-                    initial={{ opacity: 0, y: 30 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ duration: 0.6, delay: index * 0.1 }}
-                  >
-                    {/* ...tuo rendering classico... */}
-                  </ContentBlock>
-                ))
-              ) : (
-                <>
-                  {seriesPhotos.map(photo => (
-                    <ClassicFigure key={photo.id} style={{ marginBottom: "var(--spacing-4xl)" }}>
-                      <img
-                        src={`${IMAGES_BASE_URL}${photo.image}`}
-                        alt={photo.title}
-                        loading="lazy"
-                        onClick={() => handlePhotoClick(photo)}
-                        style={{ cursor: "pointer" }}
-                      />
-                      {photo.title && <figcaption>{photo.title}</figcaption>}
-                    </ClassicFigure>
-                  ))}
-                </>
               )}
-            </>
-          )}
+          </LayoutStage>
         </ContentSection>
       </PageContainer>
 
@@ -2790,7 +2743,7 @@ function SeriesDetail() {
               ✕
             </LightboxClose>
             <LightboxImage
-              src={`${IMAGES_BASE_URL}${lightboxPhoto.image}`}
+              src={resolveVersionedPhotoAssetUrl(lightboxPhoto, 'image')}
               alt={lightboxPhoto.title}
               onClick={(e) => e.stopPropagation()}
             />

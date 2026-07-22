@@ -1,8 +1,13 @@
 import { useEffect, useRef } from 'react';
+import { registerModalHistoryEntry } from '../utils/modalHistory';
 
 const escapeStack = [];
-let suppressPopstateCount = 0;
 let modalTokenCounter = 0;
+
+const removeStackEntry = (stack, entry) => {
+  const index = stack.lastIndexOf(entry);
+  if (index !== -1) stack.splice(index, 1);
+};
 
 export const useEscapeToClose = ({
   enabled = true,
@@ -15,7 +20,6 @@ export const useEscapeToClose = ({
   const historyTokenRef = useRef(null);
   const onCloseRef = useRef(onClose);
   const canCloseRef = useRef(canClose);
-  const consumedByPopstateRef = useRef(false);
 
   if (!stackTokenRef.current) {
     stackTokenRef.current = Symbol('escape-modal');
@@ -54,57 +58,20 @@ export const useEscapeToClose = ({
     target.addEventListener('keydown', handleEscape);
     return () => {
       target.removeEventListener('keydown', handleEscape);
-      const tokenIndex = escapeStack.lastIndexOf(token);
-      if (tokenIndex !== -1) {
-        escapeStack.splice(tokenIndex, 1);
-      }
+      removeStackEntry(escapeStack, token);
     };
   }, [enabled, target]);
 
   useEffect(() => {
     if (!enabled || !handleBrowserBack || typeof window === 'undefined' || !window.history) {
-      consumedByPopstateRef.current = false;
       return undefined;
     }
 
-    const token = stackTokenRef.current;
     const historyToken = historyTokenRef.current;
-    consumedByPopstateRef.current = false;
-
-    window.history.pushState(
-      {
-        ...(window.history.state || {}),
-        __modalToken: historyToken
-      },
-      ''
-    );
-
-    const handlePopstate = () => {
-      if (suppressPopstateCount > 0) {
-        suppressPopstateCount -= 1;
-        return;
-      }
-
-      if (escapeStack[escapeStack.length - 1] !== token) return;
-      consumedByPopstateRef.current = true;
-      if (!canCloseRef.current) return;
-      onCloseRef.current?.();
-    };
-
-    window.addEventListener('popstate', handlePopstate);
-
-    return () => {
-      window.removeEventListener('popstate', handlePopstate);
-
-      if (consumedByPopstateRef.current) {
-        consumedByPopstateRef.current = false;
-        return;
-      }
-
-      if (window.history.state?.__modalToken !== historyToken) return;
-
-      suppressPopstateCount += 1;
-      window.history.back();
-    };
+    return registerModalHistoryEntry({
+      historyToken,
+      canClose: () => canCloseRef.current,
+      onClose: () => onCloseRef.current?.()
+    });
   }, [enabled, handleBrowserBack]);
 };

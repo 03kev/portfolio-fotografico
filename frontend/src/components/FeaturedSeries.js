@@ -5,12 +5,17 @@ import { Link } from 'react-router-dom';
 import { Camera } from 'lucide-react';
 import { useSeries } from '../contexts/SeriesContext';
 import { usePhotos } from '../contexts/PhotoContext';
-import { resolveVersionedAssetUrl } from '../utils/imageUrl';
+import { resolveVersionedPhotoAssetUrl } from '../utils/imageUrl';
 
 const Grid = styled(motion.div)`
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: var(--spacing-xl);
+
+  @media (max-width: 640px) {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--spacing-lg);
+  }
 `;
 
 const Card = styled(motion(Link))`
@@ -32,6 +37,10 @@ const Cover = styled.div`
   position: relative;
   aspect-ratio: 16 / 10;
   background: rgba(255, 255, 255, 0.03);
+
+  @media (max-width: 480px) {
+    aspect-ratio: 4 / 3;
+  }
 `;
 
 const Img = styled.img`
@@ -115,7 +124,7 @@ export default function FeaturedSeries({ limit = 6 }) {
     const photo = photos.find(p => p.id === coverId);
     if (!photo || !photo.thumbnail11) return null;
     return {
-      url: resolveVersionedAssetUrl(photo.thumbnail11, photo.derivativesVersion || photo.id),
+      url: resolveVersionedPhotoAssetUrl(photo, 'thumbnail11'),
       alt: s.title
     };
   };

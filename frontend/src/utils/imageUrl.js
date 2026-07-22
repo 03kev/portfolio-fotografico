@@ -15,3 +15,11 @@ export function resolveVersionedAssetUrl(value, version, fallback = LOCAL_IMAGE_
   if (!src || !version) return base;
   return `${base}${base.includes('?') ? '&' : '?'}v=${encodeURIComponent(String(version))}`;
 }
+
+export function getPhotoAssetVersion(photo) {
+  return photo?.derivativesVersion || photo?.id || '';
+}
+
+export function resolveVersionedPhotoAssetUrl(photo, assetKey, fallback = LOCAL_IMAGE_FALLBACK) {
+  return resolveVersionedAssetUrl(photo?.[assetKey], getPhotoAssetVersion(photo), fallback);
+}

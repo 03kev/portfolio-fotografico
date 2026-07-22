@@ -417,6 +417,8 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                         this.initialMousePos = null;
                     }
                     break;
+                default:
+                    return;
             }
         },
 

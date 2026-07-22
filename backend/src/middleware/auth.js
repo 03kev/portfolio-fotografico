@@ -197,6 +197,13 @@ function isAuthenticatedRequest(req) {
     return false;
 }
 
+function canAccessAdminData(req) {
+    if (!hasWriteTokenConfigured()) {
+        return !isProduction();
+    }
+    return isAuthenticatedRequest(req);
+}
+
 function requireWriteAuth(req, res, next) {
     if (!hasWriteTokenConfigured()) {
         if (isProduction()) {
@@ -228,6 +235,7 @@ function protectWriteMethods(req, res, next) {
 }
 
 module.exports = {
+    canAccessAdminData,
     clearSessionCookie,
     hasWriteTokenConfigured,
     isAuthenticatedRequest,

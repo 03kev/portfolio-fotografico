@@ -82,9 +82,13 @@ function toRuntimePhoto(record) {
         tags: normalizeTags(record.tags),
         sourcePath: pickFirstNonEmpty(sourceObject.path),
         sourceContentType: pickFirstNonEmpty(sourceObject.contentType),
+        mobileImage: Boolean(record.mobileImage),
+        updatedAt: Number.isFinite(Number(record.updatedAt))
+            ? Number(record.updatedAt)
+            : 0,
         derivativesVersion: Number.isFinite(Number(record.derivativesVersion))
             ? Number(record.derivativesVersion)
-            : Date.now()
+            : (Number.isFinite(Number(record.id)) ? Number(record.id) : 0)
     };
 
     return runtimePhoto;
@@ -123,6 +127,10 @@ function toStoragePhoto(runtimePhoto) {
         tags: normalizeTags(runtimePhoto.tags),
         sourcePath: toTrimmedString(runtimePhoto.sourcePath),
         sourceContentType: toTrimmedString(runtimePhoto.sourceContentType),
+        mobileImage: Boolean(runtimePhoto.mobileImage),
+        updatedAt: Number.isFinite(Number(runtimePhoto.updatedAt))
+            ? Number(runtimePhoto.updatedAt)
+            : 0,
         derivativesVersion: Number.isFinite(Number(runtimePhoto.derivativesVersion))
             ? Number(runtimePhoto.derivativesVersion)
             : Date.now()
@@ -158,6 +166,8 @@ function toStoragePhoto(runtimePhoto) {
         ...(cropProfiles ? { composition: { cropProfiles } } : {}),
         tags: normalizeTags(photo.tags),
         ...(Object.keys(source).length ? { source } : {}),
+        ...(photo.mobileImage ? { mobileImage: true } : {}),
+        ...(photo.updatedAt > 0 ? { updatedAt: photo.updatedAt } : {}),
         derivativesVersion: Number.isFinite(Number(photo.derivativesVersion))
             ? Number(photo.derivativesVersion)
             : Date.now()

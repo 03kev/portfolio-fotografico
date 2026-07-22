@@ -7,10 +7,7 @@ import { usePhotos } from '../contexts/PhotoContext';
 import { 
     createWorldMapNavigation, 
     GLOBE_RADIUS as NAV_GLOBE_RADIUS,
-    CAMERA_START_Z as NAV_CAMERA_START_Z,
-    MIN_CAMERA_DISTANCE as NAV_MIN_CAMERA_DISTANCE,
-    MAX_CAMERA_DISTANCE as NAV_MAX_CAMERA_DISTANCE,
-    AUTO_ROTATE_SPEED as NAV_AUTO_ROTATE_SPEED
+    CAMERA_START_Z as NAV_CAMERA_START_Z
 } from '../utils/WorldMapNavigation';
 
 import { useInView } from 'react-intersection-observer';
@@ -21,9 +18,6 @@ import { useInView } from 'react-intersection-observer';
 // Import navigation constants and use local names
 const GLOBE_RADIUS = NAV_GLOBE_RADIUS;
 const CAMERA_START_Z = NAV_CAMERA_START_Z;
-const MIN_CAMERA_DISTANCE = NAV_MIN_CAMERA_DISTANCE;
-const MAX_CAMERA_DISTANCE = NAV_MAX_CAMERA_DISTANCE;
-const AUTO_ROTATE_SPEED = NAV_AUTO_ROTATE_SPEED;
 
 // Local constants specific to WorldMap component
 const ATMOSPHERE_RADIUS     = GLOBE_RADIUS * 1.025;
@@ -57,7 +51,7 @@ const SectionTitle = styled(motion.h2)`
   font-weight: var(--font-weight-black);
   text-align: center;
   margin-bottom: var(--spacing-3xl);
-  background: var(--primary-gradient);
+  background: var(--accent-gradient);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -586,7 +580,7 @@ const createCustomControls = useCallback((camera, domElement) => {
     };
     
     return createWorldMapNavigation(camera, domElement, refs, callbacks);
-}, [disableAutoRotate, scheduleAutoRotateResume]);
+}, [disableAutoRotate, scheduleAutoRotateResume, setCanvasCursor]);
 
 // Funzione per calcolare la rotazione della bussola
 const updateCompassRotation = useCallback(() => {
@@ -611,13 +605,13 @@ const updateCompassRotation = useCallback(() => {
 }, []);
 
 useEffect(() => {
-    if (!mountRef.current || !inView) return;
+    const mountElement = mountRef.current;
+    if (!mountElement || !inView) return;
     
     const scene = new THREE.Scene();
-    let contextLost = false;
     const camera = new THREE.PerspectiveCamera(
         50, // FOV
-        mountRef.current.clientWidth / mountRef.current.clientHeight, 
+        mountElement.clientWidth / mountElement.clientHeight,
         0.1, 
         1000
     );
@@ -628,12 +622,12 @@ useEffect(() => {
     });
     
     renderer.setClearColor(0x060608, 1);
-    renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
+    renderer.setSize(mountElement.clientWidth, mountElement.clientHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.domElement.setAttribute('data-testid', 'worldmap-canvas');
     
     renderer.shadowMap.enabled = false;
-    mountRef.current.appendChild(renderer.domElement);
+    mountElement.appendChild(renderer.domElement);
     
     // store references
     sceneRef.current = scene;
@@ -850,18 +844,6 @@ useEffect(() => {
     // Inizializza la rotazione della bussola
     updateCompassRotation();
     
-    // Aggiorna scala marker in base alla distanza camera
-    const updateMarkerScales = () => {
-        const cameraDistance = camera.position.length();
-        const scaleFactor = Math.max(0.5, Math.min(2, (cameraDistance - 5) / 15));
-        
-        markersRef.current.forEach(marker => {
-            if (marker.pulseScale) {
-                marker.pulseScale(Date.now() * 0.001, scaleFactor);
-            }
-        });
-    };
-    
     // raycaster ottimizzato
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
@@ -1003,12 +985,10 @@ useEffect(() => {
     // Gestione perdita/ripristino contesto WebGL
     canvas.addEventListener('webglcontextlost', (e) => {
         e.preventDefault();
-        contextLost = true;
         console.warn('WebGL context lost');
     }, false);
     canvas.addEventListener('webglcontextrestored', () => {
         console.warn('WebGL context restored');
-        contextLost = false;
         // Ricarica texture della Terra
         if (typeof loadTextures === 'function') {
             loadTextures();
@@ -1109,10 +1089,10 @@ useEffect(() => {
     
     // Handle resize ottimizzato
     const handleResize = throttle(() => {
-        if (!mountRef.current || !camera || !renderer) return;
+        if (!mountElement || !camera || !renderer) return;
         
-        const width = mountRef.current.clientWidth;
-        const height = mountRef.current.clientHeight;
+        const width = mountElement.clientWidth;
+        const height = mountElement.clientHeight;
         
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
@@ -1143,9 +1123,8 @@ useEffect(() => {
             delete window.__worldmapDebug;
         }
         
-        const currentMount = mountRef.current;
-        if (currentMount && currentCanvas) {
-            currentMount.removeChild(currentCanvas);
+        if (currentCanvas.parentNode === mountElement) {
+            mountElement.removeChild(currentCanvas);
         }
         
         // Dispose completo delle risorse
@@ -1172,6 +1151,9 @@ useEffect(() => {
         document.body.style.cursor = 'default';
         if (autoRotateTimerRef.current) { clearTimeout(autoRotateTimerRef.current); }
     };
+// The renderer is intentionally recreated only when its data or visibility
+// changes. Event handlers read mutable interaction state through refs.
+// eslint-disable-next-line react-hooks/exhaustive-deps
 }, [inView, validPhotos, drawMarkersForLevel, updateCompassRotation]);
 
 // Funzione per raddrizzare il globo (nord in alto)
@@ -1333,7 +1315,7 @@ const zoomOut = () => {
 * @param {number}   duration     Animation duration in ms
 * @param {Function} onComplete   Callback once animation finishes
 */
-const focusOnPhoto = (
+const focusOnPhoto = useCallback((
     photo,
     targetRadius = FOCUS_OFFSET_RADIUS,
     duration = 900,
@@ -1346,7 +1328,6 @@ const focusOnPhoto = (
     
     if (!photo || !cameraRef.current || !controlsRef.current) return false;
     const controls = controlsRef.current;
-    const camera   = cameraRef.current;
     prevRadiusRef.current = controls.spherical.radius;  // distanza attuale
     const markerPos = latLngToVector3(photo.lat, photo.lng, 1).normalize(); // posizione del marker
     
@@ -1406,7 +1387,7 @@ const focusOnPhoto = (
     };
     requestAnimationFrame(animate);
     return true;
-};
+}, [latLngToVector3, modalOpen]);
 
 useEffect(() => {
     actions.registerFocusHandler(focusOnPhoto);
@@ -1476,8 +1457,6 @@ useEffect(() => {
     if (!controlsRef.current || !globeRef.current || !cameraRef.current) return;
     
     const controls = controlsRef.current;
-    const cam      = cameraRef.current;
-    
     if (modalOpen || galleryModalOpen) {
         controls.autoRotate = false;
         setAutoRotate(false);
@@ -1530,7 +1509,7 @@ useEffect(() => {
         }
     };
     requestAnimationFrame(zoomAnim);
-}, [modalOpen, galleryModalOpen]);
+}, [modalOpen, galleryModalOpen, scheduleAutoRotateResume]);
 
 
 // Calcolo statistiche memoizzato

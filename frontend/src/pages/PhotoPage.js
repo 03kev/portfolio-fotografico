@@ -56,8 +56,9 @@ const PhotoDescription = styled.p`
 
 export default function PhotoPage() {
   const { id } = useParams();
-  const { photos, loading } = usePhotos();
+  const { photos, loading, modalOpen, selectedPhoto, actions } = usePhotos();
   const photoId = String(id || '').trim();
+  const openedPhotoIdRef = React.useRef(null);
   const canonicalUrl = toAbsoluteSiteUrl(`/photo/${encodeURIComponent(photoId)}`);
 
   const photo = React.useMemo(
@@ -65,12 +66,26 @@ export default function PhotoPage() {
     [photos, photoId]
   );
 
+  React.useEffect(() => {
+    if (loading || !photo) return;
+    if (modalOpen && String(selectedPhoto?.id) === photoId) {
+      openedPhotoIdRef.current = photoId;
+      return;
+    }
+    if (openedPhotoIdRef.current === photoId) return;
+
+    actions.openPhotoModal(photo);
+    openedPhotoIdRef.current = photoId;
+  }, [actions, loading, modalOpen, photo, photoId, selectedPhoto]);
+
   const seoTitle = photo?.title
     ? `${photo.title} - Kevin Muka`
     : 'Foto - Kevin Muka';
 
   const seoDescription = buildPhotoDescription(photo);
 
+  const rightsUrl = toAbsoluteSiteUrl('/rights');
+  const acquireLicensePage = toAbsoluteSiteUrl('/contact');
   const seoImage = photo ? toAbsoluteImageUrl(photo.socialImage) : '';
   const keywords = React.useMemo(
     () => (Array.isArray(photo?.tags) ? photo.tags.filter(Boolean) : []),
@@ -81,25 +96,44 @@ export default function PhotoPage() {
   const structuredData = React.useMemo(() => {
     if (!photo) return null;
 
-    const data = {
-      '@context': 'https://schema.org',
+    const imageObjectId = `${canonicalUrl}#primary-image`;
+    const imageObject = {
       '@type': 'ImageObject',
+      '@id': imageObjectId,
       name: photo.title || 'Fotografia',
       description: buildPhotoDescription(photo),
-      contentUrl: toAbsoluteImageUrl(photo.socialImage),
+      contentUrl: toAbsoluteImageUrl(photo.image),
       url: canonicalUrl,
+      creator: { '@type': 'Person', name: 'Kevin Muka' },
+      creditText: 'Kevin Muka',
+      copyrightNotice: '© Kevin Muka. Tutti i diritti riservati.',
+      license: rightsUrl,
+      acquireLicensePage,
     };
 
     if (keywordsCsv) {
-      data.keywords = keywordsCsv;
+      imageObject.keywords = keywordsCsv;
     }
 
     if (photo.date) {
-      data.datePublished = photo.date;
+      imageObject.datePublished = photo.date;
     }
 
-    return data;
-  }, [photo, canonicalUrl, keywordsCsv]);
+    return {
+      '@context': 'https://schema.org',
+      '@graph': [
+        {
+          '@type': 'WebPage',
+          '@id': canonicalUrl,
+          url: canonicalUrl,
+          name: seoTitle,
+          description: seoDescription,
+          primaryImageOfPage: { '@id': imageObjectId }
+        },
+        imageObject
+      ]
+    };
+  }, [photo, canonicalUrl, keywordsCsv, rightsUrl, acquireLicensePage, seoDescription, seoTitle]);
 
   useSeo({
     title: seoTitle,
@@ -128,7 +162,6 @@ export default function PhotoPage() {
       </SeoOnlyIntro>
       <Gallery
         headingLevel="h2"
-        forcedPhotoId={photoId}
         hideCardDescriptions
       />
     </>

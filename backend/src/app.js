@@ -22,6 +22,7 @@ const {
 const { buildPhotoAssetPaths } = require('./services/photoDerivatives');
 const { toRuntimePhoto } = require('./services/photoRecord');
 const { buildPublicAssetUrl } = require('./services/publicAssetUrl');
+const { normalizeSeriesCollection } = require('./services/seriesRecord');
 
 const app = express();
 validateEnv();
@@ -265,19 +266,55 @@ function toAbsoluteSiteUrl(value, siteBaseUrl) {
     return `${siteBaseUrl}/${src}`;
 }
 
-function resolvePhotoImageUrl(photo, siteBaseUrl) {
+function resolvePhotoImageUrl(photo, siteBaseUrl, assetKey = 'socialImagePath') {
     const photoId = String(photo?.id || '').trim();
     if (!photoId) return '';
-    const raw = buildPhotoAssetPaths(photoId).socialImagePath;
+    const raw = buildPhotoAssetPaths(photoId)[assetKey];
     if (!raw) return '';
 
     const normalized = buildPublicAssetUrl(raw);
     return toAbsoluteSiteUrl(normalized, siteBaseUrl);
 }
 
-function renderPhotoSeoHtml({ title, description, canonicalUrl, imageUrl, noindex = false }) {
-    const safeTitle = escapeXml(title || 'Foto - Kevin Muka');
-    const safeDescription = escapeXml(description || 'Dettaglio foto del portfolio di Kevin Muka.');
+function serializeJsonForHtml(value) {
+    return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
+function getPhotoLastModifiedIso(photo) {
+    const timestamp = Number(photo?.updatedAt || photo?.derivativesVersion || 0);
+    if (!Number.isFinite(timestamp) || timestamp <= 0) return '';
+
+    const date = new Date(timestamp);
+    return Number.isNaN(date.getTime()) ? '' : date.toISOString();
+}
+
+function getSeriesLastModifiedIso(series) {
+    const timestamp = Date.parse(series?.updatedAt || series?.createdAt || '');
+    if (!Number.isFinite(timestamp)) return '';
+
+    return new Date(timestamp).toISOString();
+}
+
+function buildSeriesDescription(series) {
+    const customDescription = String(series?.description || '').trim();
+    if (customDescription) return customDescription;
+
+    const title = String(series?.title || 'Serie fotografica').trim() || 'Serie fotografica';
+    return `Serie fotografica "${title}" di Kevin Muka.`;
+}
+
+function renderSeoHtml({
+    title,
+    description,
+    canonicalUrl,
+    imageUrl,
+    structuredData = null,
+    noindex = false,
+    ogType = 'website',
+    bodyContent = ''
+}) {
+    const safeTitle = escapeXml(title || 'Kevin Muka | Portfolio Fotografico');
+    const safeDescription = escapeXml(description || 'Portfolio fotografico di Kevin Muka.');
     const safeCanonical = escapeXml(canonicalUrl || '');
     const safeImage = escapeXml(imageUrl || '');
     const robotsContent = noindex ? 'noindex, nofollow' : 'index, follow';
@@ -287,6 +324,9 @@ function renderPhotoSeoHtml({ title, description, canonicalUrl, imageUrl, noinde
             `<meta property="og:image" content="${safeImage}" />`,
             `<meta name="twitter:image" content="${safeImage}" />`
         ].join('\n')
+        : '';
+    const structuredDataBlock = structuredData
+        ? `<script type="application/ld+json">${serializeJsonForHtml(structuredData)}</script>`
         : '';
 
     return [
@@ -299,7 +339,7 @@ function renderPhotoSeoHtml({ title, description, canonicalUrl, imageUrl, noinde
         `  <meta name="description" content="${safeDescription}" />`,
         `  <meta name="robots" content="${robotsContent}" />`,
         `  <link rel="canonical" href="${safeCanonical}" />`,
-        '  <meta property="og:type" content="article" />',
+        `  <meta property="og:type" content="${escapeXml(ogType)}" />`,
         `  <meta property="og:title" content="${safeTitle}" />`,
         `  <meta property="og:description" content="${safeDescription}" />`,
         `  <meta property="og:url" content="${safeCanonical}" />`,
@@ -308,13 +348,35 @@ function renderPhotoSeoHtml({ title, description, canonicalUrl, imageUrl, noinde
         `  <meta name="twitter:title" content="${safeTitle}" />`,
         `  <meta name="twitter:description" content="${safeDescription}" />`,
         `  ${ogImageBlock}`,
+        `  ${structuredDataBlock}`,
         '</head>',
         '<body>',
-        `  <h1>${safeTitle}</h1>`,
-        `  <p>${safeDescription}</p>`,
+        '  <main>',
+        `    <h1>${safeTitle}</h1>`,
+        `    <p>${safeDescription}</p>`,
+        bodyContent,
+        '  </main>',
         '</body>',
         '</html>'
     ].join('\n');
+}
+
+function renderPhotoSeoHtml(options) {
+    const safeContentImage = escapeXml(options.contentUrl || options.imageUrl || '');
+    const bodyContent = safeContentImage
+        ? [
+            '    <figure>',
+            `      <img src="${safeContentImage}" alt="${escapeXml(options.title || 'Foto')}" />`,
+            `      <figcaption>${escapeXml(options.description || '')}</figcaption>`,
+            '    </figure>'
+        ].join('\n')
+        : '';
+
+    return renderSeoHtml({
+        ...options,
+        ogType: 'article',
+        bodyContent
+    });
 }
 
 async function handlePhotoSeoPage(req, res, next) {
@@ -333,6 +395,7 @@ async function handlePhotoSeoPage(req, res, next) {
                 description: 'La foto richiesta non è disponibile.',
                 canonicalUrl,
                 imageUrl: '',
+                contentUrl: '',
                 noindex: true
             });
 
@@ -345,11 +408,276 @@ async function handlePhotoSeoPage(req, res, next) {
         const title = `${photoTitle} - Kevin Muka`;
         const description = buildPhotoCaption(photo);
         const imageUrl = resolvePhotoImageUrl(photo, siteBaseUrl);
+        const contentUrl = resolvePhotoImageUrl(photo, siteBaseUrl, 'imagePath');
+        const rightsUrl = `${siteBaseUrl}/rights`;
+        const imageObjectId = `${canonicalUrl}#primary-image`;
+        const structuredData = {
+            '@context': 'https://schema.org',
+            '@graph': [
+                {
+                    '@type': 'WebPage',
+                    '@id': canonicalUrl,
+                    url: canonicalUrl,
+                    name: title,
+                    description,
+                    primaryImageOfPage: { '@id': imageObjectId }
+                },
+                {
+                    '@type': 'ImageObject',
+                    '@id': imageObjectId,
+                    name: photoTitle,
+                    description,
+                    contentUrl,
+                    url: canonicalUrl,
+                    creator: { '@type': 'Person', name: 'Kevin Muka' },
+                    creditText: 'Kevin Muka',
+                    copyrightNotice: '© Kevin Muka. Tutti i diritti riservati.',
+                    license: rightsUrl,
+                    acquireLicensePage: `${siteBaseUrl}/contact`
+                }
+            ]
+        };
         const html = renderPhotoSeoHtml({
             title,
             description,
             canonicalUrl,
-            imageUrl
+            imageUrl,
+            contentUrl,
+            structuredData
+        });
+
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=86400');
+        return res.status(200).send(html);
+    } catch (error) {
+        return next(error);
+    }
+}
+
+async function handleSeriesIndexSeoPage(req, res, next) {
+    try {
+        const siteBaseUrl = getSiteBaseUrl();
+        const canonicalUrl = `${siteBaseUrl}/series`;
+        const [rawSeries, rawPhotos] = await Promise.all([
+            readMetadataFile('series.json', []),
+            readMetadataFile('photos.json', [])
+        ]);
+        const series = normalizeSeriesCollection(rawSeries).filter((item) => item.published && item.slug);
+        const photos = Array.isArray(rawPhotos) ? rawPhotos.map((item) => toRuntimePhoto(item)) : [];
+        const photosById = new Map(photos.map((photo) => [String(photo?.id || ''), photo]));
+        const entries = series.map((item) => {
+            const coverPhoto = photosById.get(String(item.coverImage || ''))
+                || item.photos.map((photoId) => photosById.get(String(photoId))).find(Boolean)
+                || null;
+            return {
+                series: item,
+                url: `${siteBaseUrl}/series/${encodeURIComponent(item.slug)}`,
+                coverPhoto
+            };
+        });
+        const title = 'Kevin Muka | Serie Fotografiche';
+        const description = 'Serie fotografiche di Kevin Muka: progetti visivi organizzati per tema, luogo e narrazione.';
+        const imageUrl = entries[0]?.coverPhoto
+            ? resolvePhotoImageUrl(entries[0].coverPhoto, siteBaseUrl, 'socialImagePath')
+            : '';
+        const itemListId = `${canonicalUrl}#series-list`;
+        const structuredData = {
+            '@context': 'https://schema.org',
+            '@graph': [
+                {
+                    '@type': 'CollectionPage',
+                    '@id': canonicalUrl,
+                    url: canonicalUrl,
+                    name: title,
+                    description,
+                    mainEntity: { '@id': itemListId }
+                },
+                {
+                    '@type': 'ItemList',
+                    '@id': itemListId,
+                    name: 'Serie fotografiche di Kevin Muka',
+                    numberOfItems: entries.length,
+                    itemListElement: entries.map((entry, index) => ({
+                        '@type': 'ListItem',
+                        position: index + 1,
+                        name: entry.series.title,
+                        url: entry.url
+                    }))
+                }
+            ]
+        };
+        const bodyContent = [
+            '    <nav aria-label="Serie fotografiche">',
+            '      <ul>',
+            ...entries.map((entry) => {
+                const coverUrl = entry.coverPhoto
+                    ? resolvePhotoImageUrl(entry.coverPhoto, siteBaseUrl, 'imagePath')
+                    : '';
+                return [
+                    '        <li>',
+                    '          <article>',
+                    `            <h2><a href="${escapeXml(entry.url)}">${escapeXml(entry.series.title)}</a></h2>`,
+                    coverUrl
+                        ? `            <a href="${escapeXml(entry.url)}"><img src="${escapeXml(coverUrl)}" alt="${escapeXml(entry.series.title)}" loading="lazy" /></a>`
+                        : '',
+                    `            <p>${escapeXml(buildSeriesDescription(entry.series))}</p>`,
+                    '          </article>',
+                    '        </li>'
+                ].filter(Boolean).join('\n');
+            }),
+            '      </ul>',
+            '    </nav>'
+        ].join('\n');
+        const html = renderSeoHtml({
+            title,
+            description,
+            canonicalUrl,
+            imageUrl,
+            structuredData,
+            ogType: 'website',
+            bodyContent
+        });
+
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=86400');
+        return res.status(200).send(html);
+    } catch (error) {
+        return next(error);
+    }
+}
+
+async function handleSeriesSeoPage(req, res, next) {
+    try {
+        const siteBaseUrl = getSiteBaseUrl();
+        const rawIdentifier = String(req.params.identifier || '').trim();
+        const identifier = decodeURIComponent(rawIdentifier);
+        const requestedUrl = `${siteBaseUrl}/series/${encodeURIComponent(identifier)}`;
+        const [rawSeries, rawPhotos] = await Promise.all([
+            readMetadataFile('series.json', []),
+            readMetadataFile('photos.json', [])
+        ]);
+        const allSeries = normalizeSeriesCollection(rawSeries);
+        const series = allSeries.find((item) => (
+            item.published
+            && (String(item.id) === identifier || item.slug === identifier)
+        ));
+
+        if (!series) {
+            const notFoundHtml = renderSeoHtml({
+                title: 'Serie non trovata - Kevin Muka',
+                description: 'La serie fotografica richiesta non è disponibile.',
+                canonicalUrl: requestedUrl,
+                imageUrl: '',
+                noindex: true
+            });
+
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            res.setHeader('Cache-Control', 'public, max-age=60');
+            return res.status(404).send(notFoundHtml);
+        }
+
+        const photos = Array.isArray(rawPhotos) ? rawPhotos.map((item) => toRuntimePhoto(item)) : [];
+        const photosById = new Map(photos.map((photo) => [String(photo?.id || ''), photo]));
+        const seriesPhotos = series.photos
+            .map((photoId) => photosById.get(String(photoId)))
+            .filter(Boolean)
+            .slice(0, 120);
+        const coverPhoto = photosById.get(String(series.coverImage || '')) || seriesPhotos[0] || null;
+        const canonicalUrl = `${siteBaseUrl}/series/${encodeURIComponent(series.slug)}`;
+        const title = `Kevin Muka | Serie: ${series.title}`;
+        const description = buildSeriesDescription(series);
+        const imageUrl = coverPhoto
+            ? resolvePhotoImageUrl(coverPhoto, siteBaseUrl, 'socialImagePath')
+            : '';
+        const rightsUrl = `${siteBaseUrl}/rights`;
+        const contactUrl = `${siteBaseUrl}/contact`;
+        const galleryId = `${canonicalUrl}#gallery`;
+        const imageObjects = seriesPhotos.map((photo) => {
+            const photoId = String(photo.id);
+            const photoUrl = `${siteBaseUrl}/photo/${encodeURIComponent(photoId)}`;
+            return {
+                '@type': 'ImageObject',
+                '@id': `${photoUrl}#primary-image`,
+                name: String(photo.title || series.title || 'Fotografia').trim(),
+                description: buildPhotoCaption(photo),
+                contentUrl: resolvePhotoImageUrl(photo, siteBaseUrl, 'imagePath'),
+                url: photoUrl,
+                creator: { '@type': 'Person', name: 'Kevin Muka' },
+                creditText: 'Kevin Muka',
+                copyrightNotice: '© Kevin Muka. Tutti i diritti riservati.',
+                license: rightsUrl,
+                acquireLicensePage: contactUrl
+            };
+        });
+        const coverObject = coverPhoto
+            ? imageObjects.find((item) => item['@id'] === `${siteBaseUrl}/photo/${encodeURIComponent(String(coverPhoto.id))}#primary-image`)
+            : null;
+        const structuredData = {
+            '@context': 'https://schema.org',
+            '@graph': [
+                {
+                    '@type': 'CollectionPage',
+                    '@id': canonicalUrl,
+                    url: canonicalUrl,
+                    name: title,
+                    description,
+                    mainEntity: { '@id': galleryId },
+                    ...(coverObject ? { primaryImageOfPage: { '@id': coverObject['@id'] } } : {})
+                },
+                {
+                    '@type': 'ImageGallery',
+                    '@id': galleryId,
+                    name: series.title,
+                    description,
+                    url: canonicalUrl,
+                    creator: { '@type': 'Person', name: 'Kevin Muka' },
+                    associatedMedia: imageObjects
+                },
+                {
+                    '@type': 'BreadcrumbList',
+                    itemListElement: [
+                        {
+                            '@type': 'ListItem',
+                            position: 1,
+                            name: 'Serie',
+                            item: `${siteBaseUrl}/series`
+                        },
+                        {
+                            '@type': 'ListItem',
+                            position: 2,
+                            name: series.title,
+                            item: canonicalUrl
+                        }
+                    ]
+                }
+            ]
+        };
+        const narrativeContent = series.content
+            .filter((block) => block.type === 'text' && String(block.content || '').trim())
+            .map((block) => `    <section><p>${escapeXml(block.content)}</p></section>`)
+            .join('\n');
+        const galleryContent = seriesPhotos
+            .map((photo) => {
+                const photoUrl = `${siteBaseUrl}/photo/${encodeURIComponent(String(photo.id))}`;
+                const contentUrl = resolvePhotoImageUrl(photo, siteBaseUrl, 'imagePath');
+                return [
+                    '    <figure>',
+                    `      <a href="${escapeXml(photoUrl)}">`,
+                    `        <img src="${escapeXml(contentUrl)}" alt="${escapeXml(photo.title || series.title)}" loading="lazy" />`,
+                    '      </a>',
+                    `      <figcaption>${escapeXml(buildPhotoCaption(photo))}</figcaption>`,
+                    '    </figure>'
+                ].join('\n');
+            })
+            .join('\n');
+        const html = renderSeoHtml({
+            title,
+            description,
+            canonicalUrl,
+            imageUrl,
+            structuredData,
+            ogType: 'website',
+            bodyContent: [narrativeContent, galleryContent].filter(Boolean).join('\n')
         });
 
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -363,15 +691,55 @@ async function handlePhotoSeoPage(req, res, next) {
 async function handleSitemapPages(req, res) {
     try {
         const siteBaseUrl = getSiteBaseUrl();
-        const pages = ['/', '/series', '/gallery', '/map', '/about', '/contact'];
-        const entries = pages
+        const pages = ['/', '/series', '/gallery', '/map', '/about', '/contact', '/rights'];
+        const pageEntries = pages
             .map((path) => {
                 const pageUrl = `${siteBaseUrl}${path === '/' ? '/' : path}`;
                 return [
                     '<url>',
                     `<loc>${escapeXml(pageUrl)}</loc>`,
                     '<changefreq>weekly</changefreq>',
-                    path === '/' ? '<priority>1.0</priority>' : '<priority>0.8</priority>',
+                    path === '/'
+                        ? '<priority>1.0</priority>'
+                        : path === '/series'
+                            ? '<priority>0.9</priority>'
+                            : '<priority>0.7</priority>',
+                    '</url>'
+                ].join('');
+            })
+            .join('');
+        const [rawPhotos, rawSeries] = await Promise.all([
+            readMetadataFile('photos.json', []),
+            readMetadataFile('series.json', [])
+        ]);
+        const photos = Array.isArray(rawPhotos) ? rawPhotos.map((item) => toRuntimePhoto(item)) : [];
+        const series = normalizeSeriesCollection(rawSeries).filter((item) => item.published && item.slug);
+        const photoEntries = photos
+            .map((photo) => {
+                const photoId = String(photo?.id || '').trim();
+                if (!photoId) return '';
+
+                const photoUrl = `${siteBaseUrl}/photo/${encodeURIComponent(photoId)}`;
+                const lastmod = getPhotoLastModifiedIso(photo);
+                return [
+                    '<url>',
+                    `<loc>${escapeXml(photoUrl)}</loc>`,
+                    lastmod ? `<lastmod>${escapeXml(lastmod)}</lastmod>` : '',
+                    '<priority>0.6</priority>',
+                    '</url>'
+                ].join('');
+            })
+            .filter(Boolean)
+            .join('');
+        const seriesEntries = series
+            .map((item) => {
+                const seriesUrl = `${siteBaseUrl}/series/${encodeURIComponent(item.slug)}`;
+                const lastmod = getSeriesLastModifiedIso(item);
+                return [
+                    '<url>',
+                    `<loc>${escapeXml(seriesUrl)}</loc>`,
+                    lastmod ? `<lastmod>${escapeXml(lastmod)}</lastmod>` : '',
+                    '<priority>0.9</priority>',
                     '</url>'
                 ].join('');
             })
@@ -379,7 +747,7 @@ async function handleSitemapPages(req, res) {
 
         const xml = `<?xml version="1.0" encoding="UTF-8"?>`
             + `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">`
-            + `${entries}`
+            + `${pageEntries}${seriesEntries}${photoEntries}`
             + `</urlset>`;
 
         res.setHeader('Content-Type', 'application/xml; charset=utf-8');
@@ -433,6 +801,7 @@ async function handleSitemapImages(req, res) {
                 }
 
                 const landingUrl = `${siteBaseUrl}/photo/${encodeURIComponent(photoId)}`;
+                const lastmod = getPhotoLastModifiedIso(photo);
 
                 const title = escapeXml(photo.title || 'Foto');
                 const caption = escapeXml(buildPhotoCaption(photo));
@@ -440,6 +809,7 @@ async function handleSitemapImages(req, res) {
                 return [
                     '<url>',
                     `<loc>${escapeXml(landingUrl)}</loc>`,
+                    lastmod ? `<lastmod>${escapeXml(lastmod)}</lastmod>` : '',
                     '<image:image>',
                     `<image:loc>${escapeXml(fullImage)}</image:loc>`,
                     `<image:title>${title}</image:title>`,
@@ -471,6 +841,8 @@ app.get('/sitemap.xml', handleSitemapPages);
 app.get('/robots.txt', handleRobotsTxt);
 app.get('/sitemap-images.xml', handleSitemapImages);
 app.get('/photo/:id', handlePhotoSeoPage);
+app.get('/series', handleSeriesIndexSeoPage);
+app.get('/series/:identifier', handleSeriesSeoPage);
 
 // Health check
 app.get('/api/health', (req, res) => {

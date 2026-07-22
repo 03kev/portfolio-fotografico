@@ -2,9 +2,9 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { env } = require('../config/env');
 const {
+    canAccessAdminData,
     clearSessionCookie,
     hasWriteTokenConfigured,
-    isAuthenticatedRequest,
     isWriteTokenValid,
     setSessionCookie
 } = require('../middleware/auth');
@@ -32,7 +32,7 @@ function wait(ms) {
 router.get('/session', (req, res) => {
     res.json({
         success: true,
-        authenticated: isAuthenticatedRequest(req)
+        authenticated: canAccessAdminData(req)
     });
 });
 

@@ -68,7 +68,29 @@
         {
           "type": "header",
           "key": "user-agent",
-          "value": ".*(facebookexternalhit|Facebot|Instagram|Twitterbot|LinkedInBot|WhatsApp|TelegramBot|Discordbot|Slackbot|SkypeUriPreview|Pinterestbot|redditbot|vkShare).*"
+          "value": ".*(Googlebot|Google-InspectionTool|GoogleOther|bingbot|BingPreview|facebookexternalhit|Facebot|Instagram|Twitterbot|LinkedInBot|WhatsApp|TelegramBot|Discordbot|Slackbot|SkypeUriPreview|Pinterestbot|redditbot|vkShare).*"
+        }
+      ],
+      "destination": "/api"
+    },
+    {
+      "source": "/series",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(Googlebot|Google-InspectionTool|GoogleOther|bingbot|BingPreview|facebookexternalhit|Facebot|Instagram|Twitterbot|LinkedInBot|WhatsApp|TelegramBot|Discordbot|Slackbot|SkypeUriPreview|Pinterestbot|redditbot|vkShare).*"
+        }
+      ],
+      "destination": "/api"
+    },
+    {
+      "source": "/series/:slug",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(Googlebot|Google-InspectionTool|GoogleOther|bingbot|BingPreview|facebookexternalhit|Facebot|Instagram|Twitterbot|LinkedInBot|WhatsApp|TelegramBot|Discordbot|Slackbot|SkypeUriPreview|Pinterestbot|redditbot|vkShare).*"
         }
       ],
       "destination": "/api"

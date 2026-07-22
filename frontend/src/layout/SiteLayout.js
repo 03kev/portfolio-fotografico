@@ -1,13 +1,12 @@
-import React, { useEffect, useLayoutEffect, useState } from 'react';
+import React, { Suspense, useEffect, useLayoutEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 import PhotoModal from '../components/PhotoModal';
 import GalleryModal from '../components/GalleryModal';
-import PhotoUpload from '../components/PhotoUpload';
-import AdminTokenModal from '../components/AdminTokenModal';
 import ToastProvider, { useToast } from '../components/Toast';
+import { LazyAdminTokenModal, LazyPhotoUpload } from '../components/lazyAdminComponents';
 import useAdminMode from '../hooks/useAdminMode';
 import { authService } from '../utils/api';
 
@@ -165,20 +164,26 @@ export default function SiteLayout() {
       <GalleryModal />
 
       {showUpload && (
-        <PhotoUpload
-          onUploadSuccess={handleUploadSuccess}
-          onUploadError={handleUploadError}
-          onClose={() => setShowUpload(false)}
-        />
+        <Suspense fallback={null}>
+          <LazyPhotoUpload
+            onUploadSuccess={handleUploadSuccess}
+            onUploadError={handleUploadError}
+            onClose={() => setShowUpload(false)}
+          />
+        </Suspense>
       )}
 
-      <AdminTokenModal
-        isOpen={isAdminMode && showAuthModal}
-        loading={authModalLoading}
-        error={authModalError}
-        onClose={handleCloseAuthModal}
-        onSubmit={handleSubmitAuthModal}
-      />
+      {isAdminMode && showAuthModal && (
+        <Suspense fallback={null}>
+          <LazyAdminTokenModal
+            isOpen
+            loading={authModalLoading}
+            error={authModalError}
+            onClose={handleCloseAuthModal}
+            onSubmit={handleSubmitAuthModal}
+          />
+        </Suspense>
+      )}
 
       <ToastProvider toasts={toast.toasts} onRemove={toast.removeToast} />
     </>

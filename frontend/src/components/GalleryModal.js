@@ -3,7 +3,7 @@ import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapPin, Camera } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
-import { resolveVersionedAssetUrl } from '../utils/imageUrl';
+import { resolveVersionedPhotoAssetUrl } from '../utils/imageUrl';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 const ModalOverlay = styled(motion.div)`
@@ -93,7 +93,7 @@ const CloseButton = styled(motion.button)`
 
   &:hover {
     background: rgba(245, 87, 108, 0.8);
-    border-color: var(--color-secondary);
+    border-color: rgba(255, 255, 255, 0.78);
   }
 
   @media (max-width: 768px) {
@@ -284,8 +284,7 @@ const GalleryModal = () => {
   };
 
   const getPhotoSrc = (photo) => {
-    const version = photo?.derivativesVersion || photo?.updatedAt || photo?.id;
-    return resolveVersionedAssetUrl(photo.image, version);
+    return resolveVersionedPhotoAssetUrl(photo, 'image');
   };
 
   if (!galleryPhotos || galleryPhotos.length === 0) {

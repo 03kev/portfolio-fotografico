@@ -38,9 +38,9 @@ function getR2Client() {
     }
 
     if (!s3ClientInstance) {
-        const { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+        const { S3Client, GetObjectCommand, HeadObjectCommand, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 
-        s3Commands = { GetObjectCommand, PutObjectCommand, DeleteObjectCommand };
+        s3Commands = { GetObjectCommand, HeadObjectCommand, PutObjectCommand, DeleteObjectCommand };
         s3ClientInstance = new S3Client({
             region: 'auto',
             endpoint:
@@ -337,6 +337,42 @@ async function getUploadObject(uploadPath) {
     }
 }
 
+async function headUploadObject(uploadPath) {
+    if (!isR2Enabled()) {
+        return null;
+    }
+
+    const key = uploadPathToObjectKey(uploadPath);
+    if (!key) return null;
+
+    const client = getR2Client();
+    const { HeadObjectCommand } = s3Commands;
+
+    try {
+        const response = await client.send(
+            new HeadObjectCommand({
+                Bucket: env.r2Bucket,
+                Key: key
+            })
+        );
+
+        return {
+            key,
+            contentType: response.ContentType,
+            cacheControl: response.CacheControl,
+            contentLength: response.ContentLength,
+            etag: response.ETag,
+            lastModified: response.LastModified
+        };
+    } catch (error) {
+        const statusCode = error?.$metadata?.httpStatusCode;
+        if (statusCode === 404 || error?.name === 'NotFound' || error?.name === 'NoSuchKey' || error?.Code === 'NoSuchKey') {
+            return null;
+        }
+        throw error;
+    }
+}
+
 async function getPrivateObject(privatePath) {
     if (!isR2Enabled()) {
         return null;
@@ -381,6 +417,7 @@ module.exports = {
     deleteUploadObject,
     ensureR2Configured,
     getPrivateObject,
+    headUploadObject,
     getUploadObject,
     isR2Enabled,
     putPrivateObject,

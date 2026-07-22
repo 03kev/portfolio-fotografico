@@ -1,19 +1,19 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { Suspense, useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Trash2, Edit3, Crop, Upload, Loader2, X } from 'lucide-react';
+import { Search, Loader2 } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
-import { LOCAL_IMAGE_FALLBACK, resolveVersionedAssetUrl } from '../utils/imageUrl';
+import { LOCAL_IMAGE_FALLBACK, resolveVersionedPhotoAssetUrl } from '../utils/imageUrl';
 import { photoService, signSourceUpload, uploadSourceToSignedUrl } from '../utils/api';
 import { useGalleryQueryState } from '../hooks/useGalleryQueryState';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
-import { useMobileDeviceLayout, useTouchLongPressReveal } from '../hooks';
+import { useGalleryMobileCardState, useMobileDeviceLayout, useScrollableRail } from '../hooks';
 import {
   buildOperationErrorMessage
 } from '../utils/operationErrors';
-import PhotoUpload from './PhotoUpload';
-import PhotoCropModal from './PhotoCropModal';
+import { GalleryCard } from './gallery/GalleryCard';
+import { LazyPhotoCropModal, LazyPhotoUpload } from './lazyAdminComponents';
 
 const DEBOUNCE_DELAY_FILTER = 200;
 const SOURCE_REUPLOAD_ACCEPT = 'image/jpeg,image/jpg,image/png,image/webp';
@@ -29,15 +29,29 @@ const CROP_STEP_LABELS = {
   regenerate: 'rigenerazione derivate'
 };
 
-const SKELETON_CARD_COUNT = 9;
-const INITIAL_VISIBLE_CARDS = 24;
-const VISIBLE_CARDS_BATCH = 24;
-const LOAD_MORE_ROOT_MARGIN = '900px 0px';
+const SKELETON_CARD_COUNT_DESKTOP = 9;
+const SKELETON_CARD_COUNT_MOBILE = 4;
+const INITIAL_VISIBLE_CARDS_DESKTOP = 18;
+const INITIAL_VISIBLE_CARDS_MOBILE = 8;
+const VISIBLE_CARDS_BATCH_DESKTOP = 18;
+const VISIBLE_CARDS_BATCH_MOBILE = 8;
+const LOAD_MORE_ROOT_MARGIN_DESKTOP = '700px 0px';
+const LOAD_MORE_ROOT_MARGIN_MOBILE = '350px 0px';
 
-const cardVariants = {
-  hidden: { opacity: 0, scale: 0.98, y: 8 },
-  visible: { opacity: 1, scale: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' } },
-  exit: { opacity: 0, scale: 0.98, y: -8, transition: { duration: 0.25 } }
+const getThumbImageUrl = (photo) => {
+  return resolveVersionedPhotoAssetUrl(photo, 'thumbnail43');
+};
+
+const getPhotoCardUrl = (photo) => `/photo/${encodeURIComponent(String(photo.id))}`;
+
+const getPhotoAltText = (photo) => {
+  const title = String(photo?.title || 'Foto').trim() || 'Foto';
+  const description = String(photo?.description || '').trim();
+  const location = String(photo?.location || '').trim();
+
+  if (description) return `${title} - ${description}`;
+  if (location) return `${title} - ${location}`;
+  return title;
 };
 
 const GallerySection = styled(motion.section)`
@@ -204,7 +218,7 @@ const FilterButton = styled(motion.button)`
   }
 `;
 
-const GalleryGrid = styled(motion.div).attrs({ layout: true })`
+const GalleryGrid = styled(motion.div)`
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: var(--spacing-xl);
@@ -219,392 +233,6 @@ const GalleryGrid = styled(motion.div).attrs({ layout: true })`
   }
 `;
 
-const PhotoCard = styled(motion.div)`
-  position: relative;
-  border-radius: var(--border-radius-2xl);
-  overflow: hidden;
-  aspect-ratio: 4/3;
-  cursor: pointer;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: var(--shadow-medium);
-  transition: transform var(--transition-normal), box-shadow var(--transition-normal), border-color var(--transition-normal);
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-touch-callout: none;
-
-  &:hover {
-    transform: translateY(-4px);
-    border-color: rgba(214, 179, 106, 0.22);
-    box-shadow: var(--shadow-large);
-  }
-
-  @media (max-width: 768px) {
-    border-radius: 18px;
-    box-shadow: var(--shadow-small);
-  }
-`;
-
-const SeoImageLink = styled.a`
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-`;
-
-const PhotoImage = styled(motion.img)`
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  color: transparent;
-  font-size: 0;
-  transition: transform 0.45s ease;
-  -webkit-user-drag: none;
-  -webkit-touch-callout: none;
-  -webkit-user-select: none;
-  user-select: none;
-  pointer-events: none;
-
-  ${PhotoCard}:hover & {
-    transform: scale(1.03);
-  }
-`;
-
-const PhotoOverlay = styled(motion.div)`
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: flex-end;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.82), rgba(0, 0, 0, 0.15) 55%, rgba(0, 0, 0, 0.0));
-  padding: var(--spacing-lg);
-  opacity: 0;
-  transition: opacity var(--transition-normal);
-
-  ${PhotoCard}:hover & {
-    opacity: 1;
-  }
-`;
-
-const DeleteButton = styled(motion.button)`
-  position: absolute;
-  top: var(--spacing-md);
-  right: var(--spacing-md);
-  background: rgba(220, 38, 38, 0.9);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: white;
-  padding: 8px;
-  border-radius: var(--border-radius-full);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: opacity var(--transition-normal), background var(--transition-normal);
-  z-index: 10;
-
-  ${PhotoCard}:hover & {
-    opacity: 1;
-  }
-
-  &:hover {
-    background: rgba(185, 28, 28, 1);
-  }
-`;
-
-const EditButton = styled(motion.button)`
-  position: absolute;
-  top: var(--spacing-md);
-  right: calc(var(--spacing-md) + 48px);
-  background: rgba(214, 179, 106, 0.9);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: white;
-  padding: 8px;
-  border-radius: var(--border-radius-full);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: opacity var(--transition-normal), background var(--transition-normal);
-  z-index: 10;
-
-  ${PhotoCard}:hover & {
-    opacity: 1;
-  }
-
-  &:hover {
-    background: rgba(184, 149, 76, 1);
-  }
-`;
-
-const CropButton = styled(motion.button)`
-  position: absolute;
-  top: var(--spacing-md);
-  right: calc(var(--spacing-md) + 96px);
-  background: rgba(39, 137, 255, 0.88);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  color: white;
-  padding: 8px;
-  border-radius: var(--border-radius-full);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: opacity var(--transition-normal), background var(--transition-normal);
-  z-index: 10;
-
-  ${PhotoCard}:hover & {
-    opacity: 1;
-  }
-
-  &:hover {
-    background: rgba(18, 118, 236, 1);
-  }
-`;
-
-const ReplaceSourceButton = styled(motion.button)`
-  position: absolute;
-  top: var(--spacing-md);
-  right: calc(var(--spacing-md) + 144px);
-  background: rgba(123, 107, 255, 0.88);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  color: white;
-  padding: 8px;
-  border-radius: var(--border-radius-full);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: opacity var(--transition-normal), background var(--transition-normal);
-  z-index: 10;
-
-  ${PhotoCard}:hover & {
-    opacity: 1;
-  }
-
-  &:hover {
-    background: rgba(103, 84, 255, 1);
-  }
-
-  &:disabled {
-    cursor: wait;
-    opacity: 0.5;
-  }
-`;
-
-const MobileManageButton = styled.button`
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 32px;
-  height: 32px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(10, 12, 18, 0.74);
-  backdrop-filter: blur(12px);
-  color: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 14px 26px rgba(0, 0, 0, 0.22);
-  z-index: 14;
-`;
-
-const MobileAdminPanel = styled.div`
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  display: grid;
-  width: min(84px, calc(100% - 12px));
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
-  padding: 6px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(10, 12, 18, 0.9);
-  backdrop-filter: blur(16px);
-  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.26);
-  z-index: 15;
-`;
-
-const MobileAdminAction = styled.button`
-  width: 100%;
-  aspect-ratio: 1;
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: ${({ $tone }) => {
-    if ($tone === 'purple') return 'rgba(123, 107, 255, 0.18)';
-    if ($tone === 'blue') return 'rgba(39, 137, 255, 0.18)';
-    if ($tone === 'gold') return 'rgba(214, 179, 106, 0.18)';
-    if ($tone === 'danger') return 'rgba(220, 38, 38, 0.18)';
-    return 'rgba(255, 255, 255, 0.06)';
-  }};
-  color: ${({ $tone }) => {
-    if ($tone === 'purple') return 'rgba(197, 189, 255, 0.98)';
-    if ($tone === 'blue') return 'rgba(178, 216, 255, 0.98)';
-    if ($tone === 'gold') return 'rgba(239, 216, 161, 0.98)';
-    if ($tone === 'danger') return 'rgba(255, 211, 211, 0.98)';
-    return 'rgba(255, 255, 255, 0.94)';
-  }};
-  padding: 0;
-`;
-
-const MobileCaptionBar = styled.div`
-  position: absolute;
-  inset: auto 0 0 0;
-  padding: 34px 12px 10px;
-  background: linear-gradient(180deg, rgba(8, 10, 16, 0) 0%, rgba(8, 10, 16, 0.72) 52%, rgba(8, 10, 16, 0.96) 100%);
-  pointer-events: none;
-  z-index: 11;
-`;
-
-const MobileCaptionTitle = styled.div`
-  color: rgba(255, 255, 255, 0.96);
-  font-size: 0.84rem;
-  line-height: 1.25;
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: -0.01em;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
-`;
-
-const ReuploadCardOverlay = styled.div`
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  background: rgba(8, 10, 16, 0.58);
-  backdrop-filter: blur(2px);
-  z-index: 12;
-  pointer-events: auto;
-  color: rgba(255, 255, 255, 0.94);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: 0.01em;
-`;
-
-const ReuploadCardSpinner = styled(Loader2)`
-  animation: replace-source-spin 0.9s linear infinite;
-  color: rgba(214, 179, 106, 0.98);
-  filter: drop-shadow(0 0 8px rgba(214, 179, 106, 0.35));
-
-  @keyframes replace-source-spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-  }
-`;
-
-const ReuploadProgressMeta = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: min(240px, 72%);
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 0.78rem;
-  font-weight: var(--font-weight-medium);
-  letter-spacing: 0.01em;
-  gap: 10px;
-`;
-
-const ReuploadProgressTrack = styled.div`
-  width: min(240px, 72%);
-  height: 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.2);
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-`;
-
-const ReuploadProgressFill = styled.div`
-  width: ${({ $percent }) => `${$percent}%`};
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, rgba(214, 179, 106, 0.92), rgba(255, 230, 168, 0.94));
-  transition: width 220ms ease-out;
-`;
-
-const ReuploadAbortButton = styled.button`
-  margin-top: 4px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  border-radius: var(--border-radius-full);
-  padding: 6px 10px;
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.95);
-  font-size: 0.76rem;
-  font-weight: var(--font-weight-semibold);
-  cursor: pointer;
-  transition: var(--transition-normal);
-
-  &:hover {
-    background: rgba(255, 255, 255, 0.2);
-    border-color: rgba(255, 255, 255, 0.34);
-    transform: translateY(-1px);
-  }
-`;
-
-const OverlayContent = styled.div`
-  width: 100%;
-`;
-
-const PhotoTitle = styled.h3`
-  color: var(--color-text);
-  margin: 0 0 6px 0;
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-semibold);
-`;
-
-const PhotoLocation = styled.p`
-  color: rgba(255, 255, 255, 0.78);
-  margin: 0 0 6px 0;
-  font-size: var(--font-size-sm);
-`;
-
-const PhotoDescription = styled.p`
-  color: rgba(255, 255, 255, 0.70);
-  margin: 0;
-  font-size: var(--font-size-sm);
-  line-height: 1.45;
-`;
-
-const PhotoTags = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 10px;
-`;
-
-const Tag = styled.span`
-  background: rgba(255, 255, 255, 0.10);
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  color: rgba(255, 255, 255, 0.80);
-  padding: 4px 8px;
-  border-radius: var(--border-radius-full);
-  font-size: 0.72rem;
-`;
 
 const LoadingContainer = styled.div`
   display: flex;
@@ -804,249 +432,13 @@ const DeleteInlineSpinner = styled(Loader2)`
   }
 `;
 
-const GalleryCard = React.memo(function GalleryCard({
-  photo,
-  index,
-  isAdmin,
-  compactMobile,
-  isTouchCardActive,
-  isMobileAdminOpen,
-  hideCardDescriptions,
-  hasActivePhotoOp,
-  photoOpStatus,
-  getPhotoCardUrl,
-  getPhotoAltText,
-  getThumbImageUrl,
-  onOpen,
-  onDelete,
-  onEdit,
-  onCrop,
-  onReuploadSource,
-  onAbortReuploadUpload,
-  onRevealMobileCard,
-  onHideMobileCard,
-  onToggleMobileAdmin,
-  onCloseMobileAdmin
-}) {
-  const isCardOpActive = Boolean(photoOpStatus?.active);
-  const isPendingCard = Boolean(photo?.__pending);
-  const canOpenCard = !isCardOpActive && !isPendingCard;
-  const cardImageSrc = isPendingCard ? String(photo.previewUrl || '') : getThumbImageUrl(photo);
-  const isMobileUiVisible = compactMobile && (isTouchCardActive || isMobileAdminOpen);
-  const mobileAdminActions = [
-    {
-      key: 'replace',
-      tone: 'purple',
-      title: 'Reupload source privata',
-      icon: Upload,
-      onClick: onReuploadSource
-    },
-    {
-      key: 'crop',
-      tone: 'blue',
-      title: 'Modifica crop',
-      icon: Crop,
-      onClick: onCrop
-    },
-    {
-      key: 'edit',
-      tone: 'gold',
-      title: 'Modifica foto',
-      icon: Edit3,
-      onClick: onEdit
-    },
-    {
-      key: 'delete',
-      tone: 'danger',
-      title: 'Elimina foto',
-      icon: Trash2,
-      onClick: onDelete
-    }
-  ];
-  const { bind: touchRevealBind, consumeTrigger } = useTouchLongPressReveal({
-    enabled: compactMobile && !isPendingCard && !isCardOpActive,
-    onLongPress: () => onRevealMobileCard(photo.id)
-  });
-
-  return (
-    <motion.div
-      layout
-      variants={cardVariants}
-      initial="hidden"
-      animate="visible"
-      exit="exit"
-      data-mobile-gallery-card-id={photo.id}
-      {...touchRevealBind}
-      onContextMenu={(event) => {
-        if (compactMobile) {
-          event.preventDefault();
-        }
-      }}
-      onClick={() => {
-        if (compactMobile && (isTouchCardActive || isMobileAdminOpen || consumeTrigger())) {
-          onCloseMobileAdmin();
-          onHideMobileCard();
-          return;
-        }
-        if (!canOpenCard) return;
-        onOpen(photo);
-      }}
-    >
-      <PhotoCard>
-        {!isPendingCard && (
-          <SeoImageLink href={getPhotoCardUrl(photo)} aria-hidden="true" tabIndex={-1}>
-            {photo.title || 'Foto'}
-          </SeoImageLink>
-        )}
-        {isAdmin && compactMobile && !isPendingCard && !hasActivePhotoOp && !isCardOpActive && isMobileUiVisible && (
-          <>
-            <MobileManageButton
-              data-mobile-admin-manage-button="true"
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onToggleMobileAdmin(photo.id);
-              }}
-              aria-label={isMobileAdminOpen ? 'Chiudi azioni admin' : 'Apri azioni admin'}
-              title={isMobileAdminOpen ? 'Chiudi azioni admin' : 'Apri azioni admin'}
-            >
-              <Edit3 size={18} />
-            </MobileManageButton>
-            {isMobileAdminOpen && (
-              <MobileAdminPanel
-                data-mobile-admin-panel="true"
-                onClick={(event) => event.stopPropagation()}
-              >
-                {mobileAdminActions.map((action) => {
-                  const ActionIcon = action.icon;
-
-                  return (
-                    <MobileAdminAction
-                      key={action.key}
-                      type="button"
-                      $tone={action.tone}
-                      onClick={(event) => {
-                        onCloseMobileAdmin();
-                        onHideMobileCard();
-                        action.onClick(event, photo);
-                      }}
-                      title={action.title}
-                      aria-label={action.title}
-                    >
-                      <ActionIcon size={16} />
-                    </MobileAdminAction>
-                  );
-                })}
-              </MobileAdminPanel>
-            )}
-          </>
-        )}
-        {isAdmin && !compactMobile && !isPendingCard && (
-          <>
-            {!hasActivePhotoOp && !isCardOpActive && (
-              <ReplaceSourceButton
-                onClick={(event) => onReuploadSource(event, photo)}
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-                title="Reupload source privata"
-              >
-                <Upload size={18} />
-              </ReplaceSourceButton>
-            )}
-            {!hasActivePhotoOp && !isCardOpActive && (
-              <>
-                <CropButton
-                  onClick={(event) => onCrop(event, photo)}
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  title="Modifica crop"
-                >
-                  <Crop size={18} />
-                </CropButton>
-                <EditButton
-                  onClick={(event) => onEdit(event, photo)}
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                >
-                  <Edit3 size={18} />
-                </EditButton>
-                <DeleteButton
-                  onClick={(event) => onDelete(event, photo)}
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                >
-                  <Trash2 size={18} />
-                </DeleteButton>
-              </>
-            )}
-          </>
-        )}
-        <PhotoImage
-          src={cardImageSrc}
-          alt={getPhotoAltText(photo)}
-          loading={index < 3 ? 'eager' : 'lazy'}
-          fetchPriority={index < 3 ? 'high' : 'auto'}
-          decoding="async"
-          onError={(event) => {
-            event.currentTarget.onerror = null;
-            event.currentTarget.src = LOCAL_IMAGE_FALLBACK;
-          }}
-        />
-        {isCardOpActive && (
-          <ReuploadCardOverlay>
-            <ReuploadCardSpinner size={26} />
-            <span>{photoOpStatus?.label || 'Operazione in corso'}</span>
-            <ReuploadProgressMeta>
-              <span>{photoOpStatus?.type === 'source-reupload' || photoOpStatus?.type === 'new-upload' ? 'Stato upload' : 'Stato operazione'}</span>
-              <span>{Math.round(photoOpStatus?.percent || 0)}%</span>
-            </ReuploadProgressMeta>
-            <ReuploadProgressTrack>
-              <ReuploadProgressFill $percent={Math.max(0, Math.min(100, photoOpStatus?.percent || 0))} />
-            </ReuploadProgressTrack>
-            {photoOpStatus?.type === 'source-reupload' && photoOpStatus?.step === 'upload' && (
-              <ReuploadAbortButton
-                type="button"
-                onClick={(event) => onAbortReuploadUpload(event, photo.id, photoOpStatus?.step)}
-              >
-                <X size={14} />
-                Annulla upload
-              </ReuploadAbortButton>
-            )}
-          </ReuploadCardOverlay>
-        )}
-        {!isCardOpActive && !compactMobile && (
-          <PhotoOverlay>
-            <OverlayContent>
-              <PhotoTitle>{photo.title}</PhotoTitle>
-              <PhotoLocation>{photo.location}</PhotoLocation>
-              {!hideCardDescriptions && (
-                <PhotoDescription>{photo.description}</PhotoDescription>
-              )}
-              {Array.isArray(photo.tags) && photo.tags.length > 0 && (
-                <PhotoTags>
-                  {photo.tags.slice(0, 3).map((tag) => (
-                    <Tag key={tag}>{tag}</Tag>
-                  ))}
-                </PhotoTags>
-              )}
-            </OverlayContent>
-          </PhotoOverlay>
-        )}
-        {isMobileUiVisible && Boolean(photo?.title) && (
-          <MobileCaptionBar>
-            <MobileCaptionTitle>{photo.title}</MobileCaptionTitle>
-          </MobileCaptionBar>
-        )}
-      </PhotoCard>
-    </motion.div>
-  );
-});
 
 const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptions = false }) => {
   const { photos, filteredPhotos, loading, actions, modalOpen, photoOpsByPhotoId, pendingUploads } = usePhotos();
   const outletContext = useOutletContext();
   const isAdmin = Boolean(outletContext?.isAdmin);
   const notify = outletContext?.notify || null;
+  const openPhotoModalRef = useRef(actions.openPhotoModal);
   const {
     activeFilter,
     searchTerm,
@@ -1064,116 +456,47 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const autoOpenedPhotoRef = useRef(null);
   const sourceFileInputRef = useRef(null);
   const searchInputRef = useRef(null);
-  const filterRailRef = useRef(null);
-  const filterButtonRefs = useRef(new Map());
   const [editingPhoto, setEditingPhoto] = useState(null);
   const [croppingPhoto, setCroppingPhoto] = useState(null);
   const [reuploadSourcePhoto, setReuploadSourcePhoto] = useState(null);
   const [photoPendingDelete, setPhotoPendingDelete] = useState(null);
   const [deletingPhoto, setDeletingPhoto] = useState(false);
-  const [mobileTouchPhotoId, setMobileTouchPhotoId] = useState(null);
-  const [mobileAdminPhotoId, setMobileAdminPhotoId] = useState(null);
-  const [filterRailFadeState, setFilterRailFadeState] = useState({ left: false, right: false });
   const softProgressTimerRef = useRef(null);
   const reuploadUploadAbortControllerRef = useRef(null);
   const activeReuploadPhotoIdRef = useRef(null);
   const isMountedRef = useRef(true);
   const loadMoreTriggerRef = useRef(null);
-  const [visibleCardsCount, setVisibleCardsCount] = useState(INITIAL_VISIBLE_CARDS);
+  const [visibleCardsCount, setVisibleCardsCount] = useState(INITIAL_VISIBLE_CARDS_DESKTOP);
   const lastRevealKeyRef = useRef(null);
   const previousGalleryLengthRef = useRef(0);
   const compactMobile = useMobileDeviceLayout({ maxWidth: 900 });
-
-  useEffect(() => {
-    if (!compactMobile && mobileAdminPhotoId !== null) {
-      setMobileAdminPhotoId(null);
-    }
-    if (!compactMobile && mobileTouchPhotoId !== null) {
-      setMobileTouchPhotoId(null);
-    }
-  }, [compactMobile, mobileAdminPhotoId, mobileTouchPhotoId]);
-
-  useEffect(() => {
-    if (!compactMobile || (mobileAdminPhotoId === null && mobileTouchPhotoId === null)) return undefined;
-
-    const activeCardId = mobileAdminPhotoId ?? mobileTouchPhotoId;
-    const activeCardSelector = activeCardId !== null
-      ? `[data-mobile-gallery-card-id="${String(activeCardId)}"]`
-      : null;
-
-    const handlePointerDownOutsideMobileCard = (event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLElement)) return;
-
-      if (
-        target.closest('[data-mobile-admin-panel="true"]')
-        || target.closest('[data-mobile-admin-manage-button="true"]')
-      ) {
-        return;
-      }
-
-      if (activeCardSelector && target.closest(activeCardSelector)) {
-        return;
-      }
-
-      setMobileAdminPhotoId(null);
-      setMobileTouchPhotoId(null);
-    };
-
-    document.addEventListener('pointerdown', handlePointerDownOutsideMobileCard);
-    return () => document.removeEventListener('pointerdown', handlePointerDownOutsideMobileCard);
-  }, [compactMobile, mobileAdminPhotoId, mobileTouchPhotoId]);
+  const initialVisibleCards = compactMobile ? INITIAL_VISIBLE_CARDS_MOBILE : INITIAL_VISIBLE_CARDS_DESKTOP;
+  const visibleCardsBatch = compactMobile ? VISIBLE_CARDS_BATCH_MOBILE : VISIBLE_CARDS_BATCH_DESKTOP;
+  const loadMoreRootMargin = compactMobile ? LOAD_MORE_ROOT_MARGIN_MOBILE : LOAD_MORE_ROOT_MARGIN_DESKTOP;
+  const skeletonCardCount = compactMobile ? SKELETON_CARD_COUNT_MOBILE : SKELETON_CARD_COUNT_DESKTOP;
+  const priorityImageCount = compactMobile ? 1 : 2;
+  const {
+    activeCardId: mobileTouchPhotoId,
+    activeAdminCardId: mobileAdminPhotoId,
+    revealCard: handleRevealMobileCard,
+    hideCard: handleHideMobileCard,
+    toggleAdmin: handleToggleMobileAdmin,
+    closeAdmin: handleCloseMobileAdmin
+  } = useGalleryMobileCardState({ enabled: compactMobile });
 
   const allTags = useMemo(() =>
     [...new Set(photos.flatMap(photo => Array.isArray(photo.tags) ? photo.tags : []))],
   [photos]);
-
-  useEffect(() => {
-    const railNode = filterRailRef.current;
-    if (!railNode) return undefined;
-
-    const updateRailFade = () => {
-      const { scrollLeft, clientWidth, scrollWidth } = railNode;
-      const maxScrollLeft = Math.max(0, scrollWidth - clientWidth);
-      const threshold = 6;
-
-      setFilterRailFadeState({
-        left: scrollLeft > threshold,
-        right: scrollLeft < maxScrollLeft - threshold
-      });
-    };
-
-    updateRailFade();
-    railNode.addEventListener('scroll', updateRailFade, { passive: true });
-    window.addEventListener('resize', updateRailFade);
-
-    return () => {
-      railNode.removeEventListener('scroll', updateRailFade);
-      window.removeEventListener('resize', updateRailFade);
-    };
-  }, [allTags.length, compactMobile]);
-
-  useEffect(() => {
-    if (!compactMobile) return;
-
-    const railNode = filterRailRef.current;
-    const activeButton = filterButtonRefs.current.get(activeFilter);
-    if (!railNode || !activeButton) return;
-
-    const frame = requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        activeButton.scrollIntoView({
-          behavior: 'smooth',
-          block: 'nearest',
-          inline: 'center'
-        });
-      });
-    });
-
-    return () => cancelAnimationFrame(frame);
-  }, [activeFilter, compactMobile, allTags.length]);
-
   const filterOptions = useMemo(() => ['all', ...allTags], [allTags]);
+  const {
+    railRef: filterRailRef,
+    itemRefs: filterButtonRefs,
+    fadeState: filterRailFadeState
+  } = useScrollableRail({
+    activeKey: activeFilter,
+    itemCount: filterOptions.length,
+    enabled: compactMobile
+  });
   const hasActivePhotoOp = useMemo(
     () => Object.values(photoOpsByPhotoId || {}).some((entry) => Boolean(entry?.active)),
     [photoOpsByPhotoId]
@@ -1198,6 +521,10 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     () => galleryCards.slice(0, Math.max(0, visibleCardsCount)),
     [galleryCards, visibleCardsCount]
   );
+
+  useEffect(() => {
+    openPhotoModalRef.current = actions.openPhotoModal;
+  }, [actions.openPhotoModal]);
 
   useEffect(() => {
     const nextSearch = debouncedSearchTerm.trim();
@@ -1225,7 +552,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
 
     if (lastRevealKeyRef.current !== revealKey) {
       lastRevealKeyRef.current = revealKey;
-      setVisibleCardsCount(Math.min(nextLength, INITIAL_VISIBLE_CARDS));
+      setVisibleCardsCount(Math.min(nextLength, initialVisibleCards));
     } else if (allCardsWereVisible) {
       // Keep live updates snappy: if the grid was already fully visible,
       // show newly inserted cards immediately instead of re-running the reveal.
@@ -1235,7 +562,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     }
 
     previousGalleryLengthRef.current = nextLength;
-  }, [galleryCards.length, activeFilter, debouncedSearchTerm, visibleCardsCount]);
+  }, [galleryCards.length, activeFilter, debouncedSearchTerm, visibleCardsCount, initialVisibleCards]);
 
   useEffect(() => {
     if (loading || waitingForForcedModal) return;
@@ -1246,11 +573,11 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       (entries) => {
         const entry = entries[0];
         if (!entry?.isIntersecting) return;
-        setVisibleCardsCount((previous) => Math.min(galleryCards.length, previous + VISIBLE_CARDS_BATCH));
+        setVisibleCardsCount((previous) => Math.min(galleryCards.length, previous + visibleCardsBatch));
       },
       {
         root: null,
-        rootMargin: LOAD_MORE_ROOT_MARGIN,
+        rootMargin: loadMoreRootMargin,
         threshold: 0
       }
     );
@@ -1258,7 +585,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     observer.observe(loadMoreTriggerRef.current);
 
     return () => observer.disconnect();
-  }, [loading, waitingForForcedModal, visibleCardsCount, galleryCards.length]);
+  }, [loading, waitingForForcedModal, visibleCardsCount, galleryCards.length, visibleCardsBatch, loadMoreRootMargin]);
 
   useEffect(() => {
     if (!resolvedPhotoId) {
@@ -1312,23 +639,12 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   }, [searchTerm, clearSearch]);
 
   const handlePhotoClick = useCallback((photo) => {
-    actions.openPhotoModal(photo);
-  }, [actions]);
+    openPhotoModalRef.current(photo);
+  }, []);
 
-  const getThumbImageUrl = (photo) => {
-    const version = photo?.derivativesVersion || photo?.updatedAt || photo?.id;
-    return resolveVersionedAssetUrl(photo.thumbnail43, version);
-  };
-  const getPhotoCardUrl = (photo) => `/photo/${encodeURIComponent(String(photo.id))}`;
-  const getPhotoAltText = (photo) => {
-    const title = String(photo?.title || 'Foto').trim() || 'Foto';
-    const description = String(photo?.description || '').trim();
-    const location = String(photo?.location || '').trim();
-
-    if (description) return `${title} - ${description}`;
-    if (location) return `${title} - ${location}`;
-    return title;
-  };
+  const handleFilterButtonClick = useCallback((filter) => {
+    handleFilterClick(filter);
+  }, [handleFilterClick]);
 
   const handleDelete = useCallback((e, photo) => {
     e.stopPropagation();
@@ -1416,12 +732,12 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     };
   }, [stopSoftProgress]);
 
-  const handleAbortReuploadUpload = (event, photoId, step) => {
+  const handleAbortReuploadUpload = useCallback((event, photoId, step) => {
     event.stopPropagation();
     if (step !== 'upload') return;
     if (activeReuploadPhotoIdRef.current !== photoId) return;
     reuploadUploadAbortControllerRef.current?.abort();
-  };
+  }, []);
 
   const handleReuploadSourceSelected = async (event) => {
     const file = event.target.files?.[0];
@@ -1585,7 +901,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
             </SkeletonFilterRow>
           </ControlsRow>
           <SkeletonGrid>
-            {Array.from({ length: SKELETON_CARD_COUNT }).map((_, idx) => (
+            {Array.from({ length: skeletonCardCount }).map((_, idx) => (
               <SkeletonCard key={`gallery-skeleton-${idx}`} />
             ))}
           </SkeletonGrid>
@@ -1654,7 +970,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                     }
                   }}
                   active={activeFilter === filter}
-                  onClick={() => handleFilterClick(filter)}
+                  onClick={() => handleFilterButtonClick(filter)}
                   whileTap={{ scale: 0.98 }}
                 >
                   {filter === 'all' ? 'Tutti' : filter}
@@ -1671,14 +987,13 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
           </NoResults>
         ) : (
           <>
-            <GalleryGrid key="gallery-grid">
+            <GalleryGrid key="gallery-grid" layout={!compactMobile}>
               <AnimatePresence mode="popLayout" initial={false}>
                 {visibleGalleryCards.map((photo, index) => {
                   return (
                     <GalleryCard
                       key={photo.id}
                       photo={photo}
-                      index={index}
                       isAdmin={isAdmin}
                       compactMobile={compactMobile}
                       isTouchCardActive={mobileTouchPhotoId === photo.id}
@@ -1689,22 +1004,19 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                       getPhotoCardUrl={getPhotoCardUrl}
                       getPhotoAltText={getPhotoAltText}
                       getThumbImageUrl={getThumbImageUrl}
+                      fallbackImageSrc={LOCAL_IMAGE_FALLBACK}
+                      prioritizeImage={index < priorityImageCount}
+                      motionEnabled={!compactMobile}
                       onOpen={handlePhotoClick}
                       onDelete={handleDelete}
                       onEdit={handleEdit}
                       onCrop={handleCrop}
                       onReuploadSource={handleReuploadSourceClick}
                       onAbortReuploadUpload={handleAbortReuploadUpload}
-                      onRevealMobileCard={(photoId) => {
-                        setMobileTouchPhotoId(photoId);
-                        setMobileAdminPhotoId((current) => (current === photoId ? current : null));
-                      }}
-                      onHideMobileCard={() => setMobileTouchPhotoId(null)}
-                      onToggleMobileAdmin={(photoId) => {
-                        setMobileTouchPhotoId(photoId);
-                        setMobileAdminPhotoId((current) => (current === photoId ? null : photoId));
-                      }}
-                      onCloseMobileAdmin={() => setMobileAdminPhotoId(null)}
+                      onRevealMobileCard={handleRevealMobileCard}
+                      onHideMobileCard={handleHideMobileCard}
+                      onToggleMobileAdmin={handleToggleMobileAdmin}
+                      onCloseMobileAdmin={handleCloseMobileAdmin}
                     />
                   );
                 })}
@@ -1716,32 +1028,36 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
           </>
         )}
 
-        {isAdmin && editingPhoto && (
-          <PhotoUpload
-            photoToEdit={editingPhoto}
-            onClose={() => setEditingPhoto(null)}
-            onUploadSuccess={(updatedPhoto) => {
-              actions.applyPhotoUpdate?.(updatedPhoto);
-              setEditingPhoto(null);
-            }}
-            onUploadError={(error) => {
-              notify?.error?.(
-                error?.message || buildOperationErrorMessage(error, 'aggiornamento foto'),
-                6000
-              );
-            }}
-          />
-        )}
+        <Suspense fallback={null}>
+          {isAdmin && editingPhoto && (
+            <LazyPhotoUpload
+              photoToEdit={editingPhoto}
+              onClose={() => setEditingPhoto(null)}
+              onUploadSuccess={(updatedPhoto) => {
+                actions.applyPhotoUpdate?.(updatedPhoto);
+                setEditingPhoto(null);
+              }}
+              onUploadError={(error) => {
+                notify?.error?.(
+                  error?.message || buildOperationErrorMessage(error, 'aggiornamento foto'),
+                  6000
+                );
+              }}
+            />
+          )}
 
-        <PhotoCropModal
-          photo={croppingPhoto}
-          isOpen={isAdmin && Boolean(croppingPhoto)}
-          onClose={() => setCroppingPhoto(null)}
-          onApply={({ photoId, photoTitle, nextSettings }) => {
-            setCroppingPhoto(null);
-            handleApplyCropInBackground({ photoId, photoTitle, nextSettings });
-          }}
-        />
+          {isAdmin && croppingPhoto && (
+            <LazyPhotoCropModal
+              photo={croppingPhoto}
+              isOpen
+              onClose={() => setCroppingPhoto(null)}
+              onApply={({ photoId, photoTitle, nextSettings }) => {
+                setCroppingPhoto(null);
+                handleApplyCropInBackground({ photoId, photoTitle, nextSettings });
+              }}
+            />
+          )}
+        </Suspense>
 
         <AnimatePresence>
           {photoPendingDelete && (

@@ -334,8 +334,12 @@ In `vercel.json`:
 - `/api/:path*` -> backend
 - `/uploads/:path*` -> backend
 - `/robots.txt`, `/sitemap.xml`, `/sitemap-images.xml` -> backend
-- `/photo/:id` per bot social -> backend SEO page
+- `/photo/:id`, `/series` e `/series/:slug` per crawler e bot social -> backend SEO page
 - tutto il resto -> `index.html`
+
+La sitemap include automaticamente tutte le foto e le serie pubblicate con il
+relativo `lastmod`. Le serie sono esposte come pagine hub prima delle singole
+foto; le bozze non compaiono né nella sitemap né nelle pagine SEO server-side.
 
 ## Dati su R2
 
@@ -398,6 +402,29 @@ Nel JSON di storage non vengono salvati i path pubblici finali come campi canoni
 
 Questo evita ridondanza e rende stabile il naming pubblico.
 
+### Schema canonico delle serie
+
+Il backend normalizza `data/series.json` sia in lettura sia prima di ogni scrittura:
+
+- titoli e slug devono essere unici anche tra le bozze
+- `photos` contiene ID numerici unici
+- `coverImage` deve appartenere a `photos`
+- i blocchi sono ordinati per posizione visiva (`layout.y`, poi `layout.x`)
+- `order` non viene salvato: l'ordine canonico e' quello dell'array
+- tutti i layout usano `unit: "grid"` su una griglia da 24 colonne
+- i riferimenti foto nei blocchi devono appartenere alla serie
+- se una serie contiene foto ma `content` e' vuoto, vengono creati blocchi foto espliciti
+
+La griglia salvata descrive la composizione artistica desktop e non viene
+ricalcolata in base alla finestra. Nella vista pubblica, fino a 1024 px, i
+blocchi vengono proiettati in un flusso responsive ordinato per posizione:
+testi ad altezza naturale, immagini senza crop e gruppi fotografici adattivi.
+L'editor mantiene invece la tela desktop tramite scorrimento orizzontale, così
+un accesso da tablet o telefono non può alterare involontariamente le coordinate
+canoniche.
+
+Le bozze sono restituite da `GET /api/series?all=true` e aperte per ID solo con una sessione admin valida. Le richieste anonime vedono esclusivamente le serie pubblicate.
+
 ### Source e derivate
 
 - la source originale vive nel bucket privato
@@ -436,6 +463,7 @@ Foto:
 Serie:
 
 - `GET /api/series?all=false`
+- `GET /api/series?all=true` (solo sessione admin)
 - `GET /api/series/:identifier`
 - `POST /api/series`
 - `PUT /api/series/:id`

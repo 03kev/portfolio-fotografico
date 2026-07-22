@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Check, Crop as CropIcon, RotateCcw, X } from 'lucide-react';
-import { resolveVersionedAssetUrl } from '../utils/imageUrl';
+import { getPhotoAssetVersion, resolveVersionedAssetUrl } from '../utils/imageUrl';
 import {
   CROP_HANDLES,
   CROP_MAX_SCALE,
@@ -51,7 +51,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
   const pointerStateRef = useRef(null);
   const refreshRafRef = useRef(null);
 
-  const imageVersion = photo?.derivativesVersion || photo?.updatedAt || photo?.id;
+  const imageVersion = getPhotoAssetVersion(photo);
   const cropImageSrc = useMemo(
     () => resolveVersionedAssetUrl(photo?.image, imageVersion),
     [imageVersion, photo]
