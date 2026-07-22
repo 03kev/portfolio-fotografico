@@ -44,7 +44,7 @@ const Narrative = styled.div`
     font-size: ${props => props.$mobileSize || props.$size || 'var(--font-size-base)'};
     text-align: ${props => (props.$justify ? 'left' : (props.$align || 'left'))};
     text-align-last: auto;
-    line-height: 1.65;
+    line-height: 1.6;
   }
 `;
 
@@ -118,12 +118,11 @@ const PhotoGroup = styled.div`
 
   @media (max-width: 700px) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-  }
-
-  @media (max-width: 420px) {
-    grid-template-columns: 1fr;
-    gap: 18px;
+    gap: clamp(10px, 3vw, 14px);
+    width: min(100%, 36rem);
+    margin-inline: auto;
+    padding-inline: clamp(8px, 3vw, 16px);
+    box-sizing: border-box;
   }
 `;
 
@@ -133,11 +132,13 @@ const GroupPhoto = styled.figure`
   margin: 0;
 
   @media (max-width: 700px) {
-    grid-column: span ${props => (props.$mobileWide ? 2 : 1)};
-  }
+    grid-column: span 1;
 
-  @media (max-width: 420px) {
-    grid-column: 1 / -1;
+    &:last-child:nth-child(odd) {
+      grid-column: 1 / -1;
+      justify-self: center;
+      width: calc(50% - clamp(5px, 1.5vw, 7px));
+    }
   }
 `;
 
@@ -150,7 +151,10 @@ function getBlockFlowStyle(block) {
   const span = Math.max(1, Math.min(24, Number(layout.w) || 24));
   const minimum = block?.type === 'text' ? 55 : block?.type === 'photos' ? 100 : 45;
   const width = Math.min(100, Math.max(minimum, (span / 24) * 100));
-  const requestedOffset = (Math.max(0, Number(layout.x) || 0) / 24) * 100;
+  const originalOffset = (Math.max(0, Number(layout.x) || 0) / 24) * 100;
+  const originalWidth = (span / 24) * 100;
+  const originalCenter = originalOffset + originalWidth / 2;
+  const requestedOffset = originalCenter - width / 2;
   const offset = Math.max(0, Math.min(requestedOffset, 100 - width));
 
   return {
@@ -170,10 +174,12 @@ function getTextPresentation(block, textSizeMap, textFontMap) {
       : 'auto';
   const desktopSize = textSizeMap[block.textSize] || textSizeMap.base;
   const mobileSize = block.textSize === 'xl'
-    ? 'clamp(1.25rem, 6vw, 1.75rem)'
+    ? 'clamp(1.1rem, 4.8vw, 1.35rem)'
     : block.textSize === 'lg'
-      ? 'clamp(1.1rem, 5vw, 1.4rem)'
-      : desktopSize;
+      ? 'clamp(1rem, 4.3vw, 1.18rem)'
+      : block.textSize === 'sm'
+        ? 'clamp(0.82rem, 3.5vw, 0.9rem)'
+        : 'clamp(0.92rem, 3.9vw, 1rem)';
 
   return {
     align,
@@ -294,10 +300,9 @@ export default function ResponsiveSeriesContent({
                   if (!photo) return null;
                   const itemWidth = Math.max(1, Number(item?.layout?.w) || 1);
                   const span = Math.max(3, Math.min(12, Math.round((itemWidth / groupCols) * 12)));
-                  const mobileWide = itemWidth / groupCols >= 0.55;
 
                   return (
-                    <GroupPhoto key={item.id} $span={span} $mobileWide={mobileWide}>
+                    <GroupPhoto key={item.id} $span={span}>
                       <ImageButton
                         type="button"
                         onClick={() => onPhotoClick?.(photo)}

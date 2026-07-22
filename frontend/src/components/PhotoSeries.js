@@ -115,8 +115,13 @@ const StickyCreate = styled.div`
   grid-column: 2;
   justify-self: end;
 
+  @media (max-width: 1024px) {
+    position: static;
+    top: auto;
+    z-index: auto;
+  }
+
   @media (max-width: 768px) {
-    top: calc(70px + 12px);
     grid-column: 1;
     justify-self: start;
     width: 100%;

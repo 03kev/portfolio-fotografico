@@ -159,9 +159,14 @@ const AdminBar = styled.div`
   top: calc(78px + 12px);
   z-index: var(--z-sticky);
 
-  @media (max-width: 768px) {
-    top: calc(70px + 12px);
+  @media (max-width: 1024px) {
+    position: static;
+    top: auto;
+    z-index: auto;
     justify-content: flex-start;
+  }
+
+  @media (max-width: 768px) {
     gap: var(--spacing-sm);
     margin-bottom: var(--spacing-xl);
   }
@@ -1109,6 +1114,16 @@ function SeriesDetail() {
   const outletContext = useOutletContext();
   const isAdmin = Boolean(outletContext?.isAdmin);
   const toast = useToast();
+  const handleBack = () => {
+    const historyIndex = window.history.state?.idx;
+
+    if (Number.isInteger(historyIndex) && historyIndex > 0) {
+      navigate(-1);
+      return;
+    }
+
+    navigate('/series', { replace: true });
+  };
   const seriesSeoCover = React.useMemo(() => {
     if (!currentSeries || seriesPhotos.length === 0) return null;
     return seriesPhotos.find((photo) => photo.id === currentSeries.coverImage) || seriesPhotos[0];
@@ -1262,6 +1277,17 @@ function SeriesDetail() {
       setQuickAddOpen(false);
     }
   }, [layoutMode]);
+
+  useEffect(() => {
+    if (!isCompactSeriesLayout || !layoutMode) return;
+
+    // The compact renderer is a projection of the authored desktop grid, not
+    // a second layout to edit. Keep spatial editing on a sufficiently wide
+    // canvas and leave content editing available through the regular editor.
+    setLayoutMode(false);
+    setSelectedId(null);
+    setQuickAddOpen(false);
+  }, [isCompactSeriesLayout, layoutMode]);
 
   useEffect(() => {
     if (!lightboxPhoto) return undefined;
@@ -2038,7 +2064,7 @@ function SeriesDetail() {
     <>
       <PageContainer>
         <FloatingBackButton
-          onClick={() => navigate('/')}
+          onClick={handleBack}
           whileHover={{ scale: 1.03 }}
           whileTap={{ scale: 0.97 }}
           aria-label="Torna indietro"
@@ -2091,26 +2117,28 @@ function SeriesDetail() {
                 </span>
               </AdminBarButton>
 
-              <AdminBarButton
-                type="button"
-                onClick={() => {
-                  if (isSavingLayout) return;
-                  if (!layoutMode) {
-                    setSelectedId(null);
-                    setQuickAddOpen(false);
-                  }
-                  setLayoutMode(v => !v);
-                }}
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-              >
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                  {layoutMode ? <X size={16} /> : <LayoutGrid size={16} />}
-                  {layoutMode ? 'Esci layout' : 'Layout'}
-                </span>
-              </AdminBarButton>
+              {!isCompactSeriesLayout && (
+                <AdminBarButton
+                  type="button"
+                  onClick={() => {
+                    if (isSavingLayout) return;
+                    if (!layoutMode) {
+                      setSelectedId(null);
+                      setQuickAddOpen(false);
+                    }
+                    setLayoutMode(v => !v);
+                  }}
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                    {layoutMode ? <X size={16} /> : <LayoutGrid size={16} />}
+                    {layoutMode ? 'Esci layout' : 'Layout'}
+                  </span>
+                </AdminBarButton>
+              )}
 
-              {layoutMode && (
+              {layoutMode && !isCompactSeriesLayout && (
                 <>
                   <PrimaryAdminButton
                     type="button"
