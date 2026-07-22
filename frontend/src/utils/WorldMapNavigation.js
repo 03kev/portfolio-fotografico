@@ -11,17 +11,19 @@ export const CAMERA_START_Z = GLOBE_RADIUS * 2.5 + 0.5;
 export const MIN_CAMERA_DISTANCE = GLOBE_RADIUS + 0.5;
 export const MAX_CAMERA_DISTANCE = CAMERA_START_Z * 2;
 export const AUTO_ROTATE_SPEED = 0.37; // rad/s
+export const NAVIGATION_UPDATE_CAMERA = 1;
+export const NAVIGATION_UPDATE_ROTATION = 2;
 
 /**
  * Crea il sistema di controlli personalizzati per il WorldMap
  * @param {THREE.Camera} camera - Camera Three.js
  * @param {HTMLElement} domElement - Elemento DOM su cui agganciare gli eventi
- * @param {Object} refs - Riferimenti agli oggetti del globo (globeRef, markersRef)
+ * @param {Object} refs - Riferimenti al mesh terrestre e al gruppo ruotabile
  * @param {Object} callbacks - Callback functions per gestire stati esterni
  * @returns {Object} Oggetto controls con tutti i metodi di navigazione
  */
 export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
-    const { globeRef, markersRef } = refs;
+    const { globeRef, rotationGroupRef } = refs;
     const { 
         disableAutoRotate, 
         scheduleAutoRotateResume, 
@@ -39,9 +41,24 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
         pitchQuat: new THREE.Quaternion(),
         candidateQuat: new THREE.Quaternion(),
         lockedQuat: new THREE.Quaternion(),
+        horizontalQuat: new THREE.Quaternion(),
+        verticalQuat: new THREE.Quaternion(),
+        autoRotateQuat: new THREE.Quaternion(),
+        deltaQuat: new THREE.Quaternion(),
+        previousTarget: new THREE.Quaternion(),
+        appliedQuat: new THREE.Quaternion(),
+        cameraRight: new THREE.Vector3(),
+        cameraUp: new THREE.Vector3(),
+        rotationAxis: new THREE.Vector3(),
+        angularAxis: new THREE.Vector3(),
+        rayToSphere: new THREE.Vector3(),
+        normalizedRayDirection: new THREE.Vector3(),
+        projectedPoint: new THREE.Vector3(),
+        ndc: new THREE.Vector2(),
         forward: new THREE.Vector3(),
         north: new THREE.Vector3()
     };
+    const QUATERNION_EPSILON = 1e-12;
 
     const normalizeAngle = (angle) => {
         let normalized = angle % TWO_PI;
@@ -167,7 +184,7 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
         northLockPitch: 0,
         northLockJustEnabled: false,
         northLockTransitioning: false,
-        northLockTransitionStart: 0,
+        northLockTransitionElapsed: 0,
         northLockTransitionDuration: 220,
         northLockTransitionFrom: new THREE.Quaternion(),
         northLockTransitionTo: new THREE.Quaternion(),
@@ -205,25 +222,39 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
         dragStartTime: 0,
 
         target: new THREE.Vector3(0, 0, 0),
-        boundaryMesh: null, // Reference to boundary mesh if exists
-
         /**
          * Update loop principale - aggiorna camera, inertia, rotazioni
          */
-        update: function() {
+        update: function(deltaSeconds = 1 / 60) {
+            let updateFlags = 0;
+            const safeDeltaSeconds = Number.isFinite(deltaSeconds)
+                ? Math.max(0, Math.min(deltaSeconds, 0.05))
+                : 1 / 60;
+            const frameScale = safeDeltaSeconds * 60;
+
             // Update camera distance
-            this.spherical.radius *= this.scale;
-            this.spherical.radius = Math.max(this.minDistance, Math.min(this.maxDistance, this.spherical.radius));
+            const previousRadius = this.spherical.radius;
+            const nextRadius = Math.max(
+                this.minDistance,
+                Math.min(this.maxDistance, previousRadius * this.scale)
+            );
+            this.spherical.radius = nextRadius;
+            this.scale = 1;
+            if (
+                Math.abs(nextRadius - previousRadius) > 1e-8
+                || Math.abs(camera.position.z - nextRadius) > 1e-8
+            ) {
+                camera.position.set(0, 0, nextRadius);
+                camera.lookAt(this.target);
+                updateFlags |= NAVIGATION_UPDATE_CAMERA;
+            }
             
-            // Keep camera fixed, looking at center
-            camera.position.set(0, 0, this.spherical.radius);
-            camera.lookAt(this.target);
-            
-            // Apply rotation to globe and synchronize markers/borders
-            if (globeRef.current) {
+            // Apply the single shared rotation used by earth, borders and markers.
+            const rotationGroup = rotationGroupRef.current;
+            if (rotationGroup) {
                 if (this.northLocked && this.northLockTransitioning && this.currentState === this.state.NONE) {
-                    const now = Date.now();
-                    const rawT = (now - this.northLockTransitionStart) / this.northLockTransitionDuration;
+                    this.northLockTransitionElapsed += safeDeltaSeconds * 1000;
+                    const rawT = this.northLockTransitionElapsed / this.northLockTransitionDuration;
                     const t = Math.max(0, Math.min(1, rawT));
                     const eased = t * (2 - t);
                     this.globeQuaternion.copy(this.northLockTransitionFrom).slerp(this.northLockTransitionTo, eased);
@@ -243,27 +274,33 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
 
                         if (Math.abs(this.rotationVelocity.x) > minVelocity || Math.abs(this.rotationVelocity.y) > minVelocity) {
                             if (this.northLocked) {
-                                this.northLockYaw = normalizeAngle(this.northLockYaw + this.rotationVelocity.x);
+                                this.northLockYaw = normalizeAngle(
+                                    this.northLockYaw + this.rotationVelocity.x * frameScale
+                                );
                                 this.northLockPitch = clamp(
-                                    this.northLockPitch + this.rotationVelocity.y,
+                                    this.northLockPitch + this.rotationVelocity.y * frameScale,
                                     -NORTH_LOCK_MAX_PITCH,
                                     NORTH_LOCK_MAX_PITCH
                                 );
                                 this._updateNorthLockedQuaternion(this.targetGlobeQuaternion);
                             } else {
-                                // Apply inertia rotation
-                                const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-                                const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+                                temp.cameraRight.copy(WORLD_RIGHT).applyQuaternion(camera.quaternion);
+                                temp.cameraUp.copy(WORLD_UP).applyQuaternion(camera.quaternion);
+                                temp.horizontalQuat.setFromAxisAngle(
+                                    temp.cameraUp,
+                                    -this.rotationVelocity.x * frameScale
+                                );
+                                temp.verticalQuat.setFromAxisAngle(
+                                    temp.cameraRight,
+                                    -this.rotationVelocity.y * frameScale
+                                );
 
-                                const horizontalQuat = new THREE.Quaternion().setFromAxisAngle(cameraUp, -this.rotationVelocity.x);
-                                const verticalQuat = new THREE.Quaternion().setFromAxisAngle(cameraRight, -this.rotationVelocity.y);
-
-                                this.targetGlobeQuaternion.premultiply(horizontalQuat);
-                                this.targetGlobeQuaternion.premultiply(verticalQuat);
+                                this.targetGlobeQuaternion.premultiply(temp.horizontalQuat);
+                                this.targetGlobeQuaternion.premultiply(temp.verticalQuat);
                             }
 
-                            // Decay velocity
-                            this.rotationVelocity.multiplyScalar(inertiaDecay);
+                            // Preserve the existing 60 FPS feel at any actual frame rate.
+                            this.rotationVelocity.multiplyScalar(Math.pow(inertiaDecay, frameScale));
                         } else {
                             // Stop inertia when velocity is too small
                             this.inertiaEnabled = false;
@@ -274,21 +311,28 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                 
                 // Apply damping to globe rotation (tunable drag responsiveness)
                 if (this.enableDamping) {
-                    if (this.currentState === this.state.ROTATE) {
-                        if (this.northLocked) {
-                            // Keep the globe tightly under the cursor in north-lock mode.
-                            this.globeQuaternion.copy(this.targetGlobeQuaternion);
-                        } else {
-                            const clamped = Math.max(0, Math.min(1, this.dragResponsiveness));
-                            const dragFactor = Math.max(0.05, Math.pow(clamped, 2.5));
-                            if (dragFactor >= 1) {
+                    const hasRotationDelta = (
+                        1 - Math.abs(this.globeQuaternion.dot(this.targetGlobeQuaternion))
+                    ) > QUATERNION_EPSILON;
+                    if (hasRotationDelta) {
+                        if (this.currentState === this.state.ROTATE) {
+                            if (this.northLocked) {
+                                // Keep the globe tightly under the cursor in north-lock mode.
                                 this.globeQuaternion.copy(this.targetGlobeQuaternion);
                             } else {
-                                this.globeQuaternion.slerp(this.targetGlobeQuaternion, dragFactor);
+                                const clamped = Math.max(0, Math.min(1, this.dragResponsiveness));
+                                const dragFactor = Math.max(0.05, Math.pow(clamped, 2.5));
+                                const adjustedDragFactor = 1 - Math.pow(1 - dragFactor, frameScale);
+                                if (adjustedDragFactor >= 1) {
+                                    this.globeQuaternion.copy(this.targetGlobeQuaternion);
+                                } else {
+                                    this.globeQuaternion.slerp(this.targetGlobeQuaternion, adjustedDragFactor);
+                                }
                             }
+                        } else {
+                            const adjustedDamping = 1 - Math.pow(1 - this.dampingFactor, frameScale);
+                            this.globeQuaternion.slerp(this.targetGlobeQuaternion, adjustedDamping);
                         }
-                    } else {
-                        this.globeQuaternion.slerp(this.targetGlobeQuaternion, this.dampingFactor);
                     }
                 } else {
                     this.globeQuaternion.copy(this.targetGlobeQuaternion);
@@ -300,44 +344,29 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                         // Skip auto-rotate until the user drags in north-lock mode.
                     } else if (this.northLocked) {
                         this.northLockYaw = normalizeAngle(
-                            this.northLockYaw + (-this.autoRotateSpeed * 2 * Math.PI / 60 / 60)
+                            this.northLockYaw
+                            + (-this.autoRotateSpeed * 2 * Math.PI / 60 / 60) * frameScale
                         );
                         this._updateNorthLockedQuaternion(this.targetGlobeQuaternion);
                     } else {
-                        const autoRotateQuat = new THREE.Quaternion().setFromAxisAngle(
-                            new THREE.Vector3(0, 1, 0),
-                            -this.autoRotateSpeed * 2 * Math.PI / 60 / 60
+                        temp.autoRotateQuat.setFromAxisAngle(
+                            WORLD_UP,
+                            (-this.autoRotateSpeed * 2 * Math.PI / 60 / 60) * frameScale
                         );
-                        this.targetGlobeQuaternion.premultiply(autoRotateQuat);
+                        this.targetGlobeQuaternion.premultiply(temp.autoRotateQuat);
                     }
                 }
                 
-                // Apply final rotation to globe
-                globeRef.current.quaternion.copy(this.globeQuaternion);
-                
-                // Synchronize markers with globe rotation
-                if (markersRef.current) {
-                    markersRef.current.forEach(marker => {
-                        if (marker.originalPosition) {
-                            // Apply globe rotation to the original position (which doesn't have offset)
-                            const rotatedPos = marker.originalPosition.clone().applyQuaternion(this.globeQuaternion);
-                            marker.position.copy(rotatedPos);
-                            
-                            // Update marker orientation to face outward
-                            const normal = rotatedPos.clone().normalize();
-                            marker.lookAt(rotatedPos.clone().add(normal));
-                        }
-                    });
-                }
-                
-                // Synchronize boundary mesh if it exists
-                if (this.boundaryMesh) {
-                    this.boundaryMesh.quaternion.copy(this.globeQuaternion);
+                const groupRotationChanged = (
+                    1 - Math.abs(rotationGroup.quaternion.dot(this.globeQuaternion))
+                ) > QUATERNION_EPSILON;
+                if (groupRotationChanged) {
+                    rotationGroup.quaternion.copy(this.globeQuaternion);
+                    updateFlags |= NAVIGATION_UPDATE_ROTATION;
                 }
             }
-            
-            // Reset scale
-            this.scale = 1;
+
+            return updateFlags;
         },
 
         /**
@@ -355,13 +384,13 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                     const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
                     
                     if (globeRef.current) {
-                        globeRef.current.updateMatrixWorld(true);
+                        globeRef.current.updateWorldMatrix(true, false);
                     }
                     camera.updateMatrixWorld(true);
-                    this.raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
+                    this.raycaster.setFromCamera(temp.ndc.set(x, y), camera);
                     const intersects = this.raycaster.intersectObject(globeRef.current, true);
                     const hitPoint = intersects.length > 0
-                        ? intersects[0].point.clone().normalize()
+                        ? this.dragCurrent.copy(intersects[0].point).normalize()
                         : this._getSpherePointFromNDC(x, y);
                     
                     if (hitPoint) {
@@ -378,8 +407,8 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                         }
 
                         // Keep target in sync with the actual globe before the first drag move.
-                        if (globeRef.current) {
-                            this.globeQuaternion.copy(globeRef.current.quaternion);
+                        if (rotationGroupRef.current) {
+                            this.globeQuaternion.copy(rotationGroupRef.current.quaternion);
                         }
                         this.targetGlobeQuaternion.copy(this.globeQuaternion);
                         
@@ -446,13 +475,13 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                                 this.initialMousePos = new THREE.Vector2(currentX, currentY);
                             }
                             if (globeRef.current) {
-                                globeRef.current.updateMatrixWorld(true);
+                                globeRef.current.updateWorldMatrix(true, false);
                             }
                             camera.updateMatrixWorld(true);
-                            this.raycaster.setFromCamera(new THREE.Vector2(currentX, currentY), camera);
+                            this.raycaster.setFromCamera(temp.ndc.set(currentX, currentY), camera);
                             const startHits = this.raycaster.intersectObject(globeRef.current, true);
                             const startPoint = startHits.length > 0
-                                ? startHits[0].point.clone().normalize()
+                                ? this.dragCurrent.copy(startHits[0].point).normalize()
                                 : this._getSpherePointFromNDC(currentX, currentY);
                             if (startPoint) {
                                 this.dragStart.copy(startPoint);
@@ -491,15 +520,15 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                             return;
                         }
                         
-                        this.raycaster.setFromCamera(new THREE.Vector2(currentX, currentY), camera);
+                        this.raycaster.setFromCamera(temp.ndc.set(currentX, currentY), camera);
                         const hits = this.raycaster.intersectObject(globeRef.current, true);
                         const currentPoint = hits.length > 0
-                            ? hits[0].point.clone().normalize()
+                            ? this.dragCurrent.copy(hits[0].point).normalize()
                             : this._getSpherePointFromNDC(currentX, currentY);
                         
                         if (currentPoint) {
                             // Use actual intersection point for more accurate tracking
-                            const currentPointNormalized = currentPoint.clone().normalize();
+                            const currentPointNormalized = this.dragCurrent.copy(currentPoint).normalize();
 
                             if (this.justStartedDrag) {
                                 this.dragStart.copy(currentPointNormalized);
@@ -514,7 +543,7 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                             }
                             
                             // Calculate the rotation needed to move dragStart to currentPoint
-                            const rotationAxis = new THREE.Vector3().crossVectors(this.dragStart, currentPointNormalized);
+                            const rotationAxis = temp.rotationAxis.crossVectors(this.dragStart, currentPointNormalized);
                             const rotationAngle = this.dragStart.angleTo(currentPointNormalized);
                             const now = Date.now();
                             const isEarlyDrag = now - this.dragStartTime < 120;
@@ -562,8 +591,8 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                                     }
                                 } else if (hasRotation) {
                                     rotationAxis.normalize();
-                                    const prevTarget = this.targetGlobeQuaternion.clone();
-                                    const deltaQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, rotationAngle);
+                                    const prevTarget = temp.previousTarget.copy(this.targetGlobeQuaternion);
+                                    const deltaQuat = temp.deltaQuat.setFromAxisAngle(rotationAxis, rotationAngle);
 
                                     // Apply rotation to target quaternion
                                     this.targetGlobeQuaternion.copy(prevTarget).premultiply(deltaQuat);
@@ -572,14 +601,15 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                                     const deltaTime = (currentTime - this.lastRotationTime) / 1000; // Convert to seconds
                                     
                                     if (deltaTime > 0 && deltaTime < 0.1) { // Ignore if too much time has passed
-                                        const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-                                        const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
-                                        const appliedQuat = prevTarget.clone().invert().multiply(this.targetGlobeQuaternion).normalize();
+                                        const cameraRight = temp.cameraRight.copy(WORLD_RIGHT).applyQuaternion(camera.quaternion);
+                                        const cameraUp = temp.cameraUp.copy(WORLD_UP).applyQuaternion(camera.quaternion);
+                                        const appliedQuat = temp.appliedQuat.copy(prevTarget).invert()
+                                            .multiply(this.targetGlobeQuaternion).normalize();
                                         const angle = 2 * Math.acos(Math.max(-1, Math.min(1, appliedQuat.w)));
                                         const s = Math.sqrt(1 - appliedQuat.w * appliedQuat.w);
                                         const axis = s < 1e-6
-                                            ? new THREE.Vector3(1, 0, 0)
-                                            : new THREE.Vector3(appliedQuat.x / s, appliedQuat.y / s, appliedQuat.z / s);
+                                            ? temp.angularAxis.set(1, 0, 0)
+                                            : temp.angularAxis.set(appliedQuat.x / s, appliedQuat.y / s, appliedQuat.z / s);
                                         const angular = axis.multiplyScalar(angle);
                                         const velocityScale = 0.0024;
                                         const instantVelX = -(angular.dot(cameraUp) / deltaTime) * velocityScale;
@@ -639,7 +669,7 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                 const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
                 const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
                 
-                this.raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
+                this.raycaster.setFromCamera(temp.ndc.set(x, y), camera);
                 const intersects = this.raycaster.intersectObject(globeRef.current);
                 
                 setCanvasCursor(intersects.length > 0 ? 'grab' : 'default');
@@ -691,12 +721,12 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                     this._updateNorthLockedQuaternion(this.targetGlobeQuaternion);
                 } else {
                     // Get camera's local axes with quaternion transformation
-                    const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-                    const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+                    const cameraRight = temp.cameraRight.copy(WORLD_RIGHT).applyQuaternion(camera.quaternion);
+                    const cameraUp = temp.cameraUp.copy(WORLD_UP).applyQuaternion(camera.quaternion);
 
                     // Create rotations around camera's local axes
-                    const horizontalQuat = new THREE.Quaternion().setFromAxisAngle(cameraUp, -deltaX * rotateSpeed);
-                    const verticalQuat = new THREE.Quaternion().setFromAxisAngle(cameraRight, -deltaY * rotateSpeed);
+                    const horizontalQuat = temp.horizontalQuat.setFromAxisAngle(cameraUp, -deltaX * rotateSpeed);
+                    const verticalQuat = temp.verticalQuat.setFromAxisAngle(cameraRight, -deltaY * rotateSpeed);
 
                     // Apply to target quaternion
                     this.targetGlobeQuaternion.premultiply(horizontalQuat);
@@ -720,13 +750,13 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                 const y = -((event.touches[0].clientY - rect.top) / rect.height) * 2 + 1;
                 
                 if (globeRef.current) {
-                    globeRef.current.updateMatrixWorld(true);
+                    globeRef.current.updateWorldMatrix(true, false);
                 }
                 camera.updateMatrixWorld(true);
-                this.raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
+                this.raycaster.setFromCamera(temp.ndc.set(x, y), camera);
                 const intersects = this.raycaster.intersectObject(globeRef.current, true);
                 const hitPoint = intersects.length > 0
-                    ? intersects[0].point.clone().normalize()
+                    ? this.dragCurrent.copy(intersects[0].point).normalize()
                     : this._getSpherePointFromNDC(x, y);
                 
                 if (hitPoint) {
@@ -743,8 +773,8 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                     }
 
                     // Keep target in sync with the actual globe before the first drag move.
-                    if (globeRef.current) {
-                        this.globeQuaternion.copy(globeRef.current.quaternion);
+                    if (rotationGroupRef.current) {
+                        this.globeQuaternion.copy(rotationGroupRef.current.quaternion);
                     }
                     this.targetGlobeQuaternion.copy(this.globeQuaternion);
                     
@@ -794,13 +824,13 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                             this.initialMousePos = new THREE.Vector2(currentX, currentY);
                         }
                         if (globeRef.current) {
-                            globeRef.current.updateMatrixWorld(true);
+                            globeRef.current.updateWorldMatrix(true, false);
                         }
                         camera.updateMatrixWorld(true);
-                        this.raycaster.setFromCamera(new THREE.Vector2(currentX, currentY), camera);
+                        this.raycaster.setFromCamera(temp.ndc.set(currentX, currentY), camera);
                         const startHits = this.raycaster.intersectObject(globeRef.current, true);
                         const startPoint = startHits.length > 0
-                            ? startHits[0].point.clone().normalize()
+                            ? this.dragCurrent.copy(startHits[0].point).normalize()
                             : this._getSpherePointFromNDC(currentX, currentY);
                         if (startPoint) {
                             this.dragStart.copy(startPoint);
@@ -836,15 +866,15 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                             return;
                         }
                         
-                        this.raycaster.setFromCamera(new THREE.Vector2(currentX, currentY), camera);
+                        this.raycaster.setFromCamera(temp.ndc.set(currentX, currentY), camera);
                         const hits = this.raycaster.intersectObject(globeRef.current, true);
                         const currentPoint = hits.length > 0
-                            ? hits[0].point.clone().normalize()
+                            ? this.dragCurrent.copy(hits[0].point).normalize()
                             : this._getSpherePointFromNDC(currentX, currentY);
                         
                         if (currentPoint) {
                             // Use actual intersection point for more accurate tracking
-                            const currentPointNormalized = currentPoint.clone().normalize();
+                            const currentPointNormalized = this.dragCurrent.copy(currentPoint).normalize();
 
                             if (this.justStartedDrag) {
                                 this.dragStart.copy(currentPointNormalized);
@@ -858,7 +888,7 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                                 return;
                             }
                             
-                            const rotationAxis = new THREE.Vector3().crossVectors(this.dragStart, currentPointNormalized);
+                            const rotationAxis = temp.rotationAxis.crossVectors(this.dragStart, currentPointNormalized);
                             const rotationAngle = this.dragStart.angleTo(currentPointNormalized);
                             const now = Date.now();
                             const isEarlyDrag = now - this.dragStartTime < 140;
@@ -891,8 +921,8 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                                     this._updateNorthLockedQuaternion(this.targetGlobeQuaternion);
                                 } else if (hasRotation) {
                                     rotationAxis.normalize();
-                                    const deltaQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, rotationAngle);
-                                    const prevTarget = this.targetGlobeQuaternion.clone();
+                                    const deltaQuat = temp.deltaQuat.setFromAxisAngle(rotationAxis, rotationAngle);
+                                    const prevTarget = temp.previousTarget.copy(this.targetGlobeQuaternion);
                                     this.targetGlobeQuaternion.copy(prevTarget).premultiply(deltaQuat);
                                 }
                                 
@@ -926,11 +956,11 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
          * Helper method - gestisce la proiezione sulla sfera quando il mouse esce dal bordo
          */
         _getSpherePointFromNDC: function(x, y) {
-            this.raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
+            this.raycaster.setFromCamera(temp.ndc.set(x, y), camera);
             const ray = this.raycaster.ray;
             const sphereRadius = GLOBE_RADIUS;
-            const toSphere = ray.origin.clone().negate();
-            const normalizedDir = ray.direction.clone().normalize();
+            const toSphere = temp.rayToSphere.copy(ray.origin).negate();
+            const normalizedDir = temp.normalizedRayDirection.copy(ray.direction).normalize();
             const dot = toSphere.dot(normalizedDir);
             const discriminant = dot * dot - (toSphere.lengthSq() - sphereRadius * sphereRadius);
             if (discriminant < 0) {
@@ -944,7 +974,7 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
             if (t <= 0) {
                 return null;
             }
-            return ray.origin.clone().add(normalizedDir.multiplyScalar(t)).normalize();
+            return temp.projectedPoint.copy(ray.origin).addScaledVector(normalizedDir, t).normalize();
         },
 
         /**
@@ -955,9 +985,9 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
             const sphereRadius = GLOBE_RADIUS;
             
             // Project ray onto sphere surface even if it doesn't intersect
-            const toSphere = ray.origin.clone().negate();
+            const toSphere = temp.rayToSphere.copy(ray.origin).negate();
             const toCameraDistance = toSphere.length();
-            const normalizedDir = ray.direction.clone().normalize();
+            const normalizedDir = temp.normalizedRayDirection.copy(ray.direction).normalize();
             
             // Calculate the closest point on the sphere to the ray
             const dot = toSphere.dot(normalizedDir);
@@ -967,16 +997,16 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                 // There's a valid projection
                 const t = dot - Math.sqrt(discriminant);
                 if (t > 0) {
-                    const projectedPoint = ray.origin.clone().add(normalizedDir.multiplyScalar(t));
+                    const projectedPoint = temp.projectedPoint.copy(ray.origin).addScaledVector(normalizedDir, t);
                     const currentPoint = projectedPoint.normalize();
                     
-                    const rotationAxis = new THREE.Vector3().crossVectors(this.dragStart, currentPoint);
+                    const rotationAxis = temp.rotationAxis.crossVectors(this.dragStart, currentPoint);
                     const rotationAngle = this.dragStart.angleTo(currentPoint);
                     
                     if (rotationAxis.length() > 0.0001 && rotationAngle > 0.0001) {
                         rotationAxis.normalize();
-                        const prevTarget = this.targetGlobeQuaternion.clone();
-                        const deltaQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, rotationAngle);
+                        const prevTarget = temp.previousTarget.copy(this.targetGlobeQuaternion);
+                        const deltaQuat = temp.deltaQuat.setFromAxisAngle(rotationAxis, rotationAngle);
                         if (this.northLocked) {
                             if (this.dragStartLocal.lengthSq() === 0) {
                                 temp.candidateQuat.copy(this.targetGlobeQuaternion).invert();
@@ -1018,14 +1048,15 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                                 const deltaTime = (currentTime - this.lastRotationTime) / 1000;
                                 
                                 if (deltaTime > 0 && deltaTime < 0.1) {
-                                    const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-                                    const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
-                                    const appliedQuat = prevTarget.clone().invert().multiply(this.targetGlobeQuaternion).normalize();
+                                    const cameraRight = temp.cameraRight.copy(WORLD_RIGHT).applyQuaternion(camera.quaternion);
+                                    const cameraUp = temp.cameraUp.copy(WORLD_UP).applyQuaternion(camera.quaternion);
+                                    const appliedQuat = temp.appliedQuat.copy(prevTarget).invert()
+                                        .multiply(this.targetGlobeQuaternion).normalize();
                                     const angle = 2 * Math.acos(Math.max(-1, Math.min(1, appliedQuat.w)));
                                     const s = Math.sqrt(1 - appliedQuat.w * appliedQuat.w);
                                     const axis = s < 1e-6
-                                        ? new THREE.Vector3(1, 0, 0)
-                                        : new THREE.Vector3(appliedQuat.x / s, appliedQuat.y / s, appliedQuat.z / s);
+                                        ? temp.angularAxis.set(1, 0, 0)
+                                        : temp.angularAxis.set(appliedQuat.x / s, appliedQuat.y / s, appliedQuat.z / s);
                                     const angular = axis.multiplyScalar(angle);
                                     const velocityScale = 0.0024;
                                     const instantVelX = -(angular.dot(cameraUp) / deltaTime) * velocityScale;
@@ -1084,12 +1115,12 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                 this._updateNorthLockedQuaternion(this.targetGlobeQuaternion);
             } else {
                 // Get camera's local axes with consistent quaternion transformation
-                const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-                const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+                const cameraRight = temp.cameraRight.copy(WORLD_RIGHT).applyQuaternion(camera.quaternion);
+                const cameraUp = temp.cameraUp.copy(WORLD_UP).applyQuaternion(camera.quaternion);
 
                 // Create rotations around camera's local axes
-                const horizontalQuat = new THREE.Quaternion().setFromAxisAngle(cameraUp, -this.mouseDelta.x * rotateSpeed);
-                const verticalQuat = new THREE.Quaternion().setFromAxisAngle(cameraRight, -this.mouseDelta.y * rotateSpeed);
+                const horizontalQuat = temp.horizontalQuat.setFromAxisAngle(cameraUp, -this.mouseDelta.x * rotateSpeed);
+                const verticalQuat = temp.verticalQuat.setFromAxisAngle(cameraRight, -this.mouseDelta.y * rotateSpeed);
 
                 // Apply to target quaternion
                 this.targetGlobeQuaternion.premultiply(horizontalQuat);
@@ -1129,7 +1160,7 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
             const sourceQuat = this.globeQuaternion;
             const lockedQuat = this._syncNorthLockFromQuaternion(sourceQuat);
             this.northLockTransitioning = true;
-            this.northLockTransitionStart = Date.now();
+            this.northLockTransitionElapsed = 0;
             this.northLockTransitionFrom.copy(sourceQuat);
             this.northLockTransitionTo.copy(lockedQuat);
             this.rotationVelocity.set(0, 0);
@@ -1140,12 +1171,12 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
          * Public method - entra in modalità north lock senza cambiare orientamento
          */
         enterNorthLock: function() {
-            const sourceQuat = globeRef.current
-                ? globeRef.current.quaternion
+            const sourceQuat = rotationGroupRef.current
+                ? rotationGroupRef.current.quaternion
                 : this.globeQuaternion;
             const lockedQuat = this._syncNorthLockFromQuaternion(sourceQuat);
             this.northLockTransitioning = true;
-            this.northLockTransitionStart = Date.now();
+            this.northLockTransitionElapsed = 0;
             this.northLockTransitionFrom.copy(sourceQuat);
             this.northLockTransitionTo.copy(lockedQuat);
             this.northLockJustEnabled = true;
@@ -1191,9 +1222,9 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
     controls.spherical.setFromVector3(camera.position.clone().sub(controls.target));
     
     // Initialize globe quaternion
-    if (globeRef.current) {
-        controls.globeQuaternion.copy(globeRef.current.quaternion);
-        controls.targetGlobeQuaternion.copy(globeRef.current.quaternion);
+    if (rotationGroupRef.current) {
+        controls.globeQuaternion.copy(rotationGroupRef.current.quaternion);
+        controls.targetGlobeQuaternion.copy(rotationGroupRef.current.quaternion);
     }
     
     controls.bindEventHandlers();

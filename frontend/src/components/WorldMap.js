@@ -7,7 +7,9 @@ import { usePhotos } from '../contexts/PhotoContext';
 import { 
     createWorldMapNavigation, 
     GLOBE_RADIUS as NAV_GLOBE_RADIUS,
-    CAMERA_START_Z as NAV_CAMERA_START_Z
+    CAMERA_START_Z as NAV_CAMERA_START_Z,
+    NAVIGATION_UPDATE_CAMERA,
+    NAVIGATION_UPDATE_ROTATION
 } from '../utils/WorldMapNavigation';
 
 import { useInView } from 'react-intersection-observer';
@@ -410,10 +412,14 @@ const WorldMap = ({ headingLevel = 'h2' }) => {
     const sceneRef = useRef(null);
     const rendererRef = useRef(null);
     const globeRef = useRef(null);
+    const rotationGroupRef = useRef(null);
     const cameraRef = useRef(null);
     const controlsRef = useRef(null);
     const markersRef = useRef([]);
     const markerObjectsRef = useRef([]); // Cache per raycasting
+    const hoveredMarkerObjectRef = useRef(null);
+    const markerScaleRef = useRef(1);
+    const renderRequestedRef = useRef(true);
     const animationLifecycleRef = useRef(null);
     if (animationLifecycleRef.current === null) {
         animationLifecycleRef.current = createAnimationLifecycleController();
@@ -424,13 +430,16 @@ const WorldMap = ({ headingLevel = 'h2' }) => {
     const [autoRotate, setAutoRotate] = useState(true);
     const autoRotateTimerRef = useRef(null);
     const [hoveredMarker, setHoveredMarker] = useState(null);
+    const hoveredMarkerDataRef = useRef(null);
     const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
     const [adjustedPosition, setAdjustedPosition] = useState({ x: 0, y: 0 });
     const popupRef = useRef(null);
     const skipUnzoomRef = useRef(false);
     const disablePopupRef = useRef(false);
     const isAnimatingRef = useRef(false); // Blocca interazioni durante animazioni
-    const [compassRotation, setCompassRotation] = useState(0); // Rotazione della bussola
+    const compassSvgRef = useRef(null);
+    const compassNorthLabelRef = useRef(null);
+    const compassNorthVectorRef = useRef(new THREE.Vector3(0, 1, 0));
     const [northLocked, setNorthLocked] = useState(false); // Modalità blocco nord
     
     useLayoutEffect(() => {
@@ -520,6 +529,20 @@ const setCanvasCursor = useCallback((value) => {
         cursorRef.current = value;
     }
 }, []);
+
+const clearMarkerHover = useCallback(() => {
+    const hoveredObject = hoveredMarkerObjectRef.current;
+    if (hoveredObject) {
+        hoveredObject.isHovered = false;
+        hoveredObject.pulseScale?.(0, markerScaleRef.current);
+        hoveredMarkerObjectRef.current = null;
+        renderRequestedRef.current = true;
+    }
+    if (hoveredMarkerDataRef.current !== null) {
+        hoveredMarkerDataRef.current = null;
+        setHoveredMarker(null);
+    }
+}, []);
 // ————————————————————————————————————————————————
 
 /**
@@ -541,16 +564,7 @@ const latLngToVector3 = useCallback((lat, lng, radius = GLOBE_RADIUS) => {    co
 // Creates a 3D marker for a photo or cluster
 const createMarker = useCallback((position, photo, isCluster = false) => {
     const markerGroup = new THREE.Group();
-    
-    // Store the original position without any offset for rotation calculations
-    markerGroup.originalPosition = position.clone();
-    
-    // Apply initial offset to the marker's current position
-    const initialQuat = new THREE.Quaternion().setFromEuler(
-        new THREE.Euler(0, THREE.MathUtils.degToRad(START_LON_OFFSET_DEG), 0)
-    );
-    const offsetPosition = position.clone().applyQuaternion(initialQuat);
-    markerGroup.position.copy(offsetPosition);
+    markerGroup.position.copy(position);
     
     markerGroup.userData = photo;
     
@@ -568,6 +582,8 @@ const createMarker = useCallback((position, photo, isCluster = false) => {
     // Move dot slightly outward along the normal
     const normal = position.clone().normalize();
     dot.translateOnAxis(normal, 0.015);
+    dot.updateMatrix();
+    dot.matrixAutoUpdate = false;
     markerGroup.add(dot);
     
     // states
@@ -584,13 +600,15 @@ const createMarker = useCallback((position, photo, isCluster = false) => {
         : scaleFactor * baseScale;
         
         markerGroup.dot.scale.setScalar(targetScale);
+        markerGroup.dot.updateMatrix();
         if (markerGroup.ring) {
             markerGroup.ring.scale.setScalar(targetScale * 0.9);
+            markerGroup.ring.updateMatrix();
         }
     };
-    
-    // Orienta il marker
-    markerGroup.lookAt(position.clone().add(normal));
+
+    markerGroup.updateMatrix();
+    markerGroup.matrixAutoUpdate = false;
     
     return markerGroup;
 }, []);
@@ -648,10 +666,22 @@ const currentClusterLevelRef = useRef(-1);
 
 // rimuove i marker vecchi e disegna quelli del livello richiesto
 const drawMarkersForLevel = useCallback((level) => {
-    // elimina marker esistenti
-    markersRef.current.forEach(m => sceneRef.current?.remove(m));
+    const rotationGroup = rotationGroupRef.current;
+    if (!rotationGroup) return;
+
+    // Remove and dispose the previous level before replacing it.
+    clearMarkerHover();
+    markersRef.current.forEach((marker) => {
+        rotationGroup.remove(marker);
+        marker.traverse((child) => {
+            child.geometry?.dispose();
+            if (Array.isArray(child.material)) child.material.forEach(material => material.dispose());
+            else child.material?.dispose();
+        });
+    });
     markersRef.current = [];
     markerObjectsRef.current = [];
+    hoveredMarkerObjectRef.current = null;
     
     clusterLevels[level].forEach(cluster => {
         const pos = latLngToVector3(
@@ -664,7 +694,7 @@ const drawMarkersForLevel = useCallback((level) => {
         marker.userData.photos = cluster.photos;             // array completo
         marker.userData.isCluster = isCluster; // indica se è un cluster
         marker.userData.center = cluster.center; // aggiungi il centro del cluster
-        sceneRef.current.add(marker);
+        rotationGroup.add(marker);
         markersRef.current.push(marker);
         marker.traverse(child => {
             if (child.isMesh) markerObjectsRef.current.push(child);
@@ -673,18 +703,19 @@ const drawMarkersForLevel = useCallback((level) => {
     
     // Aggiorna immediatamente la scala dei marker appena creati
     if (cameraRef.current) {
-        const scaleFactor = THREE.MathUtils.clamp(
+        markerScaleRef.current = THREE.MathUtils.clamp(
             cameraRef.current.position.length() / CAMERA_START_Z,
             0.35,
             1
         );
         markersRef.current.forEach((marker) => {
             if (marker.pulseScale) {
-                marker.pulseScale(0, scaleFactor);
+                marker.pulseScale(0, markerScaleRef.current);
             }
         });
     }
-}, [clusterLevels, latLngToVector3, createMarker]);
+    renderRequestedRef.current = true;
+}, [clusterLevels, latLngToVector3, createMarker, clearMarkerHover]);
 // ————————————————————————————————————————————————
 
 
@@ -708,21 +739,20 @@ const scheduleAutoRotateResume = useCallback((delay = RESUME_ROTATE_DELAY) => {
         // don't resume auto-rotate if modal is open
         if (controlsRef.current && !modalOpen) {
             // clear any hover state and hide popup
-            markersRef.current.forEach(m => m.isHovered = false);
-            setHoveredMarker(null);
+            clearMarkerHover();
             setCanvasCursor('grab');
             // resume auto-rotation
             controlsRef.current.autoRotate = true;
             setAutoRotate(true);
         }
     }, delay);
-}, [setAutoRotate, modalOpen, setHoveredMarker, setCanvasCursor]);
+}, [setAutoRotate, modalOpen, setCanvasCursor, clearMarkerHover]);
 
 // Creates custom controls for the camera with quaternion-based rotation
 const createCustomControls = useCallback((camera, domElement) => {
     const refs = {
         globeRef,
-        markersRef
+        rotationGroupRef
     };
     
     const callbacks = {
@@ -735,26 +765,22 @@ const createCustomControls = useCallback((camera, domElement) => {
     return createWorldMapNavigation(camera, domElement, refs, callbacks);
 }, [disableAutoRotate, scheduleAutoRotateResume, setCanvasCursor]);
 
-// Funzione per calcolare la rotazione della bussola
+// Keep the continuously changing compass transform outside React state.
 const updateCompassRotation = useCallback(() => {
-    if (!globeRef.current) return;
-    
-    // Crea un vettore che punta al nord (polo nord)
-    const northPole = new THREE.Vector3(0, 1, 0);
-    
-    // Applica la rotazione del globo al vettore del polo nord
-    const rotatedNorth = northPole.clone().applyQuaternion(globeRef.current.quaternion);
-    
-    // Proietta il vettore sul piano XZ (vista dall'alto)
-    const projectedNorth = new THREE.Vector2(rotatedNorth.x, -rotatedNorth.z);
-    
-    // Calcola l'angolo rispetto all'asse Y (nord dello schermo)
-    const angle = Math.atan2(projectedNorth.x, projectedNorth.y);
-    
-    // Converti in gradi
-    const degrees = angle * (180 / Math.PI);
-    
-    setCompassRotation(degrees);
+    const rotationGroup = rotationGroupRef.current;
+    if (!rotationGroup) return;
+
+    const rotatedNorth = compassNorthVectorRef.current
+        .set(0, 1, 0)
+        .applyQuaternion(rotationGroup.quaternion);
+    const degrees = Math.atan2(rotatedNorth.x, -rotatedNorth.z) * (180 / Math.PI);
+
+    if (compassSvgRef.current) {
+        compassSvgRef.current.style.transform = `rotate(${degrees}deg)`;
+    }
+    if (compassNorthLabelRef.current) {
+        compassNorthLabelRef.current.style.transform = `rotate(${-degrees}deg)`;
+    }
 }, []);
 
 useEffect(() => {
@@ -798,6 +824,15 @@ useEffect(() => {
     
     // setup camera iniziale
     camera.position.set(0, 0, CAMERA_START_Z);
+
+    // Earth, borders and markers share one transform. Rotating this group is O(1).
+    const initialQuaternion = new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(0, THREE.MathUtils.degToRad(START_LON_OFFSET_DEG), 0)
+    );
+    const rotationGroup = new THREE.Group();
+    rotationGroup.quaternion.copy(initialQuaternion);
+    scene.add(rotationGroup);
+    rotationGroupRef.current = rotationGroup;
     
     // crea controlli personalizzati
     const controls = createCustomControls(camera, renderer.domElement);
@@ -807,7 +842,9 @@ useEffect(() => {
 
     if (process.env.NODE_ENV !== 'production') {
         window.__worldmapDebug = {
-            getQuaternion: () => globeRef.current ? globeRef.current.quaternion.toArray() : null,
+            getQuaternion: () => rotationGroupRef.current
+                ? rotationGroupRef.current.quaternion.toArray()
+                : null,
             setAutoRotate: (value) => {
                 if (controlsRef.current) {
                     controlsRef.current.autoRotate = value;
@@ -852,7 +889,7 @@ useEffect(() => {
             });
             
             const earth = new THREE.Mesh(earthGeometry, earthMaterial);
-            scene.add(earth);
+            rotationGroup.add(earth);
             
             // BORDERS
             const boundaryMaterial = new THREE.MeshBasicMaterial({
@@ -868,24 +905,11 @@ useEffect(() => {
                 new THREE.SphereGeometry(GLOBE_RADIUS + 0.005, 64, 64),
                 boundaryMaterial
             );
-            scene.add(boundaryMesh);
-            
-            // Apply initial offset to both earth and boundary
-            const initialQuaternion = new THREE.Quaternion().setFromEuler(
-                new THREE.Euler(0, THREE.MathUtils.degToRad(START_LON_OFFSET_DEG), 0)
-            );
-            earth.quaternion.copy(initialQuaternion);
-            boundaryMesh.quaternion.copy(initialQuaternion);
+            rotationGroup.add(boundaryMesh);
             
             globeRef.current = earth;
             
-            // Store boundary mesh reference in controls for synchronization
-            if (controlsRef.current) {
-                controlsRef.current.boundaryMesh = boundaryMesh;
-                controlsRef.current.globeQuaternion.copy(initialQuaternion);
-                controlsRef.current.targetGlobeQuaternion.copy(initialQuaternion);
-            }
-            
+            renderRequestedRef.current = true;
             setMapLoaded(true);
             
         } catch (error) {
@@ -900,22 +924,11 @@ useEffect(() => {
             });
             
             const earth = new THREE.Mesh(earthGeometry, fallbackMaterial);
-            scene.add(earth);
-            
-            // Apply initial offset to fallback earth
-            const initialQuaternion = new THREE.Quaternion().setFromEuler(
-                new THREE.Euler(0, THREE.MathUtils.degToRad(START_LON_OFFSET_DEG), 0)
-            );
-            earth.quaternion.copy(initialQuaternion);
+            rotationGroup.add(earth);
             
             globeRef.current = earth;
             
-            // Initialize controls quaternion for fallback
-            if (controlsRef.current) {
-                controlsRef.current.globeQuaternion.copy(initialQuaternion);
-                controlsRef.current.targetGlobeQuaternion.copy(initialQuaternion);
-            }
-            
+            renderRequestedRef.current = true;
             if (!disposed) setMapLoaded(true);
         }
     };
@@ -979,9 +992,19 @@ useEffect(() => {
     scene.add(ambientLight);
     
     const sunLight = new THREE.DirectionalLight(0xfff6e5, 1.2);
-    //sunLight.position.set(5, 3, 5);
     sunLight.castShadow = false;
     scene.add(sunLight);
+
+    // The camera keeps a fixed orientation; only its radius changes. Compute the
+    // screen-relative sun direction once instead of rebuilding it every frame.
+    const lightDirection = new THREE.Vector3();
+    camera.getWorldDirection(lightDirection).negate();
+    const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
+    const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
+    lightDirection.applyAxisAngle(cameraRight, -THREE.MathUtils.degToRad(32.5));
+    lightDirection.applyAxisAngle(cameraUp, -THREE.MathUtils.degToRad(27.5));
+    sunLight.position.copy(lightDirection.multiplyScalar(GLOBE_RADIUS * 5));
+    atmosphereMaterial.uniforms.lightPosition.value.copy(sunLight.position);
     
     // stelle di sfondo ottimizzate
     const starsGeometry = new THREE.BufferGeometry();
@@ -1024,13 +1047,13 @@ useEffect(() => {
     // raycaster ottimizzato
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
+    const markerWorldPosition = new THREE.Vector3();
     
     // mouse move con throttling pesante per performance
     const handleMouseMove = throttle((event) => {
         // Disabilita l'InfoPopup se un modal è aperto, durante animazioni o dopo un click fino a chiusura modali
         if (modalOpen || galleryModalOpen || disablePopupRef.current || isAnimatingRef.current) {
-            markersRef.current.forEach(m => m.isHovered = false);
-            setHoveredMarker(null);
+            clearMarkerHover();
             if (!isDraggingRef.current) setCanvasCursor('grab');
             return;
         }
@@ -1052,15 +1075,19 @@ useEffect(() => {
             const hoveredData = hoveredObj.userData || (hoveredObj.parent ? hoveredObj.parent.userData : null);
             
             // se è un marker diverso, aggiorna lo stato
-            if (hoveredData && hoveredData !== hoveredMarker) {
-                if (hoveredMarker) {
-                    const prev = markersRef.current.find(m => m.userData === hoveredMarker);
-                    if (prev) prev.isHovered = false;
+            if (hoveredData && hoveredData !== hoveredMarkerDataRef.current) {
+                const previousMarker = hoveredMarkerObjectRef.current;
+                if (previousMarker) {
+                    previousMarker.isHovered = false;
+                    previousMarker.pulseScale?.(0, markerScaleRef.current);
                 }
                 
                 // Trova il marker completo per ottenere le informazioni del cluster
                 const fullMarker = markersRef.current.find(m => m.userData === hoveredData);
                 if (fullMarker) {
+                    fullMarker.isHovered = true;
+                    fullMarker.pulseScale?.(0, markerScaleRef.current);
+                    hoveredMarkerObjectRef.current = fullMarker;
                     const enhancedData = {
                         ...hoveredData,
                         isCluster: fullMarker.userData.isCluster,
@@ -1071,14 +1098,16 @@ useEffect(() => {
                 } else {
                     setHoveredMarker(hoveredData);
                 }
+                hoveredMarkerDataRef.current = hoveredData;
+                renderRequestedRef.current = true;
             }
             
             // compute marker screen position for InfoPopup
-            const worldPos = hoveredObj.getWorldPosition(new THREE.Vector3());
-            worldPos.project(camera);
+            hoveredObj.getWorldPosition(markerWorldPosition);
+            markerWorldPosition.project(camera);
             const rect = renderer.domElement.getBoundingClientRect();
-            const x = (worldPos.x * 0.5 + 0.5) * rect.width + rect.left;
-            const y = (-worldPos.y * 0.5 + 0.5) * rect.height + rect.top;
+            const x = (markerWorldPosition.x * 0.5 + 0.5) * rect.width + rect.left;
+            const y = (-markerWorldPosition.y * 0.5 + 0.5) * rect.height + rect.top;
             const offsetY = 10;
             const offsetX = 10;
             setPopupPosition({ x: x + offsetX, y: y + offsetY });
@@ -1088,8 +1117,7 @@ useEffect(() => {
             
         } else {
             // fuori da tutti i marker: rimuovi hover e nascondi popup
-            markersRef.current.forEach(m => m.isHovered = false);
-            setHoveredMarker(null);
+            clearMarkerHover();
             
             // Set cursor based on whether we're over the globe
             if (!isDraggingRef.current) {
@@ -1117,8 +1145,7 @@ useEffect(() => {
         disablePopupRef.current = true;
         
         // Chiudi l'InfoPopup
-        markersRef.current.forEach(m => m.isHovered = false);
-        setHoveredMarker(null);
+        clearMarkerHover();
         setCanvasCursor('grab');
         
         const mesh         = intersects[0].object;
@@ -1181,85 +1208,75 @@ useEffect(() => {
     
     // --- Clear hover on wheel/touch to hide InfoPopup when rotating/zooming ---
     const clearHover = () => {
-        markersRef.current.forEach(m => m.isHovered = false);
-        setHoveredMarker(null);
+        clearMarkerHover();
     };
     canvas.addEventListener('wheel', clearHover, { passive: true });
     canvas.addEventListener('touchstart', clearHover, { passive: true });
     canvas.addEventListener('touchmove', clearHover, { passive: true });
     canvas.addEventListener('touchend', clearHover);
     
-    // Animation loop ottimizzato
-    const clock = new THREE.Clock();
-    let frameCount = 0;
-    
-    const animate = () => {
+    // Keep the RAF callback cheap and only draw when something visible changed.
+    let previousFrameTime = null;
+    let starAnimationTime = 0;
+    let markerAnimationTime = 0;
+    const STAR_RENDER_INTERVAL = 1 / 12;
+    const MARKER_RENDER_INTERVAL = 1 / 20;
+
+    const animate = (lifecycleTime) => {
         if (disposed) return;
-        frameCount++;
-        const elapsedTime = clock.getElapsedTime();
-        
-        // Aggiorna controlli
-        if (controlsRef.current) {
-            controlsRef.current.update();
-        }
-        
-        // Aggiorna la rotazione della bussola
-        if (frameCount % 2 === 0) { // Ogni 2 frame per performance
+        const deltaSeconds = previousFrameTime === null
+            ? 1 / 60
+            : Math.min(Math.max((lifecycleTime - previousFrameTime) / 1000, 0), 0.05);
+        previousFrameTime = lifecycleTime;
+        let shouldRender = renderRequestedRef.current;
+        renderRequestedRef.current = false;
+
+        const updateFlags = controls.update(deltaSeconds);
+        if (updateFlags & NAVIGATION_UPDATE_ROTATION) {
             updateCompassRotation();
+            shouldRender = true;
         }
-        
-        // Anima i marker solo ogni 3 frame per performance
-        if (frameCount % 3 === 0) {
-            // scala da 1 (lontano) a 0.35 (molto vicino)
-            const scaleFactor = THREE.MathUtils.clamp(
+
+        // Marker scale and clustering depend only on camera distance, not every frame.
+        if (updateFlags & NAVIGATION_UPDATE_CAMERA) {
+            markerScaleRef.current = THREE.MathUtils.clamp(
                 camera.position.length() / CAMERA_START_Z,
                 0.35,
                 1
             );
-            
-            markersRef.current.forEach((marker) => {
-                if (marker.pulseScale) {
-                    marker.pulseScale(elapsedTime, scaleFactor);
-                }
+            markersRef.current.forEach(marker => {
+                marker.pulseScale?.(0, markerScaleRef.current);
             });
+
+            const level = radiusToLevel(camera.position.length());
+            if (level !== currentClusterLevelRef.current) {
+                currentClusterLevelRef.current = level;
+                drawMarkersForLevel(level);
+            }
+            shouldRender = true;
         }
-        
-        // Rotazione lenta delle stelle solo ogni 5 frame
-        if (frameCount % 5 === 0) {
-            stars.rotation.x += 0.0001;
-            stars.rotation.y += 0.0002;
+
+        // Only the hovered marker pulses; static markers no longer require an O(N) pass.
+        markerAnimationTime += deltaSeconds;
+        if (hoveredMarkerObjectRef.current && markerAnimationTime >= MARKER_RENDER_INTERVAL) {
+            hoveredMarkerObjectRef.current.pulseScale?.(
+                lifecycleTime / 1000,
+                markerScaleRef.current
+            );
+            markerAnimationTime = 0;
+            shouldRender = true;
         }
-        
-        // se la distanza camera cambia livello, ridisegna i marker
-        const lvlNow = radiusToLevel(camera.position.length());
-        if (lvlNow !== currentClusterLevelRef.current) {
-            currentClusterLevelRef.current = lvlNow;
-            drawMarkersForLevel(lvlNow);
+
+        // Preserve the existing star speed and update cadence independently of FPS.
+        starAnimationTime += deltaSeconds;
+        if (starAnimationTime >= STAR_RENDER_INTERVAL) {
+            stars.rotation.x += starAnimationTime * 0.0012;
+            stars.rotation.y += starAnimationTime * 0.0024;
+            starAnimationTime = 0;
+            shouldRender = true;
         }
-        
-        // Zona di ombra in basso a sinistra
-        const DISTANCE     = GLOBE_RADIUS * 5;                  // quanto lontano mettiamo il “sole”
-        const TILT_ELEV    = THREE.MathUtils.degToRad(32.5);      // inclinazione verso l’alto
-        const TILT_AZIM     = THREE.MathUtils.degToRad(27.5);     // inclinazione verso destra
-        // 1) Prendi la direzione di vista della camera (punta al centro dello schermo)
-        const dir = new THREE.Vector3();
-        camera.getWorldDirection(dir);      // ora dir punta da camera ➔ centro
-        dir.negate();                       // inverti: da centro ➔ camera (cioè luce che viene verso di te)
-        // 2) Calcola gli assi locali della camera
-        const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
-        const camUp    = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
-        // 3) Applica le due rotazioni locali
-        dir.applyAxisAngle(camRight, -TILT_ELEV);   // “solleva” la luce verso l’alto dello schermo
-        dir.applyAxisAngle(camUp,    -TILT_AZIM);  // sposta la luce verso destra dello schermo
-        // 4) Imposta la posizione del directional light
-        sunLight.position.copy(dir.multiplyScalar(DISTANCE));
-        
-        // Aggiorna la posizione della luce per l'atmosfera (usa la stessa posizione del sunLight)
-        if (atmosphereMaterial && atmosphereMaterial.uniforms) {
-            atmosphereMaterial.uniforms.lightPosition.value.copy(sunLight.position);
-        }
-        
-        renderer.render(scene, camera);
+
+        if (shouldRender) renderer.render(scene, camera);
     };
 
     animationLifecycle.setMainLoop(animate);
@@ -1275,6 +1292,7 @@ useEffect(() => {
         camera.updateProjectionMatrix();
         renderer.setSize(width, height);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+        renderRequestedRef.current = true;
     }, 100);
     
     window.addEventListener('resize', handleResize);
@@ -1340,13 +1358,17 @@ useEffect(() => {
         if (cameraRef.current === camera) cameraRef.current = null;
         if (controlsRef.current === controls) controlsRef.current = null;
         globeRef.current = null;
+        if (rotationGroupRef.current === rotationGroup) rotationGroupRef.current = null;
         markersRef.current = [];
         markerObjectsRef.current = [];
+        hoveredMarkerObjectRef.current = null;
+        hoveredMarkerDataRef.current = null;
+        renderRequestedRef.current = true;
     };
 // Initialize only after the first viewport entry. Later visibility changes
 // pause/resume the lifecycle controller without rebuilding WebGL resources.
 // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [hasEnteredView, validPhotos, drawMarkersForLevel, updateCompassRotation]);
+}, [hasEnteredView, validPhotos, drawMarkersForLevel, updateCompassRotation, clearMarkerHover]);
 
 // Funzione per raddrizzare il globo (nord in alto)
 const straightenGlobe = useCallback(() => {
@@ -1413,12 +1435,6 @@ const straightenGlobe = useCallback(() => {
             controls.globeQuaternion.slerpQuaternions(currentQuat, targetQuat, ease);
             controls.targetGlobeQuaternion.copy(controls.globeQuaternion);
             
-            // Aggiorna la bussola
-            updateCompassRotation();
-            
-            // Forza l'aggiornamento
-            controls.update();
-            
             if (t < 1) {
                 requestSecondaryAnimationFrame(animate);
             } else {
@@ -1445,8 +1461,6 @@ const straightenGlobe = useCallback(() => {
             
             controls.globeQuaternion.slerpQuaternions(currentQuat, targetQuat, ease);
             controls.targetGlobeQuaternion.copy(controls.globeQuaternion);
-            updateCompassRotation();
-            controls.update();
             
             if (t < 1) {
                 requestSecondaryAnimationFrame(animate);
@@ -1458,7 +1472,7 @@ const straightenGlobe = useCallback(() => {
         
         requestSecondaryAnimationFrame(animate);
     }
-}, [requestSecondaryAnimationFrame, updateCompassRotation, scheduleAutoRotateResume, setAutoRotate]);
+}, [requestSecondaryAnimationFrame, scheduleAutoRotateResume, setAutoRotate]);
 
 // Funzioni di controllo ottimizzate
 const resetView = () => {
@@ -1561,9 +1575,6 @@ const focusOnPhoto = useCallback((
         // Interpolate zoom
         controls.spherical.radius = startRadius + (targetRadius - startRadius) * ease;
         
-        // Update controls
-        controls.update();
-        
         if (t < 1) {
             requestSecondaryAnimationFrame(animate);
         } else {
@@ -1660,25 +1671,8 @@ useEffect(() => {
         return;
     }
     
-    /* --- MODAL CHIUSO: livella + zoom-out (comportamento normale) -------------------------------- */
-    
-    /* 1) Livella inclinazione (rotation.x → 0) */
-    const rotStartX = globeRef.current.rotation.x;
-    const targetRotX = 0;
-    const levelDur = 800;
-    const levelStart = animationLifecycleRef.current.now();
-    let levelFrameToken = null;
-    
-    const levelAnim = (now) => {
-        const t    = Math.min(1, (now - levelStart) / levelDur);
-        const ease = 1 - Math.pow(1 - t, 2);         // easeOutQuad
-        globeRef.current.rotation.x =
-        rotStartX + (targetRotX - rotStartX) * ease;
-        if (t < 1) levelFrameToken = requestSecondaryAnimationFrame(levelAnim);
-    };
-    levelFrameToken = requestSecondaryAnimationFrame(levelAnim);
-    
-    /* 2) Zoom-out alla distanza originale */
+    // Zoom out without changing the focused orientation: the selected location
+    // must remain at the centre of the globe after the modal closes.
     const startRadius = controls.spherical.radius;
     const destRadius = prevRadiusRef.current || CAMERA_START_Z;
     
@@ -1693,20 +1687,16 @@ useEffect(() => {
         // Interpolate zoom only (keep current rotation)
         controls.spherical.radius = startRadius + (destRadius - startRadius) * ease;
         
-        // Update camera
-        controls.update();
-        
         if (t < 1) {
             zoomFrameToken = requestSecondaryAnimationFrame(zoomAnim);
         } else {
-            /* 3) Dopo lo zoom-out, riattiva auto-rotate con il timer esistente */
+            // Dopo lo zoom-out, riattiva auto-rotate con il timer esistente.
             scheduleAutoRotateResume();
         }
     };
     zoomFrameToken = requestSecondaryAnimationFrame(zoomAnim);
 
     return () => {
-        cancelSecondaryAnimationFrame(levelFrameToken);
         cancelSecondaryAnimationFrame(zoomFrameToken);
     };
 }, [
@@ -1885,8 +1875,8 @@ return (
             <LockIcon>🔒</LockIcon>
         )}
         <CompassSVG 
+            ref={compassSvgRef}
             viewBox="0 0 100 100" 
-            style={{ transform: `rotate(${compassRotation}deg)` }}
         >
             {/* Cerchio esterno della bussola */}
             <circle 
@@ -1927,13 +1917,14 @@ return (
             
             {/* Lettera N */}
             <text 
+                ref={compassNorthLabelRef}
                 x="50" 
                 y="20" 
                 textAnchor="middle" 
                 fill="white" 
                 fontSize="14" 
                 fontWeight="bold"
-                style={{ transform: `rotate(${-compassRotation}deg)`, transformOrigin: '50px 50px' }}
+                style={{ transformOrigin: '50px 50px' }}
             >
                 N
             </text>
