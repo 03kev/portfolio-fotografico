@@ -27,6 +27,125 @@ const FOCUS_OFFSET_RADIUS   = GLOBE_RADIUS + 1.2;
 const RESUME_ROTATE_DELAY   = 10000; // ms
 const START_LON_OFFSET_DEG = -105; // rome longitude offset
 
+const createAnimationLifecycleController = () => {
+    let active = false;
+    let disposed = false;
+    let mainLoop = null;
+    let mainFrameId = null;
+    let nextSecondaryFrameId = 0;
+    let pausedAt = performance.now();
+    let totalPausedTime = 0;
+    const secondaryFrames = new Map();
+
+    const getLifecycleTime = (timestamp = performance.now()) => timestamp - totalPausedTime;
+
+    const scheduleMainLoop = () => {
+        if (!active || disposed || !mainLoop || mainFrameId !== null) return;
+
+        mainFrameId = window.requestAnimationFrame((timestamp) => {
+            mainFrameId = null;
+            if (!active || disposed || !mainLoop) return;
+
+            mainLoop(getLifecycleTime(timestamp));
+            scheduleMainLoop();
+        });
+    };
+
+    const scheduleSecondaryFrame = (token, entry) => {
+        if (!active || disposed || entry.frameId !== null || !secondaryFrames.has(token)) return;
+
+        entry.frameId = window.requestAnimationFrame((timestamp) => {
+            entry.frameId = null;
+            if (!active || disposed || !secondaryFrames.has(token)) return;
+
+            secondaryFrames.delete(token);
+            entry.callback(getLifecycleTime(timestamp));
+        });
+    };
+
+    const pause = () => {
+        if (!active || disposed) return;
+
+        active = false;
+        pausedAt = performance.now();
+        if (mainFrameId !== null) {
+            window.cancelAnimationFrame(mainFrameId);
+            mainFrameId = null;
+        }
+        secondaryFrames.forEach((entry) => {
+            if (entry.frameId !== null) {
+                window.cancelAnimationFrame(entry.frameId);
+                entry.frameId = null;
+            }
+        });
+    };
+
+    const resume = () => {
+        if (active || disposed) return;
+
+        if (pausedAt !== null) {
+            totalPausedTime += performance.now() - pausedAt;
+            pausedAt = null;
+        }
+        active = true;
+        scheduleMainLoop();
+        secondaryFrames.forEach((entry, token) => scheduleSecondaryFrame(token, entry));
+    };
+
+    const cancelAllSecondaryFrames = () => {
+        secondaryFrames.forEach((entry) => {
+            if (entry.frameId !== null) window.cancelAnimationFrame(entry.frameId);
+        });
+        secondaryFrames.clear();
+    };
+
+    return {
+        revive() {
+            if (!disposed) return;
+            disposed = false;
+            active = false;
+            pausedAt = performance.now();
+            totalPausedTime = 0;
+        },
+        setMainLoop(callback) {
+            if (mainFrameId !== null) {
+                window.cancelAnimationFrame(mainFrameId);
+                mainFrameId = null;
+            }
+            mainLoop = callback;
+            scheduleMainLoop();
+        },
+        requestSecondaryFrame(callback) {
+            if (disposed) return null;
+
+            const token = ++nextSecondaryFrameId;
+            const entry = { callback, frameId: null };
+            secondaryFrames.set(token, entry);
+            scheduleSecondaryFrame(token, entry);
+            return token;
+        },
+        cancelSecondaryFrame(token) {
+            if (token === null || token === undefined) return;
+            const entry = secondaryFrames.get(token);
+            if (!entry) return;
+            if (entry.frameId !== null) window.cancelAnimationFrame(entry.frameId);
+            secondaryFrames.delete(token);
+        },
+        pause,
+        resume,
+        now: () => getLifecycleTime(),
+        dispose() {
+            if (mainFrameId !== null) window.cancelAnimationFrame(mainFrameId);
+            mainFrameId = null;
+            mainLoop = null;
+            cancelAllSecondaryFrames();
+            active = false;
+            disposed = true;
+            pausedAt = null;
+        }
+    };
+};
+
 const MapSection = styled(motion.section)`
   padding: var(--spacing-2xl) 0 var(--spacing-4xl);
   background: transparent;
@@ -295,7 +414,13 @@ const WorldMap = ({ headingLevel = 'h2' }) => {
     const controlsRef = useRef(null);
     const markersRef = useRef([]);
     const markerObjectsRef = useRef([]); // Cache per raycasting
+    const animationLifecycleRef = useRef(null);
+    if (animationLifecycleRef.current === null) {
+        animationLifecycleRef.current = createAnimationLifecycleController();
+    }
+    const globeInViewRef = useRef(false);
     const [mapLoaded, setMapLoaded] = useState(false);
+    const [hasEnteredView, setHasEnteredView] = useState(false);
     const [autoRotate, setAutoRotate] = useState(true);
     const autoRotateTimerRef = useRef(null);
     const [hoveredMarker, setHoveredMarker] = useState(null);
@@ -338,10 +463,38 @@ const WorldMap = ({ headingLevel = 'h2' }) => {
     
     const lastMouseMoveTime = useRef(0); // Per throttling
     const { ref, inView } = useInView({
-        threshold: 0.1,
-        triggerOnce: true
+        threshold: 0.1
     });
     const prevRadiusRef = useRef(null);
+
+    useEffect(() => {
+        globeInViewRef.current = inView;
+        if (inView) setHasEnteredView(true);
+
+        const lifecycle = animationLifecycleRef.current;
+        if (inView && !document.hidden) lifecycle.resume();
+        else lifecycle.pause();
+    }, [inView]);
+
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            const lifecycle = animationLifecycleRef.current;
+            if (globeInViewRef.current && !document.hidden) lifecycle.resume();
+            else lifecycle.pause();
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        handleVisibilityChange();
+        return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    }, []);
+
+    const requestSecondaryAnimationFrame = useCallback((callback) => (
+        animationLifecycleRef.current.requestSecondaryFrame(callback)
+    ), []);
+
+    const cancelSecondaryAnimationFrame = useCallback((token) => {
+        animationLifecycleRef.current.cancelSecondaryFrame(token);
+    }, []);
     
     // Disattiva l’auto-rotazione e sincronizza lo stato del pulsante
     const disableAutoRotate = useCallback(() => {
@@ -606,7 +759,15 @@ const updateCompassRotation = useCallback(() => {
 
 useEffect(() => {
     const mountElement = mountRef.current;
-    if (!mountElement || !inView) return;
+    if (!mountElement || !hasEnteredView) return;
+
+    const animationLifecycle = animationLifecycleRef.current;
+    animationLifecycle.revive();
+    if (globeInViewRef.current && !document.hidden) animationLifecycle.resume();
+    else animationLifecycle.pause();
+
+    let disposed = false;
+    let textureLoadGeneration = 0;
     
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(
@@ -661,16 +822,29 @@ useEffect(() => {
     // carica texture ottimizzate
     const textureLoader = new THREE.TextureLoader();
     
+    const loadTexture = (path) => new Promise((resolve, reject) => {
+        textureLoader.load(path, resolve, undefined, reject);
+    });
+
     const loadTextures = async () => {
+        const generation = ++textureLoadGeneration;
+        let earthTexture = null;
+        let boundaryTexture = null;
+        const isStale = () => disposed || generation !== textureLoadGeneration;
+
         try {
-            const earthTexture = await new Promise((resolve, reject) => {
-                textureLoader.load(
-                    '/textures/8k_earth_v2.jpg',
-                    resolve,
-                    undefined,
-                    reject
-                );
-            });
+            earthTexture = await loadTexture('/textures/8k_earth_v2.jpg');
+            if (isStale()) {
+                earthTexture.dispose();
+                return;
+            }
+
+            boundaryTexture = await loadTexture('/textures/boundaries_8k.png');
+            if (isStale()) {
+                earthTexture.dispose();
+                boundaryTexture.dispose();
+                return;
+            }
             
             const earthMaterial = new THREE.MeshLambertMaterial({
                 map: earthTexture,
@@ -681,7 +855,6 @@ useEffect(() => {
             scene.add(earth);
             
             // BORDERS
-            const boundaryTexture = textureLoader.load('/textures/boundaries_8k.png');
             const boundaryMaterial = new THREE.MeshBasicMaterial({
                 map: boundaryTexture,
                 transparent: true,
@@ -716,6 +889,10 @@ useEffect(() => {
             setMapLoaded(true);
             
         } catch (error) {
+            earthTexture?.dispose();
+            boundaryTexture?.dispose();
+            if (isStale()) return;
+
             console.log('Usando texture di fallback');
             const fallbackMaterial = new THREE.MeshLambertMaterial({
                 color: 0x6B93D6,
@@ -739,7 +916,7 @@ useEffect(() => {
                 controlsRef.current.targetGlobeQuaternion.copy(initialQuaternion);
             }
             
-            setMapLoaded(true);
+            if (!disposed) setMapLoaded(true);
         }
     };
     
@@ -983,24 +1160,24 @@ useEffect(() => {
     // Event listeners
     const canvas = renderer.domElement;
     // Gestione perdita/ripristino contesto WebGL
-    canvas.addEventListener('webglcontextlost', (e) => {
-        e.preventDefault();
+    const handleContextLost = (event) => {
+        event.preventDefault();
         console.warn('WebGL context lost');
-    }, false);
-    canvas.addEventListener('webglcontextrestored', () => {
+    };
+    const handleContextRestored = () => {
+        if (disposed) return;
         console.warn('WebGL context restored');
-        // Ricarica texture della Terra
-        if (typeof loadTextures === 'function') {
-            loadTextures();
-        }
-    }, false);
-    
-    
+        loadTextures();
+    };
+    const handleCanvasMouseLeave = () => {
+        setCanvasCursor('default');
+    };
+
+    canvas.addEventListener('webglcontextlost', handleContextLost, false);
+    canvas.addEventListener('webglcontextrestored', handleContextRestored, false);
     canvas.addEventListener('mousemove', handleMouseMove);
     canvas.addEventListener('click', handleClick);
-    canvas.addEventListener('mouseleave', () => {
-        setCanvasCursor('default');
-    });
+    canvas.addEventListener('mouseleave', handleCanvasMouseLeave);
     
     // --- Clear hover on wheel/touch to hide InfoPopup when rotating/zooming ---
     const clearHover = () => {
@@ -1017,7 +1194,7 @@ useEffect(() => {
     let frameCount = 0;
     
     const animate = () => {
-        requestAnimationFrame(animate);
+        if (disposed) return;
         frameCount++;
         const elapsedTime = clock.getElapsedTime();
         
@@ -1084,8 +1261,8 @@ useEffect(() => {
         
         renderer.render(scene, camera);
     };
-    
-    animate();
+
+    animationLifecycle.setMainLoop(animate);
     
     // Handle resize ottimizzato
     const handleResize = throttle(() => {
@@ -1104,20 +1281,24 @@ useEffect(() => {
     
     // Cleanup ottimizzata
     return () => {
+        disposed = true;
+        textureLoadGeneration += 1;
+        animationLifecycle.dispose();
         window.removeEventListener('resize', handleResize);
         
         const currentCanvas = renderer.domElement;
+        currentCanvas.removeEventListener('webglcontextlost', handleContextLost, false);
+        currentCanvas.removeEventListener('webglcontextrestored', handleContextRestored, false);
         currentCanvas.removeEventListener('mousemove', handleMouseMove);
         currentCanvas.removeEventListener('click', handleClick);
+        currentCanvas.removeEventListener('mouseleave', handleCanvasMouseLeave);
         // Remove clearHover listeners
         currentCanvas.removeEventListener('wheel', clearHover);
         currentCanvas.removeEventListener('touchstart', clearHover);
         currentCanvas.removeEventListener('touchmove', clearHover);
         currentCanvas.removeEventListener('touchend', clearHover);
         
-        if (controlsRef.current) {
-            controlsRef.current.dispose();
-        }
+        controls.dispose();
 
         if (window.__worldmapDebug) {
             delete window.__worldmapDebug;
@@ -1149,12 +1330,23 @@ useEffect(() => {
         
         renderer.dispose();
         document.body.style.cursor = 'default';
-        if (autoRotateTimerRef.current) { clearTimeout(autoRotateTimerRef.current); }
+        if (autoRotateTimerRef.current) {
+            clearTimeout(autoRotateTimerRef.current);
+            autoRotateTimerRef.current = null;
+        }
+
+        if (sceneRef.current === scene) sceneRef.current = null;
+        if (rendererRef.current === renderer) rendererRef.current = null;
+        if (cameraRef.current === camera) cameraRef.current = null;
+        if (controlsRef.current === controls) controlsRef.current = null;
+        globeRef.current = null;
+        markersRef.current = [];
+        markerObjectsRef.current = [];
     };
-// The renderer is intentionally recreated only when its data or visibility
-// changes. Event handlers read mutable interaction state through refs.
+// Initialize only after the first viewport entry. Later visibility changes
+// pause/resume the lifecycle controller without rebuilding WebGL resources.
 // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [inView, validPhotos, drawMarkersForLevel, updateCompassRotation]);
+}, [hasEnteredView, validPhotos, drawMarkersForLevel, updateCompassRotation]);
 
 // Funzione per raddrizzare il globo (nord in alto)
 const straightenGlobe = useCallback(() => {
@@ -1211,7 +1403,7 @@ const straightenGlobe = useCallback(() => {
         
         // Animazione
         const duration = 800;
-        const start = performance.now();
+        const start = animationLifecycleRef.current.now();
         
         const animate = (now) => {
             const t = Math.min(1, (now - start) / duration);
@@ -1228,7 +1420,7 @@ const straightenGlobe = useCallback(() => {
             controls.update();
             
             if (t < 1) {
-                requestAnimationFrame(animate);
+                requestSecondaryAnimationFrame(animate);
             } else {
                 // Riabilita i controlli
                 controls.enabled = prevEnabled;
@@ -1236,7 +1428,7 @@ const straightenGlobe = useCallback(() => {
             }
         };
         
-        requestAnimationFrame(animate);
+        requestSecondaryAnimationFrame(animate);
     } else {
         // Se non troviamo intersezioni, usiamo il metodo di fallback
         // che resetta semplicemente l'inclinazione
@@ -1245,7 +1437,7 @@ const straightenGlobe = useCallback(() => {
         const targetQuat = new THREE.Quaternion().setFromEuler(targetEuler);
         
         const duration = 800;
-        const start = performance.now();
+        const start = animationLifecycleRef.current.now();
         
         const animate = (now) => {
             const t = Math.min(1, (now - start) / duration);
@@ -1257,16 +1449,16 @@ const straightenGlobe = useCallback(() => {
             controls.update();
             
             if (t < 1) {
-                requestAnimationFrame(animate);
+                requestSecondaryAnimationFrame(animate);
             } else {
                 controls.enabled = prevEnabled;
                 scheduleAutoRotateResume();
             }
         };
         
-        requestAnimationFrame(animate);
+        requestSecondaryAnimationFrame(animate);
     }
-}, [updateCompassRotation, scheduleAutoRotateResume, setAutoRotate]);
+}, [requestSecondaryAnimationFrame, updateCompassRotation, scheduleAutoRotateResume, setAutoRotate]);
 
 // Funzioni di controllo ottimizzate
 const resetView = () => {
@@ -1357,7 +1549,7 @@ const focusOnPhoto = useCallback((
     controls.autoRotate  = false;
     setAutoRotate(false);
     
-    const start = performance.now();
+    const start = animationLifecycleRef.current.now();
     const animate = (now) => {
         const t = Math.min(1, (now - start) / duration);
         const ease = 1 - Math.pow(1 - t, 2);       // easeOutQuad
@@ -1373,7 +1565,7 @@ const focusOnPhoto = useCallback((
         controls.update();
         
         if (t < 1) {
-            requestAnimationFrame(animate);
+            requestSecondaryAnimationFrame(animate);
         } else {
             controls.enabled     = prevEnabled;
             controls.autoRotate  = prevAutoRotate;   // resta off finché non riprende col timer
@@ -1385,12 +1577,13 @@ const focusOnPhoto = useCallback((
             if (typeof onComplete === "function") onComplete();
         }
     };
-    requestAnimationFrame(animate);
+    requestSecondaryAnimationFrame(animate);
     return true;
-}, [latLngToVector3, modalOpen]);
+}, [latLngToVector3, modalOpen, requestSecondaryAnimationFrame]);
 
 useEffect(() => {
     actions.registerFocusHandler(focusOnPhoto);
+    return () => actions.registerFocusHandler(null);
 }, [actions, focusOnPhoto]);
 
 // Handle pending map focus when map is loaded
@@ -1473,23 +1666,25 @@ useEffect(() => {
     const rotStartX = globeRef.current.rotation.x;
     const targetRotX = 0;
     const levelDur = 800;
-    const levelStart = performance.now();
+    const levelStart = animationLifecycleRef.current.now();
+    let levelFrameToken = null;
     
     const levelAnim = (now) => {
         const t    = Math.min(1, (now - levelStart) / levelDur);
         const ease = 1 - Math.pow(1 - t, 2);         // easeOutQuad
         globeRef.current.rotation.x =
         rotStartX + (targetRotX - rotStartX) * ease;
-        if (t < 1) requestAnimationFrame(levelAnim);
+        if (t < 1) levelFrameToken = requestSecondaryAnimationFrame(levelAnim);
     };
-    requestAnimationFrame(levelAnim);
+    levelFrameToken = requestSecondaryAnimationFrame(levelAnim);
     
     /* 2) Zoom-out alla distanza originale */
     const startRadius = controls.spherical.radius;
     const destRadius = prevRadiusRef.current || CAMERA_START_Z;
     
     const zoomDur   = 700;
-    const zoomStart = performance.now();
+    const zoomStart = animationLifecycleRef.current.now();
+    let zoomFrameToken = null;
     
     const zoomAnim = (now) => {
         const t    = Math.min(1, (now - zoomStart) / zoomDur);
@@ -1502,14 +1697,25 @@ useEffect(() => {
         controls.update();
         
         if (t < 1) {
-            requestAnimationFrame(zoomAnim);
+            zoomFrameToken = requestSecondaryAnimationFrame(zoomAnim);
         } else {
             /* 3) Dopo lo zoom-out, riattiva auto-rotate con il timer esistente */
             scheduleAutoRotateResume();
         }
     };
-    requestAnimationFrame(zoomAnim);
-}, [modalOpen, galleryModalOpen, scheduleAutoRotateResume]);
+    zoomFrameToken = requestSecondaryAnimationFrame(zoomAnim);
+
+    return () => {
+        cancelSecondaryAnimationFrame(levelFrameToken);
+        cancelSecondaryAnimationFrame(zoomFrameToken);
+    };
+}, [
+    modalOpen,
+    galleryModalOpen,
+    cancelSecondaryAnimationFrame,
+    requestSecondaryAnimationFrame,
+    scheduleAutoRotateResume
+]);
 
 
 // Calcolo statistiche memoizzato
@@ -1625,17 +1831,16 @@ const itemVariants = {
 return (
     <MapSection
     id="world-map-3d"
-    ref={ref}
     variants={sectionVariants}
     initial="hidden"
-    animate={inView ? "visible" : "hidden"}
+    animate={hasEnteredView ? "visible" : "hidden"}
     >
     <Container>
     <SectionTitle as={headingLevel} variants={itemVariants}>
     Il Mondo in foto
     </SectionTitle>
     
-    <GlobeWrapper variants={itemVariants}>
+    <GlobeWrapper ref={ref} variants={itemVariants}>
     {(loading || !mapLoaded) && (
         <LoadingOverlay>
         <LoadingSpinner />
