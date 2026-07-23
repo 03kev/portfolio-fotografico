@@ -11,7 +11,11 @@ import {
     NAVIGATION_UPDATE_CAMERA,
     NAVIGATION_UPDATE_ROTATION
 } from '../utils/WorldMapNavigation';
-import { createWorldMapGlobeResources } from '../utils/WorldMapGlobeResources';
+import {
+    configureBoundaryMaskTexture,
+    createWorldMapGlobeResources,
+    selectWorldMapTextureSet
+} from '../utils/WorldMapGlobeResources';
 
 import { useInView } from 'react-intersection-observer';
 
@@ -822,7 +826,8 @@ useEffect(() => {
     
     renderer.setClearColor(0x060608, 1);
     renderer.setSize(mountElement.clientWidth, mountElement.clientHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    const renderPixelRatio = Math.min(window.devicePixelRatio, 1.5);
+    renderer.setPixelRatio(renderPixelRatio);
     renderer.domElement.setAttribute('data-testid', 'worldmap-canvas');
     
     renderer.shadowMap.enabled = false;
@@ -869,11 +874,19 @@ useEffect(() => {
     // Load source textures. The resource owner below is solely responsible for
     // meshes, geometries, materials and successful texture instances.
     const textureLoader = new THREE.TextureLoader();
-    const loadTexture = (path) => new Promise((resolve, reject) => {
+    const loadTexture = (path, role) => new Promise((resolve, reject) => {
         let pendingTexture = null;
         pendingTexture = textureLoader.load(
             path,
-            resolve,
+            (texture) => {
+                if (role === 'boundary') {
+                    configureBoundaryMaskTexture(
+                        texture,
+                        renderer.capabilities.isWebGL2
+                    );
+                }
+                resolve(texture);
+            },
             undefined,
             (error) => {
                 pendingTexture?.dispose();
@@ -882,6 +895,15 @@ useEffect(() => {
         );
     });
     let controlsEnabledBeforeContextLoss = true;
+    const selectTextureSetForCanvas = () => selectWorldMapTextureSet({
+        canvasHeight: mountElement.clientHeight,
+        pixelRatio: renderer.getPixelRatio(),
+        verticalFov: camera.fov,
+        globeRadius: GLOBE_RADIUS,
+        cameraDistance: CAMERA_START_Z,
+        maxTextureSize: renderer.capabilities.maxTextureSize
+    });
+    let selectedTextureSet = selectTextureSetForCanvas();
     const globeResources = createWorldMapGlobeResources({
         rotationGroup,
         loadTexture,
@@ -896,12 +918,23 @@ useEffect(() => {
             renderRequestedRef.current = true;
             if (!disposed) setMapLoaded(resourceState.interactive);
         },
-        onFallback: () => {
-            if (!disposed) console.warn('Texture globo non disponibili: uso il fallback');
+        onFallback: (error, { retainedExisting }) => {
+            if (disposed) return;
+            console.warn(
+                retainedExisting
+                    ? 'Nuova qualità texture non disponibile: mantengo quella corrente'
+                    : 'Texture globo non disponibili: uso il fallback',
+                error
+            );
         }
     });
 
-    globeResources.load();
+    globeResources.load(selectedTextureSet);
+    if (process.env.NODE_ENV !== 'production' && window.__worldmapDebug) {
+        window.__worldmapDebug.getTextureResolution = () => (
+            globeResources.getSnapshot().textureSet?.width ?? null
+        );
+    }
     
     // atmosfera con shader personalizzato che rispetta l'illuminazione
     const atmosphereGeometry = new THREE.SphereGeometry(ATMOSPHERE_RADIUS, 64, 64);
@@ -1297,6 +1330,11 @@ useEffect(() => {
         camera.updateProjectionMatrix();
         renderer.setSize(width, height);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+        const nextTextureSet = selectTextureSetForCanvas();
+        if (nextTextureSet.key !== selectedTextureSet.key) {
+            selectedTextureSet = nextTextureSet;
+            globeResources.load(nextTextureSet);
+        }
         renderRequestedRef.current = true;
     }, 100);
     

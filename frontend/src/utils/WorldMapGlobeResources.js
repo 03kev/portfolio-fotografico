@@ -1,10 +1,79 @@
 import * as THREE from 'three';
 
+export const WORLD_MAP_TEXTURE_SETS = Object.freeze([
+    Object.freeze({
+        key: '2048',
+        width: 2048,
+        height: 1024,
+        earth: '/textures/earth-2048.jpg',
+        boundary: '/textures/boundaries-2048.png'
+    }),
+    Object.freeze({
+        key: '4096',
+        width: 4096,
+        height: 2048,
+        earth: '/textures/earth-4096.jpg',
+        boundary: '/textures/boundaries-4096.png'
+    })
+]);
+
+const DEFAULT_TEXTURE_SET = WORLD_MAP_TEXTURE_SETS[WORLD_MAP_TEXTURE_SETS.length - 1];
+const MAX_ACCEPTABLE_TEXEL_UPSCALE = 1.25;
+
+export const configureBoundaryMaskTexture = (texture, isWebGL2) => {
+    texture.format = isWebGL2 ? THREE.RedFormat : THREE.LuminanceFormat;
+    texture.colorSpace = THREE.NoColorSpace;
+    return texture;
+};
+
+/**
+ * Chooses the smallest texture whose equatorial texel density remains close
+ * to the projected density at the centre of the visible globe.
+ */
+export const selectWorldMapTextureSet = ({
+    canvasHeight,
+    pixelRatio,
+    verticalFov,
+    globeRadius,
+    cameraDistance,
+    maxTextureSize = Infinity
+}) => {
+    const physicalHeight = Math.max(1, canvasHeight * pixelRatio);
+    const halfFovRadians = THREE.MathUtils.degToRad(verticalFov) / 2;
+    const distanceFromSurface = Math.max(cameraDistance - globeRadius, 0.001);
+    const pixelsPerRadian = (
+        physicalHeight
+        / (2 * Math.tan(halfFovRadians))
+        * (globeRadius / distanceFromSurface)
+    );
+    const requiredWidth = (
+        2
+        * Math.PI
+        * pixelsPerRadian
+        / MAX_ACCEPTABLE_TEXEL_UPSCALE
+    );
+    const supportedSets = WORLD_MAP_TEXTURE_SETS.filter(
+        (textureSet) => textureSet.width <= maxTextureSize
+    );
+    const candidates = supportedSets.length > 0
+        ? supportedSets
+        : [WORLD_MAP_TEXTURE_SETS[0]];
+
+    return candidates.find((textureSet) => textureSet.width >= requiredWidth)
+        ?? candidates[candidates.length - 1];
+};
+
 const disposeMaterial = (material) => {
     if (!material) return;
-    material.map?.dispose();
-    material.normalMap?.dispose();
-    material.specularMap?.dispose();
+    const textures = new Set([
+        material.map,
+        material.normalMap,
+        material.specularMap
+    ]);
+    Object.values(material.uniforms ?? {}).forEach((uniform) => {
+        if (uniform?.value?.isTexture) textures.add(uniform.value);
+    });
+    textures.forEach((texture) => texture?.dispose());
     material.dispose();
 };
 
@@ -41,6 +110,7 @@ export const createWorldMapGlobeResources = ({
     let contextAvailable = true;
     let generation = 0;
     let bundle = null;
+    let pendingLoad = null;
 
     const snapshot = () => {
         const hasResources = bundle !== null;
@@ -56,6 +126,7 @@ export const createWorldMapGlobeResources = ({
             earth: bundle?.earth ?? null,
             boundary: bundle?.boundary ?? null,
             fallback: bundle?.fallback ?? false,
+            textureSet: bundle?.textureSet ?? null,
             interactive
         };
     };
@@ -80,7 +151,7 @@ export const createWorldMapGlobeResources = ({
         return true;
     };
 
-    const createTexturedBundle = (earthTexture, boundaryTexture) => {
+    const createTexturedBundle = (earthTexture, boundaryTexture, textureSet) => {
         const earth = new THREE.Mesh(
             new THREE.SphereGeometry(globeRadius, segments, segments),
             new THREE.MeshLambertMaterial({
@@ -90,20 +161,38 @@ export const createWorldMapGlobeResources = ({
         );
         const boundary = new THREE.Mesh(
             new THREE.SphereGeometry(globeRadius + 0.005, segments, segments),
-            new THREE.MeshBasicMaterial({
-                map: boundaryTexture,
+            new THREE.ShaderMaterial({
+                uniforms: {
+                    boundaryMask: { value: boundaryTexture },
+                    boundaryOpacity: { value: 0.5 }
+                },
+                vertexShader: `
+                    varying vec2 vBoundaryUv;
+                    void main() {
+                        vBoundaryUv = uv;
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    }
+                `,
+                fragmentShader: `
+                    uniform sampler2D boundaryMask;
+                    uniform float boundaryOpacity;
+                    varying vec2 vBoundaryUv;
+                    void main() {
+                        float mask = texture2D(boundaryMask, vBoundaryUv).r;
+                        gl_FragColor = vec4(0.0, 0.0, 0.0, mask * boundaryOpacity);
+                    }
+                `,
                 transparent: true,
                 depthTest: true,
-                opacity: 0.5,
                 polygonOffset: true,
                 polygonOffsetFactor: -1,
                 polygonOffsetUnits: 1
             })
         );
-        return { earth, boundary, fallback: false };
+        return { earth, boundary, fallback: false, textureSet };
     };
 
-    const createFallbackBundle = () => ({
+    const createFallbackBundle = (textureSet) => ({
         earth: new THREE.Mesh(
             new THREE.SphereGeometry(globeRadius, segments, segments),
             new THREE.MeshLambertMaterial({
@@ -112,44 +201,71 @@ export const createWorldMapGlobeResources = ({
             })
         ),
         boundary: null,
-        fallback: true
+        fallback: true,
+        textureSet
     });
 
-    const load = async () => {
-        if (disposed) return null;
+    const load = (textureSet = DEFAULT_TEXTURE_SET) => {
+        if (disposed) return Promise.resolve(null);
+        if (bundle?.textureSet.key === textureSet.key) {
+            if (pendingLoad) {
+                generation += 1;
+                pendingLoad = null;
+            }
+            return Promise.resolve(bundle);
+        }
+        if (pendingLoad?.key === textureSet.key) return pendingLoad.promise;
 
         const loadGeneration = ++generation;
-        let earthTexture = null;
-        let boundaryTexture = null;
         if (!bundle) notify();
 
-        try {
-            earthTexture = await loadTexture('/textures/8k_earth_v2.jpg');
-            if (isStale(loadGeneration)) {
-                earthTexture.dispose();
-                return null;
+        const promise = (async () => {
+            let earthTexture = null;
+            let boundaryTexture = null;
+
+            try {
+                earthTexture = await loadTexture(textureSet.earth, 'earth');
+                if (isStale(loadGeneration)) {
+                    earthTexture.dispose();
+                    return null;
+                }
+
+                boundaryTexture = await loadTexture(textureSet.boundary, 'boundary');
+                if (isStale(loadGeneration)) {
+                    earthTexture.dispose();
+                    boundaryTexture.dispose();
+                    return null;
+                }
+
+                const nextBundle = createTexturedBundle(
+                    earthTexture,
+                    boundaryTexture,
+                    textureSet
+                );
+                return replaceBundle(nextBundle, loadGeneration) ? nextBundle : null;
+            } catch (error) {
+                earthTexture?.dispose();
+                boundaryTexture?.dispose();
+                if (isStale(loadGeneration)) return null;
+
+                if (bundle) {
+                    onFallback(error, { retainedExisting: true, textureSet });
+                    return bundle;
+                }
+
+                onFallback(error, { retainedExisting: false, textureSet });
+                const fallbackBundle = createFallbackBundle(textureSet);
+                return replaceBundle(fallbackBundle, loadGeneration)
+                    ? fallbackBundle
+                    : null;
             }
+        })();
 
-            boundaryTexture = await loadTexture('/textures/boundaries_8k.png');
-            if (isStale(loadGeneration)) {
-                earthTexture.dispose();
-                boundaryTexture.dispose();
-                return null;
-            }
-
-            const nextBundle = createTexturedBundle(earthTexture, boundaryTexture);
-            return replaceBundle(nextBundle, loadGeneration) ? nextBundle : null;
-        } catch (error) {
-            earthTexture?.dispose();
-            boundaryTexture?.dispose();
-            if (isStale(loadGeneration)) return null;
-
-            onFallback(error);
-            const fallbackBundle = createFallbackBundle();
-            return replaceBundle(fallbackBundle, loadGeneration)
-                ? fallbackBundle
-                : null;
-        }
+        pendingLoad = { key: textureSet.key, promise };
+        promise.finally(() => {
+            if (pendingLoad?.promise === promise) pendingLoad = null;
+        });
+        return promise;
     };
 
     return {
@@ -171,6 +287,7 @@ export const createWorldMapGlobeResources = ({
             if (disposed) return;
             disposed = true;
             generation += 1;
+            pendingLoad = null;
             const currentBundle = bundle;
             bundle = null;
             disposeBundle(rotationGroup, currentBundle);
