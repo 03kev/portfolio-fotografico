@@ -1477,6 +1477,7 @@ const straightenGlobe = useCallback(() => {
 // Funzioni di controllo ottimizzate
 const resetView = () => {
     if (cameraRef.current && globeRef.current && controlsRef.current) {
+        controlsRef.current.stopMotion?.();
         // Reset camera distance
         controlsRef.current.spherical.radius = CAMERA_START_Z;
         
@@ -1486,6 +1487,9 @@ const resetView = () => {
         );
         controlsRef.current.targetGlobeQuaternion.copy(initialRotation);
         controlsRef.current.globeQuaternion.copy(initialRotation);
+        if (controlsRef.current.northLocked && controlsRef.current.syncNorthLockState) {
+            controlsRef.current.syncNorthLockState(initialRotation);
+        }
         
         // Re-enable auto-rotate
         controlsRef.current.autoRotate = true;
@@ -1534,6 +1538,7 @@ const focusOnPhoto = useCallback((
     
     if (!photo || !cameraRef.current || !controlsRef.current) return false;
     const controls = controlsRef.current;
+    controls.stopMotion?.();
     prevRadiusRef.current = controls.spherical.radius;  // distanza attuale
     const markerPos = latLngToVector3(photo.lat, photo.lng, 1).normalize(); // posizione del marker
     
@@ -1546,7 +1551,10 @@ const focusOnPhoto = useCallback((
     const rotationAngle = currentMarkerWorld.angleTo(front);
     
     let targetGlobeQuat = controls.globeQuaternion.clone();
-    if (rotationAxis.length() > 0.001) {
+    if (controls.northLocked && controls.createNorthLockedTarget) {
+        targetGlobeQuat = controls.createNorthLockedTarget(markerPos, targetGlobeQuat)
+            || targetGlobeQuat;
+    } else if (rotationAxis.length() > 0.001) {
         rotationAxis.normalize();
         const deltaQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, rotationAngle);
         targetGlobeQuat.premultiply(deltaQuat);
@@ -1578,6 +1586,9 @@ const focusOnPhoto = useCallback((
         if (t < 1) {
             requestSecondaryAnimationFrame(animate);
         } else {
+            if (controls.northLocked && controls.syncNorthLockState) {
+                controls.syncNorthLockState(targetGlobeQuat);
+            }
             controls.enabled     = prevEnabled;
             controls.autoRotate  = prevAutoRotate;   // resta off finché non riprende col timer
             
@@ -1865,6 +1876,8 @@ return (
                 controlsRef.current.rotationVelocity.set(0, 0);
                 if (newLocked && controlsRef.current.enterNorthLock) {
                     controlsRef.current.enterNorthLock();
+                } else if (!newLocked && controlsRef.current.exitNorthLock) {
+                    controlsRef.current.exitNorthLock();
                 }
             }
         }}
