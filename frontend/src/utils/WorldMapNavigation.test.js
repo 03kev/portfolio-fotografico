@@ -40,26 +40,33 @@ const createHarness = (initialQuaternion = new THREE.Quaternion()) => {
     scene.add(rotationGroup);
     scene.updateMatrixWorld(true);
 
+    const globeRef = { current: globe };
+    const isDraggingRef = { current: false };
+    const setCanvasCursor = jest.fn();
     const controls = createWorldMapNavigation(
         camera,
         canvas,
         {
-            globeRef: { current: globe },
+            globeRef,
             rotationGroupRef: { current: rotationGroup }
         },
         {
             disableAutoRotate: jest.fn(),
             scheduleAutoRotateResume: jest.fn(),
-            setCanvasCursor: jest.fn(),
-            isDraggingRef: { current: false }
+            setCanvasCursor,
+            isDraggingRef
         }
     );
 
     return {
+        canvas,
         camera,
         controls,
         globe,
+        globeRef,
+        isDraggingRef,
         rotationGroup,
+        setCanvasCursor,
         dispose: () => {
             controls.dispose();
             globe.geometry.dispose();
@@ -67,6 +74,50 @@ const createHarness = (initialQuaternion = new THREE.Quaternion()) => {
         }
     };
 };
+
+describe('WorldMapNavigation resource readiness', () => {
+    test('ignores pointer starts when the globe resource is unavailable', () => {
+        const harness = createHarness();
+        const { controls, globeRef } = harness;
+        globeRef.current = null;
+
+        expect(() => controls.onMouseDown({
+            button: 0,
+            clientX: 250,
+            clientY: 250,
+            preventDefault: jest.fn()
+        })).not.toThrow();
+        expect(() => controls.onTouchStart({
+            touches: [{ clientX: 250, clientY: 250 }]
+        })).not.toThrow();
+        expect(controls.currentState).toBe(controls.state.NONE);
+
+        harness.dispose();
+    });
+
+    test('cancels an active interaction without enabling inertia', () => {
+        const harness = createHarness();
+        const { controls, isDraggingRef, setCanvasCursor } = harness;
+        controls.currentState = controls.state.ROTATE;
+        controls.dragStart.set(1, 0, 0);
+        controls.initialMousePos = new THREE.Vector2(0, 0);
+        controls.inertiaEnabled = true;
+        controls.rotationVelocity.set(1, 1);
+        isDraggingRef.current = true;
+
+        controls.cancelInteraction();
+
+        expect(controls.currentState).toBe(controls.state.NONE);
+        expect(controls.dragStart.lengthSq()).toBe(0);
+        expect(controls.initialMousePos).toBeNull();
+        expect(controls.inertiaEnabled).toBe(false);
+        expect(controls.rotationVelocity.lengthSq()).toBe(0);
+        expect(isDraggingRef.current).toBe(false);
+        expect(setCanvasCursor).toHaveBeenLastCalledWith('default');
+
+        harness.dispose();
+    });
+});
 
 describe('WorldMapNavigation north lock', () => {
     test('straightens north while preserving the location at screen centre', () => {

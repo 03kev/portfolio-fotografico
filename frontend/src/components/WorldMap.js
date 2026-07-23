@@ -11,6 +11,7 @@ import {
     NAVIGATION_UPDATE_CAMERA,
     NAVIGATION_UPDATE_ROTATION
 } from '../utils/WorldMapNavigation';
+import { createWorldMapGlobeResources } from '../utils/WorldMapGlobeResources';
 
 import { useInView } from 'react-intersection-observer';
 
@@ -415,6 +416,7 @@ const WorldMap = ({ headingLevel = 'h2' }) => {
     const rotationGroupRef = useRef(null);
     const cameraRef = useRef(null);
     const controlsRef = useRef(null);
+    const globeReadyRef = useRef(false);
     const markersRef = useRef([]);
     const markerObjectsRef = useRef([]); // Cache per raycasting
     const hoveredMarkerObjectRef = useRef(null);
@@ -425,6 +427,7 @@ const WorldMap = ({ headingLevel = 'h2' }) => {
         animationLifecycleRef.current = createAnimationLifecycleController();
     }
     const globeInViewRef = useRef(false);
+    const webglContextAvailableRef = useRef(true);
     const [mapLoaded, setMapLoaded] = useState(false);
     const [hasEnteredView, setHasEnteredView] = useState(false);
     const [autoRotate, setAutoRotate] = useState(true);
@@ -481,14 +484,20 @@ const WorldMap = ({ headingLevel = 'h2' }) => {
         if (inView) setHasEnteredView(true);
 
         const lifecycle = animationLifecycleRef.current;
-        if (inView && !document.hidden) lifecycle.resume();
+        if (inView && !document.hidden && webglContextAvailableRef.current) {
+            lifecycle.resume();
+        }
         else lifecycle.pause();
     }, [inView]);
 
     useEffect(() => {
         const handleVisibilityChange = () => {
             const lifecycle = animationLifecycleRef.current;
-            if (globeInViewRef.current && !document.hidden) lifecycle.resume();
+            if (
+                globeInViewRef.current
+                && !document.hidden
+                && webglContextAvailableRef.current
+            ) lifecycle.resume();
             else lifecycle.pause();
         };
 
@@ -787,13 +796,16 @@ useEffect(() => {
     const mountElement = mountRef.current;
     if (!mountElement || !hasEnteredView) return;
 
+    webglContextAvailableRef.current = true;
     const animationLifecycle = animationLifecycleRef.current;
     animationLifecycle.revive();
     if (globeInViewRef.current && !document.hidden) animationLifecycle.resume();
     else animationLifecycle.pause();
 
     let disposed = false;
-    let textureLoadGeneration = 0;
+    setMapLoaded(false);
+    globeReadyRef.current = false;
+    globeRef.current = null;
     
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(
@@ -838,6 +850,7 @@ useEffect(() => {
     const controls = createCustomControls(camera, renderer.domElement);
     controls.autoRotate = autoRotate;
     controls.northLocked = northLocked; // Passa lo stato iniziale
+    controls.enabled = false;
     controlsRef.current = controls;
 
     if (process.env.NODE_ENV !== 'production') {
@@ -853,87 +866,42 @@ useEffect(() => {
         };
     }
     
-    // crea geometria della Terra ottimizzata
-    const earthGeometry = new THREE.SphereGeometry(GLOBE_RADIUS, 64, 64);
-    
-    // carica texture ottimizzate
+    // Load source textures. The resource owner below is solely responsible for
+    // meshes, geometries, materials and successful texture instances.
     const textureLoader = new THREE.TextureLoader();
-    
     const loadTexture = (path) => new Promise((resolve, reject) => {
-        textureLoader.load(path, resolve, undefined, reject);
+        let pendingTexture = null;
+        pendingTexture = textureLoader.load(
+            path,
+            resolve,
+            undefined,
+            (error) => {
+                pendingTexture?.dispose();
+                reject(error);
+            }
+        );
+    });
+    let controlsEnabledBeforeContextLoss = true;
+    const globeResources = createWorldMapGlobeResources({
+        rotationGroup,
+        loadTexture,
+        globeRadius: GLOBE_RADIUS,
+        segments: 64,
+        onStateChange: (resourceState) => {
+            globeRef.current = resourceState.earth;
+            globeReadyRef.current = !disposed && resourceState.interactive;
+            controls.enabled = resourceState.interactive
+                ? controlsEnabledBeforeContextLoss
+                : false;
+            renderRequestedRef.current = true;
+            if (!disposed) setMapLoaded(resourceState.interactive);
+        },
+        onFallback: () => {
+            if (!disposed) console.warn('Texture globo non disponibili: uso il fallback');
+        }
     });
 
-    const loadTextures = async () => {
-        const generation = ++textureLoadGeneration;
-        let earthTexture = null;
-        let boundaryTexture = null;
-        const isStale = () => disposed || generation !== textureLoadGeneration;
-
-        try {
-            earthTexture = await loadTexture('/textures/8k_earth_v2.jpg');
-            if (isStale()) {
-                earthTexture.dispose();
-                return;
-            }
-
-            boundaryTexture = await loadTexture('/textures/boundaries_8k.png');
-            if (isStale()) {
-                earthTexture.dispose();
-                boundaryTexture.dispose();
-                return;
-            }
-            
-            const earthMaterial = new THREE.MeshLambertMaterial({
-                map: earthTexture,
-                transparent: false
-            });
-            
-            const earth = new THREE.Mesh(earthGeometry, earthMaterial);
-            rotationGroup.add(earth);
-            
-            // BORDERS
-            const boundaryMaterial = new THREE.MeshBasicMaterial({
-                map: boundaryTexture,
-                transparent: true,
-                depthTest: true,
-                opacity: 0.5, 
-                polygonOffset: true,
-                polygonOffsetFactor: -1,
-                polygonOffsetUnits: 1
-            });
-            const boundaryMesh = new THREE.Mesh(
-                new THREE.SphereGeometry(GLOBE_RADIUS + 0.005, 64, 64),
-                boundaryMaterial
-            );
-            rotationGroup.add(boundaryMesh);
-            
-            globeRef.current = earth;
-            
-            renderRequestedRef.current = true;
-            setMapLoaded(true);
-            
-        } catch (error) {
-            earthTexture?.dispose();
-            boundaryTexture?.dispose();
-            if (isStale()) return;
-
-            console.log('Usando texture di fallback');
-            const fallbackMaterial = new THREE.MeshLambertMaterial({
-                color: 0x6B93D6,
-                transparent: false
-            });
-            
-            const earth = new THREE.Mesh(earthGeometry, fallbackMaterial);
-            rotationGroup.add(earth);
-            
-            globeRef.current = earth;
-            
-            renderRequestedRef.current = true;
-            if (!disposed) setMapLoaded(true);
-        }
-    };
-    
-    loadTextures();
+    globeResources.load();
     
     // atmosfera con shader personalizzato che rispetta l'illuminazione
     const atmosphereGeometry = new THREE.SphereGeometry(ATMOSPHERE_RADIUS, 64, 64);
@@ -1048,10 +1016,21 @@ useEffect(() => {
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
     const markerWorldPosition = new THREE.Vector3();
+    const isInteractionReady = () => (
+        !disposed
+        && globeResources.isInteractive()
+        && globeRef.current === globeResources.getEarth()
+    );
     
     // mouse move con throttling pesante per performance
     const handleMouseMove = throttle((event) => {
-        // Disabilita l'InfoPopup se un modal è aperto, durante animazioni o dopo un click fino a chiusura modali
+        if (!isInteractionReady()) {
+            clearMarkerHover();
+            if (!isDraggingRef.current) setCanvasCursor('default');
+            return;
+        }
+
+        // Disabilita l’InfoPopup se un modal è aperto, durante animazioni o dopo un click fino a chiusura modali
         if (modalOpen || galleryModalOpen || disablePopupRef.current || isAnimatingRef.current) {
             clearMarkerHover();
             if (!isDraggingRef.current) setCanvasCursor('grab');
@@ -1128,7 +1107,12 @@ useEffect(() => {
     
     const handleClick = (event) => {
         // Ignora click se stiamo già animando o se i modal sono aperti
-        if (isAnimatingRef.current || modalOpen || galleryModalOpen) return;
+        if (
+            !isInteractionReady()
+            || isAnimatingRef.current
+            || modalOpen
+            || galleryModalOpen
+        ) return;
         
         const rect = renderer.domElement.getBoundingClientRect();
         mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -1189,12 +1173,33 @@ useEffect(() => {
     // Gestione perdita/ripristino contesto WebGL
     const handleContextLost = (event) => {
         event.preventDefault();
+        if (disposed || globeResources.getSnapshot().status === 'context-lost') return;
+
+        controlsEnabledBeforeContextLoss = controls.enabled;
+        controls.cancelInteraction?.();
+        clearMarkerHover();
+        setCanvasCursor('default');
+        webglContextAvailableRef.current = false;
+        globeResources.markContextLost();
+        animationLifecycle.pause();
         console.warn('WebGL context lost');
     };
     const handleContextRestored = () => {
-        if (disposed) return;
+        if (
+            disposed
+            || globeResources.getSnapshot().status !== 'context-lost'
+        ) return;
+
+        // Three.js recreates GPU-side programs, buffers and textures for the
+        // existing scene. Keep the same owned CPU resources; reloading would
+        // append a second earth/boundary pair.
+        globeResources.markContextRestored();
+        webglContextAvailableRef.current = true;
+        renderRequestedRef.current = true;
+        if (globeInViewRef.current && !document.hidden) {
+            animationLifecycle.resume();
+        }
         console.warn('WebGL context restored');
-        loadTextures();
     };
     const handleCanvasMouseLeave = () => {
         setCanvasCursor('default');
@@ -1300,7 +1305,8 @@ useEffect(() => {
     // Cleanup ottimizzata
     return () => {
         disposed = true;
-        textureLoadGeneration += 1;
+        globeReadyRef.current = false;
+        webglContextAvailableRef.current = false;
         animationLifecycle.dispose();
         window.removeEventListener('resize', handleResize);
         
@@ -1317,6 +1323,7 @@ useEffect(() => {
         currentCanvas.removeEventListener('touchend', clearHover);
         
         controls.dispose();
+        globeResources.dispose();
 
         if (window.__worldmapDebug) {
             delete window.__worldmapDebug;
@@ -1372,7 +1379,12 @@ useEffect(() => {
 
 // Funzione per raddrizzare il globo (nord in alto)
 const straightenGlobe = useCallback(() => {
-    if (!controlsRef.current || !globeRef.current || !cameraRef.current) return;
+    if (
+        !globeReadyRef.current
+        || !controlsRef.current
+        || !globeRef.current
+        || !cameraRef.current
+    ) return;
     
     const controls = controlsRef.current;
     const camera = cameraRef.current;
@@ -1476,7 +1488,12 @@ const straightenGlobe = useCallback(() => {
 
 // Funzioni di controllo ottimizzate
 const resetView = () => {
-    if (cameraRef.current && globeRef.current && controlsRef.current) {
+    if (
+        globeReadyRef.current
+        && cameraRef.current
+        && globeRef.current
+        && controlsRef.current
+    ) {
         controlsRef.current.stopMotion?.();
         // Reset camera distance
         controlsRef.current.spherical.radius = CAMERA_START_Z;
@@ -1498,6 +1515,7 @@ const resetView = () => {
 };
 
 const toggleAutoRotate = () => {
+    if (!globeReadyRef.current) return;
     const newAutoRotate = !autoRotate;
     setAutoRotate(newAutoRotate);
     if (controlsRef.current) {
@@ -1506,13 +1524,13 @@ const toggleAutoRotate = () => {
 };
 
 const zoomIn = () => {
-    if (controlsRef.current) {
+    if (globeReadyRef.current && controlsRef.current) {
         controlsRef.current.scale = 0.9;
     }
 };
 
 const zoomOut = () => {
-    if (controlsRef.current) {
+    if (globeReadyRef.current && controlsRef.current) {
         controlsRef.current.scale = 1.1;
     }
 };
@@ -1531,12 +1549,18 @@ const focusOnPhoto = useCallback((
     duration = 900,
     onComplete
 ) => {
+    if (
+        !globeReadyRef.current
+        || !photo
+        || !cameraRef.current
+        || !controlsRef.current
+    ) return false;
+
     // Se il focus viene richiesto mentre il modal è ancora aperto (→ “vai alla mappa”)
     if (modalOpen) {
         skipUnzoomRef.current = true;
     }
-    
-    if (!photo || !cameraRef.current || !controlsRef.current) return false;
+
     const controls = controlsRef.current;
     controls.stopMotion?.();
     prevRadiusRef.current = controls.spherical.radius;  // distanza attuale
@@ -1669,7 +1693,12 @@ useEffect(() => {
         return;
     }
     
-    if (!controlsRef.current || !globeRef.current || !cameraRef.current) return;
+    if (
+        !globeReadyRef.current
+        || !controlsRef.current
+        || !globeRef.current
+        || !cameraRef.current
+    ) return;
     
     const controls = controlsRef.current;
     if (modalOpen || galleryModalOpen) {
@@ -1857,6 +1886,7 @@ return (
     <CompassButton 
         data-testid="worldmap-compass"
         onClick={() => {
+            if (!globeReadyRef.current) return;
             // Click sinistro: raddrizza la terra
             if (northLocked && controlsRef.current?.applyNorthLock) {
                 controlsRef.current.applyNorthLock();
@@ -1867,6 +1897,7 @@ return (
         onContextMenu={(e) => {
             e.preventDefault(); // Previene il menu contestuale del browser
             e.stopPropagation();
+            if (!globeReadyRef.current) return;
             // Click destro: toggle del blocco nord
             const newLocked = !northLocked;
             setNorthLocked(newLocked);

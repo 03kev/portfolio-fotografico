@@ -359,18 +359,19 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
             event.preventDefault();
             
             switch (event.button) {
-                case 0: // Left mouse button
+                case 0: { // Left mouse button
+                    const globe = globeRef.current;
+                    if (!globe) return;
+
                     // Get the point on the sphere where we clicked
                     const rect = domElement.getBoundingClientRect();
                     const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
                     const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
                     
-                    if (globeRef.current) {
-                        globeRef.current.updateWorldMatrix(true, false);
-                    }
+                    globe.updateWorldMatrix(true, false);
                     camera.updateMatrixWorld(true);
                     this.raycaster.setFromCamera(temp.ndc.set(x, y), camera);
-                    const intersects = this.raycaster.intersectObject(globeRef.current, true);
+                    const intersects = this.raycaster.intersectObject(globe, true);
                     const hitPoint = intersects.length > 0
                         ? this.dragCurrent.copy(intersects[0].point).normalize()
                         : this._getSpherePointFromNDC(x, y);
@@ -420,6 +421,7 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                         this.initialMousePos = null;
                     }
                     break;
+                }
                 default:
                     return;
             }
@@ -599,13 +601,15 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
          * Mouse up handler - termina il drag e abilita inertia se necessario
          */
         onMouseUp: function(event) {
-            if (!this.enabled) return;
-            
             document.removeEventListener('mousemove', this.onMouseMove);
             document.removeEventListener('mouseup', this.onMouseUp);
             
             // Enable inertia if we were dragging on the sphere
-            if (this.currentState === this.state.ROTATE && this.dragStart.lengthSq() > 0) {
+            if (
+                this.enabled
+                && this.currentState === this.state.ROTATE
+                && this.dragStart.lengthSq() > 0
+            ) {
                 this.inertiaEnabled = true;
             }
             
@@ -617,13 +621,14 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
             isDraggingRef.current = false;
             
             // Update cursor based on current mouse position
-            if (event) {
+            const globe = globeRef.current;
+            if (this.enabled && event && globe) {
                 const rect = domElement.getBoundingClientRect();
                 const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
                 const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
                 
                 this.raycaster.setFromCamera(temp.ndc.set(x, y), camera);
-                const intersects = this.raycaster.intersectObject(globeRef.current);
+                const intersects = this.raycaster.intersectObject(globe);
                 
                 setCanvasCursor(intersects.length > 0 ? 'grab' : 'default');
             } else {
@@ -698,17 +703,18 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
         onTouchStart: function(event) {
             if (!this.enabled) return;
             if (event.touches.length === 1) {
+                const globe = globeRef.current;
+                if (!globe) return;
+
                 // Try to get touch point on sphere
                 const rect = domElement.getBoundingClientRect();
                 const x = ((event.touches[0].clientX - rect.left) / rect.width) * 2 - 1;
                 const y = -((event.touches[0].clientY - rect.top) / rect.height) * 2 + 1;
                 
-                if (globeRef.current) {
-                    globeRef.current.updateWorldMatrix(true, false);
-                }
+                globe.updateWorldMatrix(true, false);
                 camera.updateMatrixWorld(true);
                 this.raycaster.setFromCamera(temp.ndc.set(x, y), camera);
-                const intersects = this.raycaster.intersectObject(globeRef.current, true);
+                const intersects = this.raycaster.intersectObject(globe, true);
                 const hitPoint = intersects.length > 0
                     ? this.dragCurrent.copy(intersects[0].point).normalize()
                     : this._getSpherePointFromNDC(x, y);
@@ -1344,6 +1350,25 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
         },
 
         /**
+         * Cancels an active pointer gesture without creating inertia. This is
+         * used when WebGL becomes temporarily unavailable and by dispose().
+         */
+        cancelInteraction: function() {
+            document.removeEventListener('mousemove', this.onMouseMove);
+            document.removeEventListener('mouseup', this.onMouseUp);
+            this.currentState = this.state.NONE;
+            this.justStartedDrag = false;
+            this.dragStart.set(0, 0, 0);
+            this.dragStartLocal.set(0, 0, 0);
+            this.initialMousePos = null;
+            this.northLockPointerOutside = false;
+            this.rotationVelocity.set(0, 0);
+            this.inertiaEnabled = false;
+            isDraggingRef.current = false;
+            setCanvasCursor('default');
+        },
+
+        /**
          * Bind all event handlers
          */
         bindEventHandlers: function() {
@@ -1367,15 +1392,13 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
          * Clean up event listeners
          */
         dispose: function() {
+            this.cancelInteraction();
             domElement.removeEventListener('mousedown', this.onMouseDown);
             domElement.removeEventListener('wheel', this.onWheel);
             domElement.removeEventListener('touchstart', this.onTouchStart);
             domElement.removeEventListener('touchmove', this.onTouchMove);
             domElement.removeEventListener('touchend', this.onTouchEnd);
             domElement.removeEventListener('touchcancel', this.onTouchEnd);
-            
-            document.removeEventListener('mousemove', this.onMouseMove);
-            document.removeEventListener('mouseup', this.onMouseUp);
         }
     };
     
