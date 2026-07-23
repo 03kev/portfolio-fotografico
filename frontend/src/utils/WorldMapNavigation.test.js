@@ -276,6 +276,26 @@ describe('WorldMapNavigation north lock', () => {
 });
 
 describe('WorldMapNavigation direct manipulation', () => {
+    test('uses the analytic sphere hit test instead of triangle raycasting on drag start', () => {
+        const harness = createHarness();
+        const { controls } = harness;
+        const triangleRaycast = jest.spyOn(controls.raycaster, 'intersectObject');
+
+        controls.onMouseDown({
+            button: 0,
+            clientX: 250,
+            clientY: 250,
+            preventDefault: jest.fn()
+        });
+
+        expect(controls.currentState).toBe(controls.state.ROTATE);
+        expect(controls.dragStart.lengthSq()).toBeGreaterThan(0);
+        expect(triangleRaycast).not.toHaveBeenCalled();
+
+        controls.cancelInteraction();
+        harness.dispose();
+    });
+
     test('does not add damping lag while the globe is actively dragged', () => {
         const harness = createHarness();
         const { controls, rotationGroup } = harness;

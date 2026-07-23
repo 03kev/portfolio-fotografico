@@ -368,13 +368,8 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                     const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
                     const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
                     
-                    globe.updateWorldMatrix(true, false);
                     camera.updateMatrixWorld(true);
-                    this.raycaster.setFromCamera(temp.ndc.set(x, y), camera);
-                    const intersects = this.raycaster.intersectObject(globe, true);
-                    const hitPoint = intersects.length > 0
-                        ? this.dragCurrent.copy(intersects[0].point).normalize()
-                        : this._getSpherePointFromNDC(x, y);
+                    const hitPoint = this._getSpherePointFromNDC(x, y);
                     
                     if (hitPoint) {
                         // We clicked on the globe - enable drag rotation
@@ -474,15 +469,8 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                             } else {
                                 this.initialMousePos = new THREE.Vector2(currentX, currentY);
                             }
-                            if (globeRef.current) {
-                                globeRef.current.updateWorldMatrix(true, false);
-                            }
                             camera.updateMatrixWorld(true);
-                            this.raycaster.setFromCamera(temp.ndc.set(currentX, currentY), camera);
-                            const startHits = this.raycaster.intersectObject(globeRef.current, true);
-                            const startPoint = startHits.length > 0
-                                ? this.dragCurrent.copy(startHits[0].point).normalize()
-                                : this._getSpherePointFromNDC(currentX, currentY);
+                            const startPoint = this._getSpherePointFromNDC(currentX, currentY);
                             if (startPoint) {
                                 this.dragStart.copy(startPoint);
                             }
@@ -503,11 +491,7 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                             return;
                         }
                         
-                        this.raycaster.setFromCamera(temp.ndc.set(currentX, currentY), camera);
-                        const hits = this.raycaster.intersectObject(globeRef.current, true);
-                        const currentPoint = hits.length > 0
-                            ? this.dragCurrent.copy(hits[0].point).normalize()
-                            : this._getSpherePointFromNDC(currentX, currentY);
+                        const currentPoint = this._getSpherePointFromNDC(currentX, currentY);
                         
                         if (currentPoint) {
                             // Use actual intersection point for more accurate tracking
@@ -627,10 +611,7 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                 const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
                 const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
                 
-                this.raycaster.setFromCamera(temp.ndc.set(x, y), camera);
-                const intersects = this.raycaster.intersectObject(globe);
-                
-                setCanvasCursor(intersects.length > 0 ? 'grab' : 'default');
+                setCanvasCursor(this._getSpherePointFromNDC(x, y) ? 'grab' : 'default');
             } else {
                 // Fallback if event is not available
                 setCanvasCursor('default');
@@ -711,13 +692,8 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                 const x = ((event.touches[0].clientX - rect.left) / rect.width) * 2 - 1;
                 const y = -((event.touches[0].clientY - rect.top) / rect.height) * 2 + 1;
                 
-                globe.updateWorldMatrix(true, false);
                 camera.updateMatrixWorld(true);
-                this.raycaster.setFromCamera(temp.ndc.set(x, y), camera);
-                const intersects = this.raycaster.intersectObject(globe, true);
-                const hitPoint = intersects.length > 0
-                    ? this.dragCurrent.copy(intersects[0].point).normalize()
-                    : this._getSpherePointFromNDC(x, y);
+                const hitPoint = this._getSpherePointFromNDC(x, y);
                 
                 if (hitPoint) {
                     // We touched the globe - enable drag rotation
@@ -797,15 +773,8 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                         } else {
                             this.initialMousePos = new THREE.Vector2(currentX, currentY);
                         }
-                        if (globeRef.current) {
-                            globeRef.current.updateWorldMatrix(true, false);
-                        }
                         camera.updateMatrixWorld(true);
-                        this.raycaster.setFromCamera(temp.ndc.set(currentX, currentY), camera);
-                        const startHits = this.raycaster.intersectObject(globeRef.current, true);
-                        const startPoint = startHits.length > 0
-                            ? this.dragCurrent.copy(startHits[0].point).normalize()
-                            : this._getSpherePointFromNDC(currentX, currentY);
+                        const startPoint = this._getSpherePointFromNDC(currentX, currentY);
                         if (startPoint) {
                             this.dragStart.copy(startPoint);
                         }
@@ -826,11 +795,7 @@ export function createWorldMapNavigation(camera, domElement, refs, callbacks) {
                             return;
                         }
                         
-                        this.raycaster.setFromCamera(temp.ndc.set(currentX, currentY), camera);
-                        const hits = this.raycaster.intersectObject(globeRef.current, true);
-                        const currentPoint = hits.length > 0
-                            ? this.dragCurrent.copy(hits[0].point).normalize()
-                            : this._getSpherePointFromNDC(currentX, currentY);
+                        const currentPoint = this._getSpherePointFromNDC(currentX, currentY);
                         
                         if (currentPoint) {
                             // Use actual intersection point for more accurate tracking

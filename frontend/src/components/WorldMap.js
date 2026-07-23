@@ -16,6 +16,10 @@ import {
     createWorldMapGlobeResources,
     selectWorldMapTextureSet
 } from '../utils/WorldMapGlobeResources';
+import {
+    buildGridClusters,
+    buildProximityClusters
+} from '../utils/WorldMapClustering';
 
 import { useInView } from 'react-intersection-observer';
 
@@ -635,43 +639,14 @@ const radiusToLevel = (r) => {
     return 3;                  // tutti i pin
 };
 
-// raggruppa le foto in celle di griglia lat/lng di ampiezza stepDeg
-const buildClustersForStep = (photos, stepDeg) => {
-    if (stepDeg === 0) {
-        // Anche al livello massimo, raggruppa marker con coordinate identiche
-        const exactLocationMap = new Map();
-        photos.forEach(p => {
-            const key = `${p.lat}_${p.lng}`; // Chiave basata su coordinate esatte
-            if (!exactLocationMap.has(key)) {
-                exactLocationMap.set(key, { center: [p.lat, p.lng], photos: [] });
-            }
-            exactLocationMap.get(key).photos.push(p);
-        });
-        return Array.from(exactLocationMap.values());
-    }
-    const idOf = (lat, lng) =>
-        `${Math.floor(lat / stepDeg)}_${Math.floor(lng / stepDeg)}`;
-    
-    const map = new Map();
-    photos.forEach(p => {
-        const id = idOf(p.lat, p.lng);
-        if (!map.has(id)) map.set(id, { sumLat: 0, sumLng: 0, photos: [] });
-        const c = map.get(id);
-        c.sumLat += p.lat;
-        c.sumLng += p.lng;
-        c.photos.push(p);
-    });
-    
-    return Array.from(map.values()).map(c => ({
-        center: [c.sumLat / c.photos.length, c.sumLng / c.photos.length],
-        photos: c.photos,
-    }));
-};
-
-// pre‑costruisci i cluster per 4 livelli (step 20°, 8°, 4°, 0°)
+// Pre-costruisci i cluster. Al livello più vicino usa la distanza geografica
+// reale, così due località ai lati di una cella non generano marker sovrapposti.
 const clusterLevels = useMemo(() => {
-    const steps = [20, 8, 4, 0.32]; // step finale per cluster precisi: 35 km
-    return steps.map(step => buildClustersForStep(validPhotos, step));
+    const coarseSteps = [20, 8, 4];
+    return [
+        ...coarseSteps.map(step => buildGridClusters(validPhotos, step)),
+        buildProximityClusters(validPhotos, 0.32)
+    ];
 }, [validPhotos]);
 
 // livello corrente dei cluster
@@ -1049,6 +1024,33 @@ useEffect(() => {
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
     const markerWorldPosition = new THREE.Vector3();
+    const globeHitSphere = new THREE.Sphere(
+        new THREE.Vector3(0, 0, 0),
+        GLOBE_RADIUS
+    );
+    const globeHitPoint = new THREE.Vector3();
+    const closestIntersectedMarker = (intersections, event, rect) => {
+        let closestObject = null;
+        let closestDistanceSquared = Infinity;
+
+        intersections.forEach(({ object }) => {
+            object.getWorldPosition(markerWorldPosition);
+            markerWorldPosition.project(camera);
+            const screenX = (markerWorldPosition.x * 0.5 + 0.5) * rect.width + rect.left;
+            const screenY = (-markerWorldPosition.y * 0.5 + 0.5) * rect.height + rect.top;
+            const distanceSquared = (
+                (event.clientX - screenX) ** 2
+                + (event.clientY - screenY) ** 2
+            );
+
+            if (distanceSquared < closestDistanceSquared) {
+                closestObject = object;
+                closestDistanceSquared = distanceSquared;
+            }
+        });
+
+        return closestObject;
+    };
     const isInteractionReady = () => (
         !disposed
         && globeResources.isInteractive()
@@ -1076,14 +1078,16 @@ useEffect(() => {
         raycaster.setFromCamera(mouse, camera);
         
         // First check if we're over the globe itself
-        const globeIntersects = raycaster.intersectObject(globeRef.current);
-        const isOverGlobe = globeIntersects.length > 0;
+        const isOverGlobe = raycaster.ray.intersectSphere(
+            globeHitSphere,
+            globeHitPoint
+        ) !== null;
         
         // Then check markers
         const intersects = raycaster.intersectObjects(markerObjectsRef.current);
+        const hoveredObj = closestIntersectedMarker(intersects, event, rect);
         
-        if (intersects.length > 0) {
-            const hoveredObj  = intersects[0].object;
+        if (hoveredObj) {
             const hoveredData = hoveredObj.userData || (hoveredObj.parent ? hoveredObj.parent.userData : null);
             
             // se è un marker diverso, aggiorna lo stato
@@ -1153,9 +1157,10 @@ useEffect(() => {
         
         raycaster.setFromCamera(mouse, camera);
         const intersects = raycaster.intersectObjects(markerObjectsRef.current);
+        const mesh = closestIntersectedMarker(intersects, event, rect);
         
         // Se non abbiamo cliccato su nessun marker, non fare nulla
-        if (intersects.length === 0) return;
+        if (!mesh) return;
         
         // Blocca immediatamente tutte le interazioni
         isAnimatingRef.current = true;
@@ -1165,7 +1170,6 @@ useEffect(() => {
         clearMarkerHover();
         setCanvasCursor('grab');
         
-        const mesh         = intersects[0].object;
         // il “gruppo” completo è sempre il parent di livello 1 (vedi createMarker)
         const markerGroup   = mesh.parent ?? mesh;
         const photosInMarker = markerGroup.userData?.photos ?? [];
