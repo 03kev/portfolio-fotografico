@@ -174,26 +174,28 @@ const Tag = styled(motion.span)`
 `
 
 const ActionButtons = styled(motion.div)`
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
     gap: var(--spacing-md);
     margin-top: 18px;
 
     @media (max-width: 768px) {
-        flex-direction: row;
         gap: 10px;
         margin-top: 16px;
     }
 `
 
 const ActionButton = styled(motion.button)`
-    flex: 1 1 0;
+    width: 100%;
     min-width: 0;
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: 6px;
     white-space: nowrap;
-    padding: var(--spacing-md) var(--spacing-lg);
+    padding: var(--spacing-md) 12px;
     background: rgba(255, 255, 255, 0.055);
     color: var(--color-white);
     border: 1px solid rgba(255, 255, 255, 0.1);
@@ -232,14 +234,15 @@ const ActionButton = styled(motion.button)`
     }
 
     @media (max-width: 768px) {
-        padding: 14px 12px;
+        padding: 14px 10px;
         font-size: 0.95rem;
         gap: 6px;
     }
 
     @media (max-width: 420px) {
-        font-size: 0.88rem;
-        padding: 13px 10px;
+        font-size: 0.84rem;
+        padding: 13px 8px;
+        gap: 5px;
 
         svg {
             width: 15px;
