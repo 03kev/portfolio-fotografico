@@ -4,6 +4,7 @@ import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import { Globe2, MapPin, Minus, Pause, Play, Plus } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
+import { viewportBreakpoints } from '../styles/responsive';
 import { 
     createWorldMapNavigation, 
     GLOBE_RADIUS as NAV_GLOBE_RADIUS,
@@ -171,7 +172,7 @@ const Container = styled.div`
   padding: 0 var(--spacing-xl);
   width: 100%;
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     padding: 0 var(--spacing-lg);
   }
 `;
@@ -196,7 +197,7 @@ const GlobeWrapper = styled(motion.div)`
   margin-bottom: var(--spacing-2xl);
   background: radial-gradient(circle at 30% 30%, #0a0a0f, #050506);
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     height: 400px;
     margin-bottom: var(--spacing-xl);
   }
@@ -222,7 +223,7 @@ const Controls = styled(motion.div)`
   gap: var(--spacing-sm);
   z-index: 10;
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     top: var(--spacing-md);
     right: var(--spacing-md);
     gap: var(--spacing-xs);
@@ -251,7 +252,7 @@ const ControlButton = styled.button`
     box-shadow: 0 8px 20px rgba(79, 172, 254, 0.3);
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     width: 36px;
     height: 36px;
     font-size: var(--font-size-sm);
@@ -287,7 +288,7 @@ const LockIcon = styled.div`
   font-size: 12px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
   
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     width: 18px;
     height: 18px;
     font-size: 10px;
@@ -301,7 +302,7 @@ const CompassSVG = styled.svg`
   height: 32px;
   transition: transform 0.3s ease;
   
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     width: 28px;
     height: 28px;
   }
@@ -352,7 +353,7 @@ const StatsContainer = styled(motion.div)`
   gap: var(--spacing-xl);
   margin-top: var(--spacing-2xl);
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     grid-template-columns: repeat(2, 1fr);
     gap: var(--spacing-lg);
   }

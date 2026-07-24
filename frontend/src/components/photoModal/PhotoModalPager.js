@@ -2,7 +2,7 @@ import React from 'react';
 import styled from 'styled-components';
 import { AnimatePresence, motion } from 'framer-motion';
 
-const MobileViewport = styled.div`
+const PagerViewport = styled.div`
   display: flex;
   flex: 1;
   min-height: 0;
@@ -10,7 +10,7 @@ const MobileViewport = styled.div`
   background: rgba(6, 8, 14, 0.96);
 `;
 
-const MobileCarousel = styled.div`
+const PagerCarousel = styled.div`
   flex: 1;
   min-height: 0;
   display: flex;
@@ -26,7 +26,7 @@ const MobileCarousel = styled.div`
   }
 `;
 
-const MobileSlide = styled.section`
+const PagerSlide = styled.section`
   flex: 0 0 100%;
   min-width: 100%;
   min-height: 0;
@@ -34,7 +34,7 @@ const MobileSlide = styled.section`
   scroll-snap-stop: always;
 `;
 
-const MobileIndicatorBar = styled.div`
+const PagerIndicatorBar = styled.div`
   position: relative;
   display: flex;
   justify-content: center;
@@ -47,19 +47,19 @@ const MobileIndicatorBar = styled.div`
   );
 `;
 
-const MobileIndicatorAction = styled(motion.div)`
+const PagerIndicatorAction = styled(motion.div)`
   position: absolute;
   left: 16px;
   top: 50%;
   margin-top: -19px;
 `;
 
-const MobileIndicatorEndAction = styled(MobileIndicatorAction)`
+const PagerIndicatorEndAction = styled(PagerIndicatorAction)`
   left: auto;
   right: 16px;
 `;
 
-const MobileIndicatorPill = styled.div`
+const PagerIndicatorPill = styled.div`
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -70,7 +70,7 @@ const MobileIndicatorPill = styled.div`
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
 `;
 
-const MobileIndicatorDot = styled.button`
+const PagerIndicatorDot = styled.button`
   width: ${({ $active }) => ($active ? '18px' : '7px')};
   height: 7px;
   border-radius: 999px;
@@ -83,7 +83,7 @@ const MobileIndicatorDot = styled.button`
   cursor: pointer;
 `;
 
-const PhotoModalMobilePager = ({
+const PhotoModalPager = ({
   activeSlide,
   carouselRef,
   children,
@@ -92,16 +92,16 @@ const PhotoModalMobilePager = ({
   footerAction = null,
   footerEndAction = null
 }) => (
-  <MobileViewport>
-    <MobileCarousel ref={carouselRef} onScroll={onScroll}>
+  <PagerViewport>
+    <PagerCarousel ref={carouselRef} onScroll={onScroll}>
       {React.Children.map(children, (child, index) => (
-        <MobileSlide aria-label={index === 0 ? 'Foto' : 'Dettagli'}>{child}</MobileSlide>
+        <PagerSlide aria-label={index === 0 ? 'Foto' : 'Dettagli'}>{child}</PagerSlide>
       ))}
-    </MobileCarousel>
-    <MobileIndicatorBar>
+    </PagerCarousel>
+    <PagerIndicatorBar>
       <AnimatePresence initial={false}>
         {footerAction && (
-          <MobileIndicatorAction
+          <PagerIndicatorAction
             key="photo-start-action"
             initial={{ opacity: 0, x: -8, scale: 0.9 }}
             animate={{ opacity: 1, x: 0, scale: 1 }}
@@ -109,10 +109,10 @@ const PhotoModalMobilePager = ({
             transition={{ duration: 0.16, ease: 'easeOut' }}
           >
             {footerAction}
-          </MobileIndicatorAction>
+          </PagerIndicatorAction>
         )}
         {footerEndAction && (
-          <MobileIndicatorEndAction
+          <PagerIndicatorEndAction
             key="photo-end-action"
             initial={{ opacity: 0, x: 8, scale: 0.9 }}
             animate={{ opacity: 1, x: 0, scale: 1 }}
@@ -120,15 +120,15 @@ const PhotoModalMobilePager = ({
             transition={{ duration: 0.16, ease: 'easeOut' }}
           >
             {footerEndAction}
-          </MobileIndicatorEndAction>
+          </PagerIndicatorEndAction>
         )}
       </AnimatePresence>
-      <MobileIndicatorPill aria-hidden="true">
-        <MobileIndicatorDot type="button" $active={activeSlide === 0} onClick={() => onSelectSlide?.(0)} />
-        <MobileIndicatorDot type="button" $active={activeSlide === 1} onClick={() => onSelectSlide?.(1)} />
-      </MobileIndicatorPill>
-    </MobileIndicatorBar>
-  </MobileViewport>
+      <PagerIndicatorPill aria-hidden="true">
+        <PagerIndicatorDot type="button" $active={activeSlide === 0} onClick={() => onSelectSlide?.(0)} />
+        <PagerIndicatorDot type="button" $active={activeSlide === 1} onClick={() => onSelectSlide?.(1)} />
+      </PagerIndicatorPill>
+    </PagerIndicatorBar>
+  </PagerViewport>
 );
 
-export default PhotoModalMobilePager;
+export default PhotoModalPager;

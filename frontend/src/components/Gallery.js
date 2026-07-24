@@ -8,7 +8,18 @@ import { LOCAL_IMAGE_FALLBACK, resolveVersionedPhotoAssetUrl } from '../utils/im
 import { photoService, signSourceUpload, uploadSourceToSignedUrl } from '../utils/api';
 import { useGalleryQueryState } from '../hooks/useGalleryQueryState';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
-import { useGalleryMobileCardState, useMobileDeviceLayout, useScrollableRail } from '../hooks';
+import {
+  useGalleryTouchCardState,
+  useMediaQuery,
+  useScrollableRail
+} from '../hooks';
+import {
+  combineMediaQueries,
+  inputQueries,
+  preferenceQueries,
+  viewportBreakpoints,
+  viewportQueries
+} from '../styles/responsive';
 import {
   buildOperationErrorMessage
 } from '../utils/operationErrors';
@@ -29,14 +40,14 @@ const CROP_STEP_LABELS = {
   regenerate: 'rigenerazione derivate'
 };
 
-const SKELETON_CARD_COUNT_DESKTOP = 9;
-const SKELETON_CARD_COUNT_MOBILE = 4;
-const INITIAL_VISIBLE_CARDS_DESKTOP = 18;
-const INITIAL_VISIBLE_CARDS_MOBILE = 8;
-const VISIBLE_CARDS_BATCH_DESKTOP = 18;
-const VISIBLE_CARDS_BATCH_MOBILE = 8;
-const LOAD_MORE_ROOT_MARGIN_DESKTOP = '700px 0px';
-const LOAD_MORE_ROOT_MARGIN_MOBILE = '350px 0px';
+const SKELETON_CARD_COUNT_WIDE = 9;
+const SKELETON_CARD_COUNT_COMPACT = 4;
+const INITIAL_VISIBLE_CARDS_WIDE = 18;
+const INITIAL_VISIBLE_CARDS_COMPACT = 8;
+const VISIBLE_CARDS_BATCH_WIDE = 18;
+const VISIBLE_CARDS_BATCH_COMPACT = 8;
+const LOAD_MORE_ROOT_MARGIN_WIDE = '700px 0px';
+const LOAD_MORE_ROOT_MARGIN_COMPACT = '350px 0px';
 
 const getThumbImageUrl = (photo) => {
   return resolveVersionedPhotoAssetUrl(photo, 'thumbnail43');
@@ -64,7 +75,7 @@ const Container = styled.div`
   margin: 0 auto;
   padding: 0 var(--spacing-xl);
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     padding: 0 var(--spacing-lg);
   }
 `;
@@ -98,7 +109,7 @@ const ControlsRow = styled.div`
   gap: var(--spacing-lg);
   margin-bottom: var(--spacing-2xl);
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     gap: var(--spacing-md);
     margin-bottom: var(--spacing-xl);
   }
@@ -109,7 +120,7 @@ const SearchContainer = styled(motion.div)`
   margin: 0 auto;
   position: relative;
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     max-width: none;
   }
 `;
@@ -128,7 +139,7 @@ const SearchInput = styled.input`
     box-shadow: 0 0 0 3px rgba(214, 179, 106, 0.10);
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     padding: 11px 42px 11px 14px;
     font-size: var(--font-size-sm);
   }
@@ -144,7 +155,7 @@ const SearchIcon = styled.div`
 `;
 
 const FilterRailShell = styled(motion.div)`
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     position: relative;
 
     &::before,
@@ -180,7 +191,7 @@ const FilterContainer = styled(motion.div)`
   justify-content: center;
   gap: 10px;
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     flex-wrap: nowrap;
     justify-content: flex-start;
     overflow-x: auto;
@@ -211,7 +222,7 @@ const FilterButton = styled(motion.button)`
     transform: translateY(-1px);
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     flex: 0 0 auto;
     white-space: nowrap;
     padding: 8px 14px;
@@ -223,7 +234,7 @@ const GalleryGrid = styled(motion.div)`
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: var(--spacing-xl);
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--spacing-md);
   }
@@ -308,7 +319,7 @@ const SkeletonGrid = styled.div`
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: var(--spacing-xl);
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--spacing-md);
   }
@@ -466,23 +477,30 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   const activeReuploadPhotoIdRef = useRef(null);
   const isMountedRef = useRef(true);
   const loadMoreTriggerRef = useRef(null);
-  const [visibleCardsCount, setVisibleCardsCount] = useState(INITIAL_VISIBLE_CARDS_DESKTOP);
+  const [visibleCardsCount, setVisibleCardsCount] = useState(INITIAL_VISIBLE_CARDS_WIDE);
   const lastRevealKeyRef = useRef(null);
   const previousGalleryLengthRef = useRef(0);
-  const compactMobile = useMobileDeviceLayout({ maxWidth: 900 });
-  const initialVisibleCards = compactMobile ? INITIAL_VISIBLE_CARDS_MOBILE : INITIAL_VISIBLE_CARDS_DESKTOP;
-  const visibleCardsBatch = compactMobile ? VISIBLE_CARDS_BATCH_MOBILE : VISIBLE_CARDS_BATCH_DESKTOP;
-  const loadMoreRootMargin = compactMobile ? LOAD_MORE_ROOT_MARGIN_MOBILE : LOAD_MORE_ROOT_MARGIN_DESKTOP;
-  const skeletonCardCount = compactMobile ? SKELETON_CARD_COUNT_MOBILE : SKELETON_CARD_COUNT_DESKTOP;
-  const priorityImageCount = compactMobile ? 1 : 2;
+  const isCompactGalleryViewport = useMediaQuery(viewportQueries.down('content'));
+  const isNarrowGalleryViewport = useMediaQuery(viewportQueries.down('medium'));
+  const usesTouchCardControls = useMediaQuery(combineMediaQueries(
+    viewportQueries.down('content'),
+    inputQueries.cannotHover,
+    inputQueries.primaryCoarse
+  ));
+  const prefersReducedMotion = useMediaQuery(preferenceQueries.reducedMotion);
+  const initialVisibleCards = isCompactGalleryViewport ? INITIAL_VISIBLE_CARDS_COMPACT : INITIAL_VISIBLE_CARDS_WIDE;
+  const visibleCardsBatch = isCompactGalleryViewport ? VISIBLE_CARDS_BATCH_COMPACT : VISIBLE_CARDS_BATCH_WIDE;
+  const loadMoreRootMargin = isCompactGalleryViewport ? LOAD_MORE_ROOT_MARGIN_COMPACT : LOAD_MORE_ROOT_MARGIN_WIDE;
+  const skeletonCardCount = isCompactGalleryViewport ? SKELETON_CARD_COUNT_COMPACT : SKELETON_CARD_COUNT_WIDE;
+  const priorityImageCount = isCompactGalleryViewport ? 1 : 2;
   const {
-    activeCardId: mobileTouchPhotoId,
-    activeAdminCardId: mobileAdminPhotoId,
-    revealCard: handleRevealMobileCard,
-    hideCard: handleHideMobileCard,
-    toggleAdmin: handleToggleMobileAdmin,
-    closeAdmin: handleCloseMobileAdmin
-  } = useGalleryMobileCardState({ enabled: compactMobile });
+    activeCardId: touchPhotoId,
+    activeAdminCardId: touchAdminPhotoId,
+    revealCard: handleRevealTouchCard,
+    hideCard: handleHideTouchCard,
+    toggleAdmin: handleToggleTouchAdmin,
+    closeAdmin: handleCloseTouchAdmin
+  } = useGalleryTouchCardState({ enabled: usesTouchCardControls });
 
   const allTags = useMemo(() =>
     [...new Set(photos.flatMap(photo => Array.isArray(photo.tags) ? photo.tags : []))],
@@ -495,7 +513,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
   } = useScrollableRail({
     activeKey: activeFilter,
     itemCount: filterOptions.length,
-    enabled: compactMobile
+    enabled: isNarrowGalleryViewport
   });
   const hasActivePhotoOp = useMemo(
     () => Object.values(photoOpsByPhotoId || {}).some((entry) => Boolean(entry?.active)),
@@ -987,7 +1005,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
           </NoResults>
         ) : (
           <>
-            <GalleryGrid key="gallery-grid" layout={!compactMobile}>
+            <GalleryGrid key="gallery-grid" layout={!usesTouchCardControls && !prefersReducedMotion}>
               <AnimatePresence mode="popLayout" initial={false}>
                 {visibleGalleryCards.map((photo, index) => {
                   return (
@@ -995,9 +1013,9 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                       key={photo.id}
                       photo={photo}
                       isAdmin={isAdmin}
-                      compactMobile={compactMobile}
-                      isTouchCardActive={mobileTouchPhotoId === photo.id}
-                      isMobileAdminOpen={mobileAdminPhotoId === photo.id}
+                      usesTouchControls={usesTouchCardControls}
+                      isTouchCardActive={touchPhotoId === photo.id}
+                      isTouchAdminOpen={touchAdminPhotoId === photo.id}
                       hideCardDescriptions={hideCardDescriptions}
                       hasActivePhotoOp={hasActivePhotoOp}
                       photoOpStatus={photoOpsByPhotoId?.[String(photo.id)]}
@@ -1006,17 +1024,17 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                       getThumbImageUrl={getThumbImageUrl}
                       fallbackImageSrc={LOCAL_IMAGE_FALLBACK}
                       prioritizeImage={index < priorityImageCount}
-                      motionEnabled={!compactMobile}
+                      motionEnabled={!usesTouchCardControls && !prefersReducedMotion}
                       onOpen={handlePhotoClick}
                       onDelete={handleDelete}
                       onEdit={handleEdit}
                       onCrop={handleCrop}
                       onReuploadSource={handleReuploadSourceClick}
                       onAbortReuploadUpload={handleAbortReuploadUpload}
-                      onRevealMobileCard={handleRevealMobileCard}
-                      onHideMobileCard={handleHideMobileCard}
-                      onToggleMobileAdmin={handleToggleMobileAdmin}
-                      onCloseMobileAdmin={handleCloseMobileAdmin}
+                      onRevealTouchCard={handleRevealTouchCard}
+                      onHideTouchCard={handleHideTouchCard}
+                      onToggleTouchAdmin={handleToggleTouchAdmin}
+                      onCloseTouchAdmin={handleCloseTouchAdmin}
                     />
                   );
                 })}

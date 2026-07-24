@@ -214,7 +214,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
   }, [scheduleViewportRefresh]);
 
   useEffect(() => {
-    if (!isOpen) return undefined;
+    if (!isOpen || typeof ResizeObserver !== 'undefined') return undefined;
 
     const handleWindowResize = () => scheduleViewportRefresh();
     window.addEventListener('resize', handleWindowResize);

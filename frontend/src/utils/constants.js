@@ -44,14 +44,6 @@ export const ANIMATION_SETTINGS = {
   easing: 'ease-out'
 };
 
-// Breakpoints for responsive design
-export const BREAKPOINTS = {
-  mobile: '480px',
-  tablet: '768px',
-  desktop: '1024px',
-  wide: '1200px'
-};
-
 // Z-index values
 export const Z_INDEX = {
   dropdown: 1000,

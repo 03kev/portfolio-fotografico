@@ -5,6 +5,7 @@ import { MapPin, Camera } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { resolveVersionedPhotoAssetUrl } from '../utils/imageUrl';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import { viewportBreakpoints } from '../styles/responsive';
 
 const ModalOverlay = styled(motion.div)`
   position: fixed;
@@ -20,7 +21,7 @@ const ModalOverlay = styled(motion.div)`
   justify-content: center;
   padding: var(--spacing-lg);
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     padding: var(--spacing-md);
   }
 `;
@@ -38,7 +39,7 @@ const ModalContent = styled(motion.div)`
   display: flex;
   flex-direction: column;
 
-  @media (max-width: 900px) {
+  @media (max-width: ${viewportBreakpoints.content}px) {
     max-width: 95vw;
   }
 `;
@@ -60,7 +61,7 @@ const Title = styled.h2`
   justify-content: center;
   gap: 10px;
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     font-size: var(--font-size-xl);
   }
 `;
@@ -96,7 +97,7 @@ const CloseButton = styled(motion.button)`
     border-color: rgba(255, 255, 255, 0.78);
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     top: var(--spacing-md);
     right: var(--spacing-md);
     width: 40px;
@@ -113,13 +114,13 @@ const PhotoGrid = styled.div`
   gap: var(--spacing-lg);
   max-height: 70vh;
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: var(--spacing-md);
     padding: var(--spacing-lg);
   }
 
-  @media (max-width: 480px) {
+  @media (max-width: ${viewportBreakpoints.narrow}px) {
     grid-template-columns: 1fr;
     gap: var(--spacing-md);
   }

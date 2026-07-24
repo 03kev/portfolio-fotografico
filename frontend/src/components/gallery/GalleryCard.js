@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import { Crop, Edit3, Loader2, Trash2, Upload, X } from 'lucide-react';
 import { useTouchLongPressReveal } from '../../hooks';
+import { viewportBreakpoints } from '../../styles/responsive';
 
 const cardVariants = {
   hidden: { opacity: 0, scale: 0.98, y: 8 },
@@ -10,7 +11,7 @@ const cardVariants = {
   exit: { opacity: 0, scale: 0.98, y: -8, transition: { duration: 0.25 } }
 };
 
-const MOBILE_ADMIN_ACTIONS = [
+const TOUCH_ADMIN_ACTIONS = [
   {
     key: 'replace',
     tone: 'purple',
@@ -72,7 +73,7 @@ const PhotoCard = styled(motion.div)`
     box-shadow: var(--shadow-large);
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     border-radius: 18px;
     box-shadow: var(--shadow-small);
   }
@@ -448,9 +449,9 @@ export const GalleryCard = React.memo(function GalleryCard({
   prioritizeImage,
   motionEnabled,
   isAdmin,
-  compactMobile,
+  usesTouchControls,
   isTouchCardActive,
-  isMobileAdminOpen,
+  isTouchAdminOpen,
   hideCardDescriptions,
   hasActivePhotoOp,
   photoOpStatus,
@@ -464,34 +465,34 @@ export const GalleryCard = React.memo(function GalleryCard({
   onCrop,
   onReuploadSource,
   onAbortReuploadUpload,
-  onRevealMobileCard,
-  onHideMobileCard,
-  onToggleMobileAdmin,
-  onCloseMobileAdmin
+  onRevealTouchCard,
+  onHideTouchCard,
+  onToggleTouchAdmin,
+  onCloseTouchAdmin
 }) {
   const isCardOpActive = Boolean(photoOpStatus?.active);
   const isPendingCard = Boolean(photo?.__pending);
   const canOpenCard = !isCardOpActive && !isPendingCard;
   const cardImageSrc = isPendingCard ? String(photo.previewUrl || '') : getThumbImageUrl(photo);
-  const isMobileUiVisible = compactMobile && (isTouchCardActive || isMobileAdminOpen);
+  const isTouchUiVisible = usesTouchControls && (isTouchCardActive || isTouchAdminOpen);
   const { bind: touchRevealBind, consumeTrigger } = useTouchLongPressReveal({
-    enabled: compactMobile && !isPendingCard && !isCardOpActive,
-    onLongPress: () => onRevealMobileCard(photo.id)
+    enabled: usesTouchControls && !isPendingCard && !isCardOpActive,
+    onLongPress: () => onRevealTouchCard(photo.id)
   });
 
   const handleCardClick = () => {
-    if (compactMobile && (isTouchCardActive || isMobileAdminOpen || consumeTrigger())) {
-      onCloseMobileAdmin();
-      onHideMobileCard();
+    if (usesTouchControls && (isTouchCardActive || isTouchAdminOpen || consumeTrigger())) {
+      onCloseTouchAdmin();
+      onHideTouchCard();
       return;
     }
     if (!canOpenCard) return;
     onOpen(photo);
   };
 
-  const handleMobileAction = (action, event) => {
-    onCloseMobileAdmin();
-    onHideMobileCard();
+  const handleTouchAction = (action, event) => {
+    onCloseTouchAdmin();
+    onHideTouchCard();
 
     if (action === 'reupload') onReuploadSource(event, photo);
     if (action === 'crop') onCrop(event, photo);
@@ -506,10 +507,10 @@ export const GalleryCard = React.memo(function GalleryCard({
       initial={motionEnabled ? 'hidden' : false}
       animate={motionEnabled ? 'visible' : false}
       exit={motionEnabled ? 'exit' : undefined}
-      data-mobile-gallery-card-id={photo.id}
+      data-touch-gallery-card-id={photo.id}
       {...touchRevealBind}
       onContextMenu={(event) => {
-        if (compactMobile) event.preventDefault();
+        if (usesTouchControls) event.preventDefault();
       }}
       onClick={handleCardClick}
     >
@@ -519,26 +520,26 @@ export const GalleryCard = React.memo(function GalleryCard({
             {photo.title || 'Foto'}
           </SeoImageLink>
         )}
-        {isAdmin && compactMobile && !isPendingCard && !hasActivePhotoOp && !isCardOpActive && isMobileUiVisible && (
+        {isAdmin && usesTouchControls && !isPendingCard && !hasActivePhotoOp && !isCardOpActive && isTouchUiVisible && (
           <>
             <MobileManageButton
-              data-mobile-admin-manage-button="true"
+              data-touch-admin-manage-button="true"
               type="button"
               onClick={(event) => {
                 event.stopPropagation();
-                onToggleMobileAdmin(photo.id);
+                onToggleTouchAdmin(photo.id);
               }}
-              aria-label={isMobileAdminOpen ? 'Chiudi azioni admin' : 'Apri azioni admin'}
-              title={isMobileAdminOpen ? 'Chiudi azioni admin' : 'Apri azioni admin'}
+              aria-label={isTouchAdminOpen ? 'Chiudi azioni admin' : 'Apri azioni admin'}
+              title={isTouchAdminOpen ? 'Chiudi azioni admin' : 'Apri azioni admin'}
             >
               <Edit3 size={18} />
             </MobileManageButton>
-            {isMobileAdminOpen && (
+            {isTouchAdminOpen && (
               <MobileAdminPanel
-                data-mobile-admin-panel="true"
+                data-touch-admin-panel="true"
                 onClick={(event) => event.stopPropagation()}
               >
-                {MOBILE_ADMIN_ACTIONS.map((action) => {
+                {TOUCH_ADMIN_ACTIONS.map((action) => {
                   const ActionIcon = action.icon;
 
                   return (
@@ -546,7 +547,7 @@ export const GalleryCard = React.memo(function GalleryCard({
                       key={action.key}
                       type="button"
                       $tone={action.tone}
-                      onClick={(event) => handleMobileAction(action.action, event)}
+                      onClick={(event) => handleTouchAction(action.action, event)}
                       title={action.title}
                       aria-label={action.title}
                     >
@@ -558,7 +559,7 @@ export const GalleryCard = React.memo(function GalleryCard({
             )}
           </>
         )}
-        {isAdmin && !compactMobile && !isPendingCard && !hasActivePhotoOp && !isCardOpActive && (
+        {isAdmin && !usesTouchControls && !isPendingCard && !hasActivePhotoOp && !isCardOpActive && (
           <>
             <ReplaceSourceButton
               onClick={(event) => onReuploadSource(event, photo)}
@@ -625,7 +626,7 @@ export const GalleryCard = React.memo(function GalleryCard({
             )}
           </ReuploadCardOverlay>
         )}
-        {!isCardOpActive && !compactMobile && (
+        {!isCardOpActive && !usesTouchControls && (
           <PhotoOverlay>
             <OverlayContent>
               <PhotoTitle>{photo.title}</PhotoTitle>
@@ -643,7 +644,7 @@ export const GalleryCard = React.memo(function GalleryCard({
             </OverlayContent>
           </PhotoOverlay>
         )}
-        {isMobileUiVisible && Boolean(photo?.title) && (
+        {isTouchUiVisible && Boolean(photo?.title) && (
           <MobileCaptionBar>
             <MobileCaptionTitle>{photo.title}</MobileCaptionTitle>
           </MobileCaptionBar>

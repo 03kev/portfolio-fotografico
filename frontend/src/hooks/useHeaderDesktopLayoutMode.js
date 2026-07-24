@@ -1,8 +1,8 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useMeasuredLayoutMode } from './useMeasuredLayoutMode';
 
 export const HEADER_LAYOUT_MODE = {
-  MOBILE: 'mobile',
+  COMPACT_NAV: 'compact-nav',
   INLINE_FULL: 'inline-full',
   INLINE_COMPACT_UPLOAD: 'inline-compact-upload',
   STACKED_FULL: 'stacked-full',
@@ -14,7 +14,7 @@ const CENTER_SAFETY_GAP = 112;
 const TOP_ROW_GAP = 24;
 
 export const useHeaderDesktopLayoutMode = ({
-  useMobileNav,
+  useCompactNav,
   navRef,
   brandFullMeasureRef,
   brandCompactMeasureRef,
@@ -23,7 +23,7 @@ export const useHeaderDesktopLayoutMode = ({
   navMeasureRef
 }) => {
   const resolveDesktopLayoutMode = useCallback(() => {
-    if (useMobileNav) return HEADER_LAYOUT_MODE.MOBILE;
+    if (useCompactNav) return HEADER_LAYOUT_MODE.COMPACT_NAV;
     if (
       !navRef.current ||
       !brandFullMeasureRef.current ||
@@ -70,26 +70,35 @@ export const useHeaderDesktopLayoutMode = ({
     navRef,
     rightCompactMeasureRef,
     rightFullMeasureRef,
-    useMobileNav
+    useCompactNav
+  ]);
+
+  const observedRefs = useMemo(() => [
+    navRef,
+    brandFullMeasureRef,
+    brandCompactMeasureRef,
+    rightFullMeasureRef,
+    rightCompactMeasureRef,
+    navMeasureRef
+  ], [
+    brandCompactMeasureRef,
+    brandFullMeasureRef,
+    navMeasureRef,
+    navRef,
+    rightCompactMeasureRef,
+    rightFullMeasureRef
   ]);
 
   const layoutMode = useMeasuredLayoutMode({
     enabled: true,
     initialMode: HEADER_LAYOUT_MODE.INLINE_FULL,
-    observedRefs: [
-      navRef,
-      brandFullMeasureRef,
-      brandCompactMeasureRef,
-      rightFullMeasureRef,
-      rightCompactMeasureRef,
-      navMeasureRef
-    ],
+    observedRefs,
     resolveMode: resolveDesktopLayoutMode
   });
 
   return {
     layoutMode,
-    compactDesktopNav: !useMobileNav && layoutMode.startsWith('stacked'),
+    compactDesktopNav: !useCompactNav && layoutMode.startsWith('stacked'),
     compactBrand: layoutMode === HEADER_LAYOUT_MODE.STACKED_COMPACT_BRAND,
     compactUpload:
       layoutMode === HEADER_LAYOUT_MODE.INLINE_COMPACT_UPLOAD ||

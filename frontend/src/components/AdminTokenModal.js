@@ -15,7 +15,7 @@ const Card = styled(motion.div)`
   width: min(460px, 100%);
   ${panelSurface};
 
-  ${media.down('tablet')`
+  ${media.down('medium')`
     width: min(100%, 420px);
   `}
 `;

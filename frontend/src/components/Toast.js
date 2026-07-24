@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, XCircle, AlertTriangle, Info } from 'lucide-react';
+import { viewportBreakpoints } from '../styles/responsive';
 
 const ToastContainer = styled.div`
   position: fixed;
@@ -13,7 +14,7 @@ const ToastContainer = styled.div`
   gap: 10px;
   pointer-events: none;
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     top: calc(var(--header-height) + 8px);
     right: 10px;
     left: 10px;
@@ -46,7 +47,7 @@ const ToastItem = styled(motion.div)`
   font-size: 14px;
   line-height: 1.4;
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     padding: 12px 16px;
     font-size: 13px;
     max-width: none;

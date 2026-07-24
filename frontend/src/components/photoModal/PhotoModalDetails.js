@@ -3,13 +3,14 @@ import styled from 'styled-components'
 import { motion } from 'framer-motion'
 import { Check, Download, MapPin, Share2 } from 'lucide-react'
 import { toAbsoluteSiteUrl } from '../../utils/siteUrl'
+import { viewportBreakpoints } from '../../styles/responsive'
 
 const HeaderIntro = styled.div`
     max-width: 100%;
     padding-right: 92px;
     margin-bottom: 6px;
 
-    @media (max-width: 768px) {
+    @media (max-width: ${viewportBreakpoints.medium}px) {
         padding-right: 64px;
         margin-bottom: 2px;
     }
@@ -17,7 +18,7 @@ const HeaderIntro = styled.div`
 
 const DetailsContent = styled.div`
     width: 100%;
-    max-width: ${({ $compactDesktop }) => ($compactDesktop ? '680px' : '100%')};
+    max-width: ${({ $constrainContent }) => ($constrainContent ? '680px' : '100%')};
     margin: 0 auto;
 `
 
@@ -29,7 +30,7 @@ const PhotoTitle = styled(motion.h2)`
     line-height: 1.08;
     letter-spacing: -0.04em;
 
-    @media (max-width: 768px) {
+    @media (max-width: ${viewportBreakpoints.medium}px) {
         font-size: 1.65rem;
         margin-bottom: 8px;
         line-height: 1.08;
@@ -52,7 +53,7 @@ const PhotoLocation = styled(motion.p)`
         color: var(--color-white);
     }
 
-    @media (max-width: 768px) {
+    @media (max-width: ${viewportBreakpoints.medium}px) {
         font-size: var(--font-size-base);
         margin-bottom: 12px;
     }
@@ -65,7 +66,7 @@ const PhotoDescription = styled(motion.p)`
     margin-bottom: 20px;
     max-width: none;
 
-    @media (max-width: 768px) {
+    @media (max-width: ${viewportBreakpoints.medium}px) {
         font-size: var(--font-size-sm);
         line-height: 1.6;
         margin-bottom: 14px;
@@ -75,7 +76,7 @@ const PhotoDescription = styled(motion.p)`
 const MetadataSection = styled(motion.div)`
     margin-bottom: 20px;
 
-    @media (max-width: 768px) {
+    @media (max-width: ${viewportBreakpoints.medium}px) {
         margin-bottom: 16px;
     }
 `
@@ -90,7 +91,7 @@ const MetadataTitle = styled.h3`
     padding-bottom: 10px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 
-    @media (max-width: 768px) {
+    @media (max-width: ${viewportBreakpoints.medium}px) {
         font-size: 0.88rem;
         margin-bottom: 10px;
         padding-bottom: 8px;
@@ -102,7 +103,7 @@ const MetadataGrid = styled.div`
     grid-template-columns: repeat(2, 1fr);
     gap: var(--spacing-md);
 
-    @media (max-width: 768px) {
+    @media (max-width: ${viewportBreakpoints.medium}px) {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 12px;
     }
@@ -149,7 +150,7 @@ const TagsGrid = styled.div`
     flex-wrap: wrap;
     gap: var(--spacing-sm);
 
-    @media (max-width: 768px) {
+    @media (max-width: ${viewportBreakpoints.medium}px) {
         gap: 8px;
     }
 `
@@ -180,7 +181,7 @@ const ActionButtons = styled(motion.div)`
     gap: var(--spacing-md);
     margin-top: 18px;
 
-    @media (max-width: 768px) {
+    @media (max-width: ${viewportBreakpoints.medium}px) {
         gap: 10px;
         margin-top: 16px;
     }
@@ -233,7 +234,7 @@ const ActionButton = styled(motion.button)`
         }
     }
 
-    @media (max-width: 768px) {
+    @media (max-width: ${viewportBreakpoints.medium}px) {
         padding: 14px 10px;
         font-size: 0.95rem;
         gap: 6px;
@@ -294,7 +295,8 @@ const PhotoModalDetails = ({
     formatDate,
     formatResolution,
     withMotion = true,
-    compactDesktop = false,
+    constrainContent = false,
+    preferNativeShare = false,
 }) => {
     const [shareFeedback, setShareFeedback] = useState(false)
     const [isDownloading, setIsDownloading] = useState(false)
@@ -316,18 +318,11 @@ const PhotoModalDetails = ({
             text: photo.description || photo.title,
             url: shareUrl,
         }
-        const mobileUserAgent = /Android|iPhone|iPad|iPod|Mobile/i.test(
-            navigator.userAgent || ''
-        )
-        const hasTouchInput = Number(navigator.maxTouchPoints || 0) > 0
-        const hasCoarsePointer = Boolean(
-            window.matchMedia?.('(pointer: coarse)').matches
-        )
-        const useNativeMobileShare =
+        const useNativeShare =
             typeof navigator.share === 'function' &&
-            (mobileUserAgent || (hasTouchInput && hasCoarsePointer))
+            preferNativeShare
 
-        if (useNativeMobileShare) {
+        if (useNativeShare) {
             try {
                 await navigator.share(shareData)
                 return
@@ -417,7 +412,7 @@ const PhotoModalDetails = ({
     )
 
     return (
-        <DetailsContent $compactDesktop={compactDesktop}>
+    <DetailsContent $constrainContent={constrainContent}>
             <HeaderIntro>
                 <PhotoTitle {...getAnimationProps(withMotion, 0.1)}>
                     {photo.title}

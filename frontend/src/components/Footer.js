@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import { Instagram, Twitter, Youtube, Facebook, Mail, MapPin, Globe } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { viewportBreakpoints } from '../styles/responsive';
 
 const FooterContainer = styled.footer`
   background: rgba(255, 255, 255, 0.02);
@@ -15,7 +16,7 @@ const Container = styled.div`
   margin: 0 auto;
   padding: 0 var(--spacing-xl);
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     padding: 0 var(--spacing-lg);
   }
 `;
@@ -25,7 +26,7 @@ const FooterGrid = styled(motion.div)`
   grid-template-columns: 1.2fr 1fr 1fr;
   gap: var(--spacing-2xl);
 
-  @media (max-width: 900px) {
+  @media (max-width: ${viewportBreakpoints.content}px) {
     grid-template-columns: 1fr;
   }
 `;
@@ -118,7 +119,7 @@ const Bottom = styled.div`
   gap: var(--spacing-md);
   flex-wrap: wrap;
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     flex-direction: column;
     align-items: flex-start;
   }

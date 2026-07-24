@@ -6,13 +6,14 @@ import { Camera } from 'lucide-react';
 import { useSeries } from '../contexts/SeriesContext';
 import { usePhotos } from '../contexts/PhotoContext';
 import { resolveVersionedPhotoAssetUrl } from '../utils/imageUrl';
+import { viewportBreakpoints } from '../styles/responsive';
 
 const Grid = styled(motion.div)`
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: var(--spacing-xl);
 
-  @media (max-width: 640px) {
+  @media (max-width: ${viewportBreakpoints.small}px) {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--spacing-lg);
   }
@@ -38,7 +39,7 @@ const Cover = styled.div`
   aspect-ratio: 16 / 10;
   background: rgba(255, 255, 255, 0.03);
 
-  @media (max-width: 480px) {
+  @media (max-width: ${viewportBreakpoints.narrow}px) {
     aspect-ratio: 4 / 3;
   }
 `;

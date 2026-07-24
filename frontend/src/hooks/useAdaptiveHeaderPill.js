@@ -4,7 +4,7 @@ export const useAdaptiveHeaderPill = ({
   enabled,
   fullLabel,
   shortLabel,
-  mobileMaxWidth = 560
+  compactMaxWidth = 560
 }) => {
   const cardRef = useRef(null);
   const headerRef = useRef(null);
@@ -28,7 +28,7 @@ export const useAdaptiveHeaderPill = ({
     if (!card || !headerCopy || !leading || !fullMeasure || !shortMeasure) return;
 
     const cardWidth = card.clientWidth;
-    if (!cardWidth || cardWidth > mobileMaxWidth) {
+    if (!cardWidth || cardWidth > compactMaxWidth) {
       setMode('full');
       return;
     }
@@ -64,7 +64,7 @@ export const useAdaptiveHeaderPill = ({
     }
 
     setMode('hidden');
-  }, [mobileMaxWidth]);
+  }, [compactMaxWidth]);
 
   useLayoutEffect(() => {
     if (!enabled) return;
@@ -76,16 +76,18 @@ export const useAdaptiveHeaderPill = ({
 
     const card = cardRef.current;
     const topline = toplineRef.current;
-    if (!card || !topline || typeof ResizeObserver === 'undefined') return undefined;
+    if (!card || !topline) return undefined;
 
-    const observer = new ResizeObserver(() => updateMode());
-    observer.observe(card);
-    observer.observe(topline);
-    window.addEventListener('resize', updateMode);
+    const observer = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(() => updateMode());
+    observer?.observe(card);
+    observer?.observe(topline);
+    if (!observer) window.addEventListener('resize', updateMode);
 
     return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', updateMode);
+      observer?.disconnect();
+      if (!observer) window.removeEventListener('resize', updateMode);
     };
   }, [enabled, updateMode]);
 
