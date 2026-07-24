@@ -45,6 +45,9 @@ const env = {
     vercel: Boolean(process.env.VERCEL),
     vercelUrl: asString(process.env.VERCEL_URL),
     siteUrl: asString(process.env.SITE_URL),
+    metadataBackend: asString(process.env.METADATA_BACKEND, 'json').toLowerCase(),
+    databaseUrl: asString(process.env.DATABASE_URL),
+    databasePoolMax: asPositiveInt(process.env.DATABASE_POOL_MAX, 5),
 
     corsOrigins: asCsvList(process.env.CORS_ORIGINS),
 
@@ -79,6 +82,14 @@ function validateEnv() {
 
     if (!env.siteUrl) {
         errors.push('SITE_URL non impostata.');
+    }
+
+    if (!['json', 'postgres'].includes(env.metadataBackend)) {
+        errors.push('METADATA_BACKEND deve essere "json" oppure "postgres".');
+    }
+
+    if (env.metadataBackend === 'postgres' && !env.databaseUrl) {
+        errors.push('DATABASE_URL non impostata per METADATA_BACKEND=postgres.');
     }
 
     if (env.isDevelopment && !env.corsOrigins.length) {

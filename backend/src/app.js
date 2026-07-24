@@ -3,11 +3,11 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { pipeline } = require('stream/promises');
-const { readMetadataFile } = require('./services/metadataStorage');
 
 const authRoutes = require('./routes/auth');
 const photoRoutes = require('./routes/photos');
 const seriesRoutes = require('./routes/series');
+const { portfolioRepository } = require('./repositories');
 const { env, validateEnv } = require('./config/env');
 const DEFAULTS = require('./config/defaults');
 const {
@@ -20,9 +20,7 @@ const {
     getUploadObject
 } = require('./services/r2Storage');
 const { buildPhotoAssetPaths } = require('./services/photoDerivatives');
-const { toRuntimePhoto } = require('./services/photoRecord');
 const { buildPublicAssetUrl } = require('./services/publicAssetUrl');
-const { normalizeSeriesCollection } = require('./services/seriesRecord');
 
 const app = express();
 validateEnv();
@@ -140,8 +138,8 @@ const corsOptions = {
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: env.isProduction
-        ? ['Content-Type', 'x-requested-with']
-        : ['Content-Type', 'Authorization', 'x-api-key', 'x-requested-with']
+        ? ['Content-Type', 'If-Match', 'x-requested-with']
+        : ['Content-Type', 'If-Match', 'Authorization', 'x-api-key', 'x-requested-with']
 };
 
 app.use(cors(corsOptions));
@@ -385,8 +383,7 @@ async function handlePhotoSeoPage(req, res, next) {
         const rawId = String(req.params.id || '').trim();
         const decodedPhotoId = decodeURIComponent(rawId);
         const canonicalUrl = `${siteBaseUrl}/photo/${encodeURIComponent(decodedPhotoId)}`;
-        const rawPhotos = await readMetadataFile('photos.json', []);
-        const photos = Array.isArray(rawPhotos) ? rawPhotos.map((item) => toRuntimePhoto(item)) : [];
+        const photos = await portfolioRepository.photos.list();
         const photo = photos.find((item) => String(item?.id || '').trim() === decodedPhotoId);
 
         if (!photo) {
@@ -458,12 +455,11 @@ async function handleSeriesIndexSeoPage(req, res, next) {
     try {
         const siteBaseUrl = getSiteBaseUrl();
         const canonicalUrl = `${siteBaseUrl}/series`;
-        const [rawSeries, rawPhotos] = await Promise.all([
-            readMetadataFile('series.json', []),
-            readMetadataFile('photos.json', [])
+        const [allSeries, photos] = await Promise.all([
+            portfolioRepository.series.list(),
+            portfolioRepository.photos.list()
         ]);
-        const series = normalizeSeriesCollection(rawSeries).filter((item) => item.published && item.slug);
-        const photos = Array.isArray(rawPhotos) ? rawPhotos.map((item) => toRuntimePhoto(item)) : [];
+        const series = allSeries.filter((item) => item.published && item.slug);
         const photosById = new Map(photos.map((photo) => [String(photo?.id || ''), photo]));
         const entries = series.map((item) => {
             const coverPhoto = photosById.get(String(item.coverImage || ''))
@@ -552,11 +548,10 @@ async function handleSeriesSeoPage(req, res, next) {
         const rawIdentifier = String(req.params.identifier || '').trim();
         const identifier = decodeURIComponent(rawIdentifier);
         const requestedUrl = `${siteBaseUrl}/series/${encodeURIComponent(identifier)}`;
-        const [rawSeries, rawPhotos] = await Promise.all([
-            readMetadataFile('series.json', []),
-            readMetadataFile('photos.json', [])
+        const [allSeries, photos] = await Promise.all([
+            portfolioRepository.series.list(),
+            portfolioRepository.photos.list()
         ]);
-        const allSeries = normalizeSeriesCollection(rawSeries);
         const series = allSeries.find((item) => (
             item.published
             && (String(item.id) === identifier || item.slug === identifier)
@@ -576,7 +571,6 @@ async function handleSeriesSeoPage(req, res, next) {
             return res.status(404).send(notFoundHtml);
         }
 
-        const photos = Array.isArray(rawPhotos) ? rawPhotos.map((item) => toRuntimePhoto(item)) : [];
         const photosById = new Map(photos.map((photo) => [String(photo?.id || ''), photo]));
         const seriesPhotos = series.photos
             .map((photoId) => photosById.get(String(photoId)))
@@ -708,12 +702,11 @@ async function handleSitemapPages(req, res) {
                 ].join('');
             })
             .join('');
-        const [rawPhotos, rawSeries] = await Promise.all([
-            readMetadataFile('photos.json', []),
-            readMetadataFile('series.json', [])
+        const [photos, allSeries] = await Promise.all([
+            portfolioRepository.photos.list(),
+            portfolioRepository.series.list()
         ]);
-        const photos = Array.isArray(rawPhotos) ? rawPhotos.map((item) => toRuntimePhoto(item)) : [];
-        const series = normalizeSeriesCollection(rawSeries).filter((item) => item.published && item.slug);
+        const series = allSeries.filter((item) => item.published && item.slug);
         const photoEntries = photos
             .map((photo) => {
                 const photoId = String(photo?.id || '').trim();
@@ -781,8 +774,7 @@ function handleRobotsTxt(req, res) {
 
 async function handleSitemapImages(req, res) {
     try {
-        const rawPhotos = await readMetadataFile('photos.json', []);
-        const photos = Array.isArray(rawPhotos) ? rawPhotos.map((item) => toRuntimePhoto(item)) : [];
+        const photos = await portfolioRepository.photos.list();
         const siteBaseUrl = getSiteBaseUrl();
 
         const imageEntries = photos

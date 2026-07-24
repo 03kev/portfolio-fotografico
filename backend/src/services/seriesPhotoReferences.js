@@ -1,5 +1,3 @@
-const { readMetadataFile, writeMetadataFile } = require('./metadataStorage');
-
 function removePhotoFromNumericIdArray(values, photoId) {
     if (!Array.isArray(values)) {
         return { values, changed: false };
@@ -58,36 +56,6 @@ function removePhotoReferencesFromSeriesRecord(seriesRecord, photoId) {
     };
 }
 
-async function cleanupPhotoReferencesInSeries(photoId) {
-    const series = await readMetadataFile('series.json', []);
-    if (!Array.isArray(series) || series.length === 0) {
-        return {
-            modified: false,
-            modifiedCount: 0,
-            series: []
-        };
-    }
-
-    let modifiedCount = 0;
-    const nextSeries = series.map((record) => {
-        const result = removePhotoReferencesFromSeriesRecord(record, photoId);
-        if (result.changed) {
-            modifiedCount += 1;
-        }
-        return result.series;
-    });
-
-    if (modifiedCount > 0) {
-        await writeMetadataFile('series.json', nextSeries);
-    }
-
-    return {
-        modified: modifiedCount > 0,
-        modifiedCount,
-        series: nextSeries
-    };
-}
-
 module.exports = {
-    cleanupPhotoReferencesInSeries
+    removePhotoReferencesFromSeriesRecord
 };

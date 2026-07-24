@@ -19,10 +19,10 @@ const {
 } = require('../config/assetPaths');
 const DEFAULTS = require('../config/defaults');
 const { parseNumericIdOrThrow } = require('../utils/ids');
+const { repositoryOptionsFromRequest } = require('../utils/expectedVersion');
 const { sanitizePhotoPayload } = require('../utils/inputSanitizers');
 const { protectWriteMethods } = require('../middleware/auth');
-const { readPhotosDB, writePhotosDB } = require('./photos.db');
-const { cleanupPhotoReferencesInSeries } = require('../services/seriesPhotoCleanup');
+const { portfolioRepository } = require('../repositories');
 const {
     buildUploadFilename,
     describeDeleteError,
@@ -146,7 +146,7 @@ const upload = multer({
 // GET - Ottieni tutte le foto
 router.get('/', async (req, res) => {
     try {
-        const rawPhotos = await readPhotosDB();
+        const rawPhotos = await portfolioRepository.photos.list();
         const photos = rawPhotos
             .map((photo) => normalizePhotoForApiList(photo))
             .map((photo) => presentPhoto(photo));
@@ -168,8 +168,7 @@ router.get('/', async (req, res) => {
 router.get('/:id/download', async (req, res) => {
     try {
         const photoId = parseNumericIdOrThrow(req.params.id, 'ID foto');
-        const photos = await readPhotosDB();
-        const photo = photos.find((item) => Number(item.id) === photoId);
+        const photo = await portfolioRepository.photos.findById(photoId);
         if (!photo) {
             return res.status(404).json({
                 success: false,
@@ -209,8 +208,7 @@ router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const photoId = parseNumericIdOrThrow(id, 'ID foto');
-        const photos = await readPhotosDB();
-        const photo = photos.find((p) => Number(p.id) === photoId);
+        const photo = await portfolioRepository.photos.findById(photoId);
         
         if (!photo) {
             return res.status(404).json({
@@ -301,9 +299,8 @@ router.post('/', upload.single('image'), async (req, res) => {
             cropProfiles
         };
         const assets = buildPhotoAssetPaths(photoId, sourceExtension);
-        const photos = await readPhotosDB();
-
-        if (photos.some((item) => Number(item.id) === photoId)) {
+        const existingPhoto = await portfolioRepository.photos.findById(photoId);
+        if (existingPhoto) {
             return res.status(409).json({
                 success: false,
                 message: 'photoId già esistente, riprova con un nuovo upload.'
@@ -371,9 +368,13 @@ router.post('/', upload.single('image'), async (req, res) => {
             tags: sanitized.tags
         };
         
-        // Salva nel database JSON
-        photos.unshift(newPhoto); // Aggiungi all'inizio dell'array
-        await writePhotosDB(photos);
+        const createdPhoto = await portfolioRepository.photos.create(newPhoto);
+        if (!createdPhoto) {
+            return res.status(409).json({
+                success: false,
+                message: 'photoId già esistente, riprova con un nuovo upload.'
+            });
+        }
 
         await purgePublicAssetsBestEffort(
             [assets.imagePath, assets.mobileImagePath, assets.thumbnail43Path, assets.thumbnail11Path, assets.socialImagePath],
@@ -383,7 +384,7 @@ router.post('/', upload.single('image'), async (req, res) => {
         res.status(201).json({
             success: true,
             message: 'Foto caricata con successo',
-            data: presentPhoto(newPhoto)
+            data: presentPhoto(createdPhoto)
         });
         
     } catch (error) {
@@ -422,11 +423,9 @@ router.post('/:id/replace-source', async (req, res) => {
         }
         timer = createPhotoOperationTimer('replace-source', photoId);
 
-        const photos = await readPhotosDB();
+        const currentPhoto = await portfolioRepository.photos.findById(photoId);
         timer.mark('read_photos_db');
-        const photoIndex = photos.findIndex((p) => Number(p.id) === photoId);
-
-        if (photoIndex === -1) {
+        if (!currentPhoto) {
             return res.status(404).json({
                 success: false,
                 message: 'Foto non trovata'
@@ -450,7 +449,6 @@ router.post('/:id/replace-source', async (req, res) => {
             });
         }
 
-        const currentPhoto = photos[photoIndex];
         const publicAssets = withDefaultPhotoVariants(currentPhoto);
         const mobileImagePath = buildPhotoAssetPaths(photoId).mobileImagePath;
         const cropProfiles = getCropProfilesFromSettings(currentPhoto.settings);
@@ -471,18 +469,20 @@ router.post('/:id/replace-source', async (req, res) => {
         const nextSourceContentType = sourceObject.contentType || bodySourceContentType || currentPhoto.sourceContentType || '';
         const previousSourcePath = normalizePrivateSourcePathForPhotoId(currentPhoto.sourcePath, photoId);
 
-        const updatedPhoto = {
-            ...currentPhoto,
+        const updatedPhoto = await portfolioRepository.photos.updateById(photoId, {
             sourcePath: nextSourcePath,
             sourceContentType: nextSourceContentType,
             resolution: derivatives.resolution,
             mobileImage: true,
             updatedAt: Date.now(),
             derivativesVersion: Date.now()
-        };
-
-        photos[photoIndex] = updatedPhoto;
-        await writePhotosDB(photos);
+        });
+        if (!updatedPhoto) {
+            return res.status(404).json({
+                success: false,
+                message: 'Foto non trovata'
+            });
+        }
         timer.mark('write_photo_metadata');
 
         if (previousSourcePath && previousSourcePath !== nextSourcePath) {
@@ -547,18 +547,15 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
         }
         timer = createPhotoOperationTimer('regenerate-derivatives', photoId);
 
-        const photos = await readPhotosDB();
+        const photo = await portfolioRepository.photos.findById(photoId);
         timer.mark('read_photos_db');
-        const photoIndex = photos.findIndex((p) => Number(p.id) === photoId);
-
-        if (photoIndex === -1) {
+        if (!photo) {
             return res.status(404).json({
                 success: false,
                 message: 'Foto non trovata'
             });
         }
 
-        const photo = photos[photoIndex];
         const sourcePath = normalizePrivateSourcePathForPhotoId(photo.sourcePath, photoId);
         if (!sourcePath) {
             return res.status(400).json({
@@ -591,16 +588,18 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
         ]);
         timer.mark('write_public_derivatives');
 
-        const updatedPhoto = {
-            ...photo,
+        const updatedPhoto = await portfolioRepository.photos.updateById(photoId, {
             resolution: derivatives.resolution,
             mobileImage: true,
             updatedAt: Date.now(),
             derivativesVersion: Date.now()
-        };
-
-        photos[photoIndex] = updatedPhoto;
-        await writePhotosDB(photos);
+        });
+        if (!updatedPhoto) {
+            return res.status(404).json({
+                success: false,
+                message: 'Foto non trovata'
+            });
+        }
         timer.mark('write_photo_metadata');
 
         await purgePublicAssetsBestEffort(
@@ -641,30 +640,30 @@ router.put('/:id', async (req, res) => {
         const { lat, lng } = req.body;
         const sanitized = sanitizePhotoPayload(req.body, { partial: true });
         
-        const photos = await readPhotosDB();
-        const photoIndex = photos.findIndex((p) => Number(p.id) === photoId);
-        
-        if (photoIndex === -1) {
+        const changes = {
+            ...sanitized,
+            updatedAt: Date.now(),
+        };
+        if (lat !== undefined) {
+            const parsedLat = parseCoordinate(lat, 'Latitudine');
+            if (parsedLat !== null) changes.lat = parsedLat;
+        }
+        if (lng !== undefined) {
+            const parsedLng = parseCoordinate(lng, 'Longitudine');
+            if (parsedLng !== null) changes.lng = parsedLng;
+        }
+
+        const updatedPhoto = await portfolioRepository.photos.updateById(
+            photoId,
+            changes,
+            repositoryOptionsFromRequest(req)
+        );
+        if (!updatedPhoto) {
             return res.status(404).json({
                 success: false,
                 message: 'Foto non trovata'
             });
         }
-        
-        // Aggiorna la foto con i nuovi dati
-        const nextLat = lat !== undefined ? parseCoordinate(lat, 'Latitudine') : photos[photoIndex].lat;
-        const nextLng = lng !== undefined ? parseCoordinate(lng, 'Longitudine') : photos[photoIndex].lng;
-
-        const updatedPhoto = {
-            ...photos[photoIndex],
-            ...sanitized,
-            lat: nextLat ?? photos[photoIndex].lat,
-            lng: nextLng ?? photos[photoIndex].lng,
-            updatedAt: Date.now(),
-        };
-        
-        photos[photoIndex] = updatedPhoto;
-        await writePhotosDB(photos);
         
         res.json({
             success: true,
@@ -684,25 +683,20 @@ router.delete('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const photoId = parseNumericIdOrThrow(id, 'ID foto');
-        const photos = await readPhotosDB();
-        const photoIndex = photos.findIndex((p) => Number(p.id) === photoId);
-        
-        if (photoIndex === -1) {
+        const deletion = await portfolioRepository.deletePhotoWithReferences(
+            photoId,
+            repositoryOptionsFromRequest(req)
+        );
+        if (!deletion) {
             return res.status(404).json({
                 success: false,
                 message: 'Foto non trovata'
             });
         }
-        
-        // Rimuovi la foto dall'array
-        const deletedPhoto = photos.splice(photoIndex, 1)[0];
-        await writePhotosDB(photos);
-        
-        // Rimuovi l'ID della foto da tutte le serie
-        try {
-            await cleanupPhotoReferencesInSeries(photoId);
-        } catch (seriesError) {
-            console.warn('Errore nell\'aggiornamento delle serie:', seriesError);
+        const deletedPhoto = deletion.photo;
+
+        if (deletion.referenceCleanupError) {
+            console.warn('Errore nell\'aggiornamento delle serie:', deletion.referenceCleanupError);
         }
         
         const publicAssets = withDefaultPhotoVariants(deletedPhoto);
