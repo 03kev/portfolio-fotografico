@@ -1,6 +1,7 @@
 import React from 'react';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
+import { viewportBreakpoints } from '../styles/responsive';
 
 const SectionRoot = styled.section`
   padding: var(--spacing-4xl) 0;
@@ -11,7 +12,7 @@ const Container = styled.div`
   margin: 0 auto;
   padding: 0 var(--spacing-xl);
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     padding: 0 var(--spacing-lg);
   }
 `;

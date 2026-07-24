@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { ArrowDownRight } from 'lucide-react';
+import { viewportBreakpoints } from '../styles/responsive';
 
 const HeroSection = styled.section`
   margin-top: -80px;
@@ -23,7 +24,7 @@ const Container = styled.div`
   position: relative;
   z-index: 1;
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     padding: 0 var(--spacing-lg);
   }
 `;

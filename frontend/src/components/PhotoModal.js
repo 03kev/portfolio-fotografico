@@ -15,9 +15,15 @@ import { API_BASE_URL } from '../utils/constants';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useSharedImageLoadState } from '../hooks/useSharedImageLoadState';
 import { useImagePinchZoom } from '../hooks/useImagePinchZoom';
-import { useCompactViewportLayout, useMobileDeviceLayout } from '../hooks';
+import { useMediaQuery } from '../hooks';
+import {
+  combineMediaQueries,
+  inputQueries,
+  viewportBreakpoints,
+  viewportQueries
+} from '../styles/responsive';
 import PhotoModalDetails from './photoModal/PhotoModalDetails';
-import PhotoModalMobilePager from './photoModal/PhotoModalMobilePager';
+import PhotoModalPager from './photoModal/PhotoModalPager';
 
 const prefetchedMobileImageSources = new Set();
 
@@ -49,7 +55,7 @@ const ModalOverlay = styled(motion.div)`
   justify-content: center;
   padding: var(--spacing-lg);
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     padding: var(--spacing-md);
     background: rgba(2, 4, 10, 0.98);
     backdrop-filter: none;
@@ -72,14 +78,14 @@ const ModalContent = styled(motion.div)`
   display: flex;
   flex-direction: row;
 
-  @media (max-width: 1024px) {
+  @media (max-width: ${viewportBreakpoints.large}px) {
     flex-direction: column;
     max-width: 95vw;
     max-height: 95vh;
     width: min(95vw, 680px);
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     width: min(100%, 420px);
     max-width: 100%;
     max-height: calc(100dvh - 24px);
@@ -103,14 +109,14 @@ const ImageContainer = styled.div`
     linear-gradient(180deg, rgba(13, 16, 25, 0.98) 0%, rgba(7, 9, 15, 0.98) 100%);
   overflow: hidden;
 
-  @media (max-width: 1024px) {
+  @media (max-width: ${viewportBreakpoints.large}px) {
     flex: 0 0 auto;
     min-height: 0;
     height: clamp(260px, 46vh, 420px);
     padding: 14px;
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     height: clamp(300px, 52dvh, 440px);
     padding: 12px 12px 0;
   }
@@ -128,7 +134,7 @@ const ImagePreview = styled.img`
   transition: opacity 0.32s ease;
   pointer-events: none;
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     filter: none;
     transform: none;
     opacity: ${({ $loaded }) => ($loaded ? 0 : 0.38)};
@@ -180,12 +186,12 @@ const ModalImage = styled(motion.img)`
     0 18px 50px rgba(0, 0, 0, 0.34),
     inset 0 0 0 1px rgba(255, 255, 255, 0.04);
 
-  @media (max-width: 1024px) {
+  @media (max-width: ${viewportBreakpoints.large}px) {
     max-height: 100%;
     width: 100%;
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     filter: none;
     transition: opacity 0.18s ease;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
@@ -211,7 +217,7 @@ const InfoPanel = styled.div`
     linear-gradient(180deg, rgba(8, 10, 16, 0.96) 0%, rgba(4, 5, 10, 0.94) 100%);
   backdrop-filter: blur(22px);
 
-  @media (max-width: 1024px) {
+  @media (max-width: ${viewportBreakpoints.large}px) {
     flex: 1 1 auto;
     min-height: 0;
     min-width: auto;
@@ -221,7 +227,7 @@ const InfoPanel = styled.div`
     border-top: 1px solid rgba(255, 255, 255, 0.08);
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     padding: 16px 16px 18px;
     backdrop-filter: none;
   }
@@ -281,7 +287,7 @@ const CloseButton = styled(motion.button)`
     transform: translateY(-1px);
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     top: var(--spacing-md);
     right: var(--spacing-md);
     width: 40px;
@@ -292,7 +298,7 @@ const CloseButton = styled(motion.button)`
   }
 `;
 
-const MobileQualityButton = styled.button`
+const PagerQualityButton = styled.button`
   border: 1px solid ${({ $active }) => ($active ? 'rgba(214, 179, 106, 0.68)' : 'rgba(255, 255, 255, 0.22)')};
   border-radius: var(--border-radius-full);
   width: 38px;
@@ -311,7 +317,7 @@ const MobileQualityButton = styled.button`
   }
 `;
 
-const MobileQualityLoader = styled(LoaderCircle)`
+const PagerQualityLoader = styled(LoaderCircle)`
   animation: photo-modal-quality-spin 0.8s linear infinite;
 
   @keyframes photo-modal-quality-spin {
@@ -321,7 +327,7 @@ const MobileQualityLoader = styled(LoaderCircle)`
   }
 `;
 
-const MobileImageSlide = styled(ImageContainer)`
+const PagerImageSlide = styled(ImageContainer)`
   height: 100%;
   min-height: 0;
   flex: none;
@@ -329,7 +335,7 @@ const MobileImageSlide = styled(ImageContainer)`
     linear-gradient(180deg, rgba(10, 12, 18, 0.98) 0%, rgba(4, 6, 10, 0.98) 100%);
 `;
 
-const MobileInfoSlide = styled(InfoPanel)`
+const PagerInfoSlide = styled(InfoPanel)`
   height: 100%;
   min-height: 0;
   max-width: none;
@@ -348,13 +354,21 @@ const PhotoModal = () => {
     const { modalOpen, photos, selectedPhoto, actions, galleryModalOpen } = usePhotos();
     const navigate = useNavigate();
     const location = useLocation();
-    const isMobileLayout = useMobileDeviceLayout({ maxWidth: 768 });
-    const isCompactViewport = useCompactViewportLayout({ maxWidth: 1120, maxHeight: 860 });
+    const isNarrowViewport = useMediaQuery(viewportQueries.down('medium'));
+    const isCompactViewport = useMediaQuery(viewportQueries.constrained({
+      maxWidth: 1120,
+      maxHeight: 860
+    }));
+    const hasCoarseInput = useMediaQuery(inputQueries.anyCoarse);
+    const preferNativeShare = useMediaQuery(combineMediaQueries(
+      inputQueries.cannotHover,
+      inputQueries.primaryCoarse
+    ));
     const originalBodyOverflowRef = React.useRef(null);
-    const mobileCarouselRef = useRef(null);
+    const pagerCarouselRef = useRef(null);
     const qualityRequestIdRef = useRef(0);
     const infoPanelRef = useRef(null);
-    const [activeMobileSlide, setActiveMobileSlide] = useState(0);
+    const [activePagerSlide, setActivePagerSlide] = useState(0);
     const [detailsExpanded, setDetailsExpanded] = useState(false);
     const [useFullImageFallback, setUseFullImageFallback] = useState(false);
     const [showFullResolution, setShowFullResolution] = useState(false);
@@ -365,7 +379,7 @@ const PhotoModal = () => {
     const mobileImageSrc = selectedPhoto?.mobileImage
       ? resolveVersionedPhotoAssetUrl(selectedPhoto, 'mobileImage', '')
       : '';
-    const imageSrc = isMobileLayout && mobileImageSrc && !showFullResolution && !useFullImageFallback
+    const imageSrc = isNarrowViewport && mobileImageSrc && !showFullResolution && !useFullImageFallback
       ? mobileImageSrc
       : fullImageSrc;
     const downloadSrc = selectedPhotoId
@@ -378,8 +392,8 @@ const PhotoModal = () => {
     );
     const { isLoaded: isFullImageLoaded, setIsLoaded: setIsFullImageLoaded, markLoaded: markFullImageLoaded } = useSharedImageLoadState(imageSrc, modalOpen && Boolean(selectedPhotoId));
     const isImageDisplayReady = isFullImageLoaded || isQualitySwitching;
-    const mobileImageZoom = useImagePinchZoom({
-      enabled: modalOpen && isMobileLayout && isFullImageLoaded,
+    const imageZoom = useImagePinchZoom({
+      enabled: modalOpen && isNarrowViewport && hasCoarseInput && isFullImageLoaded,
       resetKey: `${modalOpen ? 'open' : 'closed'}:${selectedPhotoId || ''}`
     });
 
@@ -393,7 +407,7 @@ const PhotoModal = () => {
     useEffect(() => {
       if (
         !modalOpen ||
-        !isMobileLayout ||
+        !isNarrowViewport ||
         !isFullImageLoaded ||
         showFullResolution ||
         !selectedPhotoId ||
@@ -444,7 +458,7 @@ const PhotoModal = () => {
         cancelled = true;
         window.clearTimeout(timeoutId);
       };
-    }, [isFullImageLoaded, isMobileLayout, modalOpen, photos, selectedPhotoId, showFullResolution]);
+    }, [isFullImageLoaded, isNarrowViewport, modalOpen, photos, selectedPhotoId, showFullResolution]);
 
     const handleImageError = useCallback((event) => {
       setIsQualitySwitching(false);
@@ -529,11 +543,11 @@ const PhotoModal = () => {
         }
     };
 
-    const handleMobileCarouselScroll = useCallback((event) => {
+    const handlePagerScroll = useCallback((event) => {
         const { scrollLeft, clientWidth } = event.currentTarget;
         if (!clientWidth) return;
         const nextSlide = Math.round(scrollLeft / clientWidth);
-        setActiveMobileSlide((prev) => (prev === nextSlide ? prev : nextSlide));
+        setActivePagerSlide((prev) => (prev === nextSlide ? prev : nextSlide));
     }, []);
     
     const handleLocationClick = () => {
@@ -602,24 +616,24 @@ const PhotoModal = () => {
         return { width, height };
     })();
 
-    const useCompactPagerLayout = isMobileLayout || isCompactViewport;
+    const useCompactPagerLayout = isCompactViewport;
     const isPortraitPhoto = Boolean(parsedResolution && parsedResolution.height > parsedResolution.width);
 
     useEffect(() => {
-        if (!modalOpen || !(isMobileLayout || isCompactViewport)) return;
-        setActiveMobileSlide(0);
-        if (mobileCarouselRef.current) {
-            mobileCarouselRef.current.scrollTo({ left: 0, behavior: 'auto' });
+        if (!modalOpen || !isCompactViewport) return;
+        setActivePagerSlide(0);
+        if (pagerCarouselRef.current) {
+            pagerCarouselRef.current.scrollTo({ left: 0, behavior: 'auto' });
         }
-    }, [isCompactViewport, isMobileLayout, modalOpen, selectedPhotoId]);
+    }, [isCompactViewport, modalOpen, selectedPhotoId]);
 
     const handlePagerSelectSlide = useCallback((index) => {
-      const carouselNode = mobileCarouselRef.current;
+      const carouselNode = pagerCarouselRef.current;
       if (!carouselNode) return;
 
       const nextLeft = index * carouselNode.clientWidth;
       carouselNode.scrollTo({ left: nextLeft, behavior: 'smooth' });
-      setActiveMobileSlide(index);
+      setActivePagerSlide(index);
     }, []);
 
     useEffect(() => {
@@ -646,15 +660,16 @@ const PhotoModal = () => {
 
       scheduleEvaluate();
 
-      const observer = new ResizeObserver(scheduleEvaluate);
-      observer.observe(panel);
-
-      window.addEventListener('resize', scheduleEvaluate);
+      const observer = typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver(scheduleEvaluate);
+      observer?.observe(panel);
+      if (!observer) window.addEventListener('resize', scheduleEvaluate);
 
       return () => {
         if (frameId !== null) cancelAnimationFrame(frameId);
-        observer.disconnect();
-        window.removeEventListener('resize', scheduleEvaluate);
+        observer?.disconnect();
+        if (!observer) window.removeEventListener('resize', scheduleEvaluate);
       };
     }, [modalOpen, selectedPhotoId, useCompactPagerLayout]);
 
@@ -668,15 +683,15 @@ const PhotoModal = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: isMobileLayout ? 0.16 : 0.25 }}
+            transition={{ duration: isNarrowViewport ? 0.16 : 0.25 }}
             onClick={handleOverlayClick}
             >
             <ModalContent
             $compactLayout={useCompactPagerLayout}
-            initial={isMobileLayout ? { opacity: 0, y: 8 } : { scale: 0.8, opacity: 0 }}
-            animate={isMobileLayout ? { opacity: 1, y: 0 } : { scale: 1, opacity: 1 }}
-            exit={isMobileLayout ? { opacity: 0, y: 8 } : { scale: 0.8, opacity: 0 }}
-            transition={{ duration: isMobileLayout ? 0.18 : 0.3 }}
+            initial={isNarrowViewport ? { opacity: 0, y: 8 } : { scale: 0.8, opacity: 0 }}
+            animate={isNarrowViewport ? { opacity: 1, y: 0 } : { scale: 1, opacity: 1 }}
+            exit={isNarrowViewport ? { opacity: 0, y: 8 } : { scale: 0.8, opacity: 0 }}
+            transition={{ duration: isNarrowViewport ? 0.18 : 0.3 }}
             onClick={(e) => e.stopPropagation()}
             >
             <CloseButton
@@ -728,13 +743,13 @@ const PhotoModal = () => {
             />
             </ImageContainer>
             ) : (
-              <PhotoModalMobilePager
-                activeSlide={activeMobileSlide}
-                carouselRef={mobileCarouselRef}
-                onScroll={handleMobileCarouselScroll}
+              <PhotoModalPager
+                activeSlide={activePagerSlide}
+                carouselRef={pagerCarouselRef}
+                onScroll={handlePagerScroll}
                 onSelectSlide={handlePagerSelectSlide}
-                footerAction={activeMobileSlide === 0 && mobileImageSrc && !useFullImageFallback ? (
-                  <MobileQualityButton
+                footerAction={activePagerSlide === 0 && mobileImageSrc && !useFullImageFallback ? (
+                  <PagerQualityButton
                     type="button"
                     $active={showFullResolution}
                     $loading={isQualitySwitching}
@@ -746,28 +761,28 @@ const PhotoModal = () => {
                     onClick={handleQualityToggle}
                   >
                     {isQualitySwitching
-                      ? <MobileQualityLoader size={17} strokeWidth={2.25} aria-hidden="true" />
+                      ? <PagerQualityLoader size={17} strokeWidth={2.25} aria-hidden="true" />
                       : <Maximize2 size={17} strokeWidth={2.25} aria-hidden="true" />}
-                  </MobileQualityButton>
+                  </PagerQualityButton>
                 ) : null}
-                footerEndAction={activeMobileSlide === 0 && isFullImageLoaded ? (
-                  <MobileQualityButton
+                footerEndAction={activePagerSlide === 0 && isFullImageLoaded ? (
+                  <PagerQualityButton
                     type="button"
-                    $active={mobileImageZoom.isZoomed}
-                    aria-pressed={mobileImageZoom.isZoomed}
-                    aria-label={mobileImageZoom.isZoomed ? 'Riduci foto' : 'Ingrandisci foto'}
-                    title={mobileImageZoom.isZoomed ? 'Riduci foto' : 'Ingrandisci foto'}
-                    onClick={mobileImageZoom.toggle}
+                    $active={imageZoom.isZoomed}
+                    aria-pressed={imageZoom.isZoomed}
+                    aria-label={imageZoom.isZoomed ? 'Riduci foto' : 'Ingrandisci foto'}
+                    title={imageZoom.isZoomed ? 'Riduci foto' : 'Ingrandisci foto'}
+                    onClick={imageZoom.toggle}
                   >
-                    {mobileImageZoom.isZoomed
+                    {imageZoom.isZoomed
                       ? <ZoomOut size={18} strokeWidth={2.25} aria-hidden="true" />
                       : <ZoomIn size={18} strokeWidth={2.25} aria-hidden="true" />}
-                  </MobileQualityButton>
+                  </PagerQualityButton>
                 ) : null}
               >
-                <MobileImageSlide
-                  ref={mobileImageZoom.containerRef}
-                  {...mobileImageZoom.handlers}
+                <PagerImageSlide
+                  ref={imageZoom.containerRef}
+                  {...imageZoom.handlers}
                 >
                   {previewSrc && (
                     <ImagePreview
@@ -780,20 +795,20 @@ const PhotoModal = () => {
                   <LoadingBackdrop
                     initial={{ opacity: 0 }}
                     animate={{ opacity: isImageDisplayReady ? 0 : 1 }}
-                    transition={{ duration: isMobileLayout ? 0.12 : 0.2, ease: 'easeOut' }}
+                    transition={{ duration: isNarrowViewport ? 0.12 : 0.2, ease: 'easeOut' }}
                   >
                     <LoadingSpinner
-                      animate={isMobileLayout
+                      animate={isNarrowViewport
                         ? { opacity: isImageDisplayReady ? 0 : 1 }
                         : { opacity: isImageDisplayReady ? 0 : 1, scale: isImageDisplayReady ? 0.96 : 1 }}
-                      transition={{ duration: isMobileLayout ? 0.12 : 0.18, ease: 'easeOut' }}
+                      transition={{ duration: isNarrowViewport ? 0.12 : 0.18, ease: 'easeOut' }}
                     />
                   </LoadingBackdrop>
                   <ModalImage
                     as="img"
-                    ref={mobileImageZoom.imageRef}
+                    ref={imageZoom.imageRef}
                     $zoomable
-                    $zoomed={mobileImageZoom.isZoomed}
+                    $zoomed={imageZoom.isZoomed}
                     $loaded={isImageDisplayReady}
                     src={imageSrc}
                     alt={selectedPhoto.title}
@@ -802,15 +817,15 @@ const PhotoModal = () => {
                     decoding="async"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    transition={{ duration: isMobileLayout ? 0.18 : 0.28 }}
+                    transition={{ duration: isNarrowViewport ? 0.18 : 0.28 }}
                     onLoad={() => {
                       markFullImageLoaded();
                       setIsQualitySwitching(false);
                     }}
                     onError={handleImageError}
                   />
-                </MobileImageSlide>
-                <MobileInfoSlide>
+                </PagerImageSlide>
+                <PagerInfoSlide>
                   <PhotoModalDetails
                     photo={selectedPhoto}
                     canDownload={canDownload}
@@ -822,10 +837,11 @@ const PhotoModal = () => {
                     formatDate={formatDate}
                     formatResolution={formatResolution}
                     withMotion={false}
-                    compactDesktop={isCompactViewport && !isMobileLayout}
+                    constrainContent={isCompactViewport && !isNarrowViewport}
+                    preferNativeShare={preferNativeShare}
                   />
-                </MobileInfoSlide>
-              </PhotoModalMobilePager>
+                </PagerInfoSlide>
+              </PhotoModalPager>
             )}
 
             {!useCompactPagerLayout && (
@@ -841,7 +857,8 @@ const PhotoModal = () => {
                   formatDate={formatDate}
                   formatResolution={formatResolution}
                   withMotion
-                  compactDesktop={false}
+                  constrainContent={false}
+                  preferNativeShare={preferNativeShare}
                 />
               </InfoPanel>
             )}

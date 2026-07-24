@@ -7,6 +7,7 @@ import Section from '../ui/Section';
 import FeaturedSeries from '../components/FeaturedSeries';
 import FeaturedGallery from '../components/FeaturedGallery';
 import useSeo from '../seo/useSeo';
+import { viewportBreakpoints } from '../styles/responsive';
 
 const HomeSurface = styled.div`
   position: relative;
@@ -44,7 +45,7 @@ const Container = styled.div`
   margin: 0 auto;
   padding: 0 var(--spacing-xl);
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     padding: 0 var(--spacing-lg);
   }
 `;
@@ -59,7 +60,7 @@ const Card = styled.div`
   align-items: center;
   gap: 20px;
 
-  @media (max-width: 900px) {
+  @media (max-width: ${viewportBreakpoints.content}px) {
     grid-template-columns: 1fr;
     align-items: start;
   }
@@ -86,7 +87,7 @@ const Buttons = styled.div`
   justify-content: flex-end;
   flex-wrap: wrap;
 
-  @media (max-width: 900px) {
+  @media (max-width: ${viewportBreakpoints.content}px) {
     justify-content: flex-start;
   }
 `;

@@ -4,13 +4,14 @@ import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { usePhotos } from '../contexts/PhotoContext';
 import { resolveVersionedPhotoAssetUrl } from '../utils/imageUrl';
+import { viewportBreakpoints } from '../styles/responsive';
 
 const Grid = styled(motion.div)`
   display: grid;
   grid-template-columns: repeat(12, 1fr);
   gap: 10px;
 
-  @media (max-width: 900px) {
+  @media (max-width: ${viewportBreakpoints.content}px) {
     grid-template-columns: repeat(6, 1fr);
   }
 

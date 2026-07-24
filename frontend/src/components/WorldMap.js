@@ -4,11 +4,23 @@ import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import { Globe2, MapPin, Minus, Pause, Play, Plus } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
+import { viewportBreakpoints } from '../styles/responsive';
 import { 
     createWorldMapNavigation, 
     GLOBE_RADIUS as NAV_GLOBE_RADIUS,
-    CAMERA_START_Z as NAV_CAMERA_START_Z
+    CAMERA_START_Z as NAV_CAMERA_START_Z,
+    NAVIGATION_UPDATE_CAMERA,
+    NAVIGATION_UPDATE_ROTATION
 } from '../utils/WorldMapNavigation';
+import {
+    configureBoundaryMaskTexture,
+    createWorldMapGlobeResources,
+    selectWorldMapTextureSet
+} from '../utils/WorldMapGlobeResources';
+import {
+    buildGridClusters,
+    buildProximityClusters
+} from '../utils/WorldMapClustering';
 
 import { useInView } from 'react-intersection-observer';
 
@@ -27,6 +39,125 @@ const FOCUS_OFFSET_RADIUS   = GLOBE_RADIUS + 1.2;
 const RESUME_ROTATE_DELAY   = 10000; // ms
 const START_LON_OFFSET_DEG = -105; // rome longitude offset
 
+const createAnimationLifecycleController = () => {
+    let active = false;
+    let disposed = false;
+    let mainLoop = null;
+    let mainFrameId = null;
+    let nextSecondaryFrameId = 0;
+    let pausedAt = performance.now();
+    let totalPausedTime = 0;
+    const secondaryFrames = new Map();
+
+    const getLifecycleTime = (timestamp = performance.now()) => timestamp - totalPausedTime;
+
+    const scheduleMainLoop = () => {
+        if (!active || disposed || !mainLoop || mainFrameId !== null) return;
+
+        mainFrameId = window.requestAnimationFrame((timestamp) => {
+            mainFrameId = null;
+            if (!active || disposed || !mainLoop) return;
+
+            mainLoop(getLifecycleTime(timestamp));
+            scheduleMainLoop();
+        });
+    };
+
+    const scheduleSecondaryFrame = (token, entry) => {
+        if (!active || disposed || entry.frameId !== null || !secondaryFrames.has(token)) return;
+
+        entry.frameId = window.requestAnimationFrame((timestamp) => {
+            entry.frameId = null;
+            if (!active || disposed || !secondaryFrames.has(token)) return;
+
+            secondaryFrames.delete(token);
+            entry.callback(getLifecycleTime(timestamp));
+        });
+    };
+
+    const pause = () => {
+        if (!active || disposed) return;
+
+        active = false;
+        pausedAt = performance.now();
+        if (mainFrameId !== null) {
+            window.cancelAnimationFrame(mainFrameId);
+            mainFrameId = null;
+        }
+        secondaryFrames.forEach((entry) => {
+            if (entry.frameId !== null) {
+                window.cancelAnimationFrame(entry.frameId);
+                entry.frameId = null;
+            }
+        });
+    };
+
+    const resume = () => {
+        if (active || disposed) return;
+
+        if (pausedAt !== null) {
+            totalPausedTime += performance.now() - pausedAt;
+            pausedAt = null;
+        }
+        active = true;
+        scheduleMainLoop();
+        secondaryFrames.forEach((entry, token) => scheduleSecondaryFrame(token, entry));
+    };
+
+    const cancelAllSecondaryFrames = () => {
+        secondaryFrames.forEach((entry) => {
+            if (entry.frameId !== null) window.cancelAnimationFrame(entry.frameId);
+        });
+        secondaryFrames.clear();
+    };
+
+    return {
+        revive() {
+            if (!disposed) return;
+            disposed = false;
+            active = false;
+            pausedAt = performance.now();
+            totalPausedTime = 0;
+        },
+        setMainLoop(callback) {
+            if (mainFrameId !== null) {
+                window.cancelAnimationFrame(mainFrameId);
+                mainFrameId = null;
+            }
+            mainLoop = callback;
+            scheduleMainLoop();
+        },
+        requestSecondaryFrame(callback) {
+            if (disposed) return null;
+
+            const token = ++nextSecondaryFrameId;
+            const entry = { callback, frameId: null };
+            secondaryFrames.set(token, entry);
+            scheduleSecondaryFrame(token, entry);
+            return token;
+        },
+        cancelSecondaryFrame(token) {
+            if (token === null || token === undefined) return;
+            const entry = secondaryFrames.get(token);
+            if (!entry) return;
+            if (entry.frameId !== null) window.cancelAnimationFrame(entry.frameId);
+            secondaryFrames.delete(token);
+        },
+        pause,
+        resume,
+        now: () => getLifecycleTime(),
+        dispose() {
+            if (mainFrameId !== null) window.cancelAnimationFrame(mainFrameId);
+            mainFrameId = null;
+            mainLoop = null;
+            cancelAllSecondaryFrames();
+            active = false;
+            disposed = true;
+            pausedAt = null;
+        }
+    };
+};
+
 const MapSection = styled(motion.section)`
   padding: var(--spacing-2xl) 0 var(--spacing-4xl);
   background: transparent;
@@ -41,7 +172,7 @@ const Container = styled.div`
   padding: 0 var(--spacing-xl);
   width: 100%;
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     padding: 0 var(--spacing-lg);
   }
 `;
@@ -66,7 +197,7 @@ const GlobeWrapper = styled(motion.div)`
   margin-bottom: var(--spacing-2xl);
   background: radial-gradient(circle at 30% 30%, #0a0a0f, #050506);
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     height: 400px;
     margin-bottom: var(--spacing-xl);
   }
@@ -92,7 +223,7 @@ const Controls = styled(motion.div)`
   gap: var(--spacing-sm);
   z-index: 10;
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     top: var(--spacing-md);
     right: var(--spacing-md);
     gap: var(--spacing-xs);
@@ -121,7 +252,7 @@ const ControlButton = styled.button`
     box-shadow: 0 8px 20px rgba(79, 172, 254, 0.3);
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     width: 36px;
     height: 36px;
     font-size: var(--font-size-sm);
@@ -157,7 +288,7 @@ const LockIcon = styled.div`
   font-size: 12px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
   
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     width: 18px;
     height: 18px;
     font-size: 10px;
@@ -171,7 +302,7 @@ const CompassSVG = styled.svg`
   height: 32px;
   transition: transform 0.3s ease;
   
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     width: 28px;
     height: 28px;
   }
@@ -222,7 +353,7 @@ const StatsContainer = styled(motion.div)`
   gap: var(--spacing-xl);
   margin-top: var(--spacing-2xl);
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     grid-template-columns: repeat(2, 1fr);
     gap: var(--spacing-lg);
   }
@@ -291,21 +422,36 @@ const WorldMap = ({ headingLevel = 'h2' }) => {
     const sceneRef = useRef(null);
     const rendererRef = useRef(null);
     const globeRef = useRef(null);
+    const rotationGroupRef = useRef(null);
     const cameraRef = useRef(null);
     const controlsRef = useRef(null);
+    const globeReadyRef = useRef(false);
     const markersRef = useRef([]);
     const markerObjectsRef = useRef([]); // Cache per raycasting
+    const hoveredMarkerObjectRef = useRef(null);
+    const markerScaleRef = useRef(1);
+    const renderRequestedRef = useRef(true);
+    const animationLifecycleRef = useRef(null);
+    if (animationLifecycleRef.current === null) {
+        animationLifecycleRef.current = createAnimationLifecycleController();
+    }
+    const globeInViewRef = useRef(false);
+    const webglContextAvailableRef = useRef(true);
     const [mapLoaded, setMapLoaded] = useState(false);
+    const [hasEnteredView, setHasEnteredView] = useState(false);
     const [autoRotate, setAutoRotate] = useState(true);
     const autoRotateTimerRef = useRef(null);
     const [hoveredMarker, setHoveredMarker] = useState(null);
+    const hoveredMarkerDataRef = useRef(null);
     const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
     const [adjustedPosition, setAdjustedPosition] = useState({ x: 0, y: 0 });
     const popupRef = useRef(null);
     const skipUnzoomRef = useRef(false);
     const disablePopupRef = useRef(false);
     const isAnimatingRef = useRef(false); // Blocca interazioni durante animazioni
-    const [compassRotation, setCompassRotation] = useState(0); // Rotazione della bussola
+    const compassSvgRef = useRef(null);
+    const compassNorthLabelRef = useRef(null);
+    const compassNorthVectorRef = useRef(new THREE.Vector3(0, 1, 0));
     const [northLocked, setNorthLocked] = useState(false); // Modalità blocco nord
     
     useLayoutEffect(() => {
@@ -338,10 +484,44 @@ const WorldMap = ({ headingLevel = 'h2' }) => {
     
     const lastMouseMoveTime = useRef(0); // Per throttling
     const { ref, inView } = useInView({
-        threshold: 0.1,
-        triggerOnce: true
+        threshold: 0.1
     });
     const prevRadiusRef = useRef(null);
+
+    useEffect(() => {
+        globeInViewRef.current = inView;
+        if (inView) setHasEnteredView(true);
+
+        const lifecycle = animationLifecycleRef.current;
+        if (inView && !document.hidden && webglContextAvailableRef.current) {
+            lifecycle.resume();
+        }
+        else lifecycle.pause();
+    }, [inView]);
+
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            const lifecycle = animationLifecycleRef.current;
+            if (
+                globeInViewRef.current
+                && !document.hidden
+                && webglContextAvailableRef.current
+            ) lifecycle.resume();
+            else lifecycle.pause();
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        handleVisibilityChange();
+        return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    }, []);
+
+    const requestSecondaryAnimationFrame = useCallback((callback) => (
+        animationLifecycleRef.current.requestSecondaryFrame(callback)
+    ), []);
+
+    const cancelSecondaryAnimationFrame = useCallback((token) => {
+        animationLifecycleRef.current.cancelSecondaryFrame(token);
+    }, []);
     
     // Disattiva l’auto-rotazione e sincronizza lo stato del pulsante
     const disableAutoRotate = useCallback(() => {
@@ -367,6 +547,20 @@ const setCanvasCursor = useCallback((value) => {
         cursorRef.current = value;
     }
 }, []);
+
+const clearMarkerHover = useCallback(() => {
+    const hoveredObject = hoveredMarkerObjectRef.current;
+    if (hoveredObject) {
+        hoveredObject.isHovered = false;
+        hoveredObject.pulseScale?.(0, markerScaleRef.current);
+        hoveredMarkerObjectRef.current = null;
+        renderRequestedRef.current = true;
+    }
+    if (hoveredMarkerDataRef.current !== null) {
+        hoveredMarkerDataRef.current = null;
+        setHoveredMarker(null);
+    }
+}, []);
 // ————————————————————————————————————————————————
 
 /**
@@ -388,16 +582,7 @@ const latLngToVector3 = useCallback((lat, lng, radius = GLOBE_RADIUS) => {    co
 // Creates a 3D marker for a photo or cluster
 const createMarker = useCallback((position, photo, isCluster = false) => {
     const markerGroup = new THREE.Group();
-    
-    // Store the original position without any offset for rotation calculations
-    markerGroup.originalPosition = position.clone();
-    
-    // Apply initial offset to the marker's current position
-    const initialQuat = new THREE.Quaternion().setFromEuler(
-        new THREE.Euler(0, THREE.MathUtils.degToRad(START_LON_OFFSET_DEG), 0)
-    );
-    const offsetPosition = position.clone().applyQuaternion(initialQuat);
-    markerGroup.position.copy(offsetPosition);
+    markerGroup.position.copy(position);
     
     markerGroup.userData = photo;
     
@@ -415,6 +600,8 @@ const createMarker = useCallback((position, photo, isCluster = false) => {
     // Move dot slightly outward along the normal
     const normal = position.clone().normalize();
     dot.translateOnAxis(normal, 0.015);
+    dot.updateMatrix();
+    dot.matrixAutoUpdate = false;
     markerGroup.add(dot);
     
     // states
@@ -431,13 +618,15 @@ const createMarker = useCallback((position, photo, isCluster = false) => {
         : scaleFactor * baseScale;
         
         markerGroup.dot.scale.setScalar(targetScale);
+        markerGroup.dot.updateMatrix();
         if (markerGroup.ring) {
             markerGroup.ring.scale.setScalar(targetScale * 0.9);
+            markerGroup.ring.updateMatrix();
         }
     };
-    
-    // Orienta il marker
-    markerGroup.lookAt(position.clone().add(normal));
+
+    markerGroup.updateMatrix();
+    markerGroup.matrixAutoUpdate = false;
     
     return markerGroup;
 }, []);
@@ -451,43 +640,14 @@ const radiusToLevel = (r) => {
     return 3;                  // tutti i pin
 };
 
-// raggruppa le foto in celle di griglia lat/lng di ampiezza stepDeg
-const buildClustersForStep = (photos, stepDeg) => {
-    if (stepDeg === 0) {
-        // Anche al livello massimo, raggruppa marker con coordinate identiche
-        const exactLocationMap = new Map();
-        photos.forEach(p => {
-            const key = `${p.lat}_${p.lng}`; // Chiave basata su coordinate esatte
-            if (!exactLocationMap.has(key)) {
-                exactLocationMap.set(key, { center: [p.lat, p.lng], photos: [] });
-            }
-            exactLocationMap.get(key).photos.push(p);
-        });
-        return Array.from(exactLocationMap.values());
-    }
-    const idOf = (lat, lng) =>
-        `${Math.floor(lat / stepDeg)}_${Math.floor(lng / stepDeg)}`;
-    
-    const map = new Map();
-    photos.forEach(p => {
-        const id = idOf(p.lat, p.lng);
-        if (!map.has(id)) map.set(id, { sumLat: 0, sumLng: 0, photos: [] });
-        const c = map.get(id);
-        c.sumLat += p.lat;
-        c.sumLng += p.lng;
-        c.photos.push(p);
-    });
-    
-    return Array.from(map.values()).map(c => ({
-        center: [c.sumLat / c.photos.length, c.sumLng / c.photos.length],
-        photos: c.photos,
-    }));
-};
-
-// pre‑costruisci i cluster per 4 livelli (step 20°, 8°, 4°, 0°)
+// Pre-costruisci i cluster. Al livello più vicino usa la distanza geografica
+// reale, così due località ai lati di una cella non generano marker sovrapposti.
 const clusterLevels = useMemo(() => {
-    const steps = [20, 8, 4, 0.32]; // step finale per cluster precisi: 35 km
-    return steps.map(step => buildClustersForStep(validPhotos, step));
+    const coarseSteps = [20, 8, 4];
+    return [
+        ...coarseSteps.map(step => buildGridClusters(validPhotos, step)),
+        buildProximityClusters(validPhotos, 0.32)
+    ];
 }, [validPhotos]);
 
 // livello corrente dei cluster
@@ -495,10 +655,22 @@ const currentClusterLevelRef = useRef(-1);
 
 // rimuove i marker vecchi e disegna quelli del livello richiesto
 const drawMarkersForLevel = useCallback((level) => {
-    // elimina marker esistenti
-    markersRef.current.forEach(m => sceneRef.current?.remove(m));
+    const rotationGroup = rotationGroupRef.current;
+    if (!rotationGroup) return;
+
+    // Remove and dispose the previous level before replacing it.
+    clearMarkerHover();
+    markersRef.current.forEach((marker) => {
+        rotationGroup.remove(marker);
+        marker.traverse((child) => {
+            child.geometry?.dispose();
+            if (Array.isArray(child.material)) child.material.forEach(material => material.dispose());
+            else child.material?.dispose();
+        });
+    });
     markersRef.current = [];
     markerObjectsRef.current = [];
+    hoveredMarkerObjectRef.current = null;
     
     clusterLevels[level].forEach(cluster => {
         const pos = latLngToVector3(
@@ -511,7 +683,7 @@ const drawMarkersForLevel = useCallback((level) => {
         marker.userData.photos = cluster.photos;             // array completo
         marker.userData.isCluster = isCluster; // indica se è un cluster
         marker.userData.center = cluster.center; // aggiungi il centro del cluster
-        sceneRef.current.add(marker);
+        rotationGroup.add(marker);
         markersRef.current.push(marker);
         marker.traverse(child => {
             if (child.isMesh) markerObjectsRef.current.push(child);
@@ -520,18 +692,19 @@ const drawMarkersForLevel = useCallback((level) => {
     
     // Aggiorna immediatamente la scala dei marker appena creati
     if (cameraRef.current) {
-        const scaleFactor = THREE.MathUtils.clamp(
+        markerScaleRef.current = THREE.MathUtils.clamp(
             cameraRef.current.position.length() / CAMERA_START_Z,
             0.35,
             1
         );
         markersRef.current.forEach((marker) => {
             if (marker.pulseScale) {
-                marker.pulseScale(0, scaleFactor);
+                marker.pulseScale(0, markerScaleRef.current);
             }
         });
     }
-}, [clusterLevels, latLngToVector3, createMarker]);
+    renderRequestedRef.current = true;
+}, [clusterLevels, latLngToVector3, createMarker, clearMarkerHover]);
 // ————————————————————————————————————————————————
 
 
@@ -555,21 +728,20 @@ const scheduleAutoRotateResume = useCallback((delay = RESUME_ROTATE_DELAY) => {
         // don't resume auto-rotate if modal is open
         if (controlsRef.current && !modalOpen) {
             // clear any hover state and hide popup
-            markersRef.current.forEach(m => m.isHovered = false);
-            setHoveredMarker(null);
+            clearMarkerHover();
             setCanvasCursor('grab');
             // resume auto-rotation
             controlsRef.current.autoRotate = true;
             setAutoRotate(true);
         }
     }, delay);
-}, [setAutoRotate, modalOpen, setHoveredMarker, setCanvasCursor]);
+}, [setAutoRotate, modalOpen, setCanvasCursor, clearMarkerHover]);
 
 // Creates custom controls for the camera with quaternion-based rotation
 const createCustomControls = useCallback((camera, domElement) => {
     const refs = {
         globeRef,
-        markersRef
+        rotationGroupRef
     };
     
     const callbacks = {
@@ -582,31 +754,38 @@ const createCustomControls = useCallback((camera, domElement) => {
     return createWorldMapNavigation(camera, domElement, refs, callbacks);
 }, [disableAutoRotate, scheduleAutoRotateResume, setCanvasCursor]);
 
-// Funzione per calcolare la rotazione della bussola
+// Keep the continuously changing compass transform outside React state.
 const updateCompassRotation = useCallback(() => {
-    if (!globeRef.current) return;
-    
-    // Crea un vettore che punta al nord (polo nord)
-    const northPole = new THREE.Vector3(0, 1, 0);
-    
-    // Applica la rotazione del globo al vettore del polo nord
-    const rotatedNorth = northPole.clone().applyQuaternion(globeRef.current.quaternion);
-    
-    // Proietta il vettore sul piano XZ (vista dall'alto)
-    const projectedNorth = new THREE.Vector2(rotatedNorth.x, -rotatedNorth.z);
-    
-    // Calcola l'angolo rispetto all'asse Y (nord dello schermo)
-    const angle = Math.atan2(projectedNorth.x, projectedNorth.y);
-    
-    // Converti in gradi
-    const degrees = angle * (180 / Math.PI);
-    
-    setCompassRotation(degrees);
+    const rotationGroup = rotationGroupRef.current;
+    if (!rotationGroup) return;
+
+    const rotatedNorth = compassNorthVectorRef.current
+        .set(0, 1, 0)
+        .applyQuaternion(rotationGroup.quaternion);
+    const degrees = Math.atan2(rotatedNorth.x, -rotatedNorth.z) * (180 / Math.PI);
+
+    if (compassSvgRef.current) {
+        compassSvgRef.current.style.transform = `rotate(${degrees}deg)`;
+    }
+    if (compassNorthLabelRef.current) {
+        compassNorthLabelRef.current.style.transform = `rotate(${-degrees}deg)`;
+    }
 }, []);
 
 useEffect(() => {
     const mountElement = mountRef.current;
-    if (!mountElement || !inView) return;
+    if (!mountElement || !hasEnteredView) return;
+
+    webglContextAvailableRef.current = true;
+    const animationLifecycle = animationLifecycleRef.current;
+    animationLifecycle.revive();
+    if (globeInViewRef.current && !document.hidden) animationLifecycle.resume();
+    else animationLifecycle.pause();
+
+    let disposed = false;
+    setMapLoaded(false);
+    globeReadyRef.current = false;
+    globeRef.current = null;
     
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(
@@ -623,7 +802,8 @@ useEffect(() => {
     
     renderer.setClearColor(0x060608, 1);
     renderer.setSize(mountElement.clientWidth, mountElement.clientHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    const renderPixelRatio = Math.min(window.devicePixelRatio, 1.5);
+    renderer.setPixelRatio(renderPixelRatio);
     renderer.domElement.setAttribute('data-testid', 'worldmap-canvas');
     
     renderer.shadowMap.enabled = false;
@@ -637,16 +817,28 @@ useEffect(() => {
     
     // setup camera iniziale
     camera.position.set(0, 0, CAMERA_START_Z);
+
+    // Earth, borders and markers share one transform. Rotating this group is O(1).
+    const initialQuaternion = new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(0, THREE.MathUtils.degToRad(START_LON_OFFSET_DEG), 0)
+    );
+    const rotationGroup = new THREE.Group();
+    rotationGroup.quaternion.copy(initialQuaternion);
+    scene.add(rotationGroup);
+    rotationGroupRef.current = rotationGroup;
     
     // crea controlli personalizzati
     const controls = createCustomControls(camera, renderer.domElement);
     controls.autoRotate = autoRotate;
     controls.northLocked = northLocked; // Passa lo stato iniziale
+    controls.enabled = false;
     controlsRef.current = controls;
 
     if (process.env.NODE_ENV !== 'production') {
         window.__worldmapDebug = {
-            getQuaternion: () => globeRef.current ? globeRef.current.quaternion.toArray() : null,
+            getQuaternion: () => rotationGroupRef.current
+                ? rotationGroupRef.current.quaternion.toArray()
+                : null,
             setAutoRotate: (value) => {
                 if (controlsRef.current) {
                     controlsRef.current.autoRotate = value;
@@ -655,95 +847,70 @@ useEffect(() => {
         };
     }
     
-    // crea geometria della Terra ottimizzata
-    const earthGeometry = new THREE.SphereGeometry(GLOBE_RADIUS, 64, 64);
-    
-    // carica texture ottimizzate
+    // Load source textures. The resource owner below is solely responsible for
+    // meshes, geometries, materials and successful texture instances.
     const textureLoader = new THREE.TextureLoader();
-    
-    const loadTextures = async () => {
-        try {
-            const earthTexture = await new Promise((resolve, reject) => {
-                textureLoader.load(
-                    '/textures/8k_earth_v2.jpg',
-                    resolve,
-                    undefined,
-                    reject
-                );
-            });
-            
-            const earthMaterial = new THREE.MeshLambertMaterial({
-                map: earthTexture,
-                transparent: false
-            });
-            
-            const earth = new THREE.Mesh(earthGeometry, earthMaterial);
-            scene.add(earth);
-            
-            // BORDERS
-            const boundaryTexture = textureLoader.load('/textures/boundaries_8k.png');
-            const boundaryMaterial = new THREE.MeshBasicMaterial({
-                map: boundaryTexture,
-                transparent: true,
-                depthTest: true,
-                opacity: 0.5, 
-                polygonOffset: true,
-                polygonOffsetFactor: -1,
-                polygonOffsetUnits: 1
-            });
-            const boundaryMesh = new THREE.Mesh(
-                new THREE.SphereGeometry(GLOBE_RADIUS + 0.005, 64, 64),
-                boundaryMaterial
-            );
-            scene.add(boundaryMesh);
-            
-            // Apply initial offset to both earth and boundary
-            const initialQuaternion = new THREE.Quaternion().setFromEuler(
-                new THREE.Euler(0, THREE.MathUtils.degToRad(START_LON_OFFSET_DEG), 0)
-            );
-            earth.quaternion.copy(initialQuaternion);
-            boundaryMesh.quaternion.copy(initialQuaternion);
-            
-            globeRef.current = earth;
-            
-            // Store boundary mesh reference in controls for synchronization
-            if (controlsRef.current) {
-                controlsRef.current.boundaryMesh = boundaryMesh;
-                controlsRef.current.globeQuaternion.copy(initialQuaternion);
-                controlsRef.current.targetGlobeQuaternion.copy(initialQuaternion);
+    const loadTexture = (path, role) => new Promise((resolve, reject) => {
+        let pendingTexture = null;
+        pendingTexture = textureLoader.load(
+            path,
+            (texture) => {
+                if (role === 'boundary') {
+                    configureBoundaryMaskTexture(
+                        texture,
+                        renderer.capabilities.isWebGL2
+                    );
+                }
+                resolve(texture);
+            },
+            undefined,
+            (error) => {
+                pendingTexture?.dispose();
+                reject(error);
             }
-            
-            setMapLoaded(true);
-            
-        } catch (error) {
-            console.log('Usando texture di fallback');
-            const fallbackMaterial = new THREE.MeshLambertMaterial({
-                color: 0x6B93D6,
-                transparent: false
-            });
-            
-            const earth = new THREE.Mesh(earthGeometry, fallbackMaterial);
-            scene.add(earth);
-            
-            // Apply initial offset to fallback earth
-            const initialQuaternion = new THREE.Quaternion().setFromEuler(
-                new THREE.Euler(0, THREE.MathUtils.degToRad(START_LON_OFFSET_DEG), 0)
+        );
+    });
+    let controlsEnabledBeforeContextLoss = true;
+    const selectTextureSetForCanvas = () => selectWorldMapTextureSet({
+        canvasHeight: mountElement.clientHeight,
+        pixelRatio: renderer.getPixelRatio(),
+        verticalFov: camera.fov,
+        globeRadius: GLOBE_RADIUS,
+        cameraDistance: CAMERA_START_Z,
+        maxTextureSize: renderer.capabilities.maxTextureSize
+    });
+    let selectedTextureSet = selectTextureSetForCanvas();
+    const globeResources = createWorldMapGlobeResources({
+        rotationGroup,
+        loadTexture,
+        globeRadius: GLOBE_RADIUS,
+        segments: 64,
+        onStateChange: (resourceState) => {
+            globeRef.current = resourceState.earth;
+            globeReadyRef.current = !disposed && resourceState.interactive;
+            controls.enabled = resourceState.interactive
+                ? controlsEnabledBeforeContextLoss
+                : false;
+            renderRequestedRef.current = true;
+            if (!disposed) setMapLoaded(resourceState.interactive);
+        },
+        onFallback: (error, { retainedExisting }) => {
+            if (disposed) return;
+            console.warn(
+                retainedExisting
+                    ? 'Nuova qualità texture non disponibile: mantengo quella corrente'
+                    : 'Texture globo non disponibili: uso il fallback',
+                error
             );
-            earth.quaternion.copy(initialQuaternion);
-            
-            globeRef.current = earth;
-            
-            // Initialize controls quaternion for fallback
-            if (controlsRef.current) {
-                controlsRef.current.globeQuaternion.copy(initialQuaternion);
-                controlsRef.current.targetGlobeQuaternion.copy(initialQuaternion);
-            }
-            
-            setMapLoaded(true);
         }
-    };
-    
-    loadTextures();
+    });
+
+    globeResources.load(selectedTextureSet);
+    if (process.env.NODE_ENV !== 'production' && window.__worldmapDebug) {
+        window.__worldmapDebug.getTextureResolution = () => (
+            globeResources.getSnapshot().textureSet?.width ?? null
+        );
+    }
     
     // atmosfera con shader personalizzato che rispetta l'illuminazione
     const atmosphereGeometry = new THREE.SphereGeometry(ATMOSPHERE_RADIUS, 64, 64);
@@ -802,9 +969,19 @@ useEffect(() => {
     scene.add(ambientLight);
     
     const sunLight = new THREE.DirectionalLight(0xfff6e5, 1.2);
-    //sunLight.position.set(5, 3, 5);
     sunLight.castShadow = false;
     scene.add(sunLight);
+
+    // The camera keeps a fixed orientation; only its radius changes. Compute the
+    // screen-relative sun direction once instead of rebuilding it every frame.
+    const lightDirection = new THREE.Vector3();
+    camera.getWorldDirection(lightDirection).negate();
+    const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
+    const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
+    lightDirection.applyAxisAngle(cameraRight, -THREE.MathUtils.degToRad(32.5));
+    lightDirection.applyAxisAngle(cameraUp, -THREE.MathUtils.degToRad(27.5));
+    sunLight.position.copy(lightDirection.multiplyScalar(GLOBE_RADIUS * 5));
+    atmosphereMaterial.uniforms.lightPosition.value.copy(sunLight.position);
     
     // stelle di sfondo ottimizzate
     const starsGeometry = new THREE.BufferGeometry();
@@ -847,13 +1024,51 @@ useEffect(() => {
     // raycaster ottimizzato
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
+    const markerWorldPosition = new THREE.Vector3();
+    const globeHitSphere = new THREE.Sphere(
+        new THREE.Vector3(0, 0, 0),
+        GLOBE_RADIUS
+    );
+    const globeHitPoint = new THREE.Vector3();
+    const closestIntersectedMarker = (intersections, event, rect) => {
+        let closestObject = null;
+        let closestDistanceSquared = Infinity;
+
+        intersections.forEach(({ object }) => {
+            object.getWorldPosition(markerWorldPosition);
+            markerWorldPosition.project(camera);
+            const screenX = (markerWorldPosition.x * 0.5 + 0.5) * rect.width + rect.left;
+            const screenY = (-markerWorldPosition.y * 0.5 + 0.5) * rect.height + rect.top;
+            const distanceSquared = (
+                (event.clientX - screenX) ** 2
+                + (event.clientY - screenY) ** 2
+            );
+
+            if (distanceSquared < closestDistanceSquared) {
+                closestObject = object;
+                closestDistanceSquared = distanceSquared;
+            }
+        });
+
+        return closestObject;
+    };
+    const isInteractionReady = () => (
+        !disposed
+        && globeResources.isInteractive()
+        && globeRef.current === globeResources.getEarth()
+    );
     
     // mouse move con throttling pesante per performance
     const handleMouseMove = throttle((event) => {
-        // Disabilita l'InfoPopup se un modal è aperto, durante animazioni o dopo un click fino a chiusura modali
+        if (!isInteractionReady()) {
+            clearMarkerHover();
+            if (!isDraggingRef.current) setCanvasCursor('default');
+            return;
+        }
+
+        // Disabilita l’InfoPopup se un modal è aperto, durante animazioni o dopo un click fino a chiusura modali
         if (modalOpen || galleryModalOpen || disablePopupRef.current || isAnimatingRef.current) {
-            markersRef.current.forEach(m => m.isHovered = false);
-            setHoveredMarker(null);
+            clearMarkerHover();
             if (!isDraggingRef.current) setCanvasCursor('grab');
             return;
         }
@@ -864,26 +1079,32 @@ useEffect(() => {
         raycaster.setFromCamera(mouse, camera);
         
         // First check if we're over the globe itself
-        const globeIntersects = raycaster.intersectObject(globeRef.current);
-        const isOverGlobe = globeIntersects.length > 0;
+        const isOverGlobe = raycaster.ray.intersectSphere(
+            globeHitSphere,
+            globeHitPoint
+        ) !== null;
         
         // Then check markers
         const intersects = raycaster.intersectObjects(markerObjectsRef.current);
+        const hoveredObj = closestIntersectedMarker(intersects, event, rect);
         
-        if (intersects.length > 0) {
-            const hoveredObj  = intersects[0].object;
+        if (hoveredObj) {
             const hoveredData = hoveredObj.userData || (hoveredObj.parent ? hoveredObj.parent.userData : null);
             
             // se è un marker diverso, aggiorna lo stato
-            if (hoveredData && hoveredData !== hoveredMarker) {
-                if (hoveredMarker) {
-                    const prev = markersRef.current.find(m => m.userData === hoveredMarker);
-                    if (prev) prev.isHovered = false;
+            if (hoveredData && hoveredData !== hoveredMarkerDataRef.current) {
+                const previousMarker = hoveredMarkerObjectRef.current;
+                if (previousMarker) {
+                    previousMarker.isHovered = false;
+                    previousMarker.pulseScale?.(0, markerScaleRef.current);
                 }
                 
                 // Trova il marker completo per ottenere le informazioni del cluster
                 const fullMarker = markersRef.current.find(m => m.userData === hoveredData);
                 if (fullMarker) {
+                    fullMarker.isHovered = true;
+                    fullMarker.pulseScale?.(0, markerScaleRef.current);
+                    hoveredMarkerObjectRef.current = fullMarker;
                     const enhancedData = {
                         ...hoveredData,
                         isCluster: fullMarker.userData.isCluster,
@@ -894,14 +1115,16 @@ useEffect(() => {
                 } else {
                     setHoveredMarker(hoveredData);
                 }
+                hoveredMarkerDataRef.current = hoveredData;
+                renderRequestedRef.current = true;
             }
             
             // compute marker screen position for InfoPopup
-            const worldPos = hoveredObj.getWorldPosition(new THREE.Vector3());
-            worldPos.project(camera);
+            hoveredObj.getWorldPosition(markerWorldPosition);
+            markerWorldPosition.project(camera);
             const rect = renderer.domElement.getBoundingClientRect();
-            const x = (worldPos.x * 0.5 + 0.5) * rect.width + rect.left;
-            const y = (-worldPos.y * 0.5 + 0.5) * rect.height + rect.top;
+            const x = (markerWorldPosition.x * 0.5 + 0.5) * rect.width + rect.left;
+            const y = (-markerWorldPosition.y * 0.5 + 0.5) * rect.height + rect.top;
             const offsetY = 10;
             const offsetX = 10;
             setPopupPosition({ x: x + offsetX, y: y + offsetY });
@@ -911,8 +1134,7 @@ useEffect(() => {
             
         } else {
             // fuori da tutti i marker: rimuovi hover e nascondi popup
-            markersRef.current.forEach(m => m.isHovered = false);
-            setHoveredMarker(null);
+            clearMarkerHover();
             
             // Set cursor based on whether we're over the globe
             if (!isDraggingRef.current) {
@@ -923,7 +1145,12 @@ useEffect(() => {
     
     const handleClick = (event) => {
         // Ignora click se stiamo già animando o se i modal sono aperti
-        if (isAnimatingRef.current || modalOpen || galleryModalOpen) return;
+        if (
+            !isInteractionReady()
+            || isAnimatingRef.current
+            || modalOpen
+            || galleryModalOpen
+        ) return;
         
         const rect = renderer.domElement.getBoundingClientRect();
         mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -931,20 +1158,19 @@ useEffect(() => {
         
         raycaster.setFromCamera(mouse, camera);
         const intersects = raycaster.intersectObjects(markerObjectsRef.current);
+        const mesh = closestIntersectedMarker(intersects, event, rect);
         
         // Se non abbiamo cliccato su nessun marker, non fare nulla
-        if (intersects.length === 0) return;
+        if (!mesh) return;
         
         // Blocca immediatamente tutte le interazioni
         isAnimatingRef.current = true;
         disablePopupRef.current = true;
         
         // Chiudi l'InfoPopup
-        markersRef.current.forEach(m => m.isHovered = false);
-        setHoveredMarker(null);
+        clearMarkerHover();
         setCanvasCursor('grab');
         
-        const mesh         = intersects[0].object;
         // il “gruppo” completo è sempre il parent di livello 1 (vedi createMarker)
         const markerGroup   = mesh.parent ?? mesh;
         const photosInMarker = markerGroup.userData?.photos ?? [];
@@ -983,109 +1209,120 @@ useEffect(() => {
     // Event listeners
     const canvas = renderer.domElement;
     // Gestione perdita/ripristino contesto WebGL
-    canvas.addEventListener('webglcontextlost', (e) => {
-        e.preventDefault();
+    const handleContextLost = (event) => {
+        event.preventDefault();
+        if (disposed || globeResources.getSnapshot().status === 'context-lost') return;
+
+        controlsEnabledBeforeContextLoss = controls.enabled;
+        controls.cancelInteraction?.();
+        clearMarkerHover();
+        setCanvasCursor('default');
+        webglContextAvailableRef.current = false;
+        globeResources.markContextLost();
+        animationLifecycle.pause();
         console.warn('WebGL context lost');
-    }, false);
-    canvas.addEventListener('webglcontextrestored', () => {
-        console.warn('WebGL context restored');
-        // Ricarica texture della Terra
-        if (typeof loadTextures === 'function') {
-            loadTextures();
+    };
+    const handleContextRestored = () => {
+        if (
+            disposed
+            || globeResources.getSnapshot().status !== 'context-lost'
+        ) return;
+
+        // Three.js recreates GPU-side programs, buffers and textures for the
+        // existing scene. Keep the same owned CPU resources; reloading would
+        // append a second earth/boundary pair.
+        globeResources.markContextRestored();
+        webglContextAvailableRef.current = true;
+        renderRequestedRef.current = true;
+        if (globeInViewRef.current && !document.hidden) {
+            animationLifecycle.resume();
         }
-    }, false);
-    
-    
+        console.warn('WebGL context restored');
+    };
+    const handleCanvasMouseLeave = () => {
+        setCanvasCursor('default');
+    };
+
+    canvas.addEventListener('webglcontextlost', handleContextLost, false);
+    canvas.addEventListener('webglcontextrestored', handleContextRestored, false);
     canvas.addEventListener('mousemove', handleMouseMove);
     canvas.addEventListener('click', handleClick);
-    canvas.addEventListener('mouseleave', () => {
-        setCanvasCursor('default');
-    });
+    canvas.addEventListener('mouseleave', handleCanvasMouseLeave);
     
     // --- Clear hover on wheel/touch to hide InfoPopup when rotating/zooming ---
     const clearHover = () => {
-        markersRef.current.forEach(m => m.isHovered = false);
-        setHoveredMarker(null);
+        clearMarkerHover();
     };
     canvas.addEventListener('wheel', clearHover, { passive: true });
     canvas.addEventListener('touchstart', clearHover, { passive: true });
     canvas.addEventListener('touchmove', clearHover, { passive: true });
     canvas.addEventListener('touchend', clearHover);
     
-    // Animation loop ottimizzato
-    const clock = new THREE.Clock();
-    let frameCount = 0;
-    
-    const animate = () => {
-        requestAnimationFrame(animate);
-        frameCount++;
-        const elapsedTime = clock.getElapsedTime();
-        
-        // Aggiorna controlli
-        if (controlsRef.current) {
-            controlsRef.current.update();
-        }
-        
-        // Aggiorna la rotazione della bussola
-        if (frameCount % 2 === 0) { // Ogni 2 frame per performance
+    // Keep the RAF callback cheap and only draw when something visible changed.
+    let previousFrameTime = null;
+    let starAnimationTime = 0;
+    let markerAnimationTime = 0;
+    const STAR_RENDER_INTERVAL = 1 / 12;
+    const MARKER_RENDER_INTERVAL = 1 / 20;
+
+    const animate = (lifecycleTime) => {
+        if (disposed) return;
+        const deltaSeconds = previousFrameTime === null
+            ? 1 / 60
+            : Math.min(Math.max((lifecycleTime - previousFrameTime) / 1000, 0), 0.05);
+        previousFrameTime = lifecycleTime;
+        let shouldRender = renderRequestedRef.current;
+        renderRequestedRef.current = false;
+
+        const updateFlags = controls.update(deltaSeconds);
+        if (updateFlags & NAVIGATION_UPDATE_ROTATION) {
             updateCompassRotation();
+            shouldRender = true;
         }
-        
-        // Anima i marker solo ogni 3 frame per performance
-        if (frameCount % 3 === 0) {
-            // scala da 1 (lontano) a 0.35 (molto vicino)
-            const scaleFactor = THREE.MathUtils.clamp(
+
+        // Marker scale and clustering depend only on camera distance, not every frame.
+        if (updateFlags & NAVIGATION_UPDATE_CAMERA) {
+            markerScaleRef.current = THREE.MathUtils.clamp(
                 camera.position.length() / CAMERA_START_Z,
                 0.35,
                 1
             );
-            
-            markersRef.current.forEach((marker) => {
-                if (marker.pulseScale) {
-                    marker.pulseScale(elapsedTime, scaleFactor);
-                }
+            markersRef.current.forEach(marker => {
+                marker.pulseScale?.(0, markerScaleRef.current);
             });
+
+            const level = radiusToLevel(camera.position.length());
+            if (level !== currentClusterLevelRef.current) {
+                currentClusterLevelRef.current = level;
+                drawMarkersForLevel(level);
+            }
+            shouldRender = true;
         }
-        
-        // Rotazione lenta delle stelle solo ogni 5 frame
-        if (frameCount % 5 === 0) {
-            stars.rotation.x += 0.0001;
-            stars.rotation.y += 0.0002;
+
+        // Only the hovered marker pulses; static markers no longer require an O(N) pass.
+        markerAnimationTime += deltaSeconds;
+        if (hoveredMarkerObjectRef.current && markerAnimationTime >= MARKER_RENDER_INTERVAL) {
+            hoveredMarkerObjectRef.current.pulseScale?.(
+                lifecycleTime / 1000,
+                markerScaleRef.current
+            );
+            markerAnimationTime = 0;
+            shouldRender = true;
         }
-        
-        // se la distanza camera cambia livello, ridisegna i marker
-        const lvlNow = radiusToLevel(camera.position.length());
-        if (lvlNow !== currentClusterLevelRef.current) {
-            currentClusterLevelRef.current = lvlNow;
-            drawMarkersForLevel(lvlNow);
+
+        // Preserve the existing star speed and update cadence independently of FPS.
+        starAnimationTime += deltaSeconds;
+        if (starAnimationTime >= STAR_RENDER_INTERVAL) {
+            stars.rotation.x += starAnimationTime * 0.0012;
+            stars.rotation.y += starAnimationTime * 0.0024;
+            starAnimationTime = 0;
+            shouldRender = true;
         }
-        
-        // Zona di ombra in basso a sinistra
-        const DISTANCE     = GLOBE_RADIUS * 5;                  // quanto lontano mettiamo il “sole”
-        const TILT_ELEV    = THREE.MathUtils.degToRad(32.5);      // inclinazione verso l’alto
-        const TILT_AZIM     = THREE.MathUtils.degToRad(27.5);     // inclinazione verso destra
-        // 1) Prendi la direzione di vista della camera (punta al centro dello schermo)
-        const dir = new THREE.Vector3();
-        camera.getWorldDirection(dir);      // ora dir punta da camera ➔ centro
-        dir.negate();                       // inverti: da centro ➔ camera (cioè luce che viene verso di te)
-        // 2) Calcola gli assi locali della camera
-        const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
-        const camUp    = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
-        // 3) Applica le due rotazioni locali
-        dir.applyAxisAngle(camRight, -TILT_ELEV);   // “solleva” la luce verso l’alto dello schermo
-        dir.applyAxisAngle(camUp,    -TILT_AZIM);  // sposta la luce verso destra dello schermo
-        // 4) Imposta la posizione del directional light
-        sunLight.position.copy(dir.multiplyScalar(DISTANCE));
-        
-        // Aggiorna la posizione della luce per l'atmosfera (usa la stessa posizione del sunLight)
-        if (atmosphereMaterial && atmosphereMaterial.uniforms) {
-            atmosphereMaterial.uniforms.lightPosition.value.copy(sunLight.position);
-        }
-        
-        renderer.render(scene, camera);
+
+        if (shouldRender) renderer.render(scene, camera);
     };
-    
-    animate();
+
+    animationLifecycle.setMainLoop(animate);
     
     // Handle resize ottimizzato
     const handleResize = throttle(() => {
@@ -1098,26 +1335,38 @@ useEffect(() => {
         camera.updateProjectionMatrix();
         renderer.setSize(width, height);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+        const nextTextureSet = selectTextureSetForCanvas();
+        if (nextTextureSet.key !== selectedTextureSet.key) {
+            selectedTextureSet = nextTextureSet;
+            globeResources.load(nextTextureSet);
+        }
+        renderRequestedRef.current = true;
     }, 100);
     
     window.addEventListener('resize', handleResize);
     
     // Cleanup ottimizzata
     return () => {
+        disposed = true;
+        globeReadyRef.current = false;
+        webglContextAvailableRef.current = false;
+        animationLifecycle.dispose();
         window.removeEventListener('resize', handleResize);
         
         const currentCanvas = renderer.domElement;
+        currentCanvas.removeEventListener('webglcontextlost', handleContextLost, false);
+        currentCanvas.removeEventListener('webglcontextrestored', handleContextRestored, false);
         currentCanvas.removeEventListener('mousemove', handleMouseMove);
         currentCanvas.removeEventListener('click', handleClick);
+        currentCanvas.removeEventListener('mouseleave', handleCanvasMouseLeave);
         // Remove clearHover listeners
         currentCanvas.removeEventListener('wheel', clearHover);
         currentCanvas.removeEventListener('touchstart', clearHover);
         currentCanvas.removeEventListener('touchmove', clearHover);
         currentCanvas.removeEventListener('touchend', clearHover);
         
-        if (controlsRef.current) {
-            controlsRef.current.dispose();
-        }
+        controls.dispose();
+        globeResources.dispose();
 
         if (window.__worldmapDebug) {
             delete window.__worldmapDebug;
@@ -1149,16 +1398,36 @@ useEffect(() => {
         
         renderer.dispose();
         document.body.style.cursor = 'default';
-        if (autoRotateTimerRef.current) { clearTimeout(autoRotateTimerRef.current); }
+        if (autoRotateTimerRef.current) {
+            clearTimeout(autoRotateTimerRef.current);
+            autoRotateTimerRef.current = null;
+        }
+
+        if (sceneRef.current === scene) sceneRef.current = null;
+        if (rendererRef.current === renderer) rendererRef.current = null;
+        if (cameraRef.current === camera) cameraRef.current = null;
+        if (controlsRef.current === controls) controlsRef.current = null;
+        globeRef.current = null;
+        if (rotationGroupRef.current === rotationGroup) rotationGroupRef.current = null;
+        markersRef.current = [];
+        markerObjectsRef.current = [];
+        hoveredMarkerObjectRef.current = null;
+        hoveredMarkerDataRef.current = null;
+        renderRequestedRef.current = true;
     };
-// The renderer is intentionally recreated only when its data or visibility
-// changes. Event handlers read mutable interaction state through refs.
+// Initialize only after the first viewport entry. Later visibility changes
+// pause/resume the lifecycle controller without rebuilding WebGL resources.
 // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [inView, validPhotos, drawMarkersForLevel, updateCompassRotation]);
+}, [hasEnteredView, validPhotos, drawMarkersForLevel, updateCompassRotation, clearMarkerHover]);
 
 // Funzione per raddrizzare il globo (nord in alto)
 const straightenGlobe = useCallback(() => {
-    if (!controlsRef.current || !globeRef.current || !cameraRef.current) return;
+    if (
+        !globeReadyRef.current
+        || !controlsRef.current
+        || !globeRef.current
+        || !cameraRef.current
+    ) return;
     
     const controls = controlsRef.current;
     const camera = cameraRef.current;
@@ -1211,7 +1480,7 @@ const straightenGlobe = useCallback(() => {
         
         // Animazione
         const duration = 800;
-        const start = performance.now();
+        const start = animationLifecycleRef.current.now();
         
         const animate = (now) => {
             const t = Math.min(1, (now - start) / duration);
@@ -1221,14 +1490,8 @@ const straightenGlobe = useCallback(() => {
             controls.globeQuaternion.slerpQuaternions(currentQuat, targetQuat, ease);
             controls.targetGlobeQuaternion.copy(controls.globeQuaternion);
             
-            // Aggiorna la bussola
-            updateCompassRotation();
-            
-            // Forza l'aggiornamento
-            controls.update();
-            
             if (t < 1) {
-                requestAnimationFrame(animate);
+                requestSecondaryAnimationFrame(animate);
             } else {
                 // Riabilita i controlli
                 controls.enabled = prevEnabled;
@@ -1236,7 +1499,7 @@ const straightenGlobe = useCallback(() => {
             }
         };
         
-        requestAnimationFrame(animate);
+        requestSecondaryAnimationFrame(animate);
     } else {
         // Se non troviamo intersezioni, usiamo il metodo di fallback
         // che resetta semplicemente l'inclinazione
@@ -1245,7 +1508,7 @@ const straightenGlobe = useCallback(() => {
         const targetQuat = new THREE.Quaternion().setFromEuler(targetEuler);
         
         const duration = 800;
-        const start = performance.now();
+        const start = animationLifecycleRef.current.now();
         
         const animate = (now) => {
             const t = Math.min(1, (now - start) / duration);
@@ -1253,24 +1516,28 @@ const straightenGlobe = useCallback(() => {
             
             controls.globeQuaternion.slerpQuaternions(currentQuat, targetQuat, ease);
             controls.targetGlobeQuaternion.copy(controls.globeQuaternion);
-            updateCompassRotation();
-            controls.update();
             
             if (t < 1) {
-                requestAnimationFrame(animate);
+                requestSecondaryAnimationFrame(animate);
             } else {
                 controls.enabled = prevEnabled;
                 scheduleAutoRotateResume();
             }
         };
         
-        requestAnimationFrame(animate);
+        requestSecondaryAnimationFrame(animate);
     }
-}, [updateCompassRotation, scheduleAutoRotateResume, setAutoRotate]);
+}, [requestSecondaryAnimationFrame, scheduleAutoRotateResume, setAutoRotate]);
 
 // Funzioni di controllo ottimizzate
 const resetView = () => {
-    if (cameraRef.current && globeRef.current && controlsRef.current) {
+    if (
+        globeReadyRef.current
+        && cameraRef.current
+        && globeRef.current
+        && controlsRef.current
+    ) {
+        controlsRef.current.stopMotion?.();
         // Reset camera distance
         controlsRef.current.spherical.radius = CAMERA_START_Z;
         
@@ -1280,6 +1547,9 @@ const resetView = () => {
         );
         controlsRef.current.targetGlobeQuaternion.copy(initialRotation);
         controlsRef.current.globeQuaternion.copy(initialRotation);
+        if (controlsRef.current.northLocked && controlsRef.current.syncNorthLockState) {
+            controlsRef.current.syncNorthLockState(initialRotation);
+        }
         
         // Re-enable auto-rotate
         controlsRef.current.autoRotate = true;
@@ -1288,6 +1558,7 @@ const resetView = () => {
 };
 
 const toggleAutoRotate = () => {
+    if (!globeReadyRef.current) return;
     const newAutoRotate = !autoRotate;
     setAutoRotate(newAutoRotate);
     if (controlsRef.current) {
@@ -1296,13 +1567,13 @@ const toggleAutoRotate = () => {
 };
 
 const zoomIn = () => {
-    if (controlsRef.current) {
+    if (globeReadyRef.current && controlsRef.current) {
         controlsRef.current.scale = 0.9;
     }
 };
 
 const zoomOut = () => {
-    if (controlsRef.current) {
+    if (globeReadyRef.current && controlsRef.current) {
         controlsRef.current.scale = 1.1;
     }
 };
@@ -1321,13 +1592,20 @@ const focusOnPhoto = useCallback((
     duration = 900,
     onComplete
 ) => {
+    if (
+        !globeReadyRef.current
+        || !photo
+        || !cameraRef.current
+        || !controlsRef.current
+    ) return false;
+
     // Se il focus viene richiesto mentre il modal è ancora aperto (→ “vai alla mappa”)
     if (modalOpen) {
         skipUnzoomRef.current = true;
     }
-    
-    if (!photo || !cameraRef.current || !controlsRef.current) return false;
+
     const controls = controlsRef.current;
+    controls.stopMotion?.();
     prevRadiusRef.current = controls.spherical.radius;  // distanza attuale
     const markerPos = latLngToVector3(photo.lat, photo.lng, 1).normalize(); // posizione del marker
     
@@ -1340,7 +1618,10 @@ const focusOnPhoto = useCallback((
     const rotationAngle = currentMarkerWorld.angleTo(front);
     
     let targetGlobeQuat = controls.globeQuaternion.clone();
-    if (rotationAxis.length() > 0.001) {
+    if (controls.northLocked && controls.createNorthLockedTarget) {
+        targetGlobeQuat = controls.createNorthLockedTarget(markerPos, targetGlobeQuat)
+            || targetGlobeQuat;
+    } else if (rotationAxis.length() > 0.001) {
         rotationAxis.normalize();
         const deltaQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, rotationAngle);
         targetGlobeQuat.premultiply(deltaQuat);
@@ -1357,7 +1638,7 @@ const focusOnPhoto = useCallback((
     controls.autoRotate  = false;
     setAutoRotate(false);
     
-    const start = performance.now();
+    const start = animationLifecycleRef.current.now();
     const animate = (now) => {
         const t = Math.min(1, (now - start) / duration);
         const ease = 1 - Math.pow(1 - t, 2);       // easeOutQuad
@@ -1369,12 +1650,12 @@ const focusOnPhoto = useCallback((
         // Interpolate zoom
         controls.spherical.radius = startRadius + (targetRadius - startRadius) * ease;
         
-        // Update controls
-        controls.update();
-        
         if (t < 1) {
-            requestAnimationFrame(animate);
+            requestSecondaryAnimationFrame(animate);
         } else {
+            if (controls.northLocked && controls.syncNorthLockState) {
+                controls.syncNorthLockState(targetGlobeQuat);
+            }
             controls.enabled     = prevEnabled;
             controls.autoRotate  = prevAutoRotate;   // resta off finché non riprende col timer
             
@@ -1385,12 +1666,13 @@ const focusOnPhoto = useCallback((
             if (typeof onComplete === "function") onComplete();
         }
     };
-    requestAnimationFrame(animate);
+    requestSecondaryAnimationFrame(animate);
     return true;
-}, [latLngToVector3, modalOpen]);
+}, [latLngToVector3, modalOpen, requestSecondaryAnimationFrame]);
 
 useEffect(() => {
     actions.registerFocusHandler(focusOnPhoto);
+    return () => actions.registerFocusHandler(null);
 }, [actions, focusOnPhoto]);
 
 // Handle pending map focus when map is loaded
@@ -1454,7 +1736,12 @@ useEffect(() => {
         return;
     }
     
-    if (!controlsRef.current || !globeRef.current || !cameraRef.current) return;
+    if (
+        !globeReadyRef.current
+        || !controlsRef.current
+        || !globeRef.current
+        || !cameraRef.current
+    ) return;
     
     const controls = controlsRef.current;
     if (modalOpen || galleryModalOpen) {
@@ -1467,29 +1754,14 @@ useEffect(() => {
         return;
     }
     
-    /* --- MODAL CHIUSO: livella + zoom-out (comportamento normale) -------------------------------- */
-    
-    /* 1) Livella inclinazione (rotation.x → 0) */
-    const rotStartX = globeRef.current.rotation.x;
-    const targetRotX = 0;
-    const levelDur = 800;
-    const levelStart = performance.now();
-    
-    const levelAnim = (now) => {
-        const t    = Math.min(1, (now - levelStart) / levelDur);
-        const ease = 1 - Math.pow(1 - t, 2);         // easeOutQuad
-        globeRef.current.rotation.x =
-        rotStartX + (targetRotX - rotStartX) * ease;
-        if (t < 1) requestAnimationFrame(levelAnim);
-    };
-    requestAnimationFrame(levelAnim);
-    
-    /* 2) Zoom-out alla distanza originale */
+    // Zoom out without changing the focused orientation: the selected location
+    // must remain at the centre of the globe after the modal closes.
     const startRadius = controls.spherical.radius;
     const destRadius = prevRadiusRef.current || CAMERA_START_Z;
     
     const zoomDur   = 700;
-    const zoomStart = performance.now();
+    const zoomStart = animationLifecycleRef.current.now();
+    let zoomFrameToken = null;
     
     const zoomAnim = (now) => {
         const t    = Math.min(1, (now - zoomStart) / zoomDur);
@@ -1498,18 +1770,25 @@ useEffect(() => {
         // Interpolate zoom only (keep current rotation)
         controls.spherical.radius = startRadius + (destRadius - startRadius) * ease;
         
-        // Update camera
-        controls.update();
-        
         if (t < 1) {
-            requestAnimationFrame(zoomAnim);
+            zoomFrameToken = requestSecondaryAnimationFrame(zoomAnim);
         } else {
-            /* 3) Dopo lo zoom-out, riattiva auto-rotate con il timer esistente */
+            // Dopo lo zoom-out, riattiva auto-rotate con il timer esistente.
             scheduleAutoRotateResume();
         }
     };
-    requestAnimationFrame(zoomAnim);
-}, [modalOpen, galleryModalOpen, scheduleAutoRotateResume]);
+    zoomFrameToken = requestSecondaryAnimationFrame(zoomAnim);
+
+    return () => {
+        cancelSecondaryAnimationFrame(zoomFrameToken);
+    };
+}, [
+    modalOpen,
+    galleryModalOpen,
+    cancelSecondaryAnimationFrame,
+    requestSecondaryAnimationFrame,
+    scheduleAutoRotateResume
+]);
 
 
 // Calcolo statistiche memoizzato
@@ -1625,17 +1904,16 @@ const itemVariants = {
 return (
     <MapSection
     id="world-map-3d"
-    ref={ref}
     variants={sectionVariants}
     initial="hidden"
-    animate={inView ? "visible" : "hidden"}
+    animate={hasEnteredView ? "visible" : "hidden"}
     >
     <Container>
     <SectionTitle as={headingLevel} variants={itemVariants}>
     Il Mondo in foto
     </SectionTitle>
     
-    <GlobeWrapper variants={itemVariants}>
+    <GlobeWrapper ref={ref} variants={itemVariants}>
     {(loading || !mapLoaded) && (
         <LoadingOverlay>
         <LoadingSpinner />
@@ -1651,6 +1929,7 @@ return (
     <CompassButton 
         data-testid="worldmap-compass"
         onClick={() => {
+            if (!globeReadyRef.current) return;
             // Click sinistro: raddrizza la terra
             if (northLocked && controlsRef.current?.applyNorthLock) {
                 controlsRef.current.applyNorthLock();
@@ -1661,6 +1940,7 @@ return (
         onContextMenu={(e) => {
             e.preventDefault(); // Previene il menu contestuale del browser
             e.stopPropagation();
+            if (!globeReadyRef.current) return;
             // Click destro: toggle del blocco nord
             const newLocked = !northLocked;
             setNorthLocked(newLocked);
@@ -1670,6 +1950,8 @@ return (
                 controlsRef.current.rotationVelocity.set(0, 0);
                 if (newLocked && controlsRef.current.enterNorthLock) {
                     controlsRef.current.enterNorthLock();
+                } else if (!newLocked && controlsRef.current.exitNorthLock) {
+                    controlsRef.current.exitNorthLock();
                 }
             }
         }}
@@ -1680,8 +1962,8 @@ return (
             <LockIcon>🔒</LockIcon>
         )}
         <CompassSVG 
+            ref={compassSvgRef}
             viewBox="0 0 100 100" 
-            style={{ transform: `rotate(${compassRotation}deg)` }}
         >
             {/* Cerchio esterno della bussola */}
             <circle 
@@ -1722,13 +2004,14 @@ return (
             
             {/* Lettera N */}
             <text 
+                ref={compassNorthLabelRef}
                 x="50" 
                 y="20" 
                 textAnchor="middle" 
                 fill="white" 
                 fontSize="14" 
                 fontWeight="bold"
-                style={{ transform: `rotate(${-compassRotation}deg)`, transformOrigin: '50px 50px' }}
+                style={{ transformOrigin: '50px 50px' }}
             >
                 N
             </text>

@@ -8,11 +8,12 @@ import { useSeries } from '../contexts/SeriesContext';
 import { usePhotos } from '../contexts/PhotoContext';
 import SeriesEditor from './SeriesEditor';
 import { resolveVersionedPhotoAssetUrl } from '../utils/imageUrl';
+import { viewportBreakpoints } from '../styles/responsive';
 
 const SectionRoot = styled(motion.section)`
   padding: var(--spacing-4xl) 0;
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     padding: var(--spacing-3xl) 0;
   }
 `;
@@ -27,7 +28,7 @@ const Container = styled.div`
   row-gap: var(--spacing-2xl);
   align-items: start;
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     padding: 0 var(--spacing-md);
     grid-template-columns: 1fr;
     row-gap: var(--spacing-xl);
@@ -115,13 +116,13 @@ const StickyCreate = styled.div`
   grid-column: 2;
   justify-self: end;
 
-  @media (max-width: 1024px) {
+  @media (max-width: ${viewportBreakpoints.large}px) {
     position: static;
     top: auto;
     z-index: auto;
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     grid-column: 1;
     justify-self: start;
     width: 100%;
@@ -134,7 +135,7 @@ const Grid = styled(motion.div)`
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: var(--spacing-xl);
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     grid-template-columns: 1fr;
     gap: var(--spacing-lg);
   }

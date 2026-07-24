@@ -45,12 +45,17 @@ export const useScrollableRail = ({
 
     updateRailFade();
     railNode.addEventListener('scroll', scheduleRailFadeUpdate, { passive: true });
-    window.addEventListener('resize', updateRailFade);
+    const resizeObserver = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(scheduleRailFadeUpdate);
+    resizeObserver?.observe(railNode);
+    if (!resizeObserver) window.addEventListener('resize', scheduleRailFadeUpdate);
 
     return () => {
       if (scrollFrame !== null) cancelAnimationFrame(scrollFrame);
+      resizeObserver?.disconnect();
       railNode.removeEventListener('scroll', scheduleRailFadeUpdate);
-      window.removeEventListener('resize', updateRailFade);
+      if (!resizeObserver) window.removeEventListener('resize', scheduleRailFadeUpdate);
     };
   }, [enabled, itemCount]);
 

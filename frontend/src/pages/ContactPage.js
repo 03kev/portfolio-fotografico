@@ -2,6 +2,7 @@ import React from 'react';
 import styled from 'styled-components';
 import Section from '../ui/Section';
 import useSeo from '../seo/useSeo';
+import { viewportBreakpoints } from '../styles/responsive';
 
 const Wrap = styled.div`
   max-width: 820px;
@@ -28,7 +29,7 @@ const Row = styled.div`
     border-bottom: 0;
   }
 
-  @media (max-width: 640px) {
+  @media (max-width: ${viewportBreakpoints.small}px) {
     flex-direction: column;
   }
 `;

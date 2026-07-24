@@ -16,12 +16,10 @@ export const useDebounce = (value, delay) => {
   return debouncedValue;
 };
 
-export { useCompactViewportLayout } from './useCompactViewportLayout';
 export { useAutoHideOnScroll } from './useAutoHideOnScroll';
-
-export { useMobileDeviceLayout } from './useMobileDeviceLayout';
+export { useMediaQuery } from './useMediaQuery';
 export { useMeasuredLayoutMode } from './useMeasuredLayoutMode';
 export { useTouchLongPressReveal } from './useTouchLongPressReveal';
 export { useHeaderDesktopLayoutMode, HEADER_LAYOUT_MODE } from './useHeaderDesktopLayoutMode';
-export { useGalleryMobileCardState } from './useGalleryMobileCardState';
+export { useGalleryTouchCardState } from './useGalleryTouchCardState';
 export { useScrollableRail } from './useScrollableRail';

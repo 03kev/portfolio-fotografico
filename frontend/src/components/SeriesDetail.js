@@ -14,6 +14,7 @@ import { useToast } from './Toast';
 import { resolveVersionedPhotoAssetUrl } from '../utils/imageUrl';
 import { toAbsoluteImageUrl, toAbsoluteSiteUrl } from '../utils/siteUrl';
 import useMediaQuery from '../hooks/useMediaQuery';
+import { viewportBreakpoints, viewportQueries } from '../styles/responsive';
 import useSeo from '../seo/useSeo';
 
 const PageContainer = styled.div`
@@ -39,7 +40,7 @@ const HeroSection = styled(motion.div)`
     z-index: 1;
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     height: clamp(360px, 58svh, 560px);
     min-height: 360px;
   }
@@ -55,7 +56,7 @@ const CoverImage = styled(motion.div)`
   background-size: cover;
   background-position: center;
 
-  @media (max-width: 1024px) {
+  @media (max-width: ${viewportBreakpoints.large}px) {
     background-image: url(${props => props.$mobileSrc || props.src});
   }
 `;
@@ -71,7 +72,7 @@ const HeroContent = styled.div`
   margin: 0 auto;
   width: 100%;
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     padding: var(--spacing-3xl) var(--spacing-lg) var(--spacing-2xl);
   }
 `;
@@ -98,7 +99,7 @@ const FloatingBackButton = styled(motion.button)`
     border-color: rgba(255, 255, 255, 0.22);
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     top: calc(70px + 12px + env(safe-area-inset-top, 0px));
     left: 12px;
     width: 40px;
@@ -113,7 +114,7 @@ const SeriesTitle = styled(motion.h1)`
   margin-bottom: var(--spacing-md);
   text-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     font-size: clamp(2rem, 10vw, 3rem);
     line-height: 1.05;
     overflow-wrap: anywhere;
@@ -127,7 +128,7 @@ const SeriesDescription = styled(motion.p)`
   line-height: 1.6;
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     font-size: var(--font-size-base);
     line-height: 1.55;
   }
@@ -138,7 +139,7 @@ const ContentSection = styled.div`
   margin: 0 auto;
   padding: ${p => (p.$isAdmin ? 'var(--spacing-2xl)' : 'var(--spacing-4xl)')} var(--spacing-xl) var(--spacing-4xl);
 
-  @media (max-width: 1024px) {
+  @media (max-width: ${viewportBreakpoints.large}px) {
     padding: ${p => (p.$isAdmin ? 'var(--spacing-xl)' : 'var(--spacing-3xl)')} var(--spacing-lg) var(--spacing-3xl);
   }
 
@@ -159,14 +160,14 @@ const AdminBar = styled.div`
   top: calc(78px + 12px);
   z-index: var(--z-sticky);
 
-  @media (max-width: 1024px) {
+  @media (max-width: ${viewportBreakpoints.large}px) {
     position: static;
     top: auto;
     z-index: auto;
     justify-content: flex-start;
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     gap: var(--spacing-sm);
     margin-bottom: var(--spacing-xl);
   }
@@ -235,7 +236,7 @@ const CanvasFrame = styled.div`
   box-shadow: ${props => (props.$showBorder ? '0 0 0 1px rgba(255,255,255,0.08)' : 'none')};
   transition: box-shadow 0.2s ease;
 
-  @media (max-width: 1024px) {
+  @media (max-width: ${viewportBreakpoints.large}px) {
     padding: ${props => (props.$showBorder ? 'var(--spacing-md)' : '0')};
     width: ${props => (props.$showBorder ? 'max-content' : '100%')};
     min-width: ${props => (props.$showBorder ? '100%' : '0')};
@@ -394,7 +395,7 @@ const Inspector = styled.div`
   box-shadow: 0 18px 46px rgba(0,0,0,0.38);
   padding: var(--spacing-lg);
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     top: auto;
     right: max(10px, env(safe-area-inset-right, 0px));
     bottom: max(10px, env(safe-area-inset-bottom, 0px));
@@ -436,7 +437,7 @@ const InspectorClose = styled.button`
 
   &:hover { background: rgba(255,255,255,0.12); }
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     margin-top: 0;
     margin-right: 0;
   }
@@ -595,7 +596,7 @@ const FloatingLayoutTools = styled.div`
   flex-direction: column;
   align-items: flex-end;
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     right: max(14px, env(safe-area-inset-right, 0px));
     bottom: max(14px, env(safe-area-inset-bottom, 0px));
   }
@@ -832,7 +833,7 @@ const LightboxOverlay = styled(motion.div)`
   justify-content: center;
   padding: var(--spacing-2xl);
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     padding: var(--spacing-md);
   }
 `;
@@ -846,7 +847,7 @@ const LightboxImage = styled.img`
   border-radius: var(--border-radius-xl);
   background: rgba(255, 255, 255, 0.04);
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     max-width: 100%;
     max-height: 90svh;
     border-radius: var(--border-radius-lg);
@@ -870,7 +871,7 @@ const LightboxClose = styled(motion.button)`
     background: rgba(0, 0, 0, 0.72);
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     top: max(12px, env(safe-area-inset-top, 0px));
     right: max(12px, env(safe-area-inset-right, 0px));
     width: 40px;
@@ -918,7 +919,7 @@ const LoadingHero = styled.div`
   overflow: hidden;
   margin-bottom: 0;
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     height: clamp(360px, 58svh, 560px);
     min-height: 360px;
   }
@@ -944,7 +945,7 @@ const LoadingHeroContent = styled.div`
   gap: 12px;
   z-index: 1;
 
-  @media (max-width: 768px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     padding: var(--spacing-3xl) var(--spacing-lg) var(--spacing-2xl);
   }
 `;
@@ -964,11 +965,11 @@ const LoadingGrid = styled.div`
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 14px;
 
-  @media (max-width: 900px) {
+  @media (max-width: ${viewportBreakpoints.content}px) {
     grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 
-  @media (max-width: 640px) {
+  @media (max-width: ${viewportBreakpoints.small}px) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 `;
@@ -980,11 +981,11 @@ const LoadingCard = styled(SkeletonBlock)`
   border: 1px solid rgba(255, 255, 255, 0.06);
   background-clip: padding-box;
 
-  @media (max-width: 900px) {
+  @media (max-width: ${viewportBreakpoints.content}px) {
     grid-column: span 3;
   }
 
-  @media (max-width: 640px) {
+  @media (max-width: ${viewportBreakpoints.small}px) {
     grid-column: span 2;
   }
 `;
@@ -1055,7 +1056,7 @@ function SeriesDetail() {
   const CANVAS_MAX_WIDTH = 1200;
   const EDITOR_MIN_CANVAS_WIDTH = 960;
   const [canvasWidth, setCanvasWidth] = useState(CANVAS_MAX_WIDTH);
-  const isCompactSeriesLayout = useMediaQuery('(max-width: 1024px)');
+  const isCompactSeriesLayout = useMediaQuery(viewportQueries.down('large'));
   const GRID_COLS = 24;
   const ROW_HEIGHT = 16;
   const GRID_GUTTER = 8;

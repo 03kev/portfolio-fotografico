@@ -34,7 +34,7 @@ const MapContainer2 = styled(motion.div)`
   display: flex;
   flex-direction: column;
 
-  ${media.down('tablet')`
+  ${media.down('medium')`
     max-width: none;
     height: var(--shell-max-height);
     max-height: var(--shell-max-height);
@@ -60,7 +60,7 @@ const MapHeader = styled.div`
     letter-spacing: -0.03em;
   }
 
-  ${media.down('tablet')`
+  ${media.down('medium')`
     padding: 12px 14px;
     gap: 10px;
 
@@ -88,7 +88,7 @@ const CloseButton = styled.button`
     border-color: rgba(214, 179, 106, 0.3);
   }
 
-  ${media.down('tablet')`
+  ${media.down('medium')`
     width: 40px;
     height: 40px;
   `}
@@ -155,7 +155,7 @@ const MapMetaPanel = styled.div`
     color: rgba(255, 255, 255, 0.52);
   }
 
-  ${media.down('tablet')`
+  ${media.down('medium')`
     top: 14px;
     left: 14px;
     width: fit-content;
@@ -182,7 +182,7 @@ const ActionButtons = styled.div`
   gap: 12px;
   z-index: 1000;
 
-  ${media.down('tablet')`
+  ${media.down('medium')`
     left: 14px;
     right: 14px;
     bottom: 14px;
@@ -235,11 +235,11 @@ const ActionButton = styled.button`
     transform: none;
   }
 
-  .label-phone {
+  .label-short {
     display: none;
   }
 
-  ${media.down('tablet')`
+  ${media.down('medium')`
     padding: 10px 12px;
     font-size: 0.84rem;
     gap: 6px;
@@ -252,11 +252,11 @@ const ActionButton = styled.button`
       height: 14px;
     }
 
-    .label-desktop {
+    .label-full {
       display: none;
     }
 
-    .label-phone {
+    .label-short {
       display: inline;
     }
   `}
@@ -437,8 +437,8 @@ const MapSelector = ({ isOpen, onClose, onLocationSelect, initialLocation = null
         <ActionButtons>
         <ActionButton onClick={getCurrentLocation} disabled={loading}>
         <LocateFixed size={16} />
-        <span className="label-desktop">Posizione attuale</span>
-        <span className="label-phone">GPS</span>
+        <span className="label-full">Posizione attuale</span>
+        <span className="label-short">GPS</span>
         </ActionButton>
         <ActionButton onClick={onClose}>
         <X size={16} /> Annulla
@@ -449,8 +449,8 @@ const MapSelector = ({ isOpen, onClose, onLocationSelect, initialLocation = null
         disabled={!selectedPosition}
         >
         <Check size={16} />
-        <span className="label-desktop">Conferma Posizione</span>
-        <span className="label-phone">Conferma</span>
+        <span className="label-full">Conferma Posizione</span>
+        <span className="label-short">Conferma</span>
         </ActionButton>
         </ActionButtons>
         </MapContent>

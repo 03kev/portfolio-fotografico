@@ -3,7 +3,12 @@ import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import { Camera, KeyRound } from 'lucide-react';
 import { Link, NavLink } from 'react-router-dom';
-import { useHeaderDesktopLayoutMode, useMobileDeviceLayout } from '../hooks';
+import { useHeaderDesktopLayoutMode, useMediaQuery } from '../hooks';
+import {
+  combineMediaQueries,
+  inputQueries,
+  viewportQueries
+} from '../styles/responsive';
 import {
   HEADER_NAV_ITEMS
 } from './header/headerNavigation';
@@ -34,7 +39,7 @@ const Nav = styled.nav`
   gap: 12px;
   height: 78px;
 
-  ${({ $mobileLayout }) => $mobileLayout && `
+  ${({ $compactTouchNav }) => $compactTouchNav && `
     padding: 0 var(--spacing-lg);
     gap: 8px;
     height: 70px;
@@ -75,7 +80,7 @@ const LogoIcon = styled.img`
   object-fit: contain;
   background: transparent;
 
-  ${({ $mobileLayout }) => $mobileLayout && `
+  ${({ $compactTouchNav }) => $compactTouchNav && `
     width: 28px;
     height: 28px;
   `}
@@ -95,7 +100,7 @@ const LogoText = styled.span`
   overflow: hidden;
   text-overflow: ellipsis;
 
-  ${({ $mobileLayout }) => $mobileLayout && `
+  ${({ $compactTouchNav }) => $compactTouchNav && `
     gap: 6px;
     font-size: 0.96rem;
   `}
@@ -108,12 +113,9 @@ const LogoText = styled.span`
 const NavLinks = styled.ul`
   display: flex;
   gap: var(--spacing-xl);
-
-  @media (min-width: 769px), ((max-width: 768px) and (hover: hover)) {
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
-  }
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
 
   ${({ $compact }) =>
     $compact
@@ -122,8 +124,8 @@ const NavLinks = styled.ul`
   `
       : ''}
 
-  ${({ $mobileLayout }) =>
-    $mobileLayout
+  ${({ $compactTouchNav }) =>
+    $compactTouchNav
       ? `
     display: none;
   `
@@ -208,7 +210,7 @@ const DesktopNavMeasure = styled.ul`
   width: max-content;
   white-space: nowrap;
 
-  ${({ $mobileLayout }) => $mobileLayout && `
+  ${({ $compactTouchNav }) => $compactTouchNav && `
     display: none;
   `}
 `;
@@ -267,7 +269,7 @@ const Right = styled.div`
   align-items: center;
   gap: 12px;
 
-  ${({ $mobileLayout }) => $mobileLayout && `
+  ${({ $compactTouchNav }) => $compactTouchNav && `
     gap: 8px;
   `}
 
@@ -294,12 +296,12 @@ const UploadButton = styled(motion.button)`
     transform: translateY(-1px);
   }
 
-  ${({ $mobileLayout }) => $mobileLayout && `
+  ${({ $compactTouchNav }) => $compactTouchNav && `
     padding: 9px 12px;
     font-size: var(--font-size-xs);
   `}
 
-  ${({ $mobileLayout, $iconOnly }) => ($mobileLayout || $iconOnly) && `
+  ${({ $compactTouchNav, $iconOnly }) => ($compactTouchNav || $iconOnly) && `
     width: 38px;
     height: 38px;
     padding: 0;
@@ -311,7 +313,7 @@ const UploadButton = styled(motion.button)`
 const UploadButtonLabel = styled.span`
   white-space: nowrap;
 
-  ${({ $mobileLayout, $iconOnly }) => ($mobileLayout || $iconOnly) && `
+  ${({ $compactTouchNav, $iconOnly }) => ($compactTouchNav || $iconOnly) && `
     display: none;
   `}
 `;
@@ -350,7 +352,11 @@ const Header = ({
   authFeedback = 'idle'
 }) => {
   const [scrolled, setScrolled] = useState(false);
-  const useMobileNav = useMobileDeviceLayout();
+  const useCompactTouchNav = useMediaQuery(combineMediaQueries(
+    viewportQueries.down('medium'),
+    inputQueries.cannotHover,
+    inputQueries.primaryCoarse
+  ));
   const navRef = useRef(null);
   const brandFullMeasureRef = useRef(null);
   const brandCompactMeasureRef = useRef(null);
@@ -366,7 +372,7 @@ const Header = ({
   }, []);
 
   const { compactDesktopNav, compactBrand, compactUpload } = useHeaderDesktopLayoutMode({
-    useMobileNav,
+    useCompactNav: useCompactTouchNav,
     navRef,
     brandFullMeasureRef,
     brandCompactMeasureRef,
@@ -378,7 +384,7 @@ const Header = ({
   useEffect(() => {
     const root = document.documentElement;
 
-    if (useMobileNav) {
+    if (useCompactTouchNav) {
       root.style.setProperty('--header-height', '70px');
     } else if (compactDesktopNav) {
       root.style.setProperty('--header-height', '132px');
@@ -389,7 +395,7 @@ const Header = ({
     return () => {
       root.style.removeProperty('--header-height');
     };
-  }, [compactDesktopNav, useMobileNav]);
+  }, [compactDesktopNav, useCompactTouchNav]);
 
   return (
     <>
@@ -400,23 +406,23 @@ const Header = ({
         transition={{ duration: 0.45, ease: 'easeOut' }}
       >
         <HeaderInner>
-          <Nav ref={navRef} $mobileLayout={useMobileNav}>
+          <Nav ref={navRef} $compactTouchNav={useCompactTouchNav}>
             <Logo to="/" whileTap={{ scale: 0.98 }} aria-label="Torna alla home">
               <LogoContent>
                 <LogoIcon
                   src="/favicon.svg"
                   alt=""
                   aria-hidden="true"
-                  $mobileLayout={useMobileNav}
+                  $compactTouchNav={useCompactTouchNav}
                   $denseDesktop={compactBrand}
                 />
-                <LogoText $mobileLayout={useMobileNav} $hidden={compactBrand}>
+                <LogoText $compactTouchNav={useCompactTouchNav} $hidden={compactBrand}>
                   FotoPortfolio <span className="dot" />
                 </LogoText>
               </LogoContent>
             </Logo>
 
-            <NavLinks $compact={compactDesktopNav} $mobileLayout={useMobileNav}>
+            <NavLinks $compact={compactDesktopNav} $compactTouchNav={useCompactTouchNav}>
               {HEADER_NAV_ITEMS.map((item) => (
                 <li key={item.to}>
                   <StyledNavLink to={item.to} end={item.to === '/'}>
@@ -426,7 +432,7 @@ const Header = ({
               ))}
             </NavLinks>
 
-            <Right $mobileLayout={useMobileNav} $denseDesktop={compactBrand}>
+            <Right $compactTouchNav={useCompactTouchNav} $denseDesktop={compactBrand}>
               {isAdmin && onConfigureAuth && (
                 <TokenButton
                   type="button"
@@ -445,11 +451,11 @@ const Header = ({
                 <UploadButton
                   onClick={onOpenUpload}
                   whileTap={{ scale: 0.98 }}
-                  $mobileLayout={useMobileNav}
+                  $compactTouchNav={useCompactTouchNav}
                   $iconOnly={compactUpload}
                 >
                   <Camera size={16} />
-                  <UploadButtonLabel $mobileLayout={useMobileNav} $iconOnly={compactUpload}>
+                  <UploadButtonLabel $compactTouchNav={useCompactTouchNav} $iconOnly={compactUpload}>
                     Carica
                   </UploadButtonLabel>
                 </UploadButton>
@@ -457,7 +463,7 @@ const Header = ({
             </Right>
           </Nav>
 
-          <DesktopCompactNavRail $visible={compactDesktopNav && !useMobileNav}>
+          <DesktopCompactNavRail $visible={compactDesktopNav && !useCompactTouchNav}>
             <DesktopCompactNavScroll>
               <DesktopCompactNavList>
                 {HEADER_NAV_ITEMS.map((item) => (
@@ -471,7 +477,7 @@ const Header = ({
             </DesktopCompactNavScroll>
           </DesktopCompactNavRail>
 
-          <DesktopNavMeasure ref={navMeasureRef} aria-hidden="true" $mobileLayout={useMobileNav}>
+          <DesktopNavMeasure ref={navMeasureRef} aria-hidden="true" $compactTouchNav={useCompactTouchNav}>
             {HEADER_NAV_ITEMS.map((item) => (
               <li key={item.to}>
                 <DesktopNavMeasureItem>{item.label}</DesktopNavMeasureItem>
@@ -479,7 +485,7 @@ const Header = ({
             ))}
           </DesktopNavMeasure>
 
-          <DesktopNavMeasure aria-hidden="true" $mobileLayout={useMobileNav} ref={brandFullMeasureRef}>
+          <DesktopNavMeasure aria-hidden="true" $compactTouchNav={useCompactTouchNav} ref={brandFullMeasureRef}>
             <li>
               <LogoContent>
                 <LogoIcon src="/favicon.svg" alt="" aria-hidden="true" />
@@ -490,13 +496,13 @@ const Header = ({
             </li>
           </DesktopNavMeasure>
 
-          <DesktopNavMeasure aria-hidden="true" $mobileLayout={useMobileNav} ref={brandCompactMeasureRef}>
+          <DesktopNavMeasure aria-hidden="true" $compactTouchNav={useCompactTouchNav} ref={brandCompactMeasureRef}>
             <li>
               <LogoIcon src="/favicon.svg" alt="" aria-hidden="true" />
             </li>
           </DesktopNavMeasure>
 
-          <DesktopNavMeasure aria-hidden="true" $mobileLayout={useMobileNav} ref={rightFullMeasureRef}>
+          <DesktopNavMeasure aria-hidden="true" $compactTouchNav={useCompactTouchNav} ref={rightFullMeasureRef}>
             <li>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: '12px' }}>
                 {isAdmin && onConfigureAuth && (
@@ -514,7 +520,7 @@ const Header = ({
             </li>
           </DesktopNavMeasure>
 
-          <DesktopNavMeasure aria-hidden="true" $mobileLayout={useMobileNav} ref={rightCompactMeasureRef}>
+          <DesktopNavMeasure aria-hidden="true" $compactTouchNav={useCompactTouchNav} ref={rightCompactMeasureRef}>
             <li>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
                 {isAdmin && onConfigureAuth && (
@@ -533,7 +539,7 @@ const Header = ({
         </HeaderInner>
       </HeaderContainer>
 
-      <HeaderMobileNav visible={useMobileNav} />
+      <HeaderMobileNav visible={useCompactTouchNav} />
     </>
   );
 };

@@ -6,6 +6,7 @@ import { useSeries } from '../contexts/SeriesContext';
 import { usePhotos } from '../contexts/PhotoContext';
 import { useToast } from './Toast';
 import { resolveVersionedPhotoAssetUrl } from '../utils/imageUrl';
+import { viewportBreakpoints } from '../styles/responsive';
 
 const EditorOverlay = styled(motion.div)`
   position: fixed;
@@ -19,7 +20,7 @@ const EditorOverlay = styled(motion.div)`
   overflow-y: auto;
   padding: var(--spacing-xl);
 
-  @media (max-width: 640px) {
+  @media (max-width: ${viewportBreakpoints.small}px) {
     padding: 0;
     overscroll-behavior: contain;
   }
@@ -33,7 +34,7 @@ const EditorContainer = styled(motion.div)`
   border: 1px solid rgba(255, 255, 255, 0.1);
   overflow: hidden;
 
-  @media (max-width: 640px) {
+  @media (max-width: ${viewportBreakpoints.small}px) {
     min-height: 100dvh;
     border: 0;
     border-radius: 0;
@@ -48,7 +49,7 @@ const EditorHeader = styled.div`
   align-items: center;
   background: rgba(0, 0, 0, 0.5);
 
-  @media (max-width: 640px) {
+  @media (max-width: ${viewportBreakpoints.small}px) {
     position: sticky;
     top: 0;
     z-index: 3;
@@ -62,7 +63,7 @@ const EditorTitle = styled.h2`
   font-weight: var(--font-weight-bold);
   color: var(--color-white);
 
-  @media (max-width: 640px) {
+  @media (max-width: ${viewportBreakpoints.small}px) {
     min-width: 0;
     font-size: var(--font-size-xl);
     line-height: 1.2;
@@ -90,7 +91,7 @@ const CloseButton = styled(motion.button)`
 const EditorBody = styled.div`
   padding: var(--spacing-xl);
 
-  @media (max-width: 640px) {
+  @media (max-width: ${viewportBreakpoints.small}px) {
     padding: var(--spacing-md);
   }
 `;
@@ -168,7 +169,7 @@ const EditorGrid = styled.div`
     grid-template-columns: 1fr;
   }
 
-  @media (max-width: 640px) {
+  @media (max-width: ${viewportBreakpoints.small}px) {
     gap: var(--spacing-md);
   }
 `;
@@ -178,7 +179,7 @@ const Column = styled.div`
   flex-direction: column;
   gap: var(--spacing-lg);
 
-  @media (max-width: 640px) {
+  @media (max-width: ${viewportBreakpoints.small}px) {
     gap: var(--spacing-md);
   }
 `;
@@ -190,7 +191,7 @@ const Panel = styled.div`
   padding: var(--spacing-lg);
   box-shadow: var(--shadow-small);
 
-  @media (max-width: 640px) {
+  @media (max-width: ${viewportBreakpoints.small}px) {
     padding: var(--spacing-md);
     border-radius: var(--border-radius-lg);
   }
@@ -283,7 +284,7 @@ const BlockHeader = styled.div`
   gap: var(--spacing-sm);
   cursor: pointer;
 
-  @media (max-width: 480px) {
+  @media (max-width: ${viewportBreakpoints.narrow}px) {
     grid-template-columns: auto minmax(0, 1fr) auto;
     gap: var(--spacing-xs);
   }
@@ -338,7 +339,7 @@ const AddBlockButtons = styled.div`
   margin-top: var(--spacing-lg);
   flex-wrap: wrap;
 
-  @media (max-width: 640px) {
+  @media (max-width: ${viewportBreakpoints.small}px) {
     display: grid;
     grid-template-columns: 1fr;
     gap: var(--spacing-sm);
@@ -361,7 +362,7 @@ const AddBlockButton = styled(motion.button)`
     opacity: 0.9;
   }
 
-  @media (max-width: 640px) {
+  @media (max-width: ${viewportBreakpoints.small}px) {
     justify-content: center;
     min-height: 44px;
   }
@@ -396,7 +397,7 @@ const PhotoSelector = styled.div`
   border-radius: var(--border-radius);
   border: 1px solid rgba(255, 255, 255, 0.08);
 
-  @media (max-width: 480px) {
+  @media (max-width: ${viewportBreakpoints.narrow}px) {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     max-height: 300px;
   }
@@ -444,7 +445,7 @@ const EditorFooter = styled.div`
   justify-content: flex-end;
   background: rgba(0, 0, 0, 0.5);
 
-  @media (max-width: 640px) {
+  @media (max-width: ${viewportBreakpoints.small}px) {
     position: sticky;
     bottom: 0;
     z-index: 3;
@@ -463,7 +464,7 @@ const Button = styled(motion.button)`
   border: none;
   transition: all var(--transition-normal);
 
-  @media (max-width: 640px) {
+  @media (max-width: ${viewportBreakpoints.small}px) {
     flex: 1 1 calc(50% - var(--spacing-sm));
     min-height: 44px;
     padding: var(--spacing-sm) var(--spacing-md);
@@ -503,7 +504,7 @@ const DeleteButton = styled(Button)`
     background: rgba(239, 68, 68, 0.3);
   }
 
-  @media (max-width: 640px) {
+  @media (max-width: ${viewportBreakpoints.small}px) {
     flex-basis: 100%;
     margin-right: 0;
     order: 3;
@@ -530,7 +531,7 @@ const MetaBar = styled.div`
   gap: var(--spacing-md);
   margin-bottom: var(--spacing-lg);
 
-  @media (max-width: 480px) {
+  @media (max-width: ${viewportBreakpoints.narrow}px) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--spacing-sm);
   }

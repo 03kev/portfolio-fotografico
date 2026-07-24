@@ -7,7 +7,7 @@ function readMediaQuery(query) {
   return window.matchMedia(query).matches;
 }
 
-export default function useMediaQuery(query) {
+export function useMediaQuery(query) {
   const [matches, setMatches] = useState(() => readMediaQuery(query));
 
   useEffect(() => {
@@ -30,3 +30,5 @@ export default function useMediaQuery(query) {
 
   return matches;
 }
+
+export default useMediaQuery;

@@ -1,5 +1,11 @@
 import { createGlobalStyle } from 'styled-components';
-import { viewportBreakpoints, viewportHeights } from './responsive';
+import {
+  combineMediaQueries,
+  inputQueries,
+  viewportBreakpoints,
+  viewportHeights,
+  viewportQueries
+} from './responsive';
 
 /**
  * Design refresh (più "professionale")
@@ -263,7 +269,7 @@ const GlobalStyles = createGlobalStyle`
     min-height: calc(100vh - var(--header-height));
   }
 
-  @media (min-width: ${viewportBreakpoints.laptop}px) {
+  @media (min-width: ${viewportBreakpoints.large}px) {
     :root {
       --panel-padding: 20px;
       --shell-width: min(100%, 920px);
@@ -351,7 +357,7 @@ const GlobalStyles = createGlobalStyle`
     }
   }
 
-  @media (max-width: ${viewportBreakpoints.tablet}px) {
+  @media (max-width: ${viewportBreakpoints.medium}px) {
     :root {
       --panel-overlay-pad-inline: 12px;
       --panel-padding: 16px;
@@ -381,7 +387,11 @@ const GlobalStyles = createGlobalStyle`
     }
   }
 
-  @media (max-width: ${viewportBreakpoints.tablet}px) and (hover: none) and (pointer: coarse) {
+  @media ${combineMediaQueries(
+    viewportQueries.down('medium'),
+    inputQueries.cannotHover,
+    inputQueries.primaryCoarse
+  )} {
     :root {
       --header-height: 70px;
       --mobile-bottom-nav-height: 92px;

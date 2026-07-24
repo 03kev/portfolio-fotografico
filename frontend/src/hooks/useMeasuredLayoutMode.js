@@ -19,24 +19,38 @@ export const useMeasuredLayoutMode = ({
   useEffect(() => {
     if (!enabled || typeof window === 'undefined') return undefined;
 
+    let frameId = null;
     const updateMode = () => {
+      frameId = null;
       const nextMode = resolveMode();
       if (typeof nextMode !== 'undefined') {
         setMode((currentMode) => (currentMode === nextMode ? currentMode : nextMode));
       }
     };
 
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateMode);
-    observedRefs
-      .map((ref) => ref?.current)
-      .filter(Boolean)
-      .forEach((node) => observer?.observe(node));
+    const scheduleUpdate = () => {
+      if (frameId !== null) return;
+      frameId = window.requestAnimationFrame(updateMode);
+    };
 
-    window.addEventListener('resize', updateMode);
+    const observedNodes = observedRefs
+      .map((ref) => ref?.current)
+      .filter(Boolean);
+    const observer = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(scheduleUpdate);
+    observedNodes.forEach((node) => observer?.observe(node));
+
+    if (!observer) {
+      window.addEventListener('resize', scheduleUpdate);
+    }
 
     return () => {
+      if (frameId !== null) window.cancelAnimationFrame(frameId);
       observer?.disconnect();
-      window.removeEventListener('resize', updateMode);
+      if (!observer) {
+        window.removeEventListener('resize', scheduleUpdate);
+      }
     };
   }, [enabled, observedRefs, resolveMode]);
 
