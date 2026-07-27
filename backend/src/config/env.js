@@ -33,9 +33,27 @@ function asCsvList(value) {
         .filter(Boolean);
 }
 
+const BOOLEAN_ENV_VALUES = new Map([
+    ['1', true],
+    ['true', true],
+    ['yes', true],
+    ['on', true],
+    ['0', false],
+    ['false', false],
+    ['no', false],
+    ['off', false]
+]);
+
+function asBoolean(value, fallback) {
+    const raw = asString(value).toLowerCase();
+    if (!raw) return fallback;
+    return BOOLEAN_ENV_VALUES.has(raw) ? BOOLEAN_ENV_VALUES.get(raw) : fallback;
+}
+
 const nodeEnv = asString(process.env.NODE_ENV, 'development');
 const isProduction = nodeEnv === 'production';
 const isDevelopment = nodeEnv !== 'production';
+const metadataWritesEnabledRaw = asString(process.env.METADATA_WRITES_ENABLED);
 
 const env = {
     nodeEnv,
@@ -46,6 +64,7 @@ const env = {
     vercelUrl: asString(process.env.VERCEL_URL),
     siteUrl: asString(process.env.SITE_URL),
     metadataBackend: asString(process.env.METADATA_BACKEND, 'json').toLowerCase(),
+    metadataWritesEnabled: asBoolean(metadataWritesEnabledRaw, true),
     databaseUrl: asString(process.env.DATABASE_URL),
     databasePoolMax: asPositiveInt(process.env.DATABASE_POOL_MAX, 5),
 
@@ -86,6 +105,15 @@ function validateEnv() {
 
     if (!['json', 'postgres'].includes(env.metadataBackend)) {
         errors.push('METADATA_BACKEND deve essere "json" oppure "postgres".');
+    }
+
+    if (
+        metadataWritesEnabledRaw
+        && !BOOLEAN_ENV_VALUES.has(metadataWritesEnabledRaw.toLowerCase())
+    ) {
+        errors.push(
+            'METADATA_WRITES_ENABLED deve essere true/false, 1/0, yes/no oppure on/off.'
+        );
     }
 
     if (env.metadataBackend === 'postgres' && !env.databaseUrl) {

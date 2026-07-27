@@ -231,6 +231,14 @@ function protectWriteMethods(req, res, next) {
         return next();
     }
 
+    if (!env.metadataWritesEnabled) {
+        return res.status(503).json({
+            success: false,
+            code: 'METADATA_READ_ONLY',
+            message: 'Le modifiche ai contenuti sono temporaneamente disabilitate.'
+        });
+    }
+
     return requireWriteAuth(req, res, next);
 }
 
