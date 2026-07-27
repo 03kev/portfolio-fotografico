@@ -3,6 +3,10 @@ const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { env } = require('../config/env');
 const DEFAULTS = require('../config/defaults');
 const { PRIVATE_PREFIX, PUBLIC_UPLOADS_PREFIX } = require('../config/assetPaths');
+const {
+    namespaceObjectKey,
+    stripObjectNamespace
+} = require('../utils/r2ObjectNamespace');
 
 let s3ClientInstance = null;
 let s3Commands = null;
@@ -68,6 +72,14 @@ function normalizePrivateObjectKey(key) {
     return normalized.replace(new RegExp(`^${privatePrefix}/+`), '');
 }
 
+function applyConfiguredObjectNamespace(key) {
+    return namespaceObjectKey(key, env.r2ObjectPrefix);
+}
+
+function stripConfiguredObjectNamespace(key) {
+    return stripObjectNamespace(key, env.r2ObjectPrefix);
+}
+
 function uploadPathToObjectKey(uploadPath) {
     const raw = String(uploadPath || '').trim();
 
@@ -76,13 +88,17 @@ function uploadPathToObjectKey(uploadPath) {
     if (raw.startsWith('http://') || raw.startsWith('https://')) {
         try {
             const parsed = new URL(raw);
-            return normalizeObjectKey(parsed.pathname);
+            return applyConfiguredObjectNamespace(
+                stripConfiguredObjectNamespace(normalizeObjectKey(parsed.pathname))
+            );
         } catch (error) {
             return null;
         }
     }
 
-    return normalizeObjectKey(raw.replace(/^\/+/, ''));
+    return applyConfiguredObjectNamespace(
+        stripConfiguredObjectNamespace(normalizeObjectKey(raw.replace(/^\/+/, '')))
+    );
 }
 
 function privatePathToObjectKey(privatePath) {
@@ -93,22 +109,26 @@ function privatePathToObjectKey(privatePath) {
     if (raw.startsWith('http://') || raw.startsWith('https://')) {
         try {
             const parsed = new URL(raw);
-            return normalizePrivateObjectKey(parsed.pathname);
+            return applyConfiguredObjectNamespace(
+                stripConfiguredObjectNamespace(normalizePrivateObjectKey(parsed.pathname))
+            );
         } catch (error) {
             return null;
         }
     }
 
-    return normalizePrivateObjectKey(raw.replace(/^\/+/, ''));
+    return applyConfiguredObjectNamespace(
+        stripConfiguredObjectNamespace(normalizePrivateObjectKey(raw.replace(/^\/+/, '')))
+    );
 }
 
 function objectKeyToUploadPath(objectKey) {
-    const key = normalizeObjectKey(objectKey);
+    const key = stripConfiguredObjectNamespace(normalizeObjectKey(objectKey));
     return `${PUBLIC_UPLOADS_PREFIX}/${key}`;
 }
 
 function objectKeyToPrivatePath(objectKey) {
-    const key = normalizePrivateObjectKey(objectKey);
+    const key = stripConfiguredObjectNamespace(normalizePrivateObjectKey(objectKey));
     return `${PRIVATE_PREFIX}/${key}`;
 }
 
@@ -420,6 +440,10 @@ module.exports = {
     headUploadObject,
     getUploadObject,
     isR2Enabled,
+    objectKeyToPrivatePath,
+    objectKeyToUploadPath,
+    privatePathToObjectKey,
     putPrivateObject,
     putUploadObject,
+    uploadPathToObjectKey
 };

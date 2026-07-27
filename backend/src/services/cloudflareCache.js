@@ -1,5 +1,6 @@
 const { env } = require('../config/env');
 const { PUBLIC_UPLOADS_PREFIX } = require('../config/assetPaths');
+const { namespaceObjectKey } = require('../utils/r2ObjectNamespace');
 
 function isCloudflarePurgeConfigured() {
     return Boolean(env.cloudflareZoneId && env.cloudflareApiToken);
@@ -13,9 +14,10 @@ function normalizeUploadPathToAbsoluteUrl(uploadPath) {
     if (!env.r2PublicUrl) return '';
 
     const publicPrefix = PUBLIC_UPLOADS_PREFIX.replace(/^\/+/, '');
-    const objectKey = raw
+    const logicalObjectKey = raw
         .replace(/^\/+/, '')
         .replace(new RegExp(`^${publicPrefix}/+`), '');
+    const objectKey = namespaceObjectKey(logicalObjectKey, env.r2ObjectPrefix);
     return `${env.r2PublicUrl}/${objectKey}`;
 }
 

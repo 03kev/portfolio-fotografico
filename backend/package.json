@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "node --test src/middleware/*.test.js src/services/*.test.js src/repositories/*.test.js src/utils/*.test.js",
+    "test": "node --test src/config/*.test.js src/middleware/*.test.js src/services/*.test.js src/repositories/*.test.js src/utils/*.test.js",
     "db:migrate": "node scripts/migrate-postgres.js",
     "metadata:validate": "node scripts/import-metadata-postgres.js --dry-run",
     "metadata:import": "node scripts/import-metadata-postgres.js",

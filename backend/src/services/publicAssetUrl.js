@@ -1,5 +1,6 @@
 const { env } = require('../config/env');
 const { PUBLIC_UPLOADS_PREFIX } = require('../config/assetPaths');
+const { namespaceObjectKey } = require('../utils/r2ObjectNamespace');
 
 function getPublicAssetBaseUrl(options = {}) {
     const { preferRelativeInDevelopment = false } = options;
@@ -19,9 +20,10 @@ function buildPublicAssetUrl(uploadPath, options = {}) {
     if (!value.startsWith(`${PUBLIC_UPLOADS_PREFIX}/`)) return value;
 
     const publicPrefix = PUBLIC_UPLOADS_PREFIX.replace(/^\/+/, '');
-    const objectKey = value
+    const logicalObjectKey = value
         .replace(/^\/+/, '')
         .replace(new RegExp(`^${publicPrefix}/+`), '');
+    const objectKey = namespaceObjectKey(logicalObjectKey, env.r2ObjectPrefix);
 
     return `${publicBaseUrl}/${objectKey}`;
 }

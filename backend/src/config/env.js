@@ -1,6 +1,10 @@
 const path = require('path');
 const dotenv = require('dotenv');
 const DEFAULTS = require('./defaults');
+const {
+    isValidR2ObjectPrefix,
+    normalizeR2ObjectPrefix
+} = require('../utils/r2ObjectNamespace');
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
@@ -54,6 +58,7 @@ const nodeEnv = asString(process.env.NODE_ENV, 'development');
 const isProduction = nodeEnv === 'production';
 const isDevelopment = nodeEnv !== 'production';
 const metadataWritesEnabledRaw = asString(process.env.METADATA_WRITES_ENABLED);
+const vercelEnv = asString(process.env.VERCEL_ENV).toLowerCase();
 
 const env = {
     nodeEnv,
@@ -61,6 +66,7 @@ const env = {
     isDevelopment,
     port: asOptionalPositiveInt(process.env.PORT),
     vercel: Boolean(process.env.VERCEL),
+    vercelEnv,
     vercelUrl: asString(process.env.VERCEL_URL),
     siteUrl: asString(process.env.SITE_URL),
     metadataBackend: asString(process.env.METADATA_BACKEND, 'json').toLowerCase(),
@@ -85,6 +91,7 @@ const env = {
     r2PrivateBucket: asString(process.env.R2_PRIVATE_BUCKET),
     r2PublicUrl: asString(process.env.R2_PUBLIC_URL).replace(/\/+$/, ''),
     r2Endpoint: asString(process.env.R2_ENDPOINT),
+    r2ObjectPrefix: normalizeR2ObjectPrefix(process.env.R2_OBJECT_PREFIX),
     r2MetadataPrefix: asString(process.env.R2_METADATA_PREFIX, DEFAULTS.r2MetadataPrefix).replace(/^\/+|\/+$/g, ''),
 
     cloudflareZoneId: asString(process.env.CLOUDFLARE_ZONE_ID),
@@ -113,6 +120,22 @@ function validateEnv() {
     ) {
         errors.push(
             'METADATA_WRITES_ENABLED deve essere true/false, 1/0, yes/no oppure on/off.'
+        );
+    }
+
+    if (!isValidR2ObjectPrefix(env.r2ObjectPrefix)) {
+        errors.push(
+            'R2_OBJECT_PREFIX può contenere solo segmenti alfanumerici, ".", "_" e "-".'
+        );
+    }
+
+    if (
+        env.vercelEnv === 'preview'
+        && env.metadataWritesEnabled
+        && !env.r2ObjectPrefix
+    ) {
+        errors.push(
+            'Le Preview con scritture abilitate richiedono R2_OBJECT_PREFIX per isolare gli asset.'
         );
     }
 
