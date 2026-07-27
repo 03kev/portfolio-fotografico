@@ -1,34 +1,65 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const dotenv = require('dotenv');
 const {
     analyzeMetadataSnapshot,
     importMetadataSnapshot,
     verifyImportedSnapshot
 } = require('../src/services/metadataMigration');
+const {
+    normalizePostgresConnectionString
+} = require('../src/utils/postgresConnectionString');
+
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 function parseArguments(argv) {
     const options = {
         dryRun: false,
-        verifyOnly: false
+        verifyOnly: false,
+        fromR2: false
     };
     for (let index = 0; index < argv.length; index += 1) {
         const argument = argv[index];
         if (argument === '--dry-run') options.dryRun = true;
         else if (argument === '--verify-only') options.verifyOnly = true;
+        else if (argument === '--from-r2') options.fromR2 = true;
         else if (argument === '--photos') options.photosPath = argv[++index];
         else if (argument === '--series') options.seriesPath = argv[++index];
         else throw new Error(`Argomento non riconosciuto: ${argument}`);
     }
-    if (!options.photosPath || !options.seriesPath) {
+    const hasFilePair = Boolean(options.photosPath && options.seriesPath);
+    if (!options.fromR2 && !hasFilePair) {
         throw new Error(
-            'Uso: --photos <photos.json> --series <series.json> [--dry-run | --verify-only]'
+            'Uso: (--from-r2 | --photos <photos.json> --series <series.json>) [--dry-run | --verify-only]'
         );
+    }
+    if (options.fromR2 && (options.photosPath || options.seriesPath)) {
+        throw new Error('--from-r2 non può essere combinato con --photos o --series.');
+    }
+    if (!options.fromR2 && !hasFilePair) {
+        throw new Error('--photos e --series devono essere specificati insieme.');
     }
     return options;
 }
 
 async function readJson(filename) {
     return JSON.parse(await fs.readFile(path.resolve(filename), 'utf8'));
+}
+
+async function readSnapshot(options) {
+    if (!options.fromR2) {
+        return {
+            photos: await readJson(options.photosPath),
+            series: await readJson(options.seriesPath)
+        };
+    }
+
+    const { readMetadataFile } = require('../src/services/metadataStorage');
+    const [photos, series] = await Promise.all([
+        readMetadataFile('photos.json', []),
+        readMetadataFile('series.json', [])
+    ]);
+    return { photos, series };
 }
 
 function printReport(report) {
@@ -43,10 +74,7 @@ function printReport(report) {
 
 async function main() {
     const options = parseArguments(process.argv.slice(2));
-    const snapshot = {
-        photos: await readJson(options.photosPath),
-        series: await readJson(options.seriesPath)
-    };
+    const snapshot = await readSnapshot(options);
     const report = analyzeMetadataSnapshot(snapshot);
     printReport(report);
     if (report.errors.length > 0) {
@@ -62,14 +90,17 @@ async function main() {
         throw new Error('Dipendenza "pg" mancante. Esegui npm install nel backend.');
     }
     const databaseUrl = String(
-        process.env.DATABASE_DIRECT_URL
+        process.env.DATABASE_URL_UNPOOLED
         || process.env.DATABASE_URL
         || ''
     ).trim();
     if (!databaseUrl) {
-        throw new Error('DATABASE_DIRECT_URL o DATABASE_URL non impostata.');
+        throw new Error('DATABASE_URL_UNPOOLED o DATABASE_URL non impostata.');
     }
-    const pool = new Pool({ connectionString: databaseUrl, max: 1 });
+    const pool = new Pool({
+        connectionString: normalizePostgresConnectionString(databaseUrl),
+        max: 1
+    });
     try {
         if (!options.verifyOnly) {
             const result = await importMetadataSnapshot(pool, snapshot);

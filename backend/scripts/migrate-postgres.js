@@ -1,6 +1,12 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const dotenv = require('dotenv');
+const {
+    normalizePostgresConnectionString
+} = require('../src/utils/postgresConnectionString');
+
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 async function main() {
     let Pool;
@@ -11,19 +17,22 @@ async function main() {
     }
 
     const databaseUrl = String(
-        process.env.DATABASE_DIRECT_URL
+        process.env.DATABASE_URL_UNPOOLED
         || process.env.DATABASE_URL
         || ''
     ).trim();
     if (!databaseUrl) {
-        throw new Error('DATABASE_DIRECT_URL o DATABASE_URL non impostata.');
+        throw new Error('DATABASE_URL_UNPOOLED o DATABASE_URL non impostata.');
     }
 
     const migrationsDirectory = path.resolve(__dirname, '../db/migrations');
     const filenames = (await fs.readdir(migrationsDirectory))
         .filter((filename) => /^\d+.*\.sql$/.test(filename))
         .sort();
-    const pool = new Pool({ connectionString: databaseUrl, max: 1 });
+    const pool = new Pool({
+        connectionString: normalizePostgresConnectionString(databaseUrl),
+        max: 1
+    });
 
     try {
         for (const filename of filenames) {

@@ -1,5 +1,8 @@
 const metadataStorage = require('../services/metadataStorage');
 const { env } = require('../config/env');
+const {
+    normalizePostgresConnectionString
+} = require('../utils/postgresConnectionString');
 const { JsonPortfolioRepository } = require('./JsonPortfolioRepository');
 
 function createPostgresPool(databaseUrl = env.databaseUrl) {
@@ -16,7 +19,7 @@ function createPostgresPool(databaseUrl = env.databaseUrl) {
     }
 
     return new Pool({
-        connectionString: databaseUrl,
+        connectionString: normalizePostgresConnectionString(databaseUrl),
         max: env.databasePoolMax,
         idleTimeoutMillis: 10_000,
         connectionTimeoutMillis: 5_000,

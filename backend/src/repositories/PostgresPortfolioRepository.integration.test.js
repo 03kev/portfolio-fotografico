@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const dotenv = require('dotenv');
 const {
     after,
     before,
@@ -11,6 +12,11 @@ const {
     PostgresPortfolioRepository,
     extractContentPhotoIds
 } = require('./PostgresPortfolioRepository');
+const {
+    normalizePostgresConnectionString
+} = require('../utils/postgresConnectionString');
+
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const databaseUrl = String(process.env.TEST_DATABASE_URL || '').trim();
 const integrationTest = databaseUrl ? test : test.skip;
@@ -102,7 +108,10 @@ before(async () => {
     } catch {
         throw new Error('TEST_DATABASE_URL è impostata ma la dipendenza "pg" non è installata.');
     }
-    adminPool = new Pool({ connectionString: databaseUrl, max: 8 });
+    adminPool = new Pool({
+        connectionString: normalizePostgresConnectionString(databaseUrl),
+        max: 8
+    });
     await adminPool.query(`CREATE SCHEMA "${schemaName}"`);
     scopedPool = new SchemaScopedPool(adminPool, schemaName);
     const migration = await fs.readFile(

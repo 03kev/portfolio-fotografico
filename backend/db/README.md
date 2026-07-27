@@ -47,10 +47,16 @@ Hard deletes never use upsert, so a stale update cannot recreate a deleted row.
 required for independent atomic photo patches. Retryable SQL states `40001` and
 `40P01` are retried inside the repository; domain/version conflicts are not.
 
-For Neon, `DATABASE_URL` should be the pooled connection string used by the
-serverless runtime. Migration and import scripts prefer `DATABASE_DIRECT_URL`
-so schema changes and the one-shot import do not depend on transaction-pooler
-behavior.
+For Neon, `DATABASE_URL` is the pooled connection string used by the serverless
+runtime. Migration and import scripts prefer Vercel/Neon's standard
+`DATABASE_URL_UNPOOLED` variable, falling back to `DATABASE_URL` outside that
+integration. `TEST_DATABASE_URL` must point to an explicitly isolated
+database/branch and never falls back to either runtime URL.
+
+Neon currently emits connection strings with `sslmode=require`. The connection
+helper upgrades that mode to `verify-full` explicitly, preserving certificate
+and hostname verification across the upcoming node-postgres SSL semantics
+change.
 
 R2 object operations intentionally remain outside this model for now. The
 database transaction guarantees metadata integrity, but media/database atomicity
