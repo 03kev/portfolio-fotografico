@@ -22,6 +22,7 @@ const ContactPage = lazy(() => import('./pages/ContactPage'));
 const RightsPage = lazy(() => import('./pages/RightsPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 const AdminAccessPage = lazy(() => import('./pages/AdminAccessPage'));
+const AdminHistoryPage = lazy(() => import('./pages/AdminHistoryPage'));
 const SeriesDetail = lazy(() => import('./components/SeriesDetail'));
 
 const RouteFallback = () => null;
@@ -38,6 +39,7 @@ export default function App() {
                 <Routes>
                   <Route element={<SiteLayout />}>
                     <Route path="/admin" element={<AdminAccessPage />} />
+                    <Route path="/admin/history" element={<AdminHistoryPage />} />
                     <Route path="/admin/logout" element={<AdminAccessPage />} />
                     <Route path="/admin/logout/*" element={<AdminAccessPage />} />
                     <Route path="/" element={<HomePage />} />

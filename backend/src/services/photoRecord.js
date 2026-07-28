@@ -88,7 +88,8 @@ function toRuntimePhoto(record) {
             : 0,
         derivativesVersion: Number.isFinite(Number(record.derivativesVersion))
             ? Number(record.derivativesVersion)
-            : (Number.isFinite(Number(record.id)) ? Number(record.id) : 0)
+            : (Number.isFinite(Number(record.id)) ? Number(record.id) : 0),
+        mediaGeneration: toTrimmedString(record.mediaGeneration)
     };
 
     return runtimePhoto;
@@ -133,7 +134,8 @@ function toStoragePhoto(runtimePhoto) {
             : 0,
         derivativesVersion: Number.isFinite(Number(runtimePhoto.derivativesVersion))
             ? Number(runtimePhoto.derivativesVersion)
-            : Date.now()
+            : Date.now(),
+        mediaGeneration: toTrimmedString(runtimePhoto.mediaGeneration)
     };
 
     const cropProfiles = isPlainObject(photo.settings?.cropProfiles) ? photo.settings.cropProfiles : null;
@@ -170,7 +172,8 @@ function toStoragePhoto(runtimePhoto) {
         ...(photo.updatedAt > 0 ? { updatedAt: photo.updatedAt } : {}),
         derivativesVersion: Number.isFinite(Number(photo.derivativesVersion))
             ? Number(photo.derivativesVersion)
-            : Date.now()
+            : Date.now(),
+        ...(photo.mediaGeneration ? { mediaGeneration: photo.mediaGeneration } : {})
     };
 }
 

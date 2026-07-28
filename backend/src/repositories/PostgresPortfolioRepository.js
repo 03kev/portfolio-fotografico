@@ -5,6 +5,7 @@ const {
     normalizeSeriesTitleKey
 } = require('../services/seriesRecord');
 const {
+    MediaMutationConflictError,
     ReferenceIntegrityError,
     RepositoryConflictError,
     VersionConflictError
@@ -27,7 +28,8 @@ const PHOTO_PATCH_COLUMNS = Object.freeze({
     sourceContentType: ['source_content_type', (value) => String(value)],
     mobileImage: ['mobile_image', Boolean],
     updatedAt: ['updated_at_ms', Number],
-    derivativesVersion: ['derivatives_version', Number]
+    derivativesVersion: ['derivatives_version', Number],
+    mediaGeneration: ['media_generation', (value) => String(value || '') || null]
 });
 
 function normalizePositiveId(value, fieldName) {
@@ -67,8 +69,30 @@ function mapPhotoRow(row) {
         mobileImage: row.mobile_image,
         updatedAt: Number(row.updated_at_ms),
         derivativesVersion: Number(row.derivatives_version),
+        mediaGeneration: row.media_generation || '',
         version: Number(row.version)
     };
+}
+
+function activeMediaOperationFromRow(row) {
+    if (!row?.media_operation_id) return null;
+    const expiresAt = row.media_operation_expires_at
+        ? new Date(row.media_operation_expires_at)
+        : null;
+    if (!expiresAt || expiresAt.getTime() <= Date.now()) return null;
+    return {
+        id: String(row.media_operation_id),
+        kind: row.media_operation_kind,
+        generation: row.media_operation_generation,
+        expiresAt: expiresAt.toISOString()
+    };
+}
+
+function assertNoActiveMediaOperation(row, photoId) {
+    const active = activeMediaOperationFromRow(row);
+    if (active) {
+        throw new MediaMutationConflictError(photoId, active.kind, active.expiresAt);
+    }
 }
 
 function mapSeriesRow(row, photoIds = []) {
@@ -86,6 +110,76 @@ function mapSeriesRow(row, photoIds = []) {
         updatedAt: new Date(row.updated_at).toISOString(),
         version: Number(row.version)
     };
+}
+
+function mapAuditRow(row) {
+    if (!row) return null;
+    return {
+        id: Number(row.id),
+        occurredAt: new Date(row.occurred_at).toISOString(),
+        entityType: row.entity_type,
+        entityId: String(row.entity_id),
+        operation: row.operation,
+        fromVersion: row.from_version === null ? null : Number(row.from_version),
+        toVersion: row.to_version === null ? null : Number(row.to_version),
+        beforeState: row.before_state,
+        afterState: row.after_state,
+        changes: row.changes || {},
+        operationId: row.operation_id ? String(row.operation_id) : null,
+        metadata: row.metadata || {}
+    };
+}
+
+function buildAuditChanges(beforeState, afterState) {
+    const before = beforeState || {};
+    const after = afterState || {};
+    const changes = {};
+    const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+
+    for (const key of keys) {
+        if (key === 'version') continue;
+        const beforeValue = before[key] === undefined ? null : before[key];
+        const afterValue = after[key] === undefined ? null : after[key];
+        if (JSON.stringify(beforeValue) === JSON.stringify(afterValue)) continue;
+        changes[key] = {
+            before: beforeValue,
+            after: afterValue
+        };
+    }
+    return changes;
+}
+
+async function insertAuditEvent(queryable, {
+    entityType,
+    entityId,
+    operation,
+    beforeState = null,
+    afterState = null,
+    operationId = null,
+    metadata = {}
+}) {
+    const result = await queryable.query(
+        `INSERT INTO admin_audit_events (
+            entity_type, entity_id, operation, from_version, to_version,
+            before_state, after_state, changes, operation_id, metadata
+         ) VALUES (
+            $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9::uuid, $10::jsonb
+         )
+         RETURNING *`,
+        [
+            entityType,
+            entityId,
+            operation,
+            beforeState?.version ?? null,
+            afterState?.version ?? null,
+            beforeState ? JSON.stringify(beforeState) : null,
+            afterState ? JSON.stringify(afterState) : null,
+            JSON.stringify(buildAuditChanges(beforeState, afterState)),
+            operationId,
+            JSON.stringify(metadata || {})
+        ]
+    );
+    return mapAuditRow(result.rows[0]);
 }
 
 function createdAtFromId(id) {
@@ -345,42 +439,54 @@ class PostgresPhotoRepository {
         return mapPhotoRow(result.rows[0]);
     }
 
-    async create(photo, _options = {}) {
+    async create(photo, options = {}) {
         const photoId = normalizePositiveId(photo?.id, 'photoId');
         try {
-            const result = await this.pool.query(
-                `INSERT INTO photos (
-                    id, title, description, date_taken, location_name,
-                    latitude, longitude, camera, lens, resolution, settings,
-                    tags, source_path, source_content_type, mobile_image,
-                    updated_at_ms, derivatives_version, created_at
-                 ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb,
-                    $12, $13, $14, $15, $16, $17, $18
-                 )
-                 RETURNING *`,
-                [
-                    photoId,
-                    photo.title,
-                    photo.description || '',
-                    photo.date || '',
-                    photo.location,
-                    Number(photo.lat),
-                    Number(photo.lng),
-                    photo.camera || '',
-                    photo.lens || '',
-                    photo.resolution || '',
-                    JSON.stringify(photo.settings || {}),
-                    photo.tags || [],
-                    photo.sourcePath || '',
-                    photo.sourceContentType || '',
-                    Boolean(photo.mobileImage),
-                    Number(photo.updatedAt) || 0,
-                    Number(photo.derivativesVersion) || photoId,
-                    createdAtFromId(photoId)
-                ]
-            );
-            return mapPhotoRow(result.rows[0]);
+            return await withTransaction(this.pool, async (client) => {
+                const result = await client.query(
+                    `INSERT INTO photos (
+                        id, title, description, date_taken, location_name,
+                        latitude, longitude, camera, lens, resolution, settings,
+                        tags, source_path, source_content_type, mobile_image,
+                        updated_at_ms, derivatives_version, created_at, media_generation
+                     ) VALUES (
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb,
+                        $12, $13, $14, $15, $16, $17, $18, $19
+                     )
+                     RETURNING *`,
+                    [
+                        photoId,
+                        photo.title,
+                        photo.description || '',
+                        photo.date || '',
+                        photo.location,
+                        Number(photo.lat),
+                        Number(photo.lng),
+                        photo.camera || '',
+                        photo.lens || '',
+                        photo.resolution || '',
+                        JSON.stringify(photo.settings || {}),
+                        photo.tags || [],
+                        photo.sourcePath || '',
+                        photo.sourceContentType || '',
+                        Boolean(photo.mobileImage),
+                        Number(photo.updatedAt) || 0,
+                        Number(photo.derivativesVersion) || photoId,
+                        createdAtFromId(photoId),
+                        photo.mediaGeneration || null
+                    ]
+                );
+                const created = mapPhotoRow(result.rows[0]);
+                await insertAuditEvent(client, {
+                    entityType: 'photo',
+                    entityId: photoId,
+                    operation: options.auditOperation || 'photo.create',
+                    afterState: created,
+                    operationId: options.operationId || null,
+                    metadata: options.auditMetadata
+                });
+                return created;
+            });
         } catch (error) {
             if (error?.constraint === 'photos_pkey') return null;
             throw translatePostgresError(error);
@@ -401,43 +507,222 @@ class PostgresPhotoRepository {
         if (assignments.length === 0) return this.findById(photoId);
 
         assignments.push('version = version + 1');
-        if (expectedVersion !== null) values.push(expectedVersion);
-        let result;
-        try {
-            result = await this.pool.query(
+        return withTransaction(this.pool, async (client) => {
+            const locked = await client.query(
+                'SELECT * FROM photos WHERE id = $1 FOR UPDATE',
+                [photoId]
+            );
+            const row = locked.rows[0];
+            if (!row) return null;
+            assertNoActiveMediaOperation(row, photoId);
+            const current = mapPhotoRow(row);
+            if (expectedVersion !== null && current.version !== expectedVersion) {
+                throw new VersionConflictError('photo', photoId, expectedVersion, current.version);
+            }
+            if (row.media_operation_id) {
+                assignments.push(
+                    'media_operation_id = NULL',
+                    'media_operation_kind = NULL',
+                    'media_operation_generation = NULL',
+                    'media_operation_expires_at = NULL'
+                );
+            }
+            const result = await client.query(
                 `UPDATE photos
                  SET ${assignments.join(', ')}
                  WHERE id = $1
-                 ${expectedVersion === null ? '' : `AND version = $${values.length}`}
                  RETURNING *`,
                 values
             );
-        } catch (error) {
-            throw translatePostgresError(error);
-        }
-        if (result.rows[0]) return mapPhotoRow(result.rows[0]);
-
-        const current = await this.findById(photoId);
-        if (!current) return null;
-        throw new VersionConflictError('photo', photoId, expectedVersion, current.version);
+            const updated = mapPhotoRow(result.rows[0]);
+            await insertAuditEvent(client, {
+                entityType: 'photo',
+                entityId: photoId,
+                operation: options.auditOperation || 'photo.update',
+                beforeState: current,
+                afterState: updated,
+                operationId: options.operationId || null,
+                metadata: options.auditMetadata
+            });
+            return updated;
+        });
     }
 
     async deleteById(id, options = {}) {
         const photoId = normalizePositiveId(id, 'photoId');
         const expectedVersion = normalizeExpectedVersion(options.expectedVersion);
-        const values = [photoId];
-        if (expectedVersion !== null) values.push(expectedVersion);
+        return withTransaction(this.pool, async (client) => {
+            const locked = await client.query(
+                'SELECT * FROM photos WHERE id = $1 FOR UPDATE',
+                [photoId]
+            );
+            const row = locked.rows[0];
+            if (!row) return null;
+            assertNoActiveMediaOperation(row, photoId);
+            const current = mapPhotoRow(row);
+            if (expectedVersion !== null && current.version !== expectedVersion) {
+                throw new VersionConflictError('photo', photoId, expectedVersion, current.version);
+            }
+            await client.query('DELETE FROM photos WHERE id = $1', [photoId]);
+            await insertAuditEvent(client, {
+                entityType: 'photo',
+                entityId: photoId,
+                operation: options.auditOperation || 'photo.delete',
+                beforeState: current,
+                operationId: options.operationId || null,
+                metadata: options.auditMetadata
+            });
+            return current;
+        });
+    }
+
+    async beginMediaMutation(id, {
+        operationId,
+        kind,
+        generation,
+        expectedVersion,
+        ttlMs
+    }) {
+        const photoId = normalizePositiveId(id, 'photoId');
+        const normalizedExpectedVersion = normalizeExpectedVersion(expectedVersion);
+        const normalizedTtlMs = Math.max(10_000, Math.min(Number(ttlMs) || 1_200_000, 3_600_000));
+        return withTransaction(this.pool, async (client) => {
+            const result = await client.query(
+                'SELECT * FROM photos WHERE id = $1 FOR UPDATE',
+                [photoId]
+            );
+            const row = result.rows[0];
+            if (!row) return null;
+            assertNoActiveMediaOperation(row, photoId);
+            const current = mapPhotoRow(row);
+            if (normalizedExpectedVersion !== null && current.version !== normalizedExpectedVersion) {
+                throw new VersionConflictError(
+                    'photo',
+                    photoId,
+                    normalizedExpectedVersion,
+                    current.version
+                );
+            }
+            const updated = await client.query(
+                `UPDATE photos
+                 SET media_operation_id = $2::uuid,
+                     media_operation_kind = $3,
+                     media_operation_generation = $4,
+                     media_operation_expires_at = CURRENT_TIMESTAMP + ($5::bigint * INTERVAL '1 millisecond')
+                 WHERE id = $1
+                 RETURNING *`,
+                [photoId, operationId, kind, generation, normalizedTtlMs]
+            );
+            return {
+                photo: mapPhotoRow(updated.rows[0]),
+                operation: {
+                    id: String(updated.rows[0].media_operation_id),
+                    kind: updated.rows[0].media_operation_kind,
+                    generation: updated.rows[0].media_operation_generation,
+                    expiresAt: new Date(updated.rows[0].media_operation_expires_at).toISOString()
+                }
+            };
+        });
+    }
+
+    async completeMediaMutation(id, operationId, changes, options = {}) {
+        const photoId = normalizePositiveId(id, 'photoId');
+        const expectedVersion = normalizeExpectedVersion(options.expectedVersion);
+        return withTransaction(this.pool, async (client) => {
+            const result = await client.query(
+                'SELECT * FROM photos WHERE id = $1 FOR UPDATE',
+                [photoId]
+            );
+            const row = result.rows[0];
+            if (!row) return null;
+            if (String(row.media_operation_id || '') !== String(operationId || '')) {
+                throw new RepositoryConflictError(
+                    'L’operazione media non è più attiva.',
+                    'MEDIA_OPERATION_STALE',
+                    { entity: 'photo', id: String(photoId) }
+                );
+            }
+            if (
+                changes.mediaGeneration !== undefined
+                && String(changes.mediaGeneration) !== String(row.media_operation_generation)
+            ) {
+                throw new RepositoryConflictError(
+                    'La generazione media non corrisponde alla prenotazione attiva.',
+                    'MEDIA_GENERATION_MISMATCH',
+                    { entity: 'photo', id: String(photoId) }
+                );
+            }
+            const current = mapPhotoRow(row);
+            if (expectedVersion !== null && current.version !== expectedVersion) {
+                throw new VersionConflictError('photo', photoId, expectedVersion, current.version);
+            }
+
+            const assignments = [];
+            const values = [photoId];
+            for (const [field, [column, convert]] of Object.entries(PHOTO_PATCH_COLUMNS)) {
+                if (changes[field] === undefined) continue;
+                values.push(convert(changes[field]));
+                assignments.push(`${column} = $${values.length}`);
+            }
+            assignments.push(
+                'media_operation_id = NULL',
+                'media_operation_kind = NULL',
+                'media_operation_generation = NULL',
+                'media_operation_expires_at = NULL',
+                'version = version + 1'
+            );
+            const updated = await client.query(
+                `UPDATE photos
+                 SET ${assignments.join(', ')}
+                 WHERE id = $1
+                 RETURNING *`,
+                values
+            );
+            const nextPhoto = mapPhotoRow(updated.rows[0]);
+            await insertAuditEvent(client, {
+                entityType: 'photo',
+                entityId: photoId,
+                operation: options.auditOperation
+                    || `photo.media.${row.media_operation_kind}`,
+                beforeState: current,
+                afterState: nextPhoto,
+                operationId,
+                metadata: {
+                    generation: row.media_operation_generation,
+                    ...(options.auditMetadata || {})
+                }
+            });
+            return nextPhoto;
+        });
+    }
+
+    async abortMediaMutation(id, operationId) {
+        const photoId = normalizePositiveId(id, 'photoId');
         const result = await this.pool.query(
-            `DELETE FROM photos
-             WHERE id = $1
-             ${expectedVersion === null ? '' : 'AND version = $2'}
+            `UPDATE photos
+             SET media_operation_id = NULL,
+                 media_operation_kind = NULL,
+                 media_operation_generation = NULL,
+                 media_operation_expires_at = NULL
+             WHERE id = $1 AND media_operation_id = $2::uuid
              RETURNING *`,
-            values
+            [photoId, operationId]
         );
-        if (result.rows[0]) return mapPhotoRow(result.rows[0]);
-        const current = await this.findById(photoId);
-        if (!current) return null;
-        throw new VersionConflictError('photo', photoId, expectedVersion, current.version);
+        return mapPhotoRow(result.rows[0]);
+    }
+
+    async getMediaMutation(id) {
+        const photoId = normalizePositiveId(id, 'photoId');
+        const result = await this.pool.query(
+            'SELECT * FROM photos WHERE id = $1',
+            [photoId]
+        );
+        const row = result.rows[0];
+        if (!row) return null;
+        return {
+            photo: mapPhotoRow(row),
+            operation: activeMediaOperationFromRow(row)
+        };
     }
 }
 
@@ -480,7 +765,7 @@ class PostgresSeriesRepository {
         return mapSeriesRow(result.rows[0], memberships.get(id) || []);
     }
 
-    async create(seriesRecord, _options = {}) {
+    async create(seriesRecord, options = {}) {
         const series = normalizeSeriesRecord(seriesRecord);
         normalizePositiveId(series.id, 'seriesId');
         assertContentReferencesMembership(series);
@@ -510,12 +795,21 @@ class PostgresSeriesRepository {
                     [series.id, series.coverImage]
                 );
             }
-            return loadSeriesById(client, series.id);
+            const created = await loadSeriesById(client, series.id);
+            await insertAuditEvent(client, {
+                entityType: 'series',
+                entityId: series.id,
+                operation: options.auditOperation || 'series.create',
+                afterState: created,
+                operationId: options.operationId || null,
+                metadata: options.auditMetadata
+            });
+            return created;
         });
     }
 
     async updateById(id, changes, options = {}) {
-        return this.#mutate(id, options, (current) => {
+        return this.#mutate(id, options, 'series.update', (current) => {
             const titleChanged = changes.title !== undefined
                 && normalizeSeriesTitleKey(changes.title) !== normalizeSeriesTitleKey(current.title);
             const slug = changes.slug !== undefined
@@ -549,13 +843,21 @@ class PostgresSeriesRepository {
                 );
             }
             await client.query('DELETE FROM series WHERE id = $1', [seriesId]);
+            await insertAuditEvent(client, {
+                entityType: 'series',
+                entityId: seriesId,
+                operation: options.auditOperation || 'series.delete',
+                beforeState: current,
+                operationId: options.operationId || null,
+                metadata: options.auditMetadata
+            });
             return current;
         });
     }
 
     async addPhoto(id, photoId, options = {}) {
         const normalizedPhotoId = normalizePositiveId(photoId, 'photoId');
-        return this.#mutate(id, options, (current) => normalizeSeriesRecord({
+        return this.#mutate(id, options, 'series.add-photo', (current) => normalizeSeriesRecord({
             ...current,
             photos: current.photos.includes(normalizedPhotoId)
                 ? current.photos
@@ -566,21 +868,21 @@ class PostgresSeriesRepository {
 
     async removePhoto(id, photoId, options = {}) {
         const normalizedPhotoId = normalizePositiveId(photoId, 'photoId');
-        return this.#mutate(id, options, (current) => (
+        return this.#mutate(id, options, 'series.remove-photo', (current) => (
             removePhotoReferences(current, normalizedPhotoId)
         ));
     }
 
     async reorderPhotos(id, photoIds, options = {}) {
         const normalizedIds = photoIds.map((photoId) => normalizePositiveId(photoId, 'photoId'));
-        return this.#mutate(id, options, (current) => normalizeSeriesRecord({
+        return this.#mutate(id, options, 'series.reorder-photos', (current) => normalizeSeriesRecord({
             ...current,
             photos: normalizedIds,
             updatedAt: new Date().toISOString()
         }));
     }
 
-    async #mutate(id, options, transform) {
+    async #mutate(id, options, defaultOperation, transform) {
         const seriesId = normalizePositiveId(id, 'seriesId');
         const expectedVersion = normalizeExpectedVersion(options.expectedVersion);
         return withTransaction(this.pool, async (client) => {
@@ -596,8 +898,77 @@ class PostgresSeriesRepository {
             }
             const next = transform(current);
             await persistSeriesAggregate(client, next, current.version + 1);
-            return loadSeriesById(client, seriesId);
+            const updated = await loadSeriesById(client, seriesId);
+            await insertAuditEvent(client, {
+                entityType: 'series',
+                entityId: seriesId,
+                operation: options.auditOperation || defaultOperation,
+                beforeState: current,
+                afterState: updated,
+                operationId: options.operationId || null,
+                metadata: options.auditMetadata
+            });
+            return updated;
         });
+    }
+}
+
+class PostgresAuditRepository {
+    constructor(pool) {
+        this.pool = pool;
+    }
+
+    async list({
+        limit = 50,
+        beforeId = null,
+        entityType = '',
+        entityId = null,
+        operation = ''
+    } = {}) {
+        const normalizedLimit = Math.max(1, Math.min(Number(limit) || 50, 100));
+        const conditions = [];
+        const values = [];
+        const addCondition = (sql, value) => {
+            values.push(value);
+            conditions.push(sql.replace('?', `$${values.length}`));
+        };
+
+        if (beforeId !== null && beforeId !== undefined && beforeId !== '') {
+            addCondition('id < ?', normalizePositiveId(beforeId, 'beforeId'));
+        }
+        if (entityType) {
+            const normalizedEntityType = String(entityType).trim().toLowerCase();
+            if (!['photo', 'series'].includes(normalizedEntityType)) {
+                throw new TypeError('entityType audit non valido.');
+            }
+            addCondition('entity_type = ?', normalizedEntityType);
+        }
+        if (entityId !== null && entityId !== undefined && entityId !== '') {
+            addCondition('entity_id = ?', normalizePositiveId(entityId, 'entityId'));
+        }
+        if (operation) {
+            addCondition('operation = ?', String(operation).trim());
+        }
+        values.push(normalizedLimit);
+
+        const result = await this.pool.query(
+            `SELECT *
+             FROM admin_audit_events
+             ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}
+             ORDER BY id DESC
+             LIMIT $${values.length}`,
+            values
+        );
+        return result.rows.map(mapAuditRow);
+    }
+
+    async findById(id) {
+        const auditId = normalizePositiveId(id, 'auditId');
+        const result = await this.pool.query(
+            'SELECT * FROM admin_audit_events WHERE id = $1',
+            [auditId]
+        );
+        return mapAuditRow(result.rows[0]);
     }
 }
 
@@ -611,10 +982,13 @@ class PostgresPortfolioRepository {
             transactions: true,
             optimisticConcurrency: true,
             referentialIntegrity: true,
-            perEntityWrites: true
+            perEntityWrites: true,
+            distributedMediaMutations: true,
+            auditHistory: true
         });
         this.photos = new PostgresPhotoRepository(pool);
         this.series = new PostgresSeriesRepository(pool);
+        this.audit = new PostgresAuditRepository(pool);
     }
 
     async deletePhotoWithReferences(photoId, options = {}) {
@@ -627,6 +1001,7 @@ class PostgresPortfolioRepository {
             );
             const photo = mapPhotoRow(photoResult.rows[0]);
             if (!photo) return null;
+            assertNoActiveMediaOperation(photoResult.rows[0], id);
             if (expectedVersion !== null && photo.version !== expectedVersion) {
                 throw new VersionConflictError('photo', id, expectedVersion, photo.version);
             }
@@ -645,9 +1020,30 @@ class PostgresPortfolioRepository {
                 const current = await loadSeriesById(client, row.id);
                 const next = removePhotoReferences(current, id);
                 await persistSeriesAggregate(client, next, current.version + 1);
+                const updatedSeries = await loadSeriesById(client, row.id);
+                await insertAuditEvent(client, {
+                    entityType: 'series',
+                    entityId: row.id,
+                    operation: 'series.photo-delete-cleanup',
+                    beforeState: current,
+                    afterState: updatedSeries,
+                    operationId: options.operationId || null,
+                    metadata: {
+                        triggerPhotoId: String(id),
+                        ...(options.auditMetadata || {})
+                    }
+                });
             }
 
             await client.query('DELETE FROM photos WHERE id = $1', [id]);
+            await insertAuditEvent(client, {
+                entityType: 'photo',
+                entityId: id,
+                operation: options.auditOperation || 'photo.delete',
+                beforeState: photo,
+                operationId: options.operationId || null,
+                metadata: options.auditMetadata
+            });
             return {
                 photo,
                 referenceCleanup: {

@@ -374,10 +374,10 @@ async function importMetadataSnapshot(pool, snapshot, { dryRun = false } = {}) {
                     id, title, description, date_taken, location_name,
                     latitude, longitude, camera, lens, resolution, settings,
                     tags, source_path, source_content_type, mobile_image,
-                    updated_at_ms, derivatives_version, created_at
+                    updated_at_ms, derivatives_version, created_at, media_generation
                  ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb,
-                    $12, $13, $14, $15, $16, $17, $18
+                    $12, $13, $14, $15, $16, $17, $18, $19
                  )`,
                 [
                     photo.id,
@@ -397,7 +397,8 @@ async function importMetadataSnapshot(pool, snapshot, { dryRun = false } = {}) {
                     photo.mobileImage,
                     photo.updatedAt,
                     photo.derivativesVersion,
-                    new Date(photo.id).toISOString()
+                    new Date(photo.id).toISOString(),
+                    photo.mediaGeneration || null
                 ]
             );
         }

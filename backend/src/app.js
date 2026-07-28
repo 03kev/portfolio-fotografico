@@ -5,6 +5,7 @@ const rateLimit = require('express-rate-limit');
 const { pipeline } = require('stream/promises');
 
 const authRoutes = require('./routes/auth');
+const auditRoutes = require('./routes/audit');
 const photoRoutes = require('./routes/photos');
 const seriesRoutes = require('./routes/series');
 const { portfolioRepository } = require('./repositories');
@@ -224,6 +225,7 @@ app.use(PUBLIC_UPLOADS_PREFIX, ...uploadsMiddlewares);
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/audit', auditRoutes);
 app.use('/api/photos', writeLimiter);
 app.use('/api/photos', photoRoutes);
 app.use('/api/series', writeLimiter);
@@ -267,7 +269,7 @@ function toAbsoluteSiteUrl(value, siteBaseUrl) {
 function resolvePhotoImageUrl(photo, siteBaseUrl, assetKey = 'socialImagePath') {
     const photoId = String(photo?.id || '').trim();
     if (!photoId) return '';
-    const raw = buildPhotoAssetPaths(photoId)[assetKey];
+    const raw = buildPhotoAssetPaths(photoId, 'bin', photo.mediaGeneration)[assetKey];
     if (!raw) return '';
 
     const normalized = buildPublicAssetUrl(raw);
@@ -782,7 +784,9 @@ async function handleSitemapImages(req, res) {
                 const photoId = String(photo.id || '').trim();
                 if (!photoId) return '';
 
-                let fullImage = buildPublicAssetUrl(buildPhotoAssetPaths(photoId).imagePath);
+                let fullImage = buildPublicAssetUrl(
+                    buildPhotoAssetPaths(photoId, 'bin', photo.mediaGeneration).imagePath
+                );
                 if (!fullImage) return '';
                 if (!/^https?:\/\//i.test(fullImage)) {
                     if (fullImage.startsWith('/')) {

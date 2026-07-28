@@ -10,6 +10,7 @@ const {
     normalizeSeriesRecord,
     normalizeSeriesTitleKey
 } = require('../services/seriesRecord');
+const { MediaMutationConflictError, RepositoryConflictError } = require('./errors');
 
 const PHOTOS_METADATA_FILE = 'photos.json';
 const SERIES_METADATA_FILE = 'series.json';
@@ -22,6 +23,7 @@ function normalizePhotoId(value) {
 class JsonPhotoRepository {
     constructor(metadataStorage) {
         this.metadataStorage = metadataStorage;
+        this.mediaOperations = new Map();
     }
 
     async list() {
@@ -87,6 +89,74 @@ class JsonPhotoRepository {
         const [deletedPhoto] = photos.splice(index, 1);
         await this.#writeAll(photos);
         return deletedPhoto;
+    }
+
+    async beginMediaMutation(id, { operationId, kind, generation, ttlMs }) {
+        const photoId = normalizePhotoId(id);
+        const photo = await this.findById(photoId);
+        if (!photo) return null;
+        const active = this.mediaOperations.get(photoId);
+        if (active && active.expiresAtMs > Date.now()) {
+            throw new MediaMutationConflictError(
+                photoId,
+                active.kind,
+                new Date(active.expiresAtMs).toISOString()
+            );
+        }
+        const operation = {
+            id: operationId,
+            kind,
+            generation,
+            expiresAtMs: Date.now() + (Number(ttlMs) || 1_200_000)
+        };
+        this.mediaOperations.set(photoId, operation);
+        return {
+            photo,
+            operation: {
+                ...operation,
+                expiresAt: new Date(operation.expiresAtMs).toISOString()
+            }
+        };
+    }
+
+    async completeMediaMutation(id, operationId, changes, options = {}) {
+        const photoId = normalizePhotoId(id);
+        const active = this.mediaOperations.get(photoId);
+        if (!active || active.id !== operationId) {
+            throw new RepositoryConflictError(
+                'L’operazione media non è più attiva.',
+                'MEDIA_OPERATION_STALE'
+            );
+        }
+        const updated = await this.updateById(photoId, changes, options);
+        this.mediaOperations.delete(photoId);
+        return updated;
+    }
+
+    async abortMediaMutation(id, operationId) {
+        const photoId = normalizePhotoId(id);
+        const active = this.mediaOperations.get(photoId);
+        if (!active || active.id !== operationId) return null;
+        this.mediaOperations.delete(photoId);
+        return this.findById(photoId);
+    }
+
+    async getMediaMutation(id) {
+        const photoId = normalizePhotoId(id);
+        const photo = await this.findById(photoId);
+        if (!photo) return null;
+        const active = this.mediaOperations.get(photoId);
+        return {
+            photo,
+            operation: active && active.expiresAtMs > Date.now()
+                ? {
+                    id: active.id,
+                    kind: active.kind,
+                    generation: active.generation,
+                    expiresAt: new Date(active.expiresAtMs).toISOString()
+                }
+                : null
+        };
     }
 
     async #writeAll(photos) {
@@ -258,7 +328,9 @@ class JsonPortfolioRepository {
             transactions: false,
             optimisticConcurrency: false,
             referentialIntegrity: false,
-            perEntityWrites: false
+            perEntityWrites: false,
+            distributedMediaMutations: false,
+            auditHistory: false
         });
         this.photos = new JsonPhotoRepository(metadataStorage);
         this.series = new JsonSeriesRepository(metadataStorage);

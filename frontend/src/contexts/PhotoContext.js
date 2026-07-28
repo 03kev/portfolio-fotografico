@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect, useMemo, useRef } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useMemo, useRef, useCallback } from 'react';
 import { photoService } from '../utils/api';
 
 const PhotoContext = createContext();
@@ -281,6 +281,20 @@ export function PhotoProvider({ children }) {
     const [state, dispatch] = useReducer(photoReducer, initialState);
     const focusHandlerRef = useRef(null);
     const lastFetchTimeRef = useRef(0);
+    const stateRef = useRef(state);
+    stateRef.current = state;
+
+    const refreshPhotosAfterConflict = useCallback(async () => {
+        try {
+            const response = await photoService.getAll();
+            dispatch({
+                type: ACTIONS.SET_PHOTOS,
+                payload: response.data?.data || response.data || []
+            });
+        } catch (refreshError) {
+            console.error('Error refreshing photos after a conflict:', refreshError);
+        }
+    }, []);
     
     // Actions
     const actions = useMemo(() => ({
@@ -394,7 +408,10 @@ export function PhotoProvider({ children }) {
         updatePhoto: async (photoId, photoData) => {
             try {
                 dispatch({ type: ACTIONS.SET_LOADING, payload: true });
-                const response = await photoService.update(photoId, photoData);
+                const current = stateRef.current.photos.find(
+                    (photo) => String(photo.id) === String(photoId)
+                );
+                const response = await photoService.update(photoId, photoData, current?.version);
                 const updatedPhoto = response.data?.data || response.data;
                 
                 dispatch({ type: ACTIONS.UPDATE_PHOTO, payload: updatedPhoto });
@@ -403,6 +420,9 @@ export function PhotoProvider({ children }) {
                 return updatedPhoto;
             } catch (error) {
                 console.error('Error updating photo:', error);
+                if (error?.status === 409 || error?.status === 428) {
+                    await refreshPhotosAfterConflict();
+                }
                 dispatch({ type: ACTIONS.SET_ERROR, payload: 'Errore durante l\'aggiornamento della foto' });
                 throw error;
             }
@@ -411,12 +431,18 @@ export function PhotoProvider({ children }) {
         // Update photo without toggling global loading (for modal/background flows)
         updatePhotoInBackground: async (photoId, photoData) => {
             try {
-                const response = await photoService.update(photoId, photoData);
+                const current = stateRef.current.photos.find(
+                    (photo) => String(photo.id) === String(photoId)
+                );
+                const response = await photoService.update(photoId, photoData, current?.version);
                 const updatedPhoto = response.data?.data || response.data;
                 dispatch({ type: ACTIONS.UPDATE_PHOTO, payload: updatedPhoto });
                 return updatedPhoto;
             } catch (error) {
                 console.error('Error updating photo in background:', error);
+                if (error?.status === 409 || error?.status === 428) {
+                    await refreshPhotosAfterConflict();
+                }
                 throw error;
             }
         },
@@ -430,13 +456,19 @@ export function PhotoProvider({ children }) {
         // Delete photo
         deletePhoto: async (photoId) => {
             try {
-                await photoService.delete(photoId);
+                const current = stateRef.current.photos.find(
+                    (photo) => String(photo.id) === String(photoId)
+                );
+                await photoService.delete(photoId, current?.version);
                 dispatch({ type: ACTIONS.DELETE_PHOTO, payload: photoId });
                 
                 // Emetti evento per notificare altri contesti
                 window.dispatchEvent(new CustomEvent('photoDeleted', { detail: { photoId } }));
             } catch (error) {
                 console.error('Error deleting photo:', error);
+                if (error?.status === 409 || error?.status === 428) {
+                    await refreshPhotosAfterConflict();
+                }
                 throw error;
             }
         },
@@ -506,7 +538,7 @@ export function PhotoProvider({ children }) {
                 payload: id
             });
         }
-    }), []);
+    }), [refreshPhotosAfterConflict]);
     
     // Load photos on mount
     useEffect(() => {

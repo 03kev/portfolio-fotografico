@@ -15,6 +15,7 @@ const DEFAULTS = Object.freeze({
     urlencodedBodyLimit: '2mb',
     publicAssetCacheControl: 'public, max-age=31536000, immutable',
     r2SignedUploadUrlExpiresSeconds: 600, // 10 minuti
+    photoMediaMutationTtlMs: 20 * 60 * 1000, // 20 minuti
 
     r2MetadataPrefix: 'data'
 });

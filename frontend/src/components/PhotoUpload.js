@@ -546,6 +546,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                 ...formDataSnapshot,
                 photoId,
                 sourcePath: signedData.sourcePath,
+                mediaGeneration: signedData.mediaGeneration,
                 sourceContentType: selectedFileSnapshot.type,
                 settings: nextSettings,
                 tags: formDataSnapshot.tags

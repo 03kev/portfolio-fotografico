@@ -3,7 +3,7 @@ const router = express.Router();
 const Series = require('../models/Series');
 const { portfolioRepository } = require('../repositories');
 const { parseNumericIdOrThrow } = require('../utils/ids');
-const { repositoryOptionsFromRequest } = require('../utils/expectedVersion');
+const { getExpectedVersion } = require('../utils/expectedVersion');
 const { sanitizeSeriesPayload } = require('../utils/inputSanitizers');
 const { canAccessAdminData, protectWriteMethods } = require('../middleware/auth');
 const {
@@ -11,6 +11,20 @@ const {
 } = require('../services/seriesRecord');
 
 router.use(protectWriteMethods);
+
+function concurrencyOptions(req) {
+    const expectedVersion = getExpectedVersion(req);
+    if (
+        expectedVersion === null
+        && portfolioRepository.capabilities.optimisticConcurrency
+    ) {
+        const error = new Error('Questa operazione richiede If-Match con la versione corrente.');
+        error.status = 428;
+        error.code = 'EXPECTED_VERSION_REQUIRED';
+        throw error;
+    }
+    return expectedVersion === null ? {} : { expectedVersion };
+}
 
 function sendSuccess(res, data, extra = {}, status = 200) {
     return res.status(status).json({
@@ -103,7 +117,7 @@ router.put('/:id', async (req, res) => {
         const persistedUpdatedSeries = await portfolioRepository.series.updateById(
             id,
             updateData,
-            repositoryOptionsFromRequest(req)
+            concurrencyOptions(req)
         );
         if (!persistedUpdatedSeries) {
             return sendError(res, 'Serie non trovata', 404);
@@ -129,7 +143,7 @@ router.delete('/:id', async (req, res) => {
 
         const deletedSeries = await portfolioRepository.series.deleteById(
             id,
-            repositoryOptionsFromRequest(req)
+            concurrencyOptions(req)
         );
         if (!deletedSeries) {
             return sendError(res, 'Serie non trovata', 404);
@@ -156,7 +170,7 @@ router.post('/:id/photos/:photoId', async (req, res) => {
         const updatedSeries = await portfolioRepository.series.addPhoto(
             id,
             normalizedPhotoId,
-            repositoryOptionsFromRequest(req)
+            concurrencyOptions(req)
         );
         if (!updatedSeries) {
             return sendError(res, 'Serie non trovata', 404);
@@ -182,7 +196,7 @@ router.delete('/:id/photos/:photoId', async (req, res) => {
         const updatedSeries = await portfolioRepository.series.removePhoto(
             id,
             normalizedPhotoId,
-            repositoryOptionsFromRequest(req)
+            concurrencyOptions(req)
         );
         if (!updatedSeries) {
             return sendError(res, 'Serie non trovata', 404);

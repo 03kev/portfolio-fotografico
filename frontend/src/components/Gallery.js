@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Loader2 } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import { LOCAL_IMAGE_FALLBACK, resolveVersionedPhotoAssetUrl } from '../utils/imageUrl';
-import { photoService, signSourceUpload, uploadSourceToSignedUrl } from '../utils/api';
+import { photoService, signExistingSourceUpload, uploadSourceToSignedUrl } from '../utils/api';
 import { useGalleryQueryState } from '../hooks/useGalleryQueryState';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import {
@@ -776,6 +776,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       step: 'sign'
     });
     let currentStep = 'sign';
+    let signedData = null;
     try {
       notify?.info?.(`Caricamento source in corso per "${targetPhoto.title || 'foto'}"...`, 2500);
 
@@ -785,8 +786,8 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
         label: 'Firma URL upload',
         step: 'sign'
       });
-      const signedData = await signSourceUpload({
-        uploadId: String(targetPhoto.id),
+      signedData = await signExistingSourceUpload({
+        photo: targetPhoto,
         file
       });
 
@@ -820,8 +821,9 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       const replaceResponse = await photoService.replaceSource(targetPhoto.id, {
         sourcePath: signedData.sourcePath,
         sourceContentType: file.type,
-        replaceToken: signedData.replaceToken || ''
-      });
+        operationId: signedData.operationId,
+        mediaGeneration: signedData.mediaGeneration
+      }, targetPhoto.version);
       stopSoftProgress();
       const updatedPhoto = replaceResponse?.data?.data || replaceResponse?.data;
       actions.applyPhotoUpdate?.(updatedPhoto);
@@ -833,10 +835,24 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       notify?.success?.(`Source aggiornata: "${targetPhoto.title || 'foto'}".`, 3500);
     } catch (error) {
       stopSoftProgress();
+      if (signedData?.operationId) {
+        try {
+          await photoService.abortMediaOperation(
+            targetPhoto.id,
+            signedData.operationId,
+            signedData.sourcePath
+          );
+        } catch (abortError) {
+          console.warn('Impossibile annullare la prenotazione media:', abortError);
+        }
+      }
       console.error('Errore reupload source privata:', error);
       if (error?.code === 'UPLOAD_ABORTED') {
         notify?.info?.('Upload source annullato.', 3500);
       } else {
+        if (error?.status === 409 || error?.status === 428) {
+          await actions.fetchPhotos({ force: true });
+        }
         const stepLabel = REUPLOAD_STEP_LABELS[currentStep] || 'operazione source';
         notify?.error?.(buildOperationErrorMessage(error, stepLabel), 6500);
       }
@@ -862,20 +878,22 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       step: 'update'
     });
 
-    let currentStep = 'update';
+    let currentStep = 'regenerate';
     try {
       notify?.info?.(`Applicazione crop in corso per "${title}"...`, 2200);
-      await photoService.update(photoId, { settings: JSON.stringify(nextSettings) });
-
-      currentStep = 'regenerate';
       actions.setPhotoOpStatus(photoId, {
-        percent: 38,
+        percent: 24,
         label: 'Rigenerazione derivate',
         step: 'regenerate'
       });
-      startSoftProgress(photoId, 38, 95);
+      startSoftProgress(photoId, 24, 95);
 
-      const regenerateResponse = await photoService.regenerateDerivatives(photoId);
+      const currentPhoto = photos.find((photo) => String(photo.id) === String(photoId));
+      const regenerateResponse = await photoService.applyCrop(
+        photoId,
+        nextSettings,
+        currentPhoto?.version
+      );
       stopSoftProgress();
 
       const updatedPhoto = regenerateResponse?.data?.data || regenerateResponse?.data;
@@ -889,6 +907,9 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     } catch (error) {
       stopSoftProgress();
       console.error('Errore applicazione crop:', error);
+      if (error?.status === 409 || error?.status === 428) {
+        await actions.fetchPhotos({ force: true });
+      }
       const stepLabel = CROP_STEP_LABELS[currentStep] || 'applicazione crop';
       notify?.error?.(buildOperationErrorMessage(error, stepLabel), 6000);
     } finally {

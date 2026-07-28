@@ -20,7 +20,9 @@ const PUBLIC_ASSET_CACHE_CONTROL = DEFAULTS.publicAssetCacheControl;
 
 function withDefaultPhotoVariants(photo) {
     const photoId = String(photo?.id || '').trim();
-    const assets = photoId ? buildPhotoAssetPaths(photoId) : null;
+    const assets = photoId
+        ? buildPhotoAssetPaths(photoId, 'bin', photo?.mediaGeneration)
+        : null;
     const imagePath = assets ? normalizeUploadsPath(assets.imagePath) : '';
     const mobileImagePath = photo?.mobileImage && assets
         ? normalizeUploadsPath(assets.mobileImagePath)

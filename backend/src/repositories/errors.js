@@ -31,7 +31,24 @@ class ReferenceIntegrityError extends RepositoryConflictError {
     }
 }
 
+class MediaMutationConflictError extends RepositoryConflictError {
+    constructor(id, operation = undefined, expiresAt = undefined) {
+        super(
+            `È già in corso un'operazione sui file della foto ${id}.`,
+            'PHOTO_MUTATION_IN_PROGRESS',
+            {
+                entity: 'photo',
+                id: String(id),
+                operation,
+                expiresAt
+            }
+        );
+        this.name = 'MediaMutationConflictError';
+    }
+}
+
 module.exports = {
+    MediaMutationConflictError,
     ReferenceIntegrityError,
     RepositoryConflictError,
     VersionConflictError

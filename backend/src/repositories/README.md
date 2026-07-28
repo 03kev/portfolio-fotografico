@@ -10,6 +10,10 @@ The application depends on domain operations, not on metadata documents.
 - `photos.findById(id)`
 - `photos.create(photo, options?)`
 - `photos.updateById(id, changes, options?)`
+- `photos.beginMediaMutation(id, reservation)`
+- `photos.getMediaMutation(id)`
+- `photos.completeMediaMutation(id, operationId, changes, options?)`
+- `photos.abortMediaMutation(id, operationId)`
 - `series.list()`
 - `series.findByIdentifier(identifier)`
 - `series.create(series, options?)`
@@ -17,6 +21,8 @@ The application depends on domain operations, not on metadata documents.
 - `series.deleteById(id, options?)`
 - `series.addPhoto(id, photoId, options?)`
 - `series.removePhoto(id, photoId, options?)`
+- `audit.list(filters?)`
+- `audit.findById(id)`
 - `deletePhotoWithReferences(photoId, options?)`
 
 Write operations accept an options object so a transactional implementation can
@@ -26,10 +32,22 @@ operations; callers do not pass database clients or transaction handles. The
 current JSON adapter ignores these options and advertises that limitation
 through `capabilities`.
 
+Long-running R2/Sharp work never owns a database transaction. A short
+`beginMediaMutation` transaction reserves the photo row and records an expiring
+operation ID plus an immutable media generation. `completeMediaMutation`
+atomically switches the visible generation and increments `version`; ordinary
+metadata updates and deletes reject an active reservation. This is distributed
+coordination through Postgres, not a process-local lock.
+
 `deletePhotoWithReferences` is one repository operation because deleting a photo
 and removing every series reference must become one database transaction. It is
 only best-effort in `JsonPortfolioRepository`; therefore the persistence P0 is
 not considered fixed while this adapter is active.
+
+The PostgreSQL adapter writes immutable audit events in the same transaction as
+each aggregate mutation. The JSON adapter deliberately exposes
+`capabilities.auditHistory = false`; it does not emulate transactional history
+with another JSON document.
 
 ## Intended SQL ownership
 

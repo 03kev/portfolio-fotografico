@@ -35,17 +35,19 @@ they benefit from uniqueness, ordering and foreign-key enforcement.
 | Operation | Transaction/concurrency rule | Conflict |
 | --- | --- | --- |
 | Create photo | Single insert; stable client-provided ID makes retry detectable | Duplicate ID: `409` |
-| Update photo | Atomic partial `UPDATE`; optional `expectedVersion` predicate | Stale expected version: `409` |
-| Delete photo | Serializable transaction locks the photo, removes all series references, then deletes it | Stale expected version: `409`; serialization/deadlock is retried |
+| Update photo | Transaction locks the photo, rejects active media work and applies the patch | Missing HTTP precondition: `428`; stale expected version: `409` |
+| Replace source/crop/regenerate | Short reservation transaction, immutable R2 generation, atomic finalize transaction | Active operation or stale version: `409` |
+| Delete photo | Serializable transaction locks the photo, rejects active media work, removes all series references, then deletes it | Missing HTTP precondition: `428`; stale expected version: `409`; serialization/deadlock is retried |
 | Create series | Transaction validates all member photos, inserts aggregate and membership | Duplicate title/slug or invalid reference: `409` |
 | Update series/content | Transaction locks the aggregate, validates membership/content and replaces the aggregate atomically | Stale expected version: `409` |
 | Add/remove/reorder photo | Same series aggregate transaction; cover/content are normalized together | Stale expected version: `409` |
 | Delete series | Row delete with optional expected version; memberships cascade | Stale expected version: `409` |
 
 Hard deletes never use upsert, so a stale update cannot recreate a deleted row.
-`expectedVersion` is useful for editor-style whole-aggregate writes and is not
-required for independent atomic photo patches. Retryable SQL states `40001` and
-`40P01` are retried inside the repository; domain/version conflicts are not.
+The admin HTTP API requires `If-Match` for updates and deletes when PostgreSQL
+is active. Repository callers may still omit `expectedVersion` for explicitly
+independent internal patches. Retryable SQL states `40001` and `40P01` are
+retried inside the repository; domain/version conflicts are not.
 
 For Neon, `DATABASE_URL` is the pooled connection string used by the serverless
 runtime. Migration and import scripts prefer Vercel/Neon's standard
@@ -58,6 +60,34 @@ helper upgrades that mode to `verify-full` explicitly, preserving certificate
 and hostname verification across the upcoming node-postgres SSL semantics
 change.
 
-R2 object operations intentionally remain outside this model for now. The
-database transaction guarantees metadata integrity, but media/database atomicity
-requires the later saga/outbox phase.
+R2 cannot participate in a PostgreSQL transaction. Media writes therefore use
+generation-specific immutable keys: failed work is never referenced, and a
+successful finalize changes the database pointer and version atomically. Old or
+failed generations are deleted best-effort. A process crash can still leave an
+unreferenced R2 generation, but it cannot expose mixed derivatives or stale
+metadata; periodic orphan collection may be added independently if storage
+growth makes it worthwhile.
+
+## Admin audit history
+
+`admin_audit_events` is an append-only history of photo and series aggregates.
+Every event is inserted inside the same transaction as the domain change and
+contains:
+
+- entity type and ID;
+- operation name and timestamp;
+- previous and resulting entity versions;
+- complete before/after snapshots;
+- a top-level field diff;
+- an optional operation UUID and contextual metadata.
+
+Database triggers reject direct `UPDATE` and `DELETE` statements against audit
+rows. A failed or rolled-back domain transaction therefore cannot leave an
+orphan audit event, and a successful transaction cannot exist without its
+corresponding history record.
+
+The history API is admin-authenticated and available only with
+`METADATA_BACKEND=postgres`. Snapshots are intentionally retained after entity
+deletion so editorial state can be inspected and can support an explicit,
+version-checked restore workflow in the future. The audit log itself is never
+used as mutable application state.

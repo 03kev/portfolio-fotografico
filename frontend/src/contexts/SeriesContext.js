@@ -102,6 +102,26 @@ export function SeriesProvider({ children }) {
     const [state, dispatch] = useReducer(seriesReducer, initialState);
     const includeUnpublishedRef = useRef(false);
     const fetchRequestIdRef = useRef(0);
+    const stateRef = useRef(state);
+    stateRef.current = state;
+
+    const findCurrentSeries = useCallback((id) => (
+        stateRef.current.series.find((item) => String(item.id) === String(id))
+        || (
+            String(stateRef.current.currentSeries?.id) === String(id)
+                ? stateRef.current.currentSeries
+                : null
+        )
+    ), []);
+
+    const refreshAfterConflict = useCallback(async () => {
+        try {
+            const response = await seriesService.getAll(includeUnpublishedRef.current);
+            dispatch({ type: ACTIONS.SET_SERIES, payload: unwrapApiData(response, []) });
+        } catch (refreshError) {
+            console.error('Errore nel refresh delle serie dopo un conflitto:', refreshError);
+        }
+    }, []);
 
     const fetchSeries = useCallback(async (includeUnpublished = includeUnpublishedRef.current) => {
         const requestedScope = Boolean(includeUnpublished);
@@ -174,49 +194,65 @@ export function SeriesProvider({ children }) {
 
     const updateSeries = useCallback(async (id, seriesData) => {
         try {
-            const response = await seriesService.update(id, seriesData);
+            const current = findCurrentSeries(id);
+            const response = await seriesService.update(id, seriesData, current?.version);
             const updatedSeries = unwrapApiData(response, null);
             dispatch({ type: ACTIONS.UPDATE_SERIES, payload: updatedSeries });
             return updatedSeries;
         } catch (error) {
             console.error('Errore nell\'aggiornamento della serie:', error);
+            if (error?.status === 409 || error?.status === 428) {
+                await refreshAfterConflict();
+            }
             throw error;
         }
-    }, []);
+    }, [findCurrentSeries, refreshAfterConflict]);
 
     const deleteSeries = useCallback(async (id) => {
         try {
-            await seriesService.delete(id);
+            const current = findCurrentSeries(id);
+            await seriesService.delete(id, current?.version);
             dispatch({ type: ACTIONS.DELETE_SERIES, payload: id });
         } catch (error) {
             console.error('Errore nell\'eliminazione della serie:', error);
+            if (error?.status === 409 || error?.status === 428) {
+                await refreshAfterConflict();
+            }
             throw error;
         }
-    }, []);
+    }, [findCurrentSeries, refreshAfterConflict]);
 
     const addPhotoToSeries = useCallback(async (seriesId, photoId) => {
         try {
-            const response = await seriesService.addPhoto(seriesId, photoId);
+            const current = findCurrentSeries(seriesId);
+            const response = await seriesService.addPhoto(seriesId, photoId, current?.version);
             const updatedSeries = unwrapApiData(response, null);
             dispatch({ type: ACTIONS.UPDATE_SERIES, payload: updatedSeries });
             return updatedSeries;
         } catch (error) {
             console.error('Errore nell\'aggiunta della foto:', error);
+            if (error?.status === 409 || error?.status === 428) {
+                await refreshAfterConflict();
+            }
             throw error;
         }
-    }, []);
+    }, [findCurrentSeries, refreshAfterConflict]);
 
     const removePhotoFromSeries = useCallback(async (seriesId, photoId) => {
         try {
-            const response = await seriesService.removePhoto(seriesId, photoId);
+            const current = findCurrentSeries(seriesId);
+            const response = await seriesService.removePhoto(seriesId, photoId, current?.version);
             const updatedSeries = unwrapApiData(response, null);
             dispatch({ type: ACTIONS.UPDATE_SERIES, payload: updatedSeries });
             return updatedSeries;
         } catch (error) {
             console.error('Errore nella rimozione della foto:', error);
+            if (error?.status === 409 || error?.status === 428) {
+                await refreshAfterConflict();
+            }
             throw error;
         }
-    }, []);
+    }, [findCurrentSeries, refreshAfterConflict]);
 
     const setEditMode = useCallback((enabled) => {
         dispatch({ type: ACTIONS.SET_EDIT_MODE, payload: enabled });

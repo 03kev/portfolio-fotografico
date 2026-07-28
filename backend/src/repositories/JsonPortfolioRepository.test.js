@@ -64,7 +64,9 @@ test('exposes domain operations while declaring the JSON consistency limitations
         transactions: false,
         optimisticConcurrency: false,
         referentialIntegrity: false,
-        perEntityWrites: false
+        perEntityWrites: false,
+        distributedMediaMutations: false,
+        auditHistory: false
     });
     assert.equal(typeof repository.photos.list, 'function');
     assert.equal(typeof repository.photos.findById, 'function');

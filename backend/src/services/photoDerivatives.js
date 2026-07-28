@@ -73,8 +73,10 @@ function normalizePrivateSourcePath(value) {
     const normalized = normalizePrivatePath(value);
     if (!normalized.startsWith(`${PRIVATE_SOURCE_PREFIX}/`)) return '';
 
-    const filename = normalized.slice(`${PRIVATE_SOURCE_PREFIX}/`.length);
-    if (!/^photo_[a-zA-Z0-9_-]+\.[a-z0-9]+$/.test(filename)) return '';
+    const relativePath = normalized.slice(`${PRIVATE_SOURCE_PREFIX}/`.length);
+    const isLegacyPath = /^photo_[a-zA-Z0-9_-]+\.[a-z0-9]+$/.test(relativePath);
+    const isGeneratedPath = /^generations\/[a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+\/photo\.[a-z0-9]+$/.test(relativePath);
+    if (!isLegacyPath && !isGeneratedPath) return '';
     return normalized;
 }
 
@@ -82,14 +84,37 @@ function normalizePrivateSourcePathForPhotoId(value, photoId) {
     const normalized = normalizePrivateSourcePath(value);
     if (!normalized) return '';
 
-    const expectedPrefix = `${PRIVATE_SOURCE_PREFIX}/photo_${photoId}.`;
-    if (!normalized.startsWith(expectedPrefix)) return '';
+    const legacyPrefix = `${PRIVATE_SOURCE_PREFIX}/photo_${photoId}.`;
+    const generatedPrefix = `${PRIVATE_SOURCE_PREFIX}/generations/${photoId}/`;
+    if (!normalized.startsWith(legacyPrefix) && !normalized.startsWith(generatedPrefix)) return '';
     return normalized;
 }
 
-function buildPhotoAssetPaths(photoId, sourceExtension = 'bin') {
+function normalizeMediaGeneration(value) {
+    const generation = String(value || '').trim();
+    if (!generation) return '';
+    if (!/^[a-zA-Z0-9_-]{1,80}$/.test(generation)) {
+        throw new TypeError('Generazione media non valida.');
+    }
+    return generation;
+}
+
+function buildPhotoAssetPaths(photoId, sourceExtension = 'bin', mediaGeneration = '') {
     const baseName = `photo_${photoId}`;
     const cleanSourceExtension = String(sourceExtension || 'bin').replace(/[^a-z0-9]/gi, '') || 'bin';
+    const generation = normalizeMediaGeneration(mediaGeneration);
+
+    if (generation) {
+        const generationPath = `generations/${photoId}/${generation}/photo`;
+        return {
+            sourcePath: `${PRIVATE_SOURCE_PREFIX}/${generationPath}.${cleanSourceExtension}`,
+            imagePath: `${PUBLIC_UPLOADS_PREFIX}/${generationPath}.webp`,
+            mobileImagePath: `${MOBILE_PREFIX}/${generationPath}.webp`,
+            thumbnail43Path: `${THUMBNAIL_43_PREFIX}/${generationPath}.webp`,
+            thumbnail11Path: `${THUMBNAIL_11_PREFIX}/${generationPath}.webp`,
+            socialImagePath: `${SOCIAL_PREFIX}/${generationPath}.jpg`
+        };
+    }
 
     return {
         sourcePath: `${PRIVATE_SOURCE_PREFIX}/${baseName}.${cleanSourceExtension}`,
@@ -318,6 +343,7 @@ async function generatePhotoDerivatives(sourceBuffer, cropProfiles = null) {
 
 module.exports = {
     buildPhotoAssetPaths,
+    normalizeMediaGeneration,
     buildDefaultCropProfiles,
     generateMobileImageDerivative,
     generatePhotoDerivatives,

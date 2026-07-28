@@ -46,6 +46,18 @@ function normalizeApiError(error) {
   };
 }
 
+function withExpectedVersion(expectedVersion, config = {}) {
+  const version = Number(expectedVersion);
+  if (!Number.isSafeInteger(version) || version <= 0) return config;
+  return {
+    ...config,
+    headers: {
+      ...(config.headers || {}),
+      'If-Match': String(version)
+    }
+  };
+}
+
 // Interceptor per le risposte
 api.interceptors.response.use(
   (response) => {
@@ -82,24 +94,48 @@ export const photoService = {
   create: (data) => api.post('/photos', data),
   
   // Aggiorna foto
-  update: (id, data) => api.put(`/photos/${id}`, data),
+  update: (id, data, expectedVersion) => api.put(
+    `/photos/${id}`,
+    data,
+    withExpectedVersion(expectedVersion)
+  ),
 
   // Rigenera derivate pubbliche da source full-res
-  regenerateDerivatives: (id) => api.post(
+  regenerateDerivatives: (id, expectedVersion) => api.post(
     `/photos/${id}/regenerate-derivatives`,
     {},
-    { timeout: NETWORK_TIMEOUTS.regenerateDerivativesMs }
+    withExpectedVersion(expectedVersion, { timeout: NETWORK_TIMEOUTS.regenerateDerivativesMs })
+  ),
+
+  applyCrop: (id, settings, expectedVersion) => api.post(
+    `/photos/${id}/crop`,
+    { settings },
+    withExpectedVersion(expectedVersion, { timeout: NETWORK_TIMEOUTS.regenerateDerivativesMs })
+  ),
+
+  getSourceUploadUrl: (id, payload, expectedVersion) => api.post(
+    `/photos/${id}/source-upload-url`,
+    payload,
+    withExpectedVersion(expectedVersion)
   ),
 
   // Sostituisce la source privata e rigenera tutte le derivate pubbliche
-  replaceSource: (id, data) => api.post(
+  replaceSource: (id, data, expectedVersion) => api.post(
     `/photos/${id}/replace-source`,
     data,
-    { timeout: NETWORK_TIMEOUTS.replaceSourceMs }
+    withExpectedVersion(expectedVersion, { timeout: NETWORK_TIMEOUTS.replaceSourceMs })
+  ),
+
+  abortMediaOperation: (id, operationId, sourcePath = '') => api.delete(
+    `/photos/${id}/media-operations/${encodeURIComponent(operationId)}`,
+    { data: { sourcePath } }
   ),
   
   // Elimina foto
-  delete: (id) => api.delete(`/photos/${id}`),
+  delete: (id, expectedVersion) => api.delete(
+    `/photos/${id}`,
+    withExpectedVersion(expectedVersion)
+  ),
   
   // Cerca foto
   search: (query) => api.get(`/photos/search?q=${encodeURIComponent(query)}`),
@@ -123,16 +159,30 @@ export const seriesService = {
   create: (data) => api.post('/series', data),
   
   // Aggiorna serie
-  update: (id, data) => api.put(`/series/${id}`, data),
+  update: (id, data, expectedVersion) => api.put(
+    `/series/${id}`,
+    data,
+    withExpectedVersion(expectedVersion)
+  ),
   
   // Elimina serie
-  delete: (id) => api.delete(`/series/${id}`),
+  delete: (id, expectedVersion) => api.delete(
+    `/series/${id}`,
+    withExpectedVersion(expectedVersion)
+  ),
   
   // Aggiungi foto a serie
-  addPhoto: (seriesId, photoId) => api.post(`/series/${seriesId}/photos/${photoId}`),
+  addPhoto: (seriesId, photoId, expectedVersion) => api.post(
+    `/series/${seriesId}/photos/${photoId}`,
+    {},
+    withExpectedVersion(expectedVersion)
+  ),
   
   // Rimuovi foto da serie
-  removePhoto: (seriesId, photoId) => api.delete(`/series/${seriesId}/photos/${photoId}`),
+  removePhoto: (seriesId, photoId, expectedVersion) => api.delete(
+    `/series/${seriesId}/photos/${photoId}`,
+    withExpectedVersion(expectedVersion)
+  ),
 };
 
 // Servizi per le statistiche (future implementazioni)
@@ -146,6 +196,25 @@ export const authService = {
   getSession: () => api.get('/auth/session'),
   login: (token) => api.post('/auth/session', { token }),
   logout: () => api.delete('/auth/session'),
+};
+
+export const auditService = {
+  getEvents: ({
+    limit = 40,
+    beforeId,
+    entityType,
+    entityId,
+    operation
+  } = {}) => api.get('/audit', {
+    params: {
+      limit,
+      ...(beforeId ? { beforeId } : {}),
+      ...(entityType ? { entityType } : {}),
+      ...(entityId ? { entityId } : {}),
+      ...(operation ? { operation } : {})
+    }
+  }),
+  getById: (id) => api.get(`/audit/${id}`),
 };
 
 export async function signSourceUpload({ uploadId, file }) {
@@ -163,6 +232,29 @@ export async function signSourceUpload({ uploadId, file }) {
     throw error;
   }
 
+  return signedData;
+}
+
+export async function signExistingSourceUpload({ photo, file }) {
+  const response = await photoService.getSourceUploadUrl(
+    photo.id,
+    {
+      mimetype: file?.type,
+      fileSize: file?.size
+    },
+    photo.version
+  );
+  const signedData = response?.data?.data || response?.data;
+  if (
+    !signedData?.uploadUrl
+    || !signedData?.sourcePath
+    || !signedData?.operationId
+    || !signedData?.mediaGeneration
+  ) {
+    const error = new Error('Prenotazione upload source non valida ricevuta dal server.');
+    error.code = 'UPLOAD_SIGN_INVALID_RESPONSE';
+    throw error;
+  }
   return signedData;
 }
 

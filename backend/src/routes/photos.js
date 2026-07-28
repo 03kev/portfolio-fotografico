@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const multer = require('multer');
 const { pipeline } = require('stream/promises');
 const {
@@ -12,19 +13,16 @@ const {
     buildDefaultCropProfiles,
     generatePhotoDerivatives,
     getCropProfilesFromSettings,
+    normalizeMediaGeneration,
     normalizePrivateSourcePathForPhotoId
 } = require('../services/photoDerivatives');
-const {
-    PRIVATE_SOURCE_PREFIX
-} = require('../config/assetPaths');
 const DEFAULTS = require('../config/defaults');
 const { parseNumericIdOrThrow } = require('../utils/ids');
-const { repositoryOptionsFromRequest } = require('../utils/expectedVersion');
+const { getExpectedVersion } = require('../utils/expectedVersion');
 const { sanitizePhotoPayload } = require('../utils/inputSanitizers');
 const { protectWriteMethods } = require('../middleware/auth');
 const { portfolioRepository } = require('../repositories');
 const {
-    buildUploadFilename,
     describeDeleteError,
     getImageExtensionFromMimeType,
     isAllowedMimeType,
@@ -44,28 +42,165 @@ const {
 
 const router = express.Router();
 router.use(protectWriteMethods);
-const photoMutationLocks = new Map();
 
-function acquirePhotoMutationLock(photoId, operation) {
-    if (photoMutationLocks.has(photoId)) return null;
-    const token = Symbol(`${operation}:${photoId}:${Date.now()}`);
-    photoMutationLocks.set(photoId, {
-        token,
-        operation,
-        startedAtMs: Date.now()
+function createMediaIdentity() {
+    return {
+        operationId: crypto.randomUUID(),
+        generation: `${Date.now().toString(36)}-${crypto.randomBytes(8).toString('hex')}`
+    };
+}
+
+function normalizeMediaOperationId(value) {
+    const operationId = String(value || '').trim().toLowerCase();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(operationId)) {
+        const error = new Error('operationId non valido.');
+        error.status = 400;
+        error.code = 'INVALID_MEDIA_OPERATION_ID';
+        throw error;
+    }
+    return operationId;
+}
+
+function requireExpectedVersion(req) {
+    const expectedVersion = getExpectedVersion(req);
+    if (
+        expectedVersion === null
+        && portfolioRepository.capabilities.optimisticConcurrency
+    ) {
+        const error = new Error('Questa operazione richiede If-Match con la versione corrente.');
+        error.status = 428;
+        error.code = 'EXPECTED_VERSION_REQUIRED';
+        throw error;
+    }
+    return expectedVersion;
+}
+
+async function writeDerivativeSet(assets, derivatives) {
+    await Promise.all([
+        writePublicObject(assets.imagePath, derivatives.image, 'image/webp'),
+        writePublicObject(assets.mobileImagePath, derivatives.mobileImage, 'image/webp'),
+        writePublicObject(assets.thumbnail43Path, derivatives.thumbnail43, 'image/webp'),
+        writePublicObject(assets.thumbnail11Path, derivatives.thumbnail11, 'image/webp'),
+        writePublicObject(assets.socialImagePath, derivatives.socialImage, 'image/jpeg')
+    ]);
+}
+
+function publicAssetPaths(assets) {
+    return [
+        assets.imagePath,
+        assets.mobileImagePath,
+        assets.thumbnail43Path,
+        assets.thumbnail11Path,
+        assets.socialImagePath
+    ];
+}
+
+async function deleteMediaSetBestEffort({ assets, sourcePath = '', reason, photoId }) {
+    const failures = [];
+    for (const path of publicAssetPaths(assets)) {
+        try {
+            await deleteUploadObject(path);
+        } catch (error) {
+            failures.push({ scope: 'public', path, message: error?.message });
+        }
+    }
+    if (sourcePath) {
+        try {
+            await deletePrivateObject(sourcePath);
+        } catch (error) {
+            failures.push({ scope: 'private', path: sourcePath, message: error?.message });
+        }
+    }
+    if (failures.length) {
+        console.warn('[photo_media_cleanup_failed]', { photoId, reason, failures });
+    }
+}
+
+async function abortMediaMutationBestEffort(photoId, operationId) {
+    if (!photoId || !operationId) return;
+    try {
+        await portfolioRepository.photos.abortMediaMutation(photoId, operationId);
+    } catch (error) {
+        console.warn('[photo_media_abort_failed]', {
+            photoId,
+            operationId,
+            message: error?.message
+        });
+    }
+}
+
+async function regeneratePhotoMedia({
+    photoId,
+    expectedVersion,
+    kind,
+    settings
+}) {
+    const { operationId, generation } = createMediaIdentity();
+    const reservation = await portfolioRepository.photos.beginMediaMutation(photoId, {
+        operationId,
+        kind,
+        generation,
+        expectedVersion,
+        ttlMs: DEFAULTS.photoMediaMutationTtlMs
     });
-    return token;
-}
+    if (!reservation) return null;
 
-function releasePhotoMutationLock(photoId, token) {
-    const active = photoMutationLocks.get(photoId);
-    if (!active) return;
-    if (active.token !== token) return;
-    photoMutationLocks.delete(photoId);
-}
+    const currentPhoto = reservation.photo;
+    const nextAssets = buildPhotoAssetPaths(photoId, 'bin', generation);
+    const previousAssets = buildPhotoAssetPaths(photoId, 'bin', currentPhoto.mediaGeneration);
+    let finalized = false;
+    try {
+        const sourcePath = normalizePrivateSourcePathForPhotoId(currentPhoto.sourcePath, photoId);
+        if (!sourcePath) {
+            const error = new Error('Source full-res non disponibile o non conforme al formato atteso.');
+            error.status = 400;
+            error.code = 'PHOTO_SOURCE_UNAVAILABLE';
+            throw error;
+        }
+        const sourceBuffer = await readPrivateSourceBuffer(sourcePath);
+        if (!sourceBuffer) {
+            const error = new Error('Source full-res non trovata nello storage.');
+            error.status = 404;
+            error.code = 'PHOTO_SOURCE_NOT_FOUND';
+            throw error;
+        }
 
-function getActivePhotoMutationLock(photoId) {
-    return photoMutationLocks.get(photoId) || null;
+        const effectiveSettings = settings ?? currentPhoto.settings;
+        const cropProfiles = getCropProfilesFromSettings(effectiveSettings);
+        const derivatives = await generatePhotoDerivatives(sourceBuffer, cropProfiles);
+        await writeDerivativeSet(nextAssets, derivatives);
+
+        const updatedPhoto = await portfolioRepository.photos.completeMediaMutation(
+            photoId,
+            operationId,
+            {
+                ...(settings === undefined ? {} : { settings }),
+                resolution: derivatives.resolution,
+                mobileImage: true,
+                mediaGeneration: generation,
+                updatedAt: Date.now(),
+                derivativesVersion: Date.now()
+            },
+            { expectedVersion }
+        );
+        finalized = true;
+
+        await deleteMediaSetBestEffort({
+            assets: previousAssets,
+            reason: `${kind}_previous_generation`,
+            photoId
+        });
+        return updatedPhoto;
+    } finally {
+        if (!finalized) {
+            await deleteMediaSetBestEffort({
+                assets: nextAssets,
+                reason: `${kind}_rollback`,
+                photoId
+            });
+            await abortMediaMutationBestEffort(photoId, operationId);
+        }
+    }
 }
 
 function createPhotoOperationTimer(operation, photoId) {
@@ -257,8 +392,14 @@ router.post('/upload-url', async (req, res) => {
             });
         }
 
-        const uploadFilename = buildUploadFilename(effectiveMimeType, uploadId);
-        const uploadPath = `${PRIVATE_SOURCE_PREFIX}/${uploadFilename}`;
+        const photoId = parseNumericIdOrThrow(uploadId, 'uploadId');
+        const { generation } = createMediaIdentity();
+        const sourceExtension = getImageExtensionFromMimeType(effectiveMimeType);
+        const uploadPath = buildPhotoAssetPaths(
+            photoId,
+            sourceExtension,
+            generation
+        ).sourcePath;
         const signed = await createPrivateUploadPresignedPutUrl(uploadPath, {
             contentType: effectiveMimeType,
             cacheControl: 'private, no-store',
@@ -270,6 +411,7 @@ router.post('/upload-url', async (req, res) => {
             data: {
                 uploadUrl: signed.uploadUrl,
                 sourcePath: signed.uploadPath,
+                mediaGeneration: generation,
                 expiresInSeconds: signed.expiresInSeconds
             }
         });
@@ -283,22 +425,37 @@ router.post('/upload-url', async (req, res) => {
 
 // POST - Upload nuova foto
 router.post('/', upload.single('image'), async (req, res) => {
+    let pendingAssets = null;
+    let pendingSourcePath = '';
+    let created = false;
+    let photoId = null;
     try {
         const { lat, lng } = req.body;
         const sanitized = sanitizePhotoPayload(req.body, { partial: false });
         const parsedLat = parseCoordinate(lat, 'Latitudine');
         const parsedLng = parseCoordinate(lng, 'Longitudine');
         const requestedPhotoId = Number.parseInt(String(req.body?.photoId || ''), 10);
-        const photoId = Number.isFinite(requestedPhotoId) && requestedPhotoId > 0
+        photoId = Number.isFinite(requestedPhotoId) && requestedPhotoId > 0
             ? requestedPhotoId
             : Date.now();
         const sourceExtension = getImageExtensionFromMimeType(req.file?.mimetype || req.body?.sourceContentType);
+        const requestedGeneration = req.file
+            ? createMediaIdentity().generation
+            : normalizeMediaGeneration(req.body?.mediaGeneration);
+        if (!requestedGeneration) {
+            const error = new Error('mediaGeneration mancante per l’upload diretto.');
+            error.status = 400;
+            error.code = 'MEDIA_GENERATION_REQUIRED';
+            throw error;
+        }
         const cropProfiles = getCropProfilesFromSettings(sanitized.settings) || buildDefaultCropProfiles();
         const normalizedSettings = {
             ...(sanitized.settings && typeof sanitized.settings === 'object' ? sanitized.settings : {}),
             cropProfiles
         };
-        const assets = buildPhotoAssetPaths(photoId, sourceExtension);
+        const assets = buildPhotoAssetPaths(photoId, sourceExtension, requestedGeneration);
+        pendingAssets = assets;
+        pendingSourcePath = normalizePrivateSourcePathForPhotoId(req.body?.sourcePath, photoId);
         const existingPhoto = await portfolioRepository.photos.findById(photoId);
         if (existingPhoto) {
             return res.status(409).json({
@@ -312,18 +469,20 @@ router.post('/', upload.single('image'), async (req, res) => {
         let sourceBuffer = null;
         if (req.file) {
             sourcePath = assets.sourcePath;
+            pendingSourcePath = sourcePath;
             sourceBuffer = req.file.buffer;
             await writePrivateObject(sourcePath, req.file.buffer, sourceContentType || 'application/octet-stream');
         } else {
             const providedSourcePath = normalizePrivateSourcePathForPhotoId(req.body?.sourcePath, photoId);
-            if (!providedSourcePath) {
+            if (!providedSourcePath || providedSourcePath !== assets.sourcePath) {
                 return res.status(400).json({
                     success: false,
-                    message: `sourcePath non valido: atteso ${PRIVATE_SOURCE_PREFIX}/photo_${photoId}.[ext]`
+                    message: 'sourcePath non valido per la generazione media richiesta.'
                 });
             }
 
             sourcePath = providedSourcePath;
+            pendingSourcePath = sourcePath;
             const sourceObject = await readPrivateSourceObject(sourcePath);
             if (!sourceObject) {
                 return res.status(400).json({
@@ -339,13 +498,7 @@ router.post('/', upload.single('image'), async (req, res) => {
         }
 
         const derivatives = await generatePhotoDerivatives(sourceBuffer, cropProfiles);
-        await Promise.all([
-            writePublicObject(assets.imagePath, derivatives.image, 'image/webp'),
-            writePublicObject(assets.mobileImagePath, derivatives.mobileImage, 'image/webp'),
-            writePublicObject(assets.thumbnail43Path, derivatives.thumbnail43, 'image/webp'),
-            writePublicObject(assets.thumbnail11Path, derivatives.thumbnail11, 'image/webp'),
-            writePublicObject(assets.socialImagePath, derivatives.socialImage, 'image/jpeg')
-        ]);
+        await writeDerivativeSet(assets, derivatives);
 
         // Crea oggetto foto con valori di default
         const newPhoto = {
@@ -359,6 +512,7 @@ router.post('/', upload.single('image'), async (req, res) => {
             mobileImage: true,
             updatedAt: Date.now(),
             derivativesVersion: Date.now(),
+            mediaGeneration: requestedGeneration,
             description: sanitized.description,
             date: sanitized.date,
             camera: sanitized.camera,
@@ -375,6 +529,7 @@ router.post('/', upload.single('image'), async (req, res) => {
                 message: 'photoId già esistente, riprova con un nuovo upload.'
             });
         }
+        created = true;
 
         await purgePublicAssetsBestEffort(
             [assets.imagePath, assets.mobileImagePath, assets.thumbnail43Path, assets.thumbnail11Path, assets.socialImagePath],
@@ -401,234 +556,276 @@ router.post('/', upload.single('image'), async (req, res) => {
         return sendRouteError(res, error, {
             fallbackMessage: 'Errore nell\'upload della foto'
         });
+    } finally {
+        if (!created && pendingAssets) {
+            await deleteMediaSetBestEffort({
+                assets: pendingAssets,
+                sourcePath: pendingSourcePath,
+                reason: 'photo_create_rollback',
+                photoId
+            });
+        }
     }
 });
 
-// POST - Reupload source privata esistente e rigenera derivate pubbliche (stessi path canonici)
+// Prenota un reupload in modo distribuito prima di esporre una URL R2 firmata.
+router.post('/:id/source-upload-url', async (req, res) => {
+    let photoId = null;
+    let operationId = null;
+    try {
+        photoId = parseNumericIdOrThrow(req.params.id, 'ID foto');
+        const expectedVersion = requireExpectedVersion(req);
+        const effectiveMimeType = String(req.body?.mimetype || req.body?.contentType || '').trim();
+        if (!effectiveMimeType || !isAllowedMimeType(effectiveMimeType, allowedUploadTypes)) {
+            const error = new Error(`Tipo file non consentito. Tipi ammessi: ${allowedUploadTypes.join(', ')}`);
+            error.status = 400;
+            error.code = 'INVALID_FILE_TYPE';
+            throw error;
+        }
+        const parsedSize = parseUploadSize(req.body?.fileSize);
+        if (parsedSize && parsedSize > uploadMaxSize) {
+            const error = new Error(`File troppo grande. Massimo ${uploadMaxSize} byte.`);
+            error.status = 400;
+            error.code = 'LIMIT_FILE_SIZE';
+            throw error;
+        }
+
+        const identity = createMediaIdentity();
+        operationId = identity.operationId;
+        const reservation = await portfolioRepository.photos.beginMediaMutation(photoId, {
+            ...identity,
+            kind: 'replace-source',
+            expectedVersion,
+            ttlMs: DEFAULTS.photoMediaMutationTtlMs
+        });
+        if (!reservation) {
+            return res.status(404).json({ success: false, message: 'Foto non trovata' });
+        }
+
+        const sourceExtension = getImageExtensionFromMimeType(effectiveMimeType);
+        const sourcePath = buildPhotoAssetPaths(
+            photoId,
+            sourceExtension,
+            identity.generation
+        ).sourcePath;
+        const signed = await createPrivateUploadPresignedPutUrl(sourcePath, {
+            contentType: effectiveMimeType,
+            cacheControl: 'private, no-store',
+            expiresInSeconds: DEFAULTS.r2SignedUploadUrlExpiresSeconds
+        });
+        return res.json({
+            success: true,
+            data: {
+                uploadUrl: signed.uploadUrl,
+                sourcePath: signed.uploadPath,
+                operationId,
+                mediaGeneration: identity.generation,
+                expectedVersion,
+                expiresInSeconds: signed.expiresInSeconds
+            }
+        });
+    } catch (error) {
+        await abortMediaMutationBestEffort(photoId, operationId);
+        return sendRouteError(res, error, {
+            fallbackMessage: 'Errore nella preparazione del reupload'
+        });
+    }
+});
+
+router.delete('/:id/media-operations/:operationId', async (req, res) => {
+    try {
+        const photoId = parseNumericIdOrThrow(req.params.id, 'ID foto');
+        const operationId = normalizeMediaOperationId(req.params.operationId);
+        const active = await portfolioRepository.photos.getMediaMutation(photoId);
+        if (
+            active?.operation
+            && active.operation.id === operationId
+        ) {
+            const sourcePath = normalizePrivateSourcePathForPhotoId(req.body?.sourcePath, photoId);
+            if (
+                sourcePath
+                && sourcePath.includes(`/${active.operation.generation}/`)
+            ) {
+                try {
+                    await deletePrivateObject(sourcePath);
+                } catch (cleanupError) {
+                    console.warn('[photo_aborted_source_cleanup_failed]', {
+                        photoId,
+                        sourcePath,
+                        message: cleanupError?.message
+                    });
+                }
+            }
+        }
+        await portfolioRepository.photos.abortMediaMutation(photoId, operationId);
+        return res.json({ success: true });
+    } catch (error) {
+        return sendRouteError(res, error, {
+            fallbackMessage: 'Errore nell’annullamento dell’operazione media'
+        });
+    }
+});
+
 router.post('/:id/replace-source', async (req, res) => {
     let photoId = null;
-    let lockToken = null;
-    let timer = null;
+    let nextAssets = null;
+    let operationId = '';
+    let nextSourcePath = '';
+    let finalized = false;
+    const timer = createPhotoOperationTimer('replace-source', req.params.id);
     try {
-        const { id } = req.params;
-        photoId = parseNumericIdOrThrow(id, 'ID foto');
-        lockToken = acquirePhotoMutationLock(photoId, 'replace-source');
-        if (!lockToken) {
-            const activeLock = getActivePhotoMutationLock(photoId);
-            return res.status(409).json({
-                success: false,
-                code: 'PHOTO_MUTATION_IN_PROGRESS',
-                message: `Operazione già in corso su questa foto${activeLock?.operation ? ` (${activeLock.operation})` : ''}.`
-            });
-        }
-        timer = createPhotoOperationTimer('replace-source', photoId);
-
-        const currentPhoto = await portfolioRepository.photos.findById(photoId);
-        timer.mark('read_photos_db');
-        if (!currentPhoto) {
-            return res.status(404).json({
-                success: false,
-                message: 'Foto non trovata'
-            });
+        photoId = parseNumericIdOrThrow(req.params.id, 'ID foto');
+        const expectedVersion = requireExpectedVersion(req);
+        operationId = normalizeMediaOperationId(req.body?.operationId);
+        const generation = normalizeMediaGeneration(req.body?.mediaGeneration);
+        nextSourcePath = normalizePrivateSourcePathForPhotoId(req.body?.sourcePath, photoId);
+        if (!operationId || !generation || !nextSourcePath) {
+            const error = new Error('Prenotazione reupload non valida o incompleta.');
+            error.status = 400;
+            error.code = 'INVALID_MEDIA_OPERATION';
+            throw error;
         }
 
-        const nextSourcePath = normalizePrivateSourcePathForPhotoId(req.body?.sourcePath, photoId);
-        if (!nextSourcePath) {
-            return res.status(400).json({
-                success: false,
-                message: `sourcePath non valido: atteso ${PRIVATE_SOURCE_PREFIX}/photo_${photoId}.[ext]`
-            });
+        const active = await portfolioRepository.photos.getMediaMutation(photoId);
+        if (
+            !active?.operation
+            || active.operation.id !== operationId
+            || active.operation.generation !== generation
+            || active.operation.kind !== 'replace-source'
+            || !nextSourcePath.includes(`/${generation}/`)
+        ) {
+            const error = new Error('La prenotazione del reupload non è più valida.');
+            error.status = 409;
+            error.code = 'MEDIA_OPERATION_STALE';
+            throw error;
         }
-
+        const currentPhoto = active.photo;
         const sourceObject = await readPrivateSourceObject(nextSourcePath);
         timer.mark('read_private_source');
         if (!sourceObject) {
-            return res.status(404).json({
-                success: false,
-                message: 'Source privata non trovata nello storage.'
-            });
+            const error = new Error('Source privata non trovata nello storage.');
+            error.status = 404;
+            error.code = 'PHOTO_SOURCE_NOT_FOUND';
+            throw error;
         }
 
-        const publicAssets = withDefaultPhotoVariants(currentPhoto);
-        const mobileImagePath = buildPhotoAssetPaths(photoId).mobileImagePath;
-        const cropProfiles = getCropProfilesFromSettings(currentPhoto.settings);
-
-        const derivatives = await generatePhotoDerivatives(sourceObject.buffer, cropProfiles);
+        nextAssets = buildPhotoAssetPaths(photoId, 'bin', generation);
+        const derivatives = await generatePhotoDerivatives(
+            sourceObject.buffer,
+            getCropProfilesFromSettings(currentPhoto.settings)
+        );
         timer.mark('generate_derivatives');
-
-        await Promise.all([
-            writePublicObject(publicAssets.image, derivatives.image, 'image/webp'),
-            writePublicObject(mobileImagePath, derivatives.mobileImage, 'image/webp'),
-            writePublicObject(publicAssets.thumbnail43, derivatives.thumbnail43, 'image/webp'),
-            writePublicObject(publicAssets.thumbnail11, derivatives.thumbnail11, 'image/webp'),
-            writePublicObject(publicAssets.socialImage, derivatives.socialImage, 'image/jpeg')
-        ]);
+        await writeDerivativeSet(nextAssets, derivatives);
         timer.mark('write_public_derivatives');
 
-        const bodySourceContentType = String(req.body?.sourceContentType || '').trim();
-        const nextSourceContentType = sourceObject.contentType || bodySourceContentType || currentPhoto.sourceContentType || '';
-        const previousSourcePath = normalizePrivateSourcePathForPhotoId(currentPhoto.sourcePath, photoId);
-
-        const updatedPhoto = await portfolioRepository.photos.updateById(photoId, {
-            sourcePath: nextSourcePath,
-            sourceContentType: nextSourceContentType,
-            resolution: derivatives.resolution,
-            mobileImage: true,
-            updatedAt: Date.now(),
-            derivativesVersion: Date.now()
-        });
-        if (!updatedPhoto) {
-            return res.status(404).json({
-                success: false,
-                message: 'Foto non trovata'
-            });
-        }
-        timer.mark('write_photo_metadata');
-
-        if (previousSourcePath && previousSourcePath !== nextSourcePath) {
-            try {
-                await deletePrivateObject(previousSourcePath);
-                timer.mark('delete_previous_private_source');
-            } catch (error) {
-                console.warn('[photo_replace_source_cleanup_failed]', {
-                    photoId,
-                    path: previousSourcePath,
-                    message: error?.message || 'Errore sconosciuto'
-                });
-            }
-        }
-
-        await purgePublicAssetsBestEffort(
-            [publicAssets.image, mobileImagePath, publicAssets.thumbnail43, publicAssets.thumbnail11, publicAssets.socialImage],
-            'photo_replace_source'
+        const updatedPhoto = await portfolioRepository.photos.completeMediaMutation(
+            photoId,
+            operationId,
+            {
+                sourcePath: nextSourcePath,
+                sourceContentType: sourceObject.contentType
+                    || String(req.body?.sourceContentType || '').trim()
+                    || currentPhoto.sourceContentType
+                    || '',
+                resolution: derivatives.resolution,
+                mobileImage: true,
+                mediaGeneration: generation,
+                updatedAt: Date.now(),
+                derivativesVersion: Date.now()
+            },
+            { expectedVersion }
         );
-        timer.mark('purge_public_cache');
-        timer.flush('success', {
-            derivativesVersion: updatedPhoto.derivativesVersion
-        });
+        finalized = true;
+        timer.mark('commit_photo_generation');
 
+        await deleteMediaSetBestEffort({
+            assets: buildPhotoAssetPaths(photoId, 'bin', currentPhoto.mediaGeneration),
+            sourcePath: currentPhoto.sourcePath,
+            reason: 'replace_source_previous_generation',
+            photoId
+        });
+        timer.flush('success', { derivativesVersion: updatedPhoto.derivativesVersion });
         return res.json({
             success: true,
             message: 'Source privata aggiornata e derivate rigenerate con successo',
             data: presentPhoto(updatedPhoto)
         });
     } catch (error) {
-        timer?.flush('error', {
-            code: error?.code || null,
-            message: error?.message || 'Errore sconosciuto'
-        });
-        console.error('Errore replace source privata:', error);
+        timer.flush('error', { code: error?.code || null, message: error?.message });
         return sendRouteError(res, error, {
             fallbackMessage: 'Errore durante il reupload della source privata'
         });
     } finally {
-        if (photoId && lockToken) {
-            releasePhotoMutationLock(photoId, lockToken);
+        if (!finalized && photoId && operationId) {
+            if (nextAssets) {
+                await deleteMediaSetBestEffort({
+                    assets: nextAssets,
+                    sourcePath: nextSourcePath,
+                    reason: 'replace_source_rollback',
+                    photoId
+                });
+            }
+            await abortMediaMutationBestEffort(photoId, operationId);
         }
     }
 });
 
-// POST - Rigenera derivate da source full-res (stessi path, overwrite su R2)
 router.post('/:id/regenerate-derivatives', async (req, res) => {
-    let photoId = null;
-    let lockToken = null;
-    let timer = null;
     try {
-        const { id } = req.params;
-        photoId = parseNumericIdOrThrow(id, 'ID foto');
-        lockToken = acquirePhotoMutationLock(photoId, 'regenerate-derivatives');
-        if (!lockToken) {
-            const activeLock = getActivePhotoMutationLock(photoId);
-            return res.status(409).json({
-                success: false,
-                code: 'PHOTO_MUTATION_IN_PROGRESS',
-                message: `Operazione già in corso su questa foto${activeLock?.operation ? ` (${activeLock.operation})` : ''}.`
-            });
-        }
-        timer = createPhotoOperationTimer('regenerate-derivatives', photoId);
-
-        const photo = await portfolioRepository.photos.findById(photoId);
-        timer.mark('read_photos_db');
-        if (!photo) {
-            return res.status(404).json({
-                success: false,
-                message: 'Foto non trovata'
-            });
-        }
-
-        const sourcePath = normalizePrivateSourcePathForPhotoId(photo.sourcePath, photoId);
-        if (!sourcePath) {
-            return res.status(400).json({
-                success: false,
-                message: 'Source full-res non disponibile o non conforme al formato atteso.'
-            });
-        }
-
-        const sourceBuffer = await readPrivateSourceBuffer(sourcePath);
-        timer.mark('read_private_source');
-        if (!sourceBuffer) {
-            return res.status(404).json({
-                success: false,
-                message: 'Source full-res non trovata nello storage.'
-            });
-        }
-
-        const publicAssets = withDefaultPhotoVariants(photo);
-        const mobileImagePath = buildPhotoAssetPaths(photoId).mobileImagePath;
-
-        const cropProfiles = getCropProfilesFromSettings(photo.settings);
-        const derivatives = await generatePhotoDerivatives(sourceBuffer, cropProfiles);
-        timer.mark('generate_derivatives');
-        await Promise.all([
-            writePublicObject(publicAssets.image, derivatives.image, 'image/webp'),
-            writePublicObject(mobileImagePath, derivatives.mobileImage, 'image/webp'),
-            writePublicObject(publicAssets.thumbnail43, derivatives.thumbnail43, 'image/webp'),
-            writePublicObject(publicAssets.thumbnail11, derivatives.thumbnail11, 'image/webp'),
-            writePublicObject(publicAssets.socialImage, derivatives.socialImage, 'image/jpeg')
-        ]);
-        timer.mark('write_public_derivatives');
-
-        const updatedPhoto = await portfolioRepository.photos.updateById(photoId, {
-            resolution: derivatives.resolution,
-            mobileImage: true,
-            updatedAt: Date.now(),
-            derivativesVersion: Date.now()
+        const photoId = parseNumericIdOrThrow(req.params.id, 'ID foto');
+        const expectedVersion = requireExpectedVersion(req);
+        const updatedPhoto = await regeneratePhotoMedia({
+            photoId,
+            expectedVersion,
+            kind: 'regenerate'
         });
         if (!updatedPhoto) {
-            return res.status(404).json({
-                success: false,
-                message: 'Foto non trovata'
-            });
+            return res.status(404).json({ success: false, message: 'Foto non trovata' });
         }
-        timer.mark('write_photo_metadata');
-
-        await purgePublicAssetsBestEffort(
-            [publicAssets.image, mobileImagePath, publicAssets.thumbnail43, publicAssets.thumbnail11, publicAssets.socialImage],
-            'photo_regenerate_derivatives'
-        );
-        timer.mark('purge_public_cache');
-        timer.flush('success', {
-            derivativesVersion: updatedPhoto.derivativesVersion
-        });
-
         return res.json({
             success: true,
             message: 'Derivate rigenerate con successo',
             data: presentPhoto(updatedPhoto)
         });
     } catch (error) {
-        timer?.flush('error', {
-            code: error?.code || null,
-            message: error?.message || 'Errore sconosciuto'
-        });
-        console.error('Errore rigenerazione derivate:', error);
         return sendRouteError(res, error, {
             fallbackMessage: 'Errore durante la rigenerazione derivate'
         });
-    } finally {
-        if (photoId && lockToken) {
-            releasePhotoMutationLock(photoId, lockToken);
+    }
+});
+
+router.post('/:id/crop', async (req, res) => {
+    try {
+        const photoId = parseNumericIdOrThrow(req.params.id, 'ID foto');
+        const expectedVersion = requireExpectedVersion(req);
+        const sanitized = sanitizePhotoPayload(
+            { settings: req.body?.settings },
+            { partial: true }
+        );
+        if (sanitized.settings === undefined) {
+            const error = new Error('Impostazioni crop mancanti.');
+            error.status = 400;
+            error.code = 'CROP_SETTINGS_REQUIRED';
+            throw error;
         }
+        const updatedPhoto = await regeneratePhotoMedia({
+            photoId,
+            expectedVersion,
+            kind: 'crop',
+            settings: sanitized.settings
+        });
+        if (!updatedPhoto) {
+            return res.status(404).json({ success: false, message: 'Foto non trovata' });
+        }
+        return res.json({
+            success: true,
+            message: 'Crop e derivate aggiornati con successo',
+            data: presentPhoto(updatedPhoto)
+        });
+    } catch (error) {
+        return sendRouteError(res, error, {
+            fallbackMessage: 'Errore durante l’applicazione del crop'
+        });
     }
 });
 
@@ -656,7 +853,7 @@ router.put('/:id', async (req, res) => {
         const updatedPhoto = await portfolioRepository.photos.updateById(
             photoId,
             changes,
-            repositoryOptionsFromRequest(req)
+            { expectedVersion: requireExpectedVersion(req) }
         );
         if (!updatedPhoto) {
             return res.status(404).json({
@@ -685,7 +882,7 @@ router.delete('/:id', async (req, res) => {
         const photoId = parseNumericIdOrThrow(id, 'ID foto');
         const deletion = await portfolioRepository.deletePhotoWithReferences(
             photoId,
-            repositoryOptionsFromRequest(req)
+            { expectedVersion: requireExpectedVersion(req) }
         );
         if (!deletion) {
             return res.status(404).json({

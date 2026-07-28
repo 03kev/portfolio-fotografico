@@ -249,5 +249,6 @@ module.exports = {
     isAuthenticatedRequest,
     isWriteTokenValid,
     protectWriteMethods,
+    requireWriteAuth,
     setSessionCookie
 };
