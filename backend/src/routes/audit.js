@@ -1,6 +1,7 @@
 const express = require('express');
 const { requireConcealedAdminAuth } = require('../middleware/auth');
 const { portfolioRepository } = require('../repositories');
+const { createApiError, sendApiError } = require('../utils/apiErrors');
 
 const router = express.Router();
 router.use(requireConcealedAdminAuth);
@@ -38,10 +39,10 @@ router.get('/', async (req, res) => {
         });
     } catch (error) {
         console.error('Errore nel recupero audit:', error);
-        return res.status(error instanceof TypeError ? 400 : 500).json({
-            success: false,
-            code: error.code || 'AUDIT_READ_FAILED',
-            message: error.message || 'Errore nel recupero dello storico admin'
+        return sendApiError(res, error, {
+            fallbackMessage: 'Errore nel recupero dello storico admin',
+            fallbackStatus: error instanceof TypeError ? 400 : 500,
+            fallbackCode: 'AUDIT_READ_FAILED'
         });
     }
 });
@@ -51,18 +52,18 @@ router.get('/:id', async (req, res) => {
     try {
         const event = await portfolioRepository.audit.findById(req.params.id);
         if (!event) {
-            return res.status(404).json({
-                success: false,
-                message: 'Evento audit non trovato'
-            });
+            return sendApiError(
+                res,
+                createApiError('Evento audit non trovato', 404, 'AUDIT_EVENT_NOT_FOUND')
+            );
         }
         return res.json({ success: true, data: event });
     } catch (error) {
         console.error('Errore nel recupero evento audit:', error);
-        return res.status(error instanceof TypeError ? 400 : 500).json({
-            success: false,
-            code: error.code || 'AUDIT_READ_FAILED',
-            message: error.message || 'Errore nel recupero dell’evento audit'
+        return sendApiError(res, error, {
+            fallbackMessage: 'Errore nel recupero dell’evento audit',
+            fallbackStatus: error instanceof TypeError ? 400 : 500,
+            fallbackCode: 'AUDIT_READ_FAILED'
         });
     }
 });

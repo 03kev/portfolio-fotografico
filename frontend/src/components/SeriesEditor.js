@@ -7,6 +7,7 @@ import { usePhotos } from '../contexts/PhotoContext';
 import { useToast } from './Toast';
 import { resolvePhotoAssetUrl } from '../utils/imageUrl';
 import { viewportBreakpoints } from '../styles/responsive';
+import { buildOperationErrorMessage } from '../utils/operationErrors';
 
 const EditorOverlay = styled(motion.div)`
   position: fixed;
@@ -580,6 +581,7 @@ function SeriesEditor({ series, onClose }) {
   const [showAdvancedContent, setShowAdvancedContent] = useState(false);
   const [photoQuery, setPhotoQuery] = useState('');
   const [expandedBlockIndex, setExpandedBlockIndex] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -701,12 +703,14 @@ function SeriesEditor({ series, onClose }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
 
     if (titleConflict) {
       toast.error('Esiste già una serie con questo titolo, anche tra le bozze.');
       return;
     }
     
+    setIsSubmitting(true);
     try {
       if (series) {
         await updateSeries(series.id, formData);
@@ -717,18 +721,24 @@ function SeriesEditor({ series, onClose }) {
       }
       onClose();
     } catch (error) {
-      toast.error(`Errore: ${error.message || 'Impossibile salvare la serie'}`);
+      toast.error(buildOperationErrorMessage(
+        error,
+        series ? 'aggiornamento serie' : 'creazione serie'
+      ));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleDelete = async () => {
-    if (!series) return;
+    if (!series || isSubmitting) return;
     
     const confirmed = window.confirm(
       `Sei sicuro di voler eliminare la serie "${series.title}"?\n\nQuesta azione non può essere annullata.`
     );
     
     if (confirmed) {
+      setIsSubmitting(true);
       try {
         await deleteSeries(series.id);
         toast.success('Serie eliminata con successo.');
@@ -736,7 +746,9 @@ function SeriesEditor({ series, onClose }) {
         // Naviga alla home dopo l'eliminazione
         window.location.href = '/';
       } catch (error) {
-        toast.error(`Errore nell'eliminazione: ${error.message || 'Impossibile eliminare la serie'}`);
+        toast.error(buildOperationErrorMessage(error, 'eliminazione serie'));
+      } finally {
+        setIsSubmitting(false);
       }
     }
   };
@@ -1102,6 +1114,7 @@ function SeriesEditor({ series, onClose }) {
               <DeleteButton
                 type="button"
                 onClick={handleDelete}
+                disabled={isSubmitting}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
               >
@@ -1113,6 +1126,7 @@ function SeriesEditor({ series, onClose }) {
             <CancelButton
               type="button"
               onClick={onClose}
+              disabled={isSubmitting}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
             >
@@ -1120,11 +1134,13 @@ function SeriesEditor({ series, onClose }) {
             </CancelButton>
             <SaveButton
               type="submit"
-              disabled={!formData.title || !formData.description || titleConflict}
+              disabled={isSubmitting || !formData.title || !formData.description || titleConflict}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
             >
-              {series ? 'Aggiorna Serie' : 'Crea Serie'}
+              {isSubmitting
+                ? 'Salvataggio…'
+                : (series ? 'Aggiorna Serie' : 'Crea Serie')}
             </SaveButton>
           </EditorFooter>
         </form>

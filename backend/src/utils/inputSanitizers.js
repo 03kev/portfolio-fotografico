@@ -4,6 +4,17 @@ function isPlainObject(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+function validationError(message, field, details = undefined) {
+    const error = new Error(message);
+    error.status = 400;
+    error.code = 'VALIDATION_ERROR';
+    error.details = {
+        ...(field ? { field } : {}),
+        ...(details || {})
+    };
+    return error;
+}
+
 function parseJsonIfString(value, fallback) {
     if (typeof value !== 'string') return value;
     try {
@@ -18,9 +29,11 @@ function sanitizeString(value, { maxLength, fallback = '', fieldName = 'field' }
     const normalized = String(value).trim();
     if (!normalized) return fallback;
     if (maxLength && normalized.length > maxLength) {
-        const error = new Error(`${fieldName} troppo lungo (max ${maxLength})`);
-        error.status = 400;
-        throw error;
+        throw validationError(
+            `${fieldName} troppo lungo (max ${maxLength})`,
+            fieldName,
+            { maximumLength: maxLength }
+        );
     }
     return normalized;
 }
@@ -30,9 +43,11 @@ function sanitizeOptionalString(value, { maxLength, fieldName = 'field' } = {}) 
     const normalized = String(value).trim();
     if (!normalized) return '';
     if (maxLength && normalized.length > maxLength) {
-        const error = new Error(`${fieldName} troppo lungo (max ${maxLength})`);
-        error.status = 400;
-        throw error;
+        throw validationError(
+            `${fieldName} troppo lungo (max ${maxLength})`,
+            fieldName,
+            { maximumLength: maxLength }
+        );
     }
     return normalized;
 }
@@ -268,9 +283,7 @@ function sanitizeSeriesPayload(body = {}, { partial = false } = {}) {
             ? sanitizeOptionalString(body.title, { maxLength: 120, fieldName: 'title' })
             : sanitizeString(body.title, { maxLength: 120, fieldName: 'title' });
         if (partial && title === '') {
-            const error = new Error('title non puo` essere vuoto');
-            error.status = 400;
-            throw error;
+            throw validationError('Il titolo non può essere vuoto.', 'title');
         }
         if (title !== undefined) output.title = title;
     }
@@ -280,9 +293,7 @@ function sanitizeSeriesPayload(body = {}, { partial = false } = {}) {
             ? sanitizeOptionalString(body.description, { maxLength: 8000, fieldName: 'description' })
             : sanitizeString(body.description, { maxLength: 8000, fieldName: 'description' });
         if (partial && description === '') {
-            const error = new Error('description non puo` essere vuota');
-            error.status = 400;
-            throw error;
+            throw validationError('La descrizione non può essere vuota.', 'description');
         }
         if (description !== undefined) output.description = description;
     }
@@ -305,9 +316,10 @@ function sanitizeSeriesPayload(body = {}, { partial = false } = {}) {
 
     if (body.photos !== undefined) {
         if (!Array.isArray(body.photos)) {
-            const error = new Error('photos deve essere un array di ID numerici');
-            error.status = 400;
-            throw error;
+            throw validationError(
+                'photos deve essere un array di ID numerici',
+                'photos'
+            );
         }
         output.photos = body.photos.slice(0, 2000).map((id) => parseNumericIdOrThrow(id, 'photoId'));
     }
@@ -322,14 +334,14 @@ function sanitizeSeriesPayload(body = {}, { partial = false } = {}) {
 
     if (!partial) {
         if (!output.title || output.title.length < 3) {
-            const error = new Error('Il titolo deve essere di almeno 3 caratteri');
-            error.status = 400;
-            throw error;
+            throw validationError(
+                'Il titolo deve essere di almeno 3 caratteri',
+                'title',
+                { minimumLength: 3 }
+            );
         }
         if (!output.description) {
-            const error = new Error('description e` obbligatoria');
-            error.status = 400;
-            throw error;
+            throw validationError('La descrizione è obbligatoria.', 'description');
         }
     }
 

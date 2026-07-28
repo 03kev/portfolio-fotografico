@@ -5,6 +5,7 @@ const { portfolioRepository } = require('../repositories');
 const { parseNumericIdOrThrow } = require('../utils/ids');
 const { getExpectedVersion } = require('../utils/expectedVersion');
 const { sanitizeSeriesPayload } = require('../utils/inputSanitizers');
+const { createApiError, sendApiError } = require('../utils/apiErrors');
 const { canAccessAdminData, protectWriteMethods } = require('../middleware/auth');
 const {
     normalizeSeriesRecord
@@ -34,14 +35,6 @@ function sendSuccess(res, data, extra = {}, status = 200) {
     });
 }
 
-function sendError(res, message, status = 500, code = undefined) {
-    return res.status(status).json({
-        success: false,
-        message,
-        ...(code ? { code } : {})
-    });
-}
-
 // GET tutte le serie
 router.get('/', async (req, res) => {
     try {
@@ -54,7 +47,10 @@ router.get('/', async (req, res) => {
         return sendSuccess(res, filteredSeries, { total: filteredSeries.length });
     } catch (error) {
         console.error('Errore nel recupero delle serie:', error);
-        return sendError(res, 'Errore nel recupero delle serie');
+        return sendApiError(res, error, {
+            fallbackMessage: 'Errore nel recupero delle serie',
+            fallbackCode: 'SERIES_LIST_FAILED'
+        });
     }
 });
 
@@ -66,13 +62,19 @@ router.get('/:identifier', async (req, res) => {
         const series = await portfolioRepository.series.findByIdentifier(identifier);
 
         if (!series || (!series.published && !canReadDrafts)) {
-            return sendError(res, 'Serie non trovata', 404);
+            return sendApiError(
+                res,
+                createApiError('Serie non trovata', 404, 'SERIES_NOT_FOUND')
+            );
         }
 
         return sendSuccess(res, series);
     } catch (error) {
         console.error('Errore nel recupero della serie:', error);
-        return sendError(res, 'Errore nel recupero della serie');
+        return sendApiError(res, error, {
+            fallbackMessage: 'Errore nel recupero della serie',
+            fallbackCode: 'SERIES_READ_FAILED'
+        });
     }
 });
 
@@ -103,8 +105,10 @@ router.post('/', async (req, res) => {
         );
     } catch (error) {
         console.error('Errore nella creazione della serie:', error);
-        const status = error.status || 400;
-        return sendError(res, error.message || 'Errore nella creazione della serie', status);
+        return sendApiError(res, error, {
+            fallbackMessage: 'Errore nella creazione della serie',
+            fallbackCode: 'SERIES_CREATE_FAILED'
+        });
     }
 });
 
@@ -120,19 +124,19 @@ router.put('/:id', async (req, res) => {
             concurrencyOptions(req)
         );
         if (!persistedUpdatedSeries) {
-            return sendError(res, 'Serie non trovata', 404);
+            return sendApiError(
+                res,
+                createApiError('Serie non trovata', 404, 'SERIES_NOT_FOUND')
+            );
         }
 
         return sendSuccess(res, persistedUpdatedSeries, { message: 'Serie aggiornata con successo' });
     } catch (error) {
         console.error('Errore nell\'aggiornamento della serie:', error);
-        const status = error.status || 400;
-        return sendError(
-            res,
-            error.message || 'Errore nell\'aggiornamento della serie',
-            status,
-            error.code
-        );
+        return sendApiError(res, error, {
+            fallbackMessage: 'Errore nell’aggiornamento della serie',
+            fallbackCode: 'SERIES_UPDATE_FAILED'
+        });
     }
 });
 
@@ -146,18 +150,19 @@ router.delete('/:id', async (req, res) => {
             concurrencyOptions(req)
         );
         if (!deletedSeries) {
-            return sendError(res, 'Serie non trovata', 404);
+            return sendApiError(
+                res,
+                createApiError('Serie non trovata', 404, 'SERIES_NOT_FOUND')
+            );
         }
 
         return sendSuccess(res, deletedSeries, { message: 'Serie eliminata con successo' });
     } catch (error) {
         console.error('Errore nell\'eliminazione della serie:', error);
-        return sendError(
-            res,
-            error.message || 'Errore nell\'eliminazione della serie',
-            error.status || 500,
-            error.code
-        );
+        return sendApiError(res, error, {
+            fallbackMessage: 'Errore nell’eliminazione della serie',
+            fallbackCode: 'SERIES_DELETE_FAILED'
+        });
     }
 });
 
@@ -173,17 +178,18 @@ router.post('/:id/photos/:photoId', async (req, res) => {
             concurrencyOptions(req)
         );
         if (!updatedSeries) {
-            return sendError(res, 'Serie non trovata', 404);
+            return sendApiError(
+                res,
+                createApiError('Serie non trovata', 404, 'SERIES_NOT_FOUND')
+            );
         }
         return sendSuccess(res, updatedSeries, { message: 'Foto aggiunta alla serie' });
     } catch (error) {
         console.error('Errore nell\'aggiunta della foto:', error);
-        return sendError(
-            res,
-            error.message || 'Errore nell\'aggiunta della foto',
-            error.status || 500,
-            error.code
-        );
+        return sendApiError(res, error, {
+            fallbackMessage: 'Errore nell’aggiunta della foto alla serie',
+            fallbackCode: 'SERIES_ADD_PHOTO_FAILED'
+        });
     }
 });
 
@@ -199,17 +205,18 @@ router.delete('/:id/photos/:photoId', async (req, res) => {
             concurrencyOptions(req)
         );
         if (!updatedSeries) {
-            return sendError(res, 'Serie non trovata', 404);
+            return sendApiError(
+                res,
+                createApiError('Serie non trovata', 404, 'SERIES_NOT_FOUND')
+            );
         }
         return sendSuccess(res, updatedSeries, { message: 'Foto rimossa dalla serie' });
     } catch (error) {
         console.error('Errore nella rimozione della foto:', error);
-        return sendError(
-            res,
-            error.message || 'Errore nella rimozione della foto',
-            error.status || 500,
-            error.code
-        );
+        return sendApiError(res, error, {
+            fallbackMessage: 'Errore nella rimozione della foto dalla serie',
+            fallbackCode: 'SERIES_REMOVE_PHOTO_FAILED'
+        });
     }
 });
 

@@ -32,11 +32,19 @@ class Series {
         const missing = required.filter(field => !seriesData[field]);
 
         if (missing.length > 0) {
-            throw new Error(`Campi mancanti: ${missing.join(', ')}`);
+            const error = new Error(`Campi mancanti: ${missing.join(', ')}`);
+            error.status = 400;
+            error.code = 'SERIES_VALIDATION_FAILED';
+            error.details = { fields: missing.join(',') };
+            throw error;
         }
 
         if (seriesData.title.length < 3) {
-            throw new Error('Il titolo deve essere di almeno 3 caratteri');
+            const error = new Error('Il titolo deve essere di almeno 3 caratteri');
+            error.status = 400;
+            error.code = 'SERIES_VALIDATION_FAILED';
+            error.details = { field: 'title', minimumLength: 3 };
+            throw error;
         }
 
         return true;

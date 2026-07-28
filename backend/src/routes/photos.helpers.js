@@ -11,6 +11,10 @@ const {
 const { buildPublicAssetUrl } = require('../services/publicAssetUrl');
 const DEFAULTS = require('../config/defaults');
 const { readStreamToBuffer } = require('../utils/streams');
+const {
+    sendApiError,
+    toApiErrorResponse
+} = require('../utils/apiErrors');
 
 const PUBLIC_ASSET_CACHE_CONTROL = DEFAULTS.publicAssetCacheControl;
 
@@ -133,73 +137,10 @@ function parseUploadSize(value) {
     return parsed;
 }
 
-const CLIENT_ERROR_CODES = new Set([
-    'INVALID_ID',
-    'INVALID_COORDINATE',
-    'INVALID_FILE_TYPE',
-    'LIMIT_FILE_SIZE'
-]);
-
-function compactErrorMessage(value, maxLength = 240) {
-    const normalized = String(value || '').replace(/\s+/g, ' ').trim();
-    if (!normalized) return '';
-    if (normalized.length <= maxLength) return normalized;
-    return `${normalized.slice(0, maxLength - 3)}...`;
-}
-
-function resolveErrorStatus(error, fallbackStatus = 500) {
-    const explicitStatus = Number(error?.status || error?.statusCode || 0);
-    if (Number.isFinite(explicitStatus) && explicitStatus >= 400 && explicitStatus < 600) {
-        return explicitStatus;
-    }
-
-    if (CLIENT_ERROR_CODES.has(String(error?.code || ''))) {
-        return 400;
-    }
-
-    return fallbackStatus;
-}
-
-function toRouteErrorResponse(error, {
-    fallbackMessage = 'Errore interno del server',
-    fallbackStatus = 500,
-    includeServerDetails = true
-} = {}) {
-    const status = resolveErrorStatus(error, fallbackStatus);
-    const isServerError = status >= 500;
-    const rawMessage = compactErrorMessage(error?.message || '');
-    const code = String(error?.code || '').trim();
-
-    const payload = {
-        success: false,
-        message: isServerError
-            ? fallbackMessage
-            : (rawMessage || fallbackMessage)
-    };
-
-    if (code) {
-        payload.code = code;
-    }
-
-    if (isServerError && includeServerDetails) {
-        const details = {};
-        if (rawMessage && rawMessage !== fallbackMessage) details.reason = rawMessage;
-        if (code) details.code = code;
-        const statusCode = Number(error?.status || error?.statusCode || 0);
-        if (Number.isFinite(statusCode) && statusCode >= 400 && statusCode < 600) {
-            details.statusCode = statusCode;
-        }
-        if (Object.keys(details).length > 0) {
-            payload.details = details;
-        }
-    }
-
-    return { status, payload };
-}
+const toRouteErrorResponse = toApiErrorResponse;
 
 function sendRouteError(res, error, options = {}) {
-    const { status, payload } = toRouteErrorResponse(error, options);
-    return res.status(status).json(payload);
+    return sendApiError(res, error, options);
 }
 
 function describeDeleteError(error) {

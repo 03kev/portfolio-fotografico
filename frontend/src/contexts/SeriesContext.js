@@ -1,5 +1,15 @@
 import React, { createContext, useContext, useReducer, useEffect, useCallback, useRef } from 'react';
 import { seriesService } from '../utils/api';
+import {
+    buildOperationErrorMessage,
+    isAmbiguousMutationError,
+    isConcurrencyError
+} from '../utils/operationErrors';
+import {
+    entityMatchesPatch,
+    findEntityById,
+    includesEntityId
+} from '../utils/mutationReconciliation';
 
 const SeriesContext = createContext();
 
@@ -40,12 +50,21 @@ function seriesReducer(state, action) {
             };
         
         case ACTIONS.SET_SERIES:
+        {
+            const nextSeries = Array.isArray(action.payload) ? action.payload : [];
+            const refreshedCurrent = state.currentSeries
+                ? nextSeries.find(
+                    (item) => String(item.id) === String(state.currentSeries.id)
+                ) || state.currentSeries
+                : null;
             return {
                 ...state,
-                series: action.payload,
+                series: nextSeries,
+                currentSeries: refreshedCurrent,
                 loading: false,
                 error: null
             };
+        }
         
         case ACTIONS.SET_ERROR:
             return {
@@ -117,9 +136,12 @@ export function SeriesProvider({ children }) {
     const refreshAfterConflict = useCallback(async () => {
         try {
             const response = await seriesService.getAll(includeUnpublishedRef.current);
-            dispatch({ type: ACTIONS.SET_SERIES, payload: unwrapApiData(response, []) });
+            const refreshedSeries = unwrapApiData(response, []);
+            dispatch({ type: ACTIONS.SET_SERIES, payload: refreshedSeries });
+            return refreshedSeries;
         } catch (refreshError) {
             console.error('Errore nel refresh delle serie dopo un conflitto:', refreshError);
+            return null;
         }
     }, []);
 
@@ -137,7 +159,10 @@ export function SeriesProvider({ children }) {
         } catch (error) {
             if (requestId !== fetchRequestIdRef.current) return;
             console.error('Errore nel caricamento delle serie:', error);
-            dispatch({ type: ACTIONS.SET_ERROR, payload: error.message || 'Errore nel caricamento delle serie' });
+            dispatch({
+                type: ACTIONS.SET_ERROR,
+                payload: buildOperationErrorMessage(error, 'caricamento serie')
+            });
         }
     }, []);
     
@@ -170,7 +195,10 @@ export function SeriesProvider({ children }) {
             return seriesItem;
         } catch (error) {
             console.error('Errore nel caricamento della serie:', error);
-            dispatch({ type: ACTIONS.SET_ERROR, payload: error.message || 'Serie non trovata' });
+            dispatch({
+                type: ACTIONS.SET_ERROR,
+                payload: buildOperationErrorMessage(error, 'caricamento serie')
+            });
             throw error;
         }
     }, []);
@@ -188,9 +216,21 @@ export function SeriesProvider({ children }) {
             return createdSeries;
         } catch (error) {
             console.error('Errore nella creazione della serie:', error);
+            if (isAmbiguousMutationError(error)) {
+                const refreshedSeries = await refreshAfterConflict();
+                const requestedTitle = String(seriesData?.title || '').trim().toLocaleLowerCase('it');
+                const createdSeries = Array.isArray(refreshedSeries)
+                    ? refreshedSeries.find((item) => (
+                        requestedTitle
+                        && String(item?.title || '').trim().toLocaleLowerCase('it') === requestedTitle
+                    ))
+                    : null;
+                if (createdSeries) return createdSeries;
+                if (!Array.isArray(refreshedSeries)) error.outcomeUnknown = true;
+            }
             throw error;
         }
-    }, []);
+    }, [refreshAfterConflict]);
 
     const updateSeries = useCallback(async (id, seriesData) => {
         try {
@@ -201,7 +241,14 @@ export function SeriesProvider({ children }) {
             return updatedSeries;
         } catch (error) {
             console.error('Errore nell\'aggiornamento della serie:', error);
-            if (error?.status === 409 || error?.status === 428) {
+            if (isAmbiguousMutationError(error)) {
+                const refreshedSeries = await refreshAfterConflict();
+                const refreshed = findEntityById(refreshedSeries, id);
+                if (refreshed && entityMatchesPatch(refreshed, seriesData)) {
+                    return refreshed;
+                }
+                if (!Array.isArray(refreshedSeries)) error.outcomeUnknown = true;
+            } else if (isConcurrencyError(error)) {
                 await refreshAfterConflict();
             }
             throw error;
@@ -215,7 +262,17 @@ export function SeriesProvider({ children }) {
             dispatch({ type: ACTIONS.DELETE_SERIES, payload: id });
         } catch (error) {
             console.error('Errore nell\'eliminazione della serie:', error);
-            if (error?.status === 409 || error?.status === 428) {
+            if (isAmbiguousMutationError(error)) {
+                const refreshedSeries = await refreshAfterConflict();
+                const seriesStillExists = Array.isArray(refreshedSeries)
+                    && refreshedSeries.some((item) => String(item.id) === String(id));
+                if (Array.isArray(refreshedSeries) && !seriesStillExists) {
+                    return;
+                }
+                if (!Array.isArray(refreshedSeries)) {
+                    error.outcomeUnknown = true;
+                }
+            } else if (isConcurrencyError(error)) {
                 await refreshAfterConflict();
             }
             throw error;
@@ -231,7 +288,14 @@ export function SeriesProvider({ children }) {
             return updatedSeries;
         } catch (error) {
             console.error('Errore nell\'aggiunta della foto:', error);
-            if (error?.status === 409 || error?.status === 428) {
+            if (isAmbiguousMutationError(error)) {
+                const refreshedSeries = await refreshAfterConflict();
+                const refreshed = findEntityById(refreshedSeries, seriesId);
+                if (refreshed && includesEntityId(refreshed.photos, photoId)) {
+                    return refreshed;
+                }
+                if (!Array.isArray(refreshedSeries)) error.outcomeUnknown = true;
+            } else if (isConcurrencyError(error)) {
                 await refreshAfterConflict();
             }
             throw error;
@@ -247,7 +311,14 @@ export function SeriesProvider({ children }) {
             return updatedSeries;
         } catch (error) {
             console.error('Errore nella rimozione della foto:', error);
-            if (error?.status === 409 || error?.status === 428) {
+            if (isAmbiguousMutationError(error)) {
+                const refreshedSeries = await refreshAfterConflict();
+                const refreshed = findEntityById(refreshedSeries, seriesId);
+                if (refreshed && !includesEntityId(refreshed.photos, photoId)) {
+                    return refreshed;
+                }
+                if (!Array.isArray(refreshedSeries)) error.outcomeUnknown = true;
+            } else if (isConcurrencyError(error)) {
                 await refreshAfterConflict();
             }
             throw error;

@@ -16,6 +16,7 @@ import { toAbsoluteImageUrl, toAbsoluteSiteUrl } from '../utils/siteUrl';
 import useMediaQuery from '../hooks/useMediaQuery';
 import { viewportBreakpoints, viewportQueries } from '../styles/responsive';
 import useSeo from '../seo/useSeo';
+import { buildOperationErrorMessage } from '../utils/operationErrors';
 
 const PageContainer = styled.div`
   min-height: 100vh;
@@ -1738,7 +1739,7 @@ function SeriesDetail() {
       setSavedContentPreview(null);
       setLayoutMode(true);
       setDraftContent(prepareContent(currentSeries.content || [], true));
-      toast.error(`Errore salvataggio layout: ${err?.message || 'unknown'}`);
+      toast.error(buildOperationErrorMessage(err, 'salvataggio layout serie'));
     } finally {
       setIsSavingLayout(false);
     }

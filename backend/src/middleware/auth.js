@@ -209,7 +209,8 @@ function requireWriteAuth(req, res, next) {
         if (isProduction()) {
             return res.status(503).json({
                 success: false,
-                message: 'Configurazione auth mancante: API_WRITE_TOKEN_HASH non impostata.'
+                code: 'AUTH_NOT_CONFIGURED',
+                message: 'Autenticazione admin non configurata sul server.'
             });
         }
 
@@ -219,6 +220,7 @@ function requireWriteAuth(req, res, next) {
     if (!isAuthenticatedRequest(req)) {
         return res.status(401).json({
             success: false,
+            code: 'AUTH_REQUIRED',
             message: 'Non autorizzato'
         });
     }

@@ -8,7 +8,8 @@ import GalleryModal from '../components/GalleryModal';
 import ToastProvider, { useToast } from '../components/Toast';
 import { LazyAdminTokenModal, LazyPhotoUpload } from '../components/lazyAdminComponents';
 import useAdminMode from '../hooks/useAdminMode';
-import { authService } from '../utils/api';
+import { ADMIN_SESSION_INVALIDATED_EVENT, authService } from '../utils/api';
+import { buildOperationErrorMessage } from '../utils/operationErrors';
 
 export default function SiteLayout() {
   const location = useLocation();
@@ -52,7 +53,7 @@ export default function SiteLayout() {
   };
 
   const handleUploadError = (error) => {
-    toast.error(error?.message || 'Caricamento non riuscito.');
+    toast.error(buildOperationErrorMessage(error, 'caricamento foto'));
   };
 
   useEffect(() => {
@@ -83,6 +84,18 @@ export default function SiteLayout() {
   }, [canEdit, showUpload]);
 
   useEffect(() => {
+    const handleInvalidatedSession = () => {
+      setApiTokenConfigured(false);
+      setShowUpload(false);
+      setAuthFeedback('error');
+    };
+    window.addEventListener(ADMIN_SESSION_INVALIDATED_EVENT, handleInvalidatedSession);
+    return () => {
+      window.removeEventListener(ADMIN_SESSION_INVALIDATED_EVENT, handleInvalidatedSession);
+    };
+  }, []);
+
+  useEffect(() => {
     if (authFeedback === 'idle') return;
     const timer = setTimeout(() => setAuthFeedback('idle'), 1400);
     return () => clearTimeout(timer);
@@ -96,8 +109,8 @@ export default function SiteLayout() {
         setAuthFeedback('idle');
         toast.info('Sessione admin disattivata.');
       } catch (error) {
-        setApiTokenConfigured(false);
         setAuthFeedback('idle');
+        toast.error(buildOperationErrorMessage(error, 'chiusura sessione admin'));
       }
       return;
     }
@@ -130,7 +143,7 @@ export default function SiteLayout() {
     } catch (error) {
       setApiTokenConfigured(false);
       setAuthFeedback('error');
-      setAuthModalError('Token non valido o sessione non autorizzata.');
+      setAuthModalError(buildOperationErrorMessage(error, 'accesso admin'));
     } finally {
       setAuthModalLoading(false);
     }

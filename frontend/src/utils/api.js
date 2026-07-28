@@ -1,6 +1,13 @@
 import axios from 'axios';
 import { API_BASE_URL, NETWORK_TIMEOUTS } from './constants';
 
+export const ADMIN_SESSION_INVALIDATED_EVENT = 'admin-session-invalidated';
+
+export function notifyAdminSessionInvalidated() {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(ADMIN_SESSION_INVALIDATED_EVENT));
+}
+
 const api = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
@@ -17,7 +24,7 @@ function compactText(value, maxLength = 240) {
   return `${normalized.slice(0, maxLength - 3)}...`;
 }
 
-function normalizeApiError(error) {
+export function normalizeApiError(error) {
   const responseData = error?.response?.data;
   const status = Number(error?.response?.status || 0) || null;
   const base = responseData && typeof responseData === 'object' ? responseData : {};
@@ -35,6 +42,12 @@ function normalizeApiError(error) {
     || 'Si è verificato un errore imprevisto'
   );
   const details = base?.details || baseError?.details || null;
+  const retryAfterHeader = error?.response?.headers?.['retry-after'];
+  const retryAfter = retryAfterHeader === undefined
+    ? null
+    : compactText(retryAfterHeader, 40);
+  const method = compactText(error?.config?.method || '', 16).toUpperCase() || null;
+  const url = compactText(error?.config?.url || '', 240) || null;
 
   return {
     ...base,
@@ -42,6 +55,16 @@ function normalizeApiError(error) {
     code: base?.code || baseError?.code || error?.code || null,
     details,
     message,
+    method,
+    url,
+    retryAfter,
+    retryable: (
+      status === null
+      || status === 408
+      || status === 425
+      || status === 429
+      || status >= 500
+    ),
     isAxiosError: Boolean(error?.isAxiosError)
   };
 }
@@ -64,9 +87,22 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
-    console.error('API Error:', error);
-
-    return Promise.reject(normalizeApiError(error));
+    const normalizedError = normalizeApiError(error);
+    if (!normalizedError.status || normalizedError.status >= 500) {
+      console.error('API request failed:', {
+        status: normalizedError.status,
+        code: normalizedError.code,
+        method: normalizedError.method,
+        url: normalizedError.url,
+        message: normalizedError.message
+      });
+    }
+    if (
+      normalizedError.code === 'AUTH_REQUIRED'
+    ) {
+      notifyAdminSessionInvalidated();
+    }
+    return Promise.reject(normalizedError);
   }
 );
 

@@ -271,7 +271,7 @@ const upload = multer({
             cb(null, true);
         } else {
             const error = new Error(`Tipo file non consentito. Tipi ammessi: ${allowedUploadTypes.join(', ')}`);
-            error.status = 400;
+            error.status = 415;
             error.code = 'INVALID_FILE_TYPE';
             cb(error, false);
         }
@@ -294,7 +294,8 @@ router.get('/', async (req, res) => {
     } catch (error) {
         console.error('Errore nel recupero foto:', error);
         return sendRouteError(res, error, {
-            fallbackMessage: 'Errore nel recupero delle foto'
+            fallbackMessage: 'Errore nel recupero delle foto',
+            fallbackCode: 'PHOTO_LIST_FAILED'
         });
     }
 });
@@ -307,6 +308,7 @@ router.get('/:id/download', async (req, res) => {
         if (!photo) {
             return res.status(404).json({
                 success: false,
+                code: 'PHOTO_NOT_FOUND',
                 message: 'Foto non trovata'
             });
         }
@@ -316,6 +318,7 @@ router.get('/:id/download', async (req, res) => {
         if (!object?.stream) {
             return res.status(404).json({
                 success: false,
+                code: 'PHOTO_ASSET_NOT_FOUND',
                 message: 'File immagine non trovato'
             });
         }
@@ -333,7 +336,8 @@ router.get('/:id/download', async (req, res) => {
     } catch (error) {
         console.error('Errore download foto:', error);
         return sendRouteError(res, error, {
-            fallbackMessage: 'Errore durante il download della foto'
+            fallbackMessage: 'Errore durante il download della foto',
+            fallbackCode: 'PHOTO_DOWNLOAD_FAILED'
         });
     }
 });
@@ -348,6 +352,7 @@ router.get('/:id', async (req, res) => {
         if (!photo) {
             return res.status(404).json({
                 success: false,
+                code: 'PHOTO_NOT_FOUND',
                 message: 'Foto non trovata'
             });
         }
@@ -359,7 +364,8 @@ router.get('/:id', async (req, res) => {
     } catch (error) {
         console.error('Errore nel recupero foto:', error);
         return sendRouteError(res, error, {
-            fallbackMessage: 'Errore nel recupero della foto'
+            fallbackMessage: 'Errore nel recupero della foto',
+            fallbackCode: 'PHOTO_READ_FAILED'
         });
     }
 });
@@ -372,20 +378,22 @@ router.post('/upload-url', async (req, res) => {
         if (rawVariant !== 'source') {
             return res.status(400).json({
                 success: false,
+                code: 'INVALID_UPLOAD_VARIANT',
                 message: 'variant non valido: usare solo "source".'
             });
         }
         const effectiveMimeType = String(mimetype || contentType || '').trim();
         if (!effectiveMimeType || !isAllowedMimeType(effectiveMimeType, allowedUploadTypes)) {
-            return res.status(400).json({
+            return res.status(415).json({
                 success: false,
+                code: 'INVALID_FILE_TYPE',
                 message: `Tipo file non consentito. Tipi ammessi: ${allowedUploadTypes.join(', ')}`
             });
         }
 
         const parsedSize = parseUploadSize(fileSize);
         if (parsedSize && parsedSize > uploadMaxSize) {
-            return res.status(400).json({
+            return res.status(413).json({
                 success: false,
                 message: `File troppo grande. Massimo ${uploadMaxSize} byte.`,
                 code: 'LIMIT_FILE_SIZE'
@@ -418,7 +426,8 @@ router.post('/upload-url', async (req, res) => {
     } catch (error) {
         console.error('Errore generazione URL upload diretto:', error);
         return sendRouteError(res, error, {
-            fallbackMessage: 'Errore nella generazione URL upload'
+            fallbackMessage: 'Errore nella generazione URL upload',
+            fallbackCode: 'PHOTO_UPLOAD_SIGNING_FAILED'
         });
     }
 });
@@ -460,6 +469,7 @@ router.post('/', upload.single('image'), async (req, res) => {
         if (existingPhoto) {
             return res.status(409).json({
                 success: false,
+                code: 'PHOTO_ID_CONFLICT',
                 message: 'photoId già esistente, riprova con un nuovo upload.'
             });
         }
@@ -477,6 +487,7 @@ router.post('/', upload.single('image'), async (req, res) => {
             if (!providedSourcePath || providedSourcePath !== assets.sourcePath) {
                 return res.status(400).json({
                     success: false,
+                    code: 'INVALID_SOURCE_PATH',
                     message: 'sourcePath non valido per la generazione media richiesta.'
                 });
             }
@@ -487,6 +498,7 @@ router.post('/', upload.single('image'), async (req, res) => {
             if (!sourceObject) {
                 return res.status(400).json({
                     success: false,
+                    code: 'PHOTO_SOURCE_NOT_FOUND',
                     message: 'sourcePath non trovato: carica prima il file originale su /api/photos/upload-url'
                 });
             }
@@ -526,6 +538,7 @@ router.post('/', upload.single('image'), async (req, res) => {
         if (!createdPhoto) {
             return res.status(409).json({
                 success: false,
+                code: 'PHOTO_ID_CONFLICT',
                 message: 'photoId già esistente, riprova con un nuovo upload.'
             });
         }
@@ -541,7 +554,7 @@ router.post('/', upload.single('image'), async (req, res) => {
         console.error('Errore nell\'upload:', error);
 
         if (error.code === 'LIMIT_FILE_SIZE') {
-            return res.status(400).json({
+            return res.status(413).json({
                 success: false,
                 message: `File troppo grande. Massimo ${uploadMaxSize} byte.`,
                 code: 'LIMIT_FILE_SIZE'
@@ -549,7 +562,8 @@ router.post('/', upload.single('image'), async (req, res) => {
         }
 
         return sendRouteError(res, error, {
-            fallbackMessage: 'Errore nell\'upload della foto'
+            fallbackMessage: 'Errore nell\'upload della foto',
+            fallbackCode: 'PHOTO_CREATE_FAILED'
         });
     } finally {
         if (!created && pendingAssets) {
@@ -573,14 +587,14 @@ router.post('/:id/source-upload-url', async (req, res) => {
         const effectiveMimeType = String(req.body?.mimetype || req.body?.contentType || '').trim();
         if (!effectiveMimeType || !isAllowedMimeType(effectiveMimeType, allowedUploadTypes)) {
             const error = new Error(`Tipo file non consentito. Tipi ammessi: ${allowedUploadTypes.join(', ')}`);
-            error.status = 400;
+            error.status = 415;
             error.code = 'INVALID_FILE_TYPE';
             throw error;
         }
         const parsedSize = parseUploadSize(req.body?.fileSize);
         if (parsedSize && parsedSize > uploadMaxSize) {
             const error = new Error(`File troppo grande. Massimo ${uploadMaxSize} byte.`);
-            error.status = 400;
+            error.status = 413;
             error.code = 'LIMIT_FILE_SIZE';
             throw error;
         }
@@ -594,7 +608,11 @@ router.post('/:id/source-upload-url', async (req, res) => {
             ttlMs: DEFAULTS.photoMediaMutationTtlMs
         });
         if (!reservation) {
-            return res.status(404).json({ success: false, message: 'Foto non trovata' });
+            return res.status(404).json({
+                success: false,
+                code: 'PHOTO_NOT_FOUND',
+                message: 'Foto non trovata'
+            });
         }
 
         const sourceExtension = getImageExtensionFromMimeType(effectiveMimeType);
@@ -622,7 +640,8 @@ router.post('/:id/source-upload-url', async (req, res) => {
     } catch (error) {
         await abortMediaMutationBestEffort(photoId, operationId);
         return sendRouteError(res, error, {
-            fallbackMessage: 'Errore nella preparazione del reupload'
+            fallbackMessage: 'Errore nella preparazione del reupload',
+            fallbackCode: 'PHOTO_REUPLOAD_PREPARE_FAILED'
         });
     }
 });
@@ -656,7 +675,8 @@ router.delete('/:id/media-operations/:operationId', async (req, res) => {
         return res.json({ success: true });
     } catch (error) {
         return sendRouteError(res, error, {
-            fallbackMessage: 'Errore nell’annullamento dell’operazione media'
+            fallbackMessage: 'Errore nell’annullamento dell’operazione media',
+            fallbackCode: 'PHOTO_MEDIA_ABORT_FAILED'
         });
     }
 });
@@ -748,7 +768,8 @@ router.post('/:id/replace-source', async (req, res) => {
     } catch (error) {
         timer.flush('error', { code: error?.code || null, message: error?.message });
         return sendRouteError(res, error, {
-            fallbackMessage: 'Errore durante il reupload della source privata'
+            fallbackMessage: 'Errore durante il reupload della source privata',
+            fallbackCode: 'PHOTO_REUPLOAD_FAILED'
         });
     } finally {
         if (!finalized && photoId && operationId) {
@@ -775,7 +796,11 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
             kind: 'regenerate'
         });
         if (!updatedPhoto) {
-            return res.status(404).json({ success: false, message: 'Foto non trovata' });
+            return res.status(404).json({
+                success: false,
+                code: 'PHOTO_NOT_FOUND',
+                message: 'Foto non trovata'
+            });
         }
         return res.json({
             success: true,
@@ -784,7 +809,8 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
         });
     } catch (error) {
         return sendRouteError(res, error, {
-            fallbackMessage: 'Errore durante la rigenerazione derivate'
+            fallbackMessage: 'Errore durante la rigenerazione derivate',
+            fallbackCode: 'PHOTO_REGENERATE_FAILED'
         });
     }
 });
@@ -810,7 +836,11 @@ router.post('/:id/crop', async (req, res) => {
             settings: sanitized.settings
         });
         if (!updatedPhoto) {
-            return res.status(404).json({ success: false, message: 'Foto non trovata' });
+            return res.status(404).json({
+                success: false,
+                code: 'PHOTO_NOT_FOUND',
+                message: 'Foto non trovata'
+            });
         }
         return res.json({
             success: true,
@@ -819,7 +849,8 @@ router.post('/:id/crop', async (req, res) => {
         });
     } catch (error) {
         return sendRouteError(res, error, {
-            fallbackMessage: 'Errore durante l’applicazione del crop'
+            fallbackMessage: 'Errore durante l’applicazione del crop',
+            fallbackCode: 'PHOTO_CROP_FAILED'
         });
     }
 });
@@ -853,6 +884,7 @@ router.put('/:id', async (req, res) => {
         if (!updatedPhoto) {
             return res.status(404).json({
                 success: false,
+                code: 'PHOTO_NOT_FOUND',
                 message: 'Foto non trovata'
             });
         }
@@ -865,7 +897,8 @@ router.put('/:id', async (req, res) => {
     } catch (error) {
         console.error('Errore nell\'aggiornamento:', error);
         return sendRouteError(res, error, {
-            fallbackMessage: 'Errore nell\'aggiornamento della foto'
+            fallbackMessage: 'Errore nell\'aggiornamento della foto',
+            fallbackCode: 'PHOTO_UPDATE_FAILED'
         });
     }
 });
@@ -882,6 +915,7 @@ router.delete('/:id', async (req, res) => {
         if (!deletion) {
             return res.status(404).json({
                 success: false,
+                code: 'PHOTO_NOT_FOUND',
                 message: 'Foto non trovata'
             });
         }
@@ -958,7 +992,8 @@ router.delete('/:id', async (req, res) => {
     } catch (error) {
         console.error('Errore nell\'eliminazione:', error);
         return sendRouteError(res, error, {
-            fallbackMessage: 'Errore nell\'eliminazione della foto'
+            fallbackMessage: 'Errore nell\'eliminazione della foto',
+            fallbackCode: 'PHOTO_DELETE_FAILED'
         });
     }
 });

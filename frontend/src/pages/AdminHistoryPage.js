@@ -3,9 +3,17 @@ import { AlertCircle, ChevronDown, Clock3, Filter, Loader2 } from 'lucide-react'
 import { useOutletContext } from 'react-router-dom';
 import styled from 'styled-components';
 import useSeo from '../seo/useSeo';
-import { auditService } from '../utils/api';
+import {
+  auditService,
+  authService,
+  notifyAdminSessionInvalidated
+} from '../utils/api';
 import { viewportQueries } from '../styles/responsive';
 import Section from '../ui/Section';
+import {
+  buildOperationErrorMessage,
+  getHttpStatusFromError
+} from '../utils/operationErrors';
 
 const PAGE_SIZE = 40;
 
@@ -383,7 +391,18 @@ export default function AdminHistoryPage() {
           : null
       );
     } catch (requestError) {
-      setError(requestError?.message || 'Impossibile caricare lo storico.');
+      if (getHttpStatusFromError(requestError) === 404) {
+        try {
+          const session = await authService.getSession();
+          if (!session?.data?.authenticated) {
+            notifyAdminSessionInvalidated();
+            return;
+          }
+        } catch {
+          // Manteniamo il 404 opaco se non riusciamo a verificare la sessione.
+        }
+      }
+      setError(buildOperationErrorMessage(requestError, 'caricamento storico modifiche'));
       if (!append) setEvents([]);
     } finally {
       setLoading(false);

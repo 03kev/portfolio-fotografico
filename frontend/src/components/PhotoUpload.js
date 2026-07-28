@@ -4,7 +4,10 @@ import { AnimatePresence } from 'framer-motion';
 import exifr from 'exifr';
 import { usePhotos } from '../contexts/PhotoContext';
 import { signSourceUpload, uploadSourceToSignedUrl, uploadUtils } from '../utils/api';
-import { buildOperationErrorMessage } from '../utils/operationErrors';
+import {
+    buildOperationErrorMessage,
+    isAmbiguousMutationError
+} from '../utils/operationErrors';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { usePhotoUploadWizard } from '../hooks/usePhotoUploadWizard';
 import MapSelector from './MapSelector';
@@ -404,7 +407,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
 
             if (!targetPhotoId) {
                 const errorMessage = 'ID foto non valido per aggiornamento.';
-                if (onUploadError) onUploadError({ message: errorMessage });
+                if (onUploadError) onUploadError({ userMessage: errorMessage });
                 return;
             }
 
@@ -442,7 +445,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                 console.error('Errore upload foto:', err);
                 const errorMessage = buildOperationErrorMessage(err, 'aggiornamento foto');
                 actions.clearPhotoOpStatus(targetPhotoId);
-                if (onUploadError) onUploadError({ ...err, message: errorMessage });
+                if (onUploadError) onUploadError({ ...err, userMessage: errorMessage });
             }
             return;
         }
@@ -569,11 +572,24 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             console.error('Errore upload foto:', err);
             actions.removePendingUpload(pendingId);
             actions.clearPhotoOpStatus(pendingId);
+            if (isAmbiguousMutationError(err)) {
+                const refreshedPhotos = await actions.fetchPhotos({ force: true });
+                const createdPhoto = Array.isArray(refreshedPhotos)
+                    ? refreshedPhotos.find((photo) => String(photo.id) === String(photoId))
+                    : null;
+                if (createdPhoto) {
+                    if (onUploadSuccess) onUploadSuccess(createdPhoto);
+                    return;
+                }
+                if (!Array.isArray(refreshedPhotos)) {
+                    err.outcomeUnknown = true;
+                }
+            }
             const errorMessage = buildCreateUploadErrorMessage(err, currentUploadStep);
             if (onUploadError) {
                 onUploadError({
                     ...err,
-                    message: errorMessage
+                    userMessage: errorMessage
                 });
             }
         }

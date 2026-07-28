@@ -21,6 +21,7 @@ const authLimiter = rateLimit({
     skipSuccessfulRequests: true,
     message: {
         success: false,
+        code: 'AUTH_RATE_LIMITED',
         message: 'Troppi tentativi di autenticazione. Riprova più tardi.'
     }
 });
@@ -41,7 +42,8 @@ router.post('/session', authLimiter, async (req, res) => {
         if (!hasWriteTokenConfigured()) {
             return res.status(503).json({
                 success: false,
-                message: 'Configurazione auth mancante: API_WRITE_TOKEN_HASH non impostata.'
+                code: 'AUTH_NOT_CONFIGURED',
+                message: 'Autenticazione admin non configurata sul server.'
             });
         }
 
@@ -50,6 +52,7 @@ router.post('/session', authLimiter, async (req, res) => {
             await wait(350);
             return res.status(401).json({
                 success: false,
+                code: 'AUTH_INVALID_CREDENTIALS',
                 message: 'Credenziali non valide'
             });
         }
@@ -64,6 +67,7 @@ router.post('/session', authLimiter, async (req, res) => {
         console.error('Errore creazione sessione auth:', error);
         return res.status(500).json({
             success: false,
+            code: 'AUTH_SESSION_FAILED',
             message: 'Errore durante autenticazione sessione'
         });
     }

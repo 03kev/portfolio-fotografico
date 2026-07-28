@@ -680,8 +680,18 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
 
     setDeletingPhoto(true);
     try {
-      await actions.deletePhoto(photoPendingDelete.id);
-      notify?.success?.(`Foto eliminata: "${photoPendingDelete.title || 'foto'}".`, 3200);
+      const deletionResult = await actions.deletePhoto(photoPendingDelete.id);
+      const failedAssets = Array.isArray(deletionResult?.failedAssets)
+        ? deletionResult.failedAssets
+        : [];
+      if (failedAssets.length > 0) {
+        notify?.warning?.(
+          `Foto eliminata, ma ${failedAssets.length} file non sono stati rimossi dallo storage. Controlla i log prima di riprovare.`,
+          6500
+        );
+      } else {
+        notify?.success?.(`Foto eliminata: "${photoPendingDelete.title || 'foto'}".`, 3200);
+      }
       setPhotoPendingDelete(null);
     } catch (error) {
       console.error('Errore nell\'eliminazione della foto:', error);
@@ -1078,7 +1088,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
               }}
               onUploadError={(error) => {
                 notify?.error?.(
-                  error?.message || buildOperationErrorMessage(error, 'aggiornamento foto'),
+                  buildOperationErrorMessage(error, 'aggiornamento foto'),
                   6000
                 );
               }}
