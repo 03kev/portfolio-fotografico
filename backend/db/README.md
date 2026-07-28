@@ -44,10 +44,14 @@ they benefit from uniqueness, ordering and foreign-key enforcement.
 | Delete series | Row delete with optional expected version; memberships cascade | Stale expected version: `409` |
 
 Hard deletes never use upsert, so a stale update cannot recreate a deleted row.
-The admin HTTP API requires `If-Match` for updates and deletes when PostgreSQL
-is active. Repository callers may still omit `expectedVersion` for explicitly
-independent internal patches. Retryable SQL states `40001` and `40P01` are
-retried inside the repository; domain/version conflicts are not.
+The admin HTTP API requires `X-Expected-Version` for updates and deletes when
+PostgreSQL is active. The standard HTTP `If-Match` header remains accepted only
+as a backwards-compatible fallback: application clients avoid it because an
+intermediary CDN may evaluate it against the response ETag after an unsafe
+request has already reached the origin. Repository callers may still omit
+`expectedVersion` for explicitly independent internal patches. Retryable SQL
+states `40001` and `40P01` are retried inside the repository; domain/version
+conflicts are not.
 
 For Neon, `DATABASE_URL` is the pooled connection string used by the serverless
 runtime. Migration and import scripts prefer Vercel/Neon's standard

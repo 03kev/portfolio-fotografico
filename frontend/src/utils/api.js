@@ -53,7 +53,7 @@ function withExpectedVersion(expectedVersion, config = {}) {
     ...config,
     headers: {
       ...(config.headers || {}),
-      'If-Match': String(version)
+      'X-Expected-Version': String(version)
     }
   };
 }

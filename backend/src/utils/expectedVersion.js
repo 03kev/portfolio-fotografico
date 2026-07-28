@@ -12,15 +12,22 @@ function parseVersion(value) {
 }
 
 function getExpectedVersion(req) {
-    const fromHeader = parseVersion(req.get('if-match'));
+    const fromApplicationHeader = parseVersion(req.get('x-expected-version'));
+    const fromHttpHeader = parseVersion(req.get('if-match'));
     const fromBody = parseVersion(req.body?.expectedVersion);
-    if (fromHeader !== null && fromBody !== null && fromHeader !== fromBody) {
-        const error = new Error('If-Match ed expectedVersion non coincidono.');
+    const providedVersions = [
+        fromApplicationHeader,
+        fromHttpHeader,
+        fromBody
+    ].filter((version) => version !== null);
+
+    if (new Set(providedVersions).size > 1) {
+        const error = new Error('Le versioni attese fornite non coincidono.');
         error.status = 400;
         error.code = 'EXPECTED_VERSION_MISMATCH';
         throw error;
     }
-    return fromHeader ?? fromBody;
+    return fromApplicationHeader ?? fromHttpHeader ?? fromBody;
 }
 
 function repositoryOptionsFromRequest(req) {

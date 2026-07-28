@@ -18,7 +18,7 @@ function concurrencyOptions(req) {
         expectedVersion === null
         && portfolioRepository.capabilities.optimisticConcurrency
     ) {
-        const error = new Error('Questa operazione richiede If-Match con la versione corrente.');
+        const error = new Error('Questa operazione richiede X-Expected-Version con la versione corrente.');
         error.status = 428;
         error.code = 'EXPECTED_VERSION_REQUIRED';
         throw error;

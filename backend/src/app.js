@@ -143,8 +143,8 @@ const corsOptions = {
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: env.isProduction
-        ? ['Content-Type', 'If-Match', 'x-requested-with']
-        : ['Content-Type', 'If-Match', 'Authorization', 'x-api-key', 'x-requested-with']
+        ? ['Content-Type', 'X-Expected-Version', 'If-Match', 'x-requested-with']
+        : ['Content-Type', 'X-Expected-Version', 'If-Match', 'Authorization', 'x-api-key', 'x-requested-with']
 };
 
 app.use(cors(corsOptions));

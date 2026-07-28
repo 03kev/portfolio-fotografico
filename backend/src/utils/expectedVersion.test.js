@@ -5,19 +5,28 @@ const {
     repositoryOptionsFromRequest
 } = require('./expectedVersion');
 
-function request({ header, body } = {}) {
+function request({ applicationHeader, httpHeader, body } = {}) {
     return {
         body,
         get(name) {
-            return name.toLowerCase() === 'if-match' ? header : undefined;
+            if (name.toLowerCase() === 'x-expected-version') return applicationHeader;
+            if (name.toLowerCase() === 'if-match') return httpHeader;
+            return undefined;
         }
     };
 }
 
-test('accepts quoted If-Match and forwards it as expectedVersion', () => {
+test('accepts X-Expected-Version and forwards it as expectedVersion', () => {
     assert.deepEqual(
-        repositoryOptionsFromRequest(request({ header: '"7"' })),
+        repositoryOptionsFromRequest(request({ applicationHeader: '7' })),
         { expectedVersion: 7 }
+    );
+});
+
+test('accepts quoted If-Match as a backwards-compatible fallback', () => {
+    assert.equal(
+        getExpectedVersion(request({ httpHeader: '"5"' })),
+        5
     );
 });
 
@@ -31,7 +40,7 @@ test('accepts an expectedVersion body fallback', () => {
 test('rejects mismatching header and body versions', () => {
     assert.throws(
         () => getExpectedVersion(request({
-            header: '"3"',
+            applicationHeader: '3',
             body: { expectedVersion: 4 }
         })),
         (error) => error.status === 400 && error.code === 'EXPECTED_VERSION_MISMATCH'

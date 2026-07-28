@@ -287,12 +287,15 @@ export function PhotoProvider({ children }) {
     const refreshPhotosAfterConflict = useCallback(async () => {
         try {
             const response = await photoService.getAll();
+            const photos = response.data?.data || response.data || [];
             dispatch({
                 type: ACTIONS.SET_PHOTOS,
-                payload: response.data?.data || response.data || []
+                payload: photos
             });
+            return photos;
         } catch (refreshError) {
             console.error('Error refreshing photos after a conflict:', refreshError);
+            return null;
         }
     }, []);
     
@@ -466,8 +469,26 @@ export function PhotoProvider({ children }) {
                 window.dispatchEvent(new CustomEvent('photoDeleted', { detail: { photoId } }));
             } catch (error) {
                 console.error('Error deleting photo:', error);
-                if (error?.status === 409 || error?.status === 428) {
-                    await refreshPhotosAfterConflict();
+                const status = Number(error?.status || 0);
+                const outcomeMayBeAmbiguous = (
+                    status === 409
+                    || status === 412
+                    || status === 428
+                    || status >= 500
+                    || status === 0
+                );
+                if (outcomeMayBeAmbiguous) {
+                    const refreshedPhotos = await refreshPhotosAfterConflict();
+                    const photoStillExists = Array.isArray(refreshedPhotos)
+                        && refreshedPhotos.some(
+                            (photo) => String(photo.id) === String(photoId)
+                        );
+                    if (Array.isArray(refreshedPhotos) && !photoStillExists) {
+                        window.dispatchEvent(new CustomEvent('photoDeleted', {
+                            detail: { photoId }
+                        }));
+                        return;
+                    }
                 }
                 throw error;
             }
