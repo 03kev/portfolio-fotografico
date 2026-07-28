@@ -394,8 +394,13 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             setError('Nessuna immagine selezionata');
             return;
         }
-        if (!formData.title.trim()) {
+        const normalizedTitle = formData.title.trim();
+        if (!normalizedTitle) {
             setError('Il Titolo è obbligatorio');
+            return;
+        }
+        if (normalizedTitle.length < 3) {
+            setError('Il titolo deve contenere almeno 3 caratteri');
             return;
         }
 
@@ -646,7 +651,11 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                             type="button"
                             className="upload-btn"
                             onClick={handleUpload}
-                            disabled={loading || (!selectedFile && !isEditMode)}
+                            disabled={
+                                loading
+                                || (!selectedFile && !isEditMode)
+                                || formData.title.trim().length < 3
+                            }
                         >
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                                 {loading ? <Loader2 size={16} /> : isEditMode ? <Save size={16} /> : <Upload size={16} />}

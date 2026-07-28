@@ -37,9 +37,16 @@ export const usePhotoUploadWizard = ({
       return;
     }
 
-    if (currentStep === 2 && !title.trim()) {
-      setError('Il campo Titolo è obbligatorio');
-      return;
+    if (currentStep === 2) {
+      const normalizedTitle = title.trim();
+      if (!normalizedTitle) {
+        setError('Il campo Titolo è obbligatorio');
+        return;
+      }
+      if (normalizedTitle.length < 3) {
+        setError('Il titolo deve contenere almeno 3 caratteri');
+        return;
+      }
     }
 
     const index = steps.findIndex((step) => step.id === currentStep);
@@ -96,12 +103,12 @@ export const usePhotoUploadWizard = ({
       if (currentStep !== lastStep) {
         const disabledNext =
           (!isEditMode && currentStep === 1 && !selectedFile) ||
-          (currentStep === 2 && !title.trim());
+          (currentStep === 2 && title.trim().length < 3);
         if (!disabledNext) nextStep();
         return;
       }
 
-      if ((selectedFile || isEditMode) && title.trim() && !loading) {
+      if ((selectedFile || isEditMode) && title.trim().length >= 3 && !loading) {
         onSubmit();
       }
     };
@@ -134,7 +141,7 @@ export const usePhotoUploadWizard = ({
     const isNextDisabled =
       loading ||
       (!isEditMode && currentStep === 1 && !selectedFile) ||
-      (currentStep === 2 && !title.trim());
+      (currentStep === 2 && title.trim().length < 3);
 
     return {
       currentStep,

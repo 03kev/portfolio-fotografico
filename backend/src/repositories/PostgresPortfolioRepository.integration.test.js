@@ -10,7 +10,8 @@ const {
 } = require('node:test');
 const {
     PostgresPortfolioRepository,
-    extractContentPhotoIds
+    extractContentPhotoIds,
+    translatePostgresError
 } = require('./PostgresPortfolioRepository');
 const {
     normalizePostgresConnectionString
@@ -150,6 +151,41 @@ after(async () => {
     if (!adminPool) return;
     await adminPool.query(`DROP SCHEMA "${schemaName}" CASCADE`);
     await adminPool.end();
+});
+
+integrationTest('every domain check constraint has an actionable error message', async () => {
+    const result = await scopedPool.query(
+        `SELECT model_constraint.conname AS constraint_name
+         FROM pg_constraint AS model_constraint
+         JOIN pg_class AS relation
+           ON relation.oid = model_constraint.conrelid
+         JOIN pg_namespace AS namespace
+           ON namespace.oid = relation.relnamespace
+         WHERE namespace.nspname = $1
+           AND model_constraint.contype = 'c'
+           AND relation.relname = ANY($2::text[])
+         ORDER BY model_constraint.conname`,
+        [schemaName, ['photos', 'series', 'series_photos']]
+    );
+    const fallbackMessage = 'Uno dei dati inviati non rispetta i vincoli richiesti.';
+    const missingMessages = result.rows
+        .map((row) => row.constraint_name)
+        .filter((constraint) => {
+            const translated = translatePostgresError({
+                code: '23514',
+                constraint
+            });
+            return (
+                translated.message === fallbackMessage
+                || !translated.details?.field
+            );
+        });
+
+    assert.deepEqual(
+        missingMessages,
+        [],
+        `Aggiungi un messaggio in translatePostgresError per: ${missingMessages.join(', ')}`
+    );
 });
 
 integrationTest('atomic patches preserve concurrent disjoint updates to one photo', async () => {

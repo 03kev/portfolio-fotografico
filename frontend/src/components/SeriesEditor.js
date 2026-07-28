@@ -815,6 +815,8 @@ function SeriesEditor({ series, onClose }) {
                       aria-invalid={titleConflict}
                       aria-describedby={titleConflict ? 'series-title-error' : undefined}
                       required
+                      minLength={3}
+                      maxLength={120}
                     />
                     {titleConflict && (
                       <FieldError id="series-title-error">
@@ -832,6 +834,7 @@ function SeriesEditor({ series, onClose }) {
                       onChange={handleInputChange}
                       placeholder="Descrivi la tua serie fotografica..."
                       required
+                      maxLength={8000}
                     />
                   </FormGroup>
 
@@ -1136,7 +1139,12 @@ function SeriesEditor({ series, onClose }) {
             </CancelButton>
             <SaveButton
               type="submit"
-              disabled={isSubmitting || !formData.title || !formData.description || titleConflict}
+              disabled={
+                isSubmitting
+                || formData.title.trim().length < 3
+                || !formData.description.trim()
+                || titleConflict
+              }
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
             >

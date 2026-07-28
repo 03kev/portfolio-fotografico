@@ -31,6 +31,27 @@ const CORS_ERROR_PATTERNS = [
   /cross-origin/i
 ];
 
+const VALIDATION_FIELD_LABELS = Object.freeze({
+  id: 'identificativo',
+  title: 'titolo',
+  description: 'descrizione',
+  location: 'luogo',
+  lat: 'latitudine',
+  lng: 'longitudine',
+  camera: 'fotocamera',
+  lens: 'obiettivo',
+  date: 'data',
+  tags: 'tag',
+  settings: 'impostazioni',
+  slug: 'indirizzo della serie',
+  photos: 'foto della serie',
+  content: 'contenuto della serie',
+  mediaGeneration: 'generazione dei file',
+  mediaOperation: 'operazione sui file',
+  derivativesVersion: 'versione delle varianti',
+  version: 'versione'
+});
+
 const GENERIC_SERVER_MESSAGE_PATTERNS = [
   /^errore del server$/i,
   /^errore interno del server$/i,
@@ -73,8 +94,18 @@ const ERROR_CODE_MESSAGES = Object.freeze({
   SERIES_TITLE_CONFLICT: () => 'Esiste già una serie con questo titolo, anche tra le bozze.',
   SERIES_SLUG_CONFLICT: () => 'Esiste già una serie con questo indirizzo. Scegli un titolo diverso.',
   SERIES_PHOTO_CONFLICT: () => 'La foto è già presente nella serie.',
-  SERIES_VALIDATION_FAILED: ({ rawMessage }) => rawMessage || 'I dati della serie non sono validi.',
-  VALIDATION_ERROR: ({ rawMessage }) => rawMessage || 'I dati inseriti non sono validi.',
+  SERIES_VALIDATION_FAILED: ({ error, rawMessage }) => (
+    buildValidationErrorMessage(error, rawMessage || 'I dati della serie non sono validi.')
+  ),
+  VALIDATION_ERROR: ({ error, rawMessage }) => (
+    buildValidationErrorMessage(error, rawMessage || 'I dati inseriti non sono validi.')
+  ),
+  CHECK_CONSTRAINT_VIOLATION: ({ error, rawMessage }) => (
+    buildValidationErrorMessage(
+      error,
+      rawMessage || 'Uno dei dati inseriti non rispetta i vincoli richiesti.'
+    )
+  ),
   REFERENCE_INTEGRITY_CONFLICT: ({ rawMessage }) => rawMessage || 'L’operazione produrrebbe riferimenti incoerenti tra foto e serie.',
   INVALID_FILE_TYPE: ({ rawMessage }) => rawMessage || 'Formato file non supportato.',
   LIMIT_FILE_SIZE: ({ rawMessage }) => rawMessage || 'Il file supera la dimensione massima consentita.',
@@ -141,6 +172,45 @@ const readErrorDetail = (error) => {
   ];
   return candidates.find((entry) => entry && typeof entry === 'object') || null;
 };
+
+function buildValidationErrorMessage(error, fallbackMessage) {
+  const detail = readErrorDetail(error);
+  const field = String(detail?.field || '').trim();
+  const fieldLabel = VALIDATION_FIELD_LABELS[field] || field;
+  const minimumLength = Number(detail?.minimumLength);
+  const maximumLength = Number(detail?.maximumLength);
+  const minimum = Number(detail?.minimum);
+  const maximum = Number(detail?.maximum);
+  const maximumItems = Number(detail?.maximumItems);
+
+  if (fieldLabel && Number.isFinite(minimumLength) && minimumLength > 0) {
+    return `Il campo “${fieldLabel}” deve contenere almeno ${minimumLength} caratteri.`;
+  }
+  if (fieldLabel && Number.isFinite(maximumLength) && maximumLength > 0) {
+    return `Il campo “${fieldLabel}” può contenere al massimo ${maximumLength} caratteri.`;
+  }
+  if (
+    fieldLabel
+    && Number.isFinite(minimum)
+    && Number.isFinite(maximum)
+  ) {
+    return `Il campo “${fieldLabel}” deve essere compreso tra ${minimum} e ${maximum}.`;
+  }
+  if (fieldLabel && Number.isFinite(maximumItems) && maximumItems > 0) {
+    return `Il campo “${fieldLabel}” può contenere al massimo ${maximumItems} elementi.`;
+  }
+
+  const fields = String(detail?.fields || '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => VALIDATION_FIELD_LABELS[entry] || entry);
+  if (fields.length > 0) {
+    return `Compila i campi obbligatori: ${fields.join(', ')}.`;
+  }
+
+  return fallbackMessage;
+}
 
 const getErrorMessages = (error) => {
   const rawMessage = compactRawMessage(error?.message || error?.error?.message || error?.data?.message || '');

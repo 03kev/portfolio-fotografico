@@ -287,10 +287,124 @@ function translatePostgresError(error) {
     }
 
     if (error?.code === '23514') {
-        const invalid = new Error('I dati non rispettano i vincoli del modello.');
+        const checkConstraints = {
+            photos_id_check: {
+                message: 'L’identificativo della foto deve essere un numero positivo.',
+                field: 'id',
+                rule: 'positive'
+            },
+            photos_title_check: {
+                message: 'Il titolo della foto deve contenere almeno 3 caratteri.',
+                field: 'title',
+                minimumLength: 3
+            },
+            photos_location_name_check: {
+                message: 'Il luogo della foto non può essere vuoto.',
+                field: 'location'
+            },
+            photos_latitude_check: {
+                message: 'La latitudine deve essere compresa tra -90 e 90.',
+                field: 'lat',
+                minimum: -90,
+                maximum: 90
+            },
+            photos_longitude_check: {
+                message: 'La longitudine deve essere compresa tra -180 e 180.',
+                field: 'lng',
+                minimum: -180,
+                maximum: 180
+            },
+            photos_settings_check: {
+                message: 'Le impostazioni della foto devono essere un oggetto valido.',
+                field: 'settings',
+                rule: 'object'
+            },
+            photos_tags_check: {
+                message: 'Una foto può avere al massimo 20 tag.',
+                field: 'tags',
+                maximumItems: 20
+            },
+            photos_updated_at_ms_check: {
+                message: 'La data di aggiornamento della foto non è valida.',
+                field: 'updatedAt'
+            },
+            photos_derivatives_version_check: {
+                message: 'La versione delle varianti della foto non è valida.',
+                field: 'derivativesVersion'
+            },
+            photos_version_check: {
+                message: 'La versione della foto non è valida.',
+                field: 'version'
+            },
+            series_id_check: {
+                message: 'L’identificativo della serie deve essere un numero positivo.',
+                field: 'id',
+                rule: 'positive'
+            },
+            series_title_check: {
+                message: 'Il titolo della serie non può essere vuoto.',
+                field: 'title'
+            },
+            series_title_key_check: {
+                message: 'Il titolo normalizzato della serie non può essere vuoto.',
+                field: 'title'
+            },
+            series_slug_check: {
+                message: 'L’indirizzo della serie può contenere solo lettere minuscole, numeri e trattini.',
+                field: 'slug',
+                rule: 'slug'
+            },
+            series_description_check: {
+                message: 'La descrizione della serie non può essere vuota.',
+                field: 'description'
+            },
+            series_content_check: {
+                message: 'Il contenuto della serie deve essere una lista valida.',
+                field: 'content',
+                rule: 'array'
+            },
+            series_version_check: {
+                message: 'La versione della serie non è valida.',
+                field: 'version'
+            },
+            series_photos_position_check: {
+                message: 'La posizione della foto nella serie non può essere negativa.',
+                field: 'photos',
+                minimum: 0
+            },
+            photos_media_generation_ulid: {
+                message: 'L’identificativo della generazione dei file non è valido. Ripeti il caricamento.',
+                field: 'mediaGeneration',
+                rule: 'ulid'
+            },
+            photos_media_operation_complete: {
+                message: 'Lo stato dell’operazione sui file è incompleto. Ripeti l’operazione.',
+                field: 'mediaOperation',
+                rule: 'complete'
+            },
+            photos_media_operation_kind_format: {
+                message: 'Il tipo di operazione sui file non è valido. Ripeti l’operazione.',
+                field: 'mediaOperation',
+                rule: 'format'
+            },
+            photos_media_operation_generation_ulid: {
+                message: 'La generazione dell’operazione sui file non è valida. Ripeti l’operazione.',
+                field: 'mediaGeneration',
+                rule: 'ulid'
+            }
+        };
+        const constraint = String(error.constraint || '');
+        const violation = checkConstraints[constraint];
+        const invalid = new Error(
+            violation?.message || 'Uno dei dati inviati non rispetta i vincoli richiesti.'
+        );
         invalid.status = 400;
         invalid.code = 'CHECK_CONSTRAINT_VIOLATION';
-        invalid.details = { constraint: error.constraint };
+        invalid.details = {
+            constraint,
+            ...(violation || {})
+        };
+        delete invalid.details.message;
         return invalid;
     }
 
@@ -1063,5 +1177,6 @@ module.exports = {
     extractContentPhotoIds,
     mapPhotoRow,
     mapSeriesRow,
+    translatePostgresError,
     withTransaction
 };

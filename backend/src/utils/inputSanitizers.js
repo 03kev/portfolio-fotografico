@@ -24,10 +24,22 @@ function parseJsonIfString(value, fallback) {
     }
 }
 
-function sanitizeString(value, { maxLength, fallback = '', fieldName = 'field' } = {}) {
+function sanitizeString(value, {
+    minLength,
+    maxLength,
+    fallback = '',
+    fieldName = 'field'
+} = {}) {
     if (value === undefined || value === null) return fallback;
     const normalized = String(value).trim();
     if (!normalized) return fallback;
+    if (minLength && normalized.length < minLength) {
+        throw validationError(
+            `${fieldName} troppo corto (min ${minLength})`,
+            fieldName,
+            { minimumLength: minLength }
+        );
+    }
     if (maxLength && normalized.length > maxLength) {
         throw validationError(
             `${fieldName} troppo lungo (max ${maxLength})`,
@@ -38,10 +50,21 @@ function sanitizeString(value, { maxLength, fallback = '', fieldName = 'field' }
     return normalized;
 }
 
-function sanitizeOptionalString(value, { maxLength, fieldName = 'field' } = {}) {
+function sanitizeOptionalString(value, {
+    minLength,
+    maxLength,
+    fieldName = 'field'
+} = {}) {
     if (value === undefined || value === null) return undefined;
     const normalized = String(value).trim();
     if (!normalized) return '';
+    if (minLength && normalized.length < minLength) {
+        throw validationError(
+            `${fieldName} troppo corto (min ${minLength})`,
+            fieldName,
+            { minimumLength: minLength }
+        );
+    }
     if (maxLength && normalized.length > maxLength) {
         throw validationError(
             `${fieldName} troppo lungo (max ${maxLength})`,
@@ -136,8 +159,17 @@ function sanitizePhotoPayload(body = {}, { partial = false } = {}) {
 
     if (!partial || body.title !== undefined) {
         let value = partial
-            ? sanitizeOptionalString(body.title, { maxLength: 120, fieldName: 'title' })
-            : sanitizeString(body.title, { maxLength: 120, fallback: 'Foto senza titolo', fieldName: 'title' });
+            ? sanitizeOptionalString(body.title, {
+                minLength: 3,
+                maxLength: 120,
+                fieldName: 'title'
+            })
+            : sanitizeString(body.title, {
+                minLength: 3,
+                maxLength: 120,
+                fallback: 'Foto senza titolo',
+                fieldName: 'title'
+            });
         if (partial && value === '') value = undefined;
         if (value !== undefined) output.title = value;
     }

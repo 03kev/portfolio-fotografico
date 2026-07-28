@@ -21,6 +21,9 @@ const InfoLocationStep = ({
       <label>Titolo<span style={{ color: '#999', marginLeft: '2px' }}>*</span></label>
       <input
         type="text"
+        required
+        minLength={3}
+        maxLength={120}
         value={formData.title}
         onChange={(e) => handleInputChange('title', e.target.value)}
         placeholder="Es: Tramonto in Toscana"

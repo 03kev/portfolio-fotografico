@@ -75,4 +75,21 @@ describe('operationErrors', () => {
     expect(message).toContain('Esito non verificabile');
     expect(message).toContain('controlla il risultato prima di riprovare');
   });
+
+  test('explains the exact field constraint returned by validation', () => {
+    const message = buildOperationErrorMessage({
+      status: 400,
+      code: 'CHECK_CONSTRAINT_VIOLATION',
+      message: 'I dati non rispettano i vincoli del modello.',
+      details: {
+        constraint: 'photos_title_check',
+        field: 'title',
+        minimumLength: 3
+      }
+    }, 'creazione foto');
+
+    expect(message).toBe(
+      'Errore (creazione foto): Il campo “titolo” deve contenere almeno 3 caratteri.'
+    );
+  });
 });
