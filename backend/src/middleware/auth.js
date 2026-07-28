@@ -226,6 +226,17 @@ function requireWriteAuth(req, res, next) {
     return next();
 }
 
+function requireConcealedAdminAuth(req, res, next) {
+    if (!canAccessAdminData(req)) {
+        return res.status(404).json({
+            success: false,
+            message: 'Endpoint non trovato'
+        });
+    }
+
+    return next();
+}
+
 function protectWriteMethods(req, res, next) {
     if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
         return next();
@@ -249,6 +260,7 @@ module.exports = {
     isAuthenticatedRequest,
     isWriteTokenValid,
     protectWriteMethods,
+    requireConcealedAdminAuth,
     requireWriteAuth,
     setSessionCookie
 };

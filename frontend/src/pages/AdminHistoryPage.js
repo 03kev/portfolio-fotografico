@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, ChevronDown, Clock3, Filter, Loader2 } from 'lucide-react';
-import { Link, useOutletContext } from 'react-router-dom';
+import { useOutletContext } from 'react-router-dom';
 import styled from 'styled-components';
 import useSeo from '../seo/useSeo';
 import { auditService } from '../utils/api';
@@ -323,15 +323,6 @@ const StateMessage = styled(Panel)`
   }
 `;
 
-const AdminLink = styled(Link)`
-  padding: 10px 14px;
-  border: 1px solid rgba(214, 179, 106, 0.42);
-  border-radius: var(--border-radius-full);
-  background: rgba(214, 179, 106, 0.1);
-  color: var(--color-text);
-  font-weight: var(--font-weight-semibold);
-`;
-
 const LoadMore = styled(Button)`
   justify-self: center;
 `;
@@ -353,7 +344,7 @@ function eventDisplayName(event) {
 }
 
 export default function AdminHistoryPage() {
-  const { isAdmin, isAdminMode } = useOutletContext();
+  const { isAdmin } = useOutletContext();
   const [filters, setFilters] = useState({
     entityType: '',
     entityId: '',
@@ -417,29 +408,6 @@ export default function AdminHistoryPage() {
       operation: filters.operation
     });
   };
-
-  if (!isAdminMode) {
-    return (
-      <Section title="Storico modifiche" subtitle="Questa sezione è riservata all’amministrazione." headingLevel="h1">
-        <StateMessage>
-          <AlertCircle size={24} />
-          <p>Attiva prima la modalità amministratore.</p>
-          <AdminLink to="/admin">Attiva modalità admin</AdminLink>
-        </StateMessage>
-      </Section>
-    );
-  }
-
-  if (!isAdmin) {
-    return (
-      <Section title="Storico modifiche" subtitle="Questa sezione richiede una sessione admin attiva." headingLevel="h1">
-        <StateMessage>
-          <AlertCircle size={24} />
-          <p>Usa il pulsante con la chiave nell’intestazione per autenticarti.</p>
-        </StateMessage>
-      </Section>
-    );
-  }
 
   return (
     <Section

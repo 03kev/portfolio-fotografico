@@ -1,5 +1,10 @@
 import React, { Suspense, lazy } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import {
+  BrowserRouter as Router,
+  Route,
+  Routes,
+  useOutletContext
+} from 'react-router-dom';
 import { ThemeProvider } from 'styled-components';
 import { MotionConfig } from 'framer-motion';
 
@@ -27,6 +32,13 @@ const SeriesDetail = lazy(() => import('./components/SeriesDetail'));
 
 const RouteFallback = () => null;
 
+function AdminHistoryRoute() {
+  const { isAdmin, isAdminSessionPending } = useOutletContext();
+
+  if (isAdminSessionPending) return null;
+  return isAdmin ? <AdminHistoryPage /> : <NotFoundPage />;
+}
+
 export default function App() {
   return (
     <ThemeProvider theme={appTheme}>
@@ -39,7 +51,7 @@ export default function App() {
                 <Routes>
                   <Route element={<SiteLayout />}>
                     <Route path="/admin" element={<AdminAccessPage />} />
-                    <Route path="/admin/history" element={<AdminHistoryPage />} />
+                    <Route path="/admin/history" element={<AdminHistoryRoute />} />
                     <Route path="/admin/logout" element={<AdminAccessPage />} />
                     <Route path="/admin/logout/*" element={<AdminAccessPage />} />
                     <Route path="/" element={<HomePage />} />

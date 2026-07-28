@@ -1,9 +1,9 @@
 const express = require('express');
-const { requireWriteAuth } = require('../middleware/auth');
+const { requireConcealedAdminAuth } = require('../middleware/auth');
 const { portfolioRepository } = require('../repositories');
 
 const router = express.Router();
-router.use(requireWriteAuth);
+router.use(requireConcealedAdminAuth);
 
 function ensureAuditAvailable(res) {
     if (portfolioRepository.capabilities.auditHistory && portfolioRepository.audit) {

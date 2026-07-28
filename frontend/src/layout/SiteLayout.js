@@ -16,6 +16,7 @@ export default function SiteLayout() {
   const toast = useToast();
   const [showUpload, setShowUpload] = useState(false);
   const [apiTokenConfigured, setApiTokenConfigured] = useState(false);
+  const [authSessionResolved, setAuthSessionResolved] = useState(false);
   const [authFeedback, setAuthFeedback] = useState('idle');
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authModalLoading, setAuthModalLoading] = useState(false);
@@ -62,10 +63,12 @@ export default function SiteLayout() {
       .then((response) => {
         if (!mounted) return;
         setApiTokenConfigured(Boolean(response?.data?.authenticated));
+        setAuthSessionResolved(true);
       })
       .catch(() => {
         if (!mounted) return;
         setApiTokenConfigured(false);
+        setAuthSessionResolved(true);
       });
 
     return () => {
@@ -148,6 +151,7 @@ export default function SiteLayout() {
           context={{
             isAdmin: canEdit,
             isAdminMode,
+            isAdminSessionPending: !authSessionResolved,
             notify: {
               success: toast.success,
               error: toast.error,
