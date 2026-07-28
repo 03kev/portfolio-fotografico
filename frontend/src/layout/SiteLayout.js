@@ -9,9 +9,10 @@ import ToastProvider, { useToast } from '../components/Toast';
 import { LazyAdminTokenModal, LazyPhotoUpload } from '../components/lazyAdminComponents';
 import useAdminMode from '../hooks/useAdminMode';
 import { ADMIN_SESSION_INVALIDATED_EVENT, authService } from '../utils/api';
+import { adminFeedback } from '../utils/adminFeedback';
 import { buildOperationErrorMessage } from '../utils/operationErrors';
 
-export default function SiteLayout() {
+function SiteLayoutContent() {
   const location = useLocation();
   const isAdminMode = useAdminMode();
   const toast = useToast();
@@ -47,9 +48,9 @@ export default function SiteLayout() {
     });
   }, [location.key, location.pathname, location.search, location.hash]);
 
-  const handleUploadSuccess = () => {
+  const handleUploadSuccess = (photo) => {
     setShowUpload(false);
-    toast.success('Foto caricata con successo.');
+    toast.success(adminFeedback.photoCreated(photo));
   };
 
   const handleUploadError = (error) => {
@@ -107,7 +108,7 @@ export default function SiteLayout() {
         await authService.logout();
         setApiTokenConfigured(false);
         setAuthFeedback('idle');
-        toast.info('Sessione admin disattivata.');
+        toast.info(adminFeedback.sessionEnded());
       } catch (error) {
         setAuthFeedback('idle');
         toast.error(buildOperationErrorMessage(error, 'chiusura sessione admin'));
@@ -139,7 +140,7 @@ export default function SiteLayout() {
       setApiTokenConfigured(true);
       setAuthFeedback('success');
       setShowAuthModal(false);
-      toast.success('Sessione admin attiva.');
+      toast.success(adminFeedback.sessionStarted());
     } catch (error) {
       setApiTokenConfigured(false);
       setAuthFeedback('error');
@@ -202,7 +203,14 @@ export default function SiteLayout() {
         </Suspense>
       )}
 
-      <ToastProvider toasts={toast.toasts} onRemove={toast.removeToast} />
     </>
+  );
+}
+
+export default function SiteLayout() {
+  return (
+    <ToastProvider>
+      <SiteLayoutContent />
+    </ToastProvider>
   );
 }

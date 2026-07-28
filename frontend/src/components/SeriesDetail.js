@@ -16,6 +16,7 @@ import { toAbsoluteImageUrl, toAbsoluteSiteUrl } from '../utils/siteUrl';
 import useMediaQuery from '../hooks/useMediaQuery';
 import { viewportBreakpoints, viewportQueries } from '../styles/responsive';
 import useSeo from '../seo/useSeo';
+import { adminFeedback } from '../utils/adminFeedback';
 import { buildOperationErrorMessage } from '../utils/operationErrors';
 
 const PageContainer = styled.div`
@@ -1733,7 +1734,7 @@ function SeriesDetail() {
       await updateSeries(currentSeries.id, {
         content: cleanContent,
       });
-      toast.success('Layout serie salvato ✅');
+      toast.success(adminFeedback.seriesLayoutSaved());
     } catch (err) {
       // rollback in caso di errore
       setSavedContentPreview(null);

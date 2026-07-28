@@ -60,10 +60,3 @@ export const ERROR_MESSAGES = {
   UPLOAD_FAILED: 'Errore durante il caricamento. Riprova.',
   GENERIC_ERROR: 'Si è verificato un errore imprevisto.'
 };
-
-// Success messages
-export const SUCCESS_MESSAGES = {
-  UPLOAD_SUCCESS: 'Foto caricata con successo!',
-  DELETE_SUCCESS: 'Foto eliminata con successo!',
-  UPDATE_SUCCESS: 'Foto aggiornata con successo!'
-};

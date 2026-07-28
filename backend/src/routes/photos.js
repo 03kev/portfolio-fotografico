@@ -546,7 +546,7 @@ router.post('/', upload.single('image'), async (req, res) => {
 
         res.status(201).json({
             success: true,
-            message: 'Foto caricata con successo',
+            message: 'Foto caricata.',
             data: presentPhoto(createdPhoto)
         });
         
@@ -762,7 +762,7 @@ router.post('/:id/replace-source', async (req, res) => {
         timer.flush('success', { derivativesVersion: updatedPhoto.derivativesVersion });
         return res.json({
             success: true,
-            message: 'Source privata aggiornata e derivate rigenerate con successo',
+            message: 'Originale sostituito e varianti rigenerate.',
             data: presentPhoto(updatedPhoto)
         });
     } catch (error) {
@@ -804,7 +804,7 @@ router.post('/:id/regenerate-derivatives', async (req, res) => {
         }
         return res.json({
             success: true,
-            message: 'Derivate rigenerate con successo',
+            message: 'Varianti rigenerate.',
             data: presentPhoto(updatedPhoto)
         });
     } catch (error) {
@@ -844,7 +844,7 @@ router.post('/:id/crop', async (req, res) => {
         }
         return res.json({
             success: true,
-            message: 'Crop e derivate aggiornati con successo',
+            message: 'Ritaglio applicato e varianti rigenerate.',
             data: presentPhoto(updatedPhoto)
         });
     } catch (error) {
@@ -892,7 +892,7 @@ router.put('/:id', async (req, res) => {
         res.json({
             success: true,
             data: presentPhoto(updatedPhoto),
-            message: 'Foto aggiornata con successo'
+            message: 'Dettagli della foto aggiornati.'
         });
     } catch (error) {
         console.error('Errore nell\'aggiornamento:', error);
@@ -982,8 +982,8 @@ router.delete('/:id', async (req, res) => {
         res.json({
             success: true,
             message: failedAssets.length
-                ? 'Foto eliminata con successo (cleanup asset parziale)'
-                : 'Foto eliminata con successo',
+                ? 'Foto eliminata; pulizia dei file incompleta.'
+                : 'Foto eliminata.',
             data: {
                 deletedAssets,
                 failedAssets

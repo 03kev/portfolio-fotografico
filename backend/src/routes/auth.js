@@ -61,7 +61,7 @@ router.post('/session', authLimiter, async (req, res) => {
         return res.json({
             success: true,
             authenticated: true,
-            message: 'Sessione autenticata'
+            message: 'Sessione admin attivata.'
         });
     } catch (error) {
         console.error('Errore creazione sessione auth:', error);
@@ -78,7 +78,7 @@ router.delete('/session', (req, res) => {
     return res.json({
         success: true,
         authenticated: false,
-        message: 'Sessione terminata'
+        message: 'Sessione admin disattivata.'
     });
 });
 

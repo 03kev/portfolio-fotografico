@@ -100,7 +100,7 @@ router.post('/', async (req, res) => {
         return sendSuccess(
             res,
             persistedNewSeries,
-            { message: 'Serie creata con successo' },
+            { message: 'Serie creata.' },
             201
         );
     } catch (error) {
@@ -130,7 +130,7 @@ router.put('/:id', async (req, res) => {
             );
         }
 
-        return sendSuccess(res, persistedUpdatedSeries, { message: 'Serie aggiornata con successo' });
+        return sendSuccess(res, persistedUpdatedSeries, { message: 'Serie aggiornata.' });
     } catch (error) {
         console.error('Errore nell\'aggiornamento della serie:', error);
         return sendApiError(res, error, {
@@ -156,7 +156,7 @@ router.delete('/:id', async (req, res) => {
             );
         }
 
-        return sendSuccess(res, deletedSeries, { message: 'Serie eliminata con successo' });
+        return sendSuccess(res, deletedSeries, { message: 'Serie eliminata.' });
     } catch (error) {
         console.error('Errore nell\'eliminazione della serie:', error);
         return sendApiError(res, error, {
@@ -183,7 +183,7 @@ router.post('/:id/photos/:photoId', async (req, res) => {
                 createApiError('Serie non trovata', 404, 'SERIES_NOT_FOUND')
             );
         }
-        return sendSuccess(res, updatedSeries, { message: 'Foto aggiunta alla serie' });
+        return sendSuccess(res, updatedSeries, { message: 'Foto aggiunta alla serie.' });
     } catch (error) {
         console.error('Errore nell\'aggiunta della foto:', error);
         return sendApiError(res, error, {
@@ -210,7 +210,7 @@ router.delete('/:id/photos/:photoId', async (req, res) => {
                 createApiError('Serie non trovata', 404, 'SERIES_NOT_FOUND')
             );
         }
-        return sendSuccess(res, updatedSeries, { message: 'Foto rimossa dalla serie' });
+        return sendSuccess(res, updatedSeries, { message: 'Foto rimossa dalla serie.' });
     } catch (error) {
         console.error('Errore nella rimozione della foto:', error);
         return sendApiError(res, error, {

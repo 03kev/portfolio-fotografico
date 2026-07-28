@@ -23,6 +23,8 @@ import {
 import {
   buildOperationErrorMessage
 } from '../utils/operationErrors';
+import { adminFeedback } from '../utils/adminFeedback';
+import { buildPhotoOperationStatus } from '../utils/photoOperationStatus';
 import { GalleryCard } from './gallery/GalleryCard';
 import { LazyPhotoCropModal, LazyPhotoUpload } from './lazyAdminComponents';
 
@@ -30,14 +32,14 @@ const DEBOUNCE_DELAY_FILTER = 200;
 const SOURCE_REUPLOAD_ACCEPT = 'image/jpeg,image/jpg,image/png,image/webp';
 
 const REUPLOAD_STEP_LABELS = {
-  sign: 'firma URL upload',
-  upload: 'upload source su R2',
-  replace: 'rigenerazione derivate'
+  sign: 'preparazione sostituzione',
+  upload: 'caricamento del nuovo originale',
+  replace: 'rigenerazione varianti'
 };
 
 const CROP_STEP_LABELS = {
-  update: 'salvataggio crop',
-  regenerate: 'rigenerazione derivate'
+  update: 'salvataggio ritaglio',
+  regenerate: 'rigenerazione varianti'
 };
 
 const SKELETON_CARD_COUNT_WIDE = 9;
@@ -686,11 +688,10 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
         : [];
       if (failedAssets.length > 0) {
         notify?.warning?.(
-          `Foto eliminata, ma ${failedAssets.length} file non sono stati rimossi dallo storage. Controlla i log prima di riprovare.`,
-          6500
+          adminFeedback.photoDeletePartial(failedAssets.length)
         );
       } else {
-        notify?.success?.(`Foto eliminata: "${photoPendingDelete.title || 'foto'}".`, 3200);
+        notify?.success?.(adminFeedback.photoDeleted(photoPendingDelete));
       }
       setPhotoPendingDelete(null);
     } catch (error) {
@@ -778,35 +779,28 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
 
     const targetPhotoId = targetPhoto.id;
     activeReuploadPhotoIdRef.current = targetPhotoId;
-    actions.setPhotoOpStatus(targetPhotoId, {
-      active: true,
-      type: 'source-reupload',
-      percent: 3,
-      label: 'Preparazione upload',
-      step: 'sign'
-    });
+    actions.setPhotoOpStatus(
+      targetPhotoId,
+      buildPhotoOperationStatus('replaceSource', 'prepare')
+    );
     let currentStep = 'sign';
     let signedData = null;
     try {
-      notify?.info?.(`Caricamento source in corso per "${targetPhoto.title || 'foto'}"...`, 2500);
-
       currentStep = 'sign';
-      actions.setPhotoOpStatus(targetPhotoId, {
-        percent: 8,
-        label: 'Firma URL upload',
-        step: 'sign'
-      });
+      actions.setPhotoOpStatus(
+        targetPhotoId,
+        buildPhotoOperationStatus('replaceSource', 'sign')
+      );
       signedData = await signExistingSourceUpload({
         photo: targetPhoto,
         file
       });
 
       currentStep = 'upload';
-      actions.setPhotoOpStatus(targetPhotoId, {
-        percent: 12,
-        label: 'Upload source su R2',
-        step: 'upload'
-      });
+      actions.setPhotoOpStatus(
+        targetPhotoId,
+        buildPhotoOperationStatus('replaceSource', 'upload')
+      );
       const uploadAbortController = new AbortController();
       reuploadUploadAbortControllerRef.current = uploadAbortController;
       await uploadSourceToSignedUrl({
@@ -822,11 +816,10 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       reuploadUploadAbortControllerRef.current = null;
 
       currentStep = 'replace';
-      actions.setPhotoOpStatus(targetPhotoId, {
-        label: 'Rigenerazione derivate',
-        percent: 74,
-        step: 'replace'
-      });
+      actions.setPhotoOpStatus(
+        targetPhotoId,
+        buildPhotoOperationStatus('replaceSource', 'process')
+      );
       startSoftProgress(targetPhotoId, 74, 95);
       const replaceResponse = await photoService.replaceSource(targetPhoto.id, {
         sourcePath: signedData.sourcePath,
@@ -837,12 +830,11 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       stopSoftProgress();
       const updatedPhoto = replaceResponse?.data?.data || replaceResponse?.data;
       actions.applyPhotoUpdate?.(updatedPhoto);
-      actions.setPhotoOpStatus(targetPhotoId, {
-        percent: 100,
-        label: 'Completato',
-        step: 'done'
-      });
-      notify?.success?.(`Source aggiornata: "${targetPhoto.title || 'foto'}".`, 3500);
+      actions.setPhotoOpStatus(
+        targetPhotoId,
+        buildPhotoOperationStatus('replaceSource', 'done')
+      );
+      notify?.success?.(adminFeedback.photoSourceReplaced(targetPhoto));
     } catch (error) {
       stopSoftProgress();
       if (signedData?.operationId) {
@@ -858,7 +850,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       }
       console.error('Errore reupload source privata:', error);
       if (error?.code === 'UPLOAD_ABORTED') {
-        notify?.info?.('Upload source annullato.', 3500);
+        notify?.info?.(adminFeedback.photoSourceUploadCancelled());
       } else {
         if (error?.status === 409 || error?.status === 428) {
           await actions.fetchPhotos({ force: true });
@@ -880,22 +872,17 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     if (!photoId || !nextSettings) return;
 
     const title = photoTitle || 'foto';
-    actions.setPhotoOpStatus(photoId, {
-      active: true,
-      type: 'crop',
-      percent: 12,
-      label: 'Salvataggio crop',
-      step: 'update'
-    });
+    actions.setPhotoOpStatus(
+      photoId,
+      buildPhotoOperationStatus('crop', 'save')
+    );
 
     let currentStep = 'regenerate';
     try {
-      notify?.info?.(`Applicazione crop in corso per "${title}"...`, 2200);
-      actions.setPhotoOpStatus(photoId, {
-        percent: 24,
-        label: 'Rigenerazione derivate',
-        step: 'regenerate'
-      });
+      actions.setPhotoOpStatus(
+        photoId,
+        buildPhotoOperationStatus('crop', 'process')
+      );
       startSoftProgress(photoId, 24, 95);
 
       const currentPhoto = photos.find((photo) => String(photo.id) === String(photoId));
@@ -908,12 +895,11 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
 
       const updatedPhoto = regenerateResponse?.data?.data || regenerateResponse?.data;
       actions.applyPhotoUpdate?.(updatedPhoto);
-      actions.setPhotoOpStatus(photoId, {
-        percent: 100,
-        label: 'Crop applicato',
-        step: 'done'
-      });
-      notify?.success?.(`Crop applicato: "${title}".`, 3200);
+      actions.setPhotoOpStatus(
+        photoId,
+        buildPhotoOperationStatus('crop', 'done')
+      );
+      notify?.success?.(adminFeedback.photoCropApplied({ title }));
     } catch (error) {
       stopSoftProgress();
       console.error('Errore applicazione crop:', error);
@@ -1085,6 +1071,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
               onUploadSuccess={(updatedPhoto) => {
                 actions.applyPhotoUpdate?.(updatedPhoto);
                 setEditingPhoto(null);
+                notify?.success?.(adminFeedback.photoUpdated(updatedPhoto));
               }}
               onUploadError={(error) => {
                 notify?.error?.(

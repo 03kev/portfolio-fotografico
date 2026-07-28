@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { FileText, Image as ImageIcon, Images, Search, Trash2 } from 'lucide-react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -7,6 +8,7 @@ import { usePhotos } from '../contexts/PhotoContext';
 import { useToast } from './Toast';
 import { resolvePhotoAssetUrl } from '../utils/imageUrl';
 import { viewportBreakpoints } from '../styles/responsive';
+import { adminFeedback } from '../utils/adminFeedback';
 import { buildOperationErrorMessage } from '../utils/operationErrors';
 
 const EditorOverlay = styled(motion.div)`
@@ -560,6 +562,7 @@ const StatValue = styled.span`
 `;
 
 function SeriesEditor({ series, onClose }) {
+  const navigate = useNavigate();
   const {
     series: existingSeries,
     createSeries,
@@ -713,11 +716,11 @@ function SeriesEditor({ series, onClose }) {
     setIsSubmitting(true);
     try {
       if (series) {
-        await updateSeries(series.id, formData);
-        toast.success('Serie aggiornata con successo.');
+        const updatedSeries = await updateSeries(series.id, formData);
+        toast.success(adminFeedback.seriesUpdated(updatedSeries));
       } else {
-        await createSeries(formData);
-        toast.success('Serie creata con successo.');
+        const createdSeries = await createSeries(formData);
+        toast.success(adminFeedback.seriesCreated(createdSeries));
       }
       onClose();
     } catch (error) {
@@ -741,10 +744,9 @@ function SeriesEditor({ series, onClose }) {
       setIsSubmitting(true);
       try {
         await deleteSeries(series.id);
-        toast.success('Serie eliminata con successo.');
+        toast.success(adminFeedback.seriesDeleted(series));
         onClose();
-        // Naviga alla home dopo l'eliminazione
-        window.location.href = '/';
+        navigate('/', { replace: true });
       } catch (error) {
         toast.error(buildOperationErrorMessage(error, 'eliminazione serie'));
       } finally {

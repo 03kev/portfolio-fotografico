@@ -8,6 +8,7 @@ import {
     buildOperationErrorMessage,
     isAmbiguousMutationError
 } from '../utils/operationErrors';
+import { buildPhotoOperationStatus } from '../utils/photoOperationStatus';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { usePhotoUploadWizard } from '../hooks/usePhotoUploadWizard';
 import MapSelector from './MapSelector';
@@ -20,8 +21,8 @@ import './PhotoUpload.css';
 const METADATA_FILE_ACCEPT = 'image/*,.nef,.nrw,.cr2,.cr3,.arw,.dng,.rw2,.orf,.raf,.pef,.srw,.raw,.tif,.tiff';
 
 const CREATE_UPLOAD_STEP_LABELS = {
-    sign: 'firma URL upload',
-    upload: 'upload file su R2',
+    sign: 'preparazione caricamento',
+    upload: 'caricamento originale',
     create: 'creazione foto'
 };
 
@@ -411,13 +412,10 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                 return;
             }
 
-            actions.setPhotoOpStatus(targetPhotoId, {
-                active: true,
-                type: 'edit',
-                percent: 18,
-                label: 'Salvataggio dettagli',
-                step: 'update'
-            });
+            actions.setPhotoOpStatus(
+                targetPhotoId,
+                buildPhotoOperationStatus('edit', 'save')
+            );
 
             if (onClose) {
                 onClose();
@@ -431,11 +429,10 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                 };
 
                 const result = await actions.updatePhotoInBackground(photoToEdit.id, updateData);
-                actions.setPhotoOpStatus(targetPhotoId, {
-                    percent: 100,
-                    label: 'Dettagli aggiornati',
-                    step: 'done'
-                });
+                actions.setPhotoOpStatus(
+                    targetPhotoId,
+                    buildPhotoOperationStatus('edit', 'done')
+                );
                 if (onUploadSuccess) onUploadSuccess(result);
 
                 setTimeout(() => {
@@ -474,13 +471,10 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             tags: formDataSnapshot.tags,
             previewUrl: pendingPreviewUrl
         });
-        actions.setPhotoOpStatus(pendingId, {
-            active: true,
-            type: 'new-upload',
-            percent: 3,
-            label: 'Preparazione upload',
-            step: 'sign'
-        });
+        actions.setPhotoOpStatus(
+            pendingId,
+            buildPhotoOperationStatus('create', 'prepare')
+        );
 
         setLoading(true);
         if (onClose) {
@@ -511,22 +505,20 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
 
         try {
             currentUploadStep = 'sign';
-            actions.setPhotoOpStatus(pendingId, {
-                percent: 8,
-                label: 'Firma URL upload',
-                step: 'sign'
-            });
+            actions.setPhotoOpStatus(
+                pendingId,
+                buildPhotoOperationStatus('create', 'sign')
+            );
             const signedData = await signSourceUpload({
                 uploadId: String(photoId),
                 file: selectedFileSnapshot
             });
 
             currentUploadStep = 'upload';
-            actions.setPhotoOpStatus(pendingId, {
-                percent: 12,
-                label: 'Upload file su R2',
-                step: 'upload'
-            });
+            actions.setPhotoOpStatus(
+                pendingId,
+                buildPhotoOperationStatus('create', 'upload')
+            );
             await uploadSourceToSignedUrl({
                 uploadUrl: signedData.uploadUrl,
                 file: selectedFileSnapshot,
@@ -538,11 +530,10 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             });
 
             currentUploadStep = 'create';
-            actions.setPhotoOpStatus(pendingId, {
-                percent: 84,
-                label: 'Creazione foto',
-                step: 'create'
-            });
+            actions.setPhotoOpStatus(
+                pendingId,
+                buildPhotoOperationStatus('create', 'process')
+            );
             startSoftProgress(84, 95);
 
             const uploadData = {
@@ -557,11 +548,10 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             const result = await actions.createPhotoInBackground(uploadData);
             stopSoftProgress();
 
-            actions.setPhotoOpStatus(pendingId, {
-                percent: 100,
-                label: 'Foto caricata',
-                step: 'done'
-            });
+            actions.setPhotoOpStatus(
+                pendingId,
+                buildPhotoOperationStatus('create', 'done')
+            );
             actions.removePendingUpload(pendingId);
             setTimeout(() => {
                 actions.clearPhotoOpStatus(pendingId);
