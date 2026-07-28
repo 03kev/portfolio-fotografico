@@ -3,7 +3,7 @@ import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapPin, Camera } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
-import { resolveVersionedPhotoAssetUrl } from '../utils/imageUrl';
+import { resolvePhotoAssetUrl } from '../utils/imageUrl';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { viewportBreakpoints } from '../styles/responsive';
 
@@ -285,7 +285,7 @@ const GalleryModal = () => {
   };
 
   const getPhotoSrc = (photo) => {
-    return resolveVersionedPhotoAssetUrl(photo, 'image');
+    return resolvePhotoAssetUrl(photo, 'image');
   };
 
   if (!galleryPhotos || galleryPhotos.length === 0) {

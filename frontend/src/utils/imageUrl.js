@@ -9,17 +9,6 @@ export function resolveAssetUrl(value, fallback = LOCAL_IMAGE_FALLBACK) {
   return `${IMAGES_BASE_URL}${src}`;
 }
 
-export function resolveVersionedAssetUrl(value, version, fallback = LOCAL_IMAGE_FALLBACK) {
-  const src = String(value || '').trim();
-  const base = resolveAssetUrl(value, fallback);
-  if (!src || !version) return base;
-  return `${base}${base.includes('?') ? '&' : '?'}v=${encodeURIComponent(String(version))}`;
-}
-
-export function getPhotoAssetVersion(photo) {
-  return photo?.derivativesVersion || photo?.id || '';
-}
-
-export function resolveVersionedPhotoAssetUrl(photo, assetKey, fallback = LOCAL_IMAGE_FALLBACK) {
-  return resolveVersionedAssetUrl(photo?.[assetKey], getPhotoAssetVersion(photo), fallback);
+export function resolvePhotoAssetUrl(photo, assetKey, fallback = LOCAL_IMAGE_FALLBACK) {
+  return resolveAssetUrl(photo?.[assetKey], fallback);
 }

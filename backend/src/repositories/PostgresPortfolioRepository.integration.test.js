@@ -21,6 +21,17 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 const databaseUrl = String(process.env.TEST_DATABASE_URL || '').trim();
 const integrationTest = databaseUrl ? test : test.skip;
 const schemaName = `portfolio_repository_${process.pid}_${Date.now()}`;
+const MEDIA_GENERATIONS = Object.freeze({
+    a: '01JGFJJZ00XR5RF7YH2J5PVWBX',
+    b: '01JGFJJZ00XR5RF7YH2J5PVWBY',
+    c: '01JGFJJZ00XR5RF7YH2J5PVWBZ',
+    d: '01JGFJJZ00XR5RF7YH2J5PVWC0',
+    e: '01JGFJJZ00XR5RF7YH2J5PVWC1',
+    f: '01JGFJJZ00XR5RF7YH2J5PVWC2',
+    g: '01JGFJJZ00XR5RF7YH2J5PVWC3',
+    h: '01JGFJJZ00XR5RF7YH2J5PVWC4',
+    i: '01JGFJJZ00XR5RF7YH2J5PVWC5'
+});
 
 let adminPool;
 let scopedPool;
@@ -164,14 +175,14 @@ integrationTest('only one distributed media mutation can reserve the same photo'
         repository.photos.beginMediaMutation(111, {
             operationId: '11111111-1111-4111-8111-111111111111',
             kind: 'crop',
-            generation: 'generation-a',
+            generation: MEDIA_GENERATIONS.a,
             expectedVersion: 1,
             ttlMs: 60_000
         }),
         repository.photos.beginMediaMutation(111, {
             operationId: '22222222-2222-4222-8222-222222222222',
             kind: 'replace-source',
-            generation: 'generation-b',
+            generation: MEDIA_GENERATIONS.b,
             expectedVersion: 1,
             ttlMs: 60_000
         })
@@ -187,7 +198,7 @@ integrationTest('metadata update and delete cannot cross an active media mutatio
     await repository.photos.beginMediaMutation(112, {
         operationId: '33333333-3333-4333-8333-333333333333',
         kind: 'regenerate',
-        generation: 'generation-c',
+        generation: MEDIA_GENERATIONS.c,
         expectedVersion: 1,
         ttlMs: 60_000
     });
@@ -212,7 +223,7 @@ integrationTest('media finalization atomically switches generation and increment
     await repository.photos.beginMediaMutation(113, {
         operationId,
         kind: 'crop',
-        generation: 'generation-d',
+        generation: MEDIA_GENERATIONS.d,
         expectedVersion: 1,
         ttlMs: 60_000
     });
@@ -222,14 +233,14 @@ integrationTest('media finalization atomically switches generation and increment
         operationId,
         {
             settings: { cropProfiles: { r43: { x: 0.4, y: 0.5, scale: 1 } } },
-            mediaGeneration: 'generation-d',
+            mediaGeneration: MEDIA_GENERATIONS.d,
             derivativesVersion: 999
         },
         { expectedVersion: 1 }
     );
 
     assert.equal(updated.version, 2);
-    assert.equal(updated.mediaGeneration, 'generation-d');
+    assert.equal(updated.mediaGeneration, MEDIA_GENERATIONS.d);
     assert.equal(updated.derivativesVersion, 999);
     assert.equal((await repository.photos.getMediaMutation(113)).operation, null);
 });
@@ -240,7 +251,7 @@ integrationTest('stale media operation cannot finalize after it was replaced', a
     await repository.photos.beginMediaMutation(114, {
         operationId: staleId,
         kind: 'crop',
-        generation: 'generation-e',
+        generation: MEDIA_GENERATIONS.e,
         expectedVersion: 1,
         ttlMs: 60_000
     });
@@ -248,7 +259,7 @@ integrationTest('stale media operation cannot finalize after it was replaced', a
     await repository.photos.beginMediaMutation(114, {
         operationId: '66666666-6666-4666-8666-666666666666',
         kind: 'crop',
-        generation: 'generation-f',
+        generation: MEDIA_GENERATIONS.f,
         expectedVersion: 1,
         ttlMs: 60_000
     });
@@ -257,7 +268,7 @@ integrationTest('stale media operation cannot finalize after it was replaced', a
         () => repository.photos.completeMediaMutation(
             114,
             staleId,
-            { mediaGeneration: 'generation-e' },
+            { mediaGeneration: MEDIA_GENERATIONS.e },
             { expectedVersion: 1 }
         ),
         { code: 'MEDIA_OPERATION_STALE' }
@@ -269,7 +280,7 @@ integrationTest('an expired media reservation can be reclaimed without changing 
     await repository.photos.beginMediaMutation(115, {
         operationId: '77777777-7777-4777-8777-777777777777',
         kind: 'crop',
-        generation: 'generation-g',
+        generation: MEDIA_GENERATIONS.g,
         expectedVersion: 1,
         ttlMs: 10_000
     });
@@ -282,12 +293,12 @@ integrationTest('an expired media reservation can be reclaimed without changing 
     const replacement = await repository.photos.beginMediaMutation(115, {
         operationId: '88888888-8888-4888-8888-888888888888',
         kind: 'replace-source',
-        generation: 'generation-h',
+        generation: MEDIA_GENERATIONS.h,
         expectedVersion: 1,
         ttlMs: 60_000
     });
     assert.equal(replacement.photo.version, 1);
-    assert.equal(replacement.operation.generation, 'generation-h');
+    assert.equal(replacement.operation.generation, MEDIA_GENERATIONS.h);
 });
 
 integrationTest('a normal update invalidates an expired media operation', async () => {
@@ -296,7 +307,7 @@ integrationTest('a normal update invalidates an expired media operation', async 
     await repository.photos.beginMediaMutation(116, {
         operationId: expiredOperationId,
         kind: 'crop',
-        generation: 'generation-i',
+        generation: MEDIA_GENERATIONS.i,
         expectedVersion: 1,
         ttlMs: 10_000
     });
@@ -316,7 +327,7 @@ integrationTest('a normal update invalidates an expired media operation', async 
         () => repository.photos.completeMediaMutation(
             116,
             expiredOperationId,
-            { mediaGeneration: 'generation-i' },
+            { mediaGeneration: MEDIA_GENERATIONS.i },
             { expectedVersion: 2 }
         ),
         { code: 'MEDIA_OPERATION_STALE' }

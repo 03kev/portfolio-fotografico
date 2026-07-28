@@ -8,12 +8,12 @@ const {
     uploadPathToObjectKey
 } = require('./r2Storage');
 const { buildPublicAssetUrl } = require('./publicAssetUrl');
-const { normalizeUploadPathToAbsoluteUrl } = require('./cloudflareCache');
 
 const originalEnvironment = {
     r2ObjectPrefix: env.r2ObjectPrefix,
     r2PublicUrl: env.r2PublicUrl
 };
+const GENERATION = '01JGFJJZ00XR5RF7YH2J5PVWBX';
 
 afterEach(() => {
     Object.assign(env, originalEnvironment);
@@ -23,20 +23,20 @@ test('maps logical public and private paths into an isolated physical namespace'
     env.r2ObjectPrefix = '_test/feature-database';
 
     assert.equal(
-        uploadPathToObjectKey('/uploads/mobile/photo_1.webp'),
-        '_test/feature-database/mobile/photo_1.webp'
+        uploadPathToObjectKey(`/uploads/photos/1/${GENERATION}/mobile.webp`),
+        `_test/feature-database/photos/1/${GENERATION}/mobile.webp`
     );
     assert.equal(
-        privatePathToObjectKey('/private/source/photo_1.jpg'),
-        '_test/feature-database/source/photo_1.jpg'
+        privatePathToObjectKey(`/private/source/photos/1/${GENERATION}/source.jpg`),
+        `_test/feature-database/source/photos/1/${GENERATION}/source.jpg`
     );
     assert.equal(
-        objectKeyToUploadPath('_test/feature-database/mobile/photo_1.webp'),
-        '/uploads/mobile/photo_1.webp'
+        objectKeyToUploadPath(`_test/feature-database/photos/1/${GENERATION}/mobile.webp`),
+        `/uploads/photos/1/${GENERATION}/mobile.webp`
     );
     assert.equal(
-        objectKeyToPrivatePath('_test/feature-database/source/photo_1.jpg'),
-        '/private/source/photo_1.jpg'
+        objectKeyToPrivatePath(`_test/feature-database/source/photos/1/${GENERATION}/source.jpg`),
+        `/private/source/photos/1/${GENERATION}/source.jpg`
     );
 });
 
@@ -45,28 +45,31 @@ test('does not duplicate the namespace when receiving an absolute asset URL', ()
 
     assert.equal(
         uploadPathToObjectKey(
-            'https://uploads.example.com/_test/feature-database/photo_1.webp'
+            `https://uploads.example.com/_test/feature-database/photos/1/${GENERATION}/full.webp`
         ),
-        '_test/feature-database/photo_1.webp'
+        `_test/feature-database/photos/1/${GENERATION}/full.webp`
     );
 });
 
-test('uses the physical namespace in public and cache-purge URLs', () => {
+test('uses the physical namespace in public asset URLs', () => {
     env.r2ObjectPrefix = '_test/feature-database';
     env.r2PublicUrl = 'https://uploads.example.com';
 
-    const expected = 'https://uploads.example.com/_test/feature-database/photo_1.webp';
-    assert.equal(buildPublicAssetUrl('/uploads/photo_1.webp'), expected);
-    assert.equal(normalizeUploadPathToAbsoluteUrl('/uploads/photo_1.webp'), expected);
+    const expected = `https://uploads.example.com/_test/feature-database/photos/1/${GENERATION}/full.webp`;
+    assert.equal(buildPublicAssetUrl(`/uploads/photos/1/${GENERATION}/full.webp`), expected);
 });
 
 test('preserves production paths when the namespace is empty', () => {
     env.r2ObjectPrefix = '';
     env.r2PublicUrl = 'https://uploads.example.com';
 
-    assert.equal(uploadPathToObjectKey('/uploads/photo_1.webp'), 'photo_1.webp');
+    const logicalPath = `/uploads/photos/1/${GENERATION}/full.webp`;
     assert.equal(
-        buildPublicAssetUrl('/uploads/photo_1.webp'),
-        'https://uploads.example.com/photo_1.webp'
+        uploadPathToObjectKey(logicalPath),
+        `photos/1/${GENERATION}/full.webp`
+    );
+    assert.equal(
+        buildPublicAssetUrl(logicalPath),
+        `https://uploads.example.com/photos/1/${GENERATION}/full.webp`
     );
 });

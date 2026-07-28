@@ -11,7 +11,7 @@ import { usePhotos } from '../contexts/PhotoContext';
 import SeriesEditor from './SeriesEditor';
 import ResponsiveSeriesContent from './series/ResponsiveSeriesContent';
 import { useToast } from './Toast';
-import { resolveVersionedPhotoAssetUrl } from '../utils/imageUrl';
+import { resolvePhotoAssetUrl } from '../utils/imageUrl';
 import { toAbsoluteImageUrl, toAbsoluteSiteUrl } from '../utils/siteUrl';
 import useMediaQuery from '../hooks/useMediaQuery';
 import { viewportBreakpoints, viewportQueries } from '../styles/responsive';
@@ -1674,7 +1674,7 @@ function SeriesDetail() {
     if (!interactive) {
       return (
         <ThumbImage
-          src={resolveVersionedPhotoAssetUrl(photo, 'image')}
+          src={resolvePhotoAssetUrl(photo, 'image')}
           alt={photo.title}
           loading="lazy"
         />
@@ -1710,7 +1710,7 @@ function SeriesDetail() {
         title={photo.title || ''}
       >
         <ThumbImage
-          src={resolveVersionedPhotoAssetUrl(photo, 'image')}
+          src={resolvePhotoAssetUrl(photo, 'image')}
           alt={photo.title}
           loading="lazy"
         />
@@ -2075,9 +2075,9 @@ function SeriesDetail() {
         <HeroSection>
           {coverPhoto && (
             <CoverImage
-              src={resolveVersionedPhotoAssetUrl(coverPhoto, 'image')}
+              src={resolvePhotoAssetUrl(coverPhoto, 'image')}
               $mobileSrc={coverPhoto.mobileImage
-                ? resolveVersionedPhotoAssetUrl(coverPhoto, 'mobileImage')
+                ? resolvePhotoAssetUrl(coverPhoto, 'mobileImage')
                 : undefined}
               initial={{ scale: 1.2 }}
               animate={{ scale: 1 }}
@@ -2346,7 +2346,7 @@ function SeriesDetail() {
                               title={p.title || ''}
                             >
                               <InspectorImg
-                                src={p.thumbnail43 ? resolveVersionedPhotoAssetUrl(p, 'thumbnail43') : '/photo-fallback.svg'}
+                                src={p.thumbnail43 ? resolvePhotoAssetUrl(p, 'thumbnail43') : '/photo-fallback.svg'}
                                 alt={p.title}
                                 loading="lazy"
                               />
@@ -2484,7 +2484,7 @@ function SeriesDetail() {
                             <PhotoFrame>
                               <PhotoMedia>
                                 <CanvasPhoto
-                                  src={resolveVersionedPhotoAssetUrl(photo, 'image')}
+                                  src={resolvePhotoAssetUrl(photo, 'image')}
                                   alt={photo.title}
                                   loading="lazy"
                                 />
@@ -2744,7 +2744,7 @@ function SeriesDetail() {
               ✕
             </LightboxClose>
             <LightboxImage
-              src={resolveVersionedPhotoAssetUrl(lightboxPhoto, 'image')}
+              src={resolvePhotoAssetUrl(lightboxPhoto, 'image')}
               alt={lightboxPhoto.title}
               onClick={(e) => e.stopPropagation()}
             />

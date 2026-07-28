@@ -61,12 +61,15 @@ and hostname verification across the upcoming node-postgres SSL semantics
 change.
 
 R2 cannot participate in a PostgreSQL transaction. Media writes therefore use
-generation-specific immutable keys: failed work is never referenced, and a
-successful finalize changes the database pointer and version atomically. Old or
-failed generations are deleted best-effort. A process crash can still leave an
-unreferenced R2 generation, but it cannot expose mixed derivatives or stale
-metadata; periodic orphan collection may be added independently if storage
-growth makes it worthwhile.
+ULID generation-specific immutable keys: failed work is never referenced, and
+a successful finalize changes the database pointer and version atomically.
+Public derivative generations and private source revisions are intentionally
+independent: crop/regenerate creates a new derivative generation without
+copying the full-resolution source, while source replacement creates both.
+Old or failed generations are deleted best-effort. A process crash can still
+leave an unreferenced R2 generation, but it cannot expose mixed derivatives or
+stale metadata; periodic orphan collection may be added independently if
+storage growth makes it worthwhile.
 
 ## Admin audit history
 

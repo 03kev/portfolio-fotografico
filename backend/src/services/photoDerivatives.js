@@ -2,12 +2,11 @@ const sharp = require('sharp');
 const {
     PRIVATE_PREFIX,
     PRIVATE_SOURCE_PREFIX,
-    PUBLIC_UPLOADS_PREFIX,
-    MOBILE_PREFIX,
-    SOCIAL_PREFIX,
-    THUMBNAIL_11_PREFIX,
-    THUMBNAIL_43_PREFIX
+    PUBLIC_UPLOADS_PREFIX
 } = require('../config/assetPaths');
+const {
+    normalizeMediaGeneration
+} = require('../utils/mediaGeneration');
 
 function normalizeUploadsPath(value) {
     const raw = String(value || '').trim();
@@ -74,9 +73,8 @@ function normalizePrivateSourcePath(value) {
     if (!normalized.startsWith(`${PRIVATE_SOURCE_PREFIX}/`)) return '';
 
     const relativePath = normalized.slice(`${PRIVATE_SOURCE_PREFIX}/`.length);
-    const isLegacyPath = /^photo_[a-zA-Z0-9_-]+\.[a-z0-9]+$/.test(relativePath);
-    const isGeneratedPath = /^generations\/[a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+\/photo\.[a-z0-9]+$/.test(relativePath);
-    if (!isLegacyPath && !isGeneratedPath) return '';
+    const isGeneratedPath = /^photos\/[1-9][0-9]*\/[0-9A-HJKMNP-TV-Z]{26}\/source\.[a-z0-9]+$/.test(relativePath);
+    if (!isGeneratedPath) return '';
     return normalized;
 }
 
@@ -84,45 +82,28 @@ function normalizePrivateSourcePathForPhotoId(value, photoId) {
     const normalized = normalizePrivateSourcePath(value);
     if (!normalized) return '';
 
-    const legacyPrefix = `${PRIVATE_SOURCE_PREFIX}/photo_${photoId}.`;
-    const generatedPrefix = `${PRIVATE_SOURCE_PREFIX}/generations/${photoId}/`;
-    if (!normalized.startsWith(legacyPrefix) && !normalized.startsWith(generatedPrefix)) return '';
+    const generatedPrefix = `${PRIVATE_SOURCE_PREFIX}/photos/${photoId}/`;
+    if (!normalized.startsWith(generatedPrefix)) return '';
     return normalized;
 }
 
-function normalizeMediaGeneration(value) {
-    const generation = String(value || '').trim();
-    if (!generation) return '';
-    if (!/^[a-zA-Z0-9_-]{1,80}$/.test(generation)) {
-        throw new TypeError('Generazione media non valida.');
+function buildPhotoAssetPaths(photoId, sourceExtension = 'bin', mediaGeneration) {
+    const normalizedPhotoId = String(photoId || '').trim();
+    if (!/^[1-9][0-9]*$/.test(normalizedPhotoId)) {
+        throw new TypeError('ID foto non valido per il path media.');
     }
-    return generation;
-}
-
-function buildPhotoAssetPaths(photoId, sourceExtension = 'bin', mediaGeneration = '') {
-    const baseName = `photo_${photoId}`;
     const cleanSourceExtension = String(sourceExtension || 'bin').replace(/[^a-z0-9]/gi, '') || 'bin';
-    const generation = normalizeMediaGeneration(mediaGeneration);
-
-    if (generation) {
-        const generationPath = `generations/${photoId}/${generation}/photo`;
-        return {
-            sourcePath: `${PRIVATE_SOURCE_PREFIX}/${generationPath}.${cleanSourceExtension}`,
-            imagePath: `${PUBLIC_UPLOADS_PREFIX}/${generationPath}.webp`,
-            mobileImagePath: `${MOBILE_PREFIX}/${generationPath}.webp`,
-            thumbnail43Path: `${THUMBNAIL_43_PREFIX}/${generationPath}.webp`,
-            thumbnail11Path: `${THUMBNAIL_11_PREFIX}/${generationPath}.webp`,
-            socialImagePath: `${SOCIAL_PREFIX}/${generationPath}.jpg`
-        };
-    }
+    const generation = normalizeMediaGeneration(mediaGeneration, { required: true });
+    const publicBase = `${PUBLIC_UPLOADS_PREFIX}/photos/${normalizedPhotoId}/${generation}`;
+    const privateBase = `${PRIVATE_SOURCE_PREFIX}/photos/${normalizedPhotoId}/${generation}`;
 
     return {
-        sourcePath: `${PRIVATE_SOURCE_PREFIX}/${baseName}.${cleanSourceExtension}`,
-        imagePath: `${PUBLIC_UPLOADS_PREFIX}/${baseName}.webp`,
-        mobileImagePath: `${MOBILE_PREFIX}/${baseName}.webp`,
-        thumbnail43Path: `${THUMBNAIL_43_PREFIX}/${baseName}.webp`,
-        thumbnail11Path: `${THUMBNAIL_11_PREFIX}/${baseName}.webp`,
-        socialImagePath: `${SOCIAL_PREFIX}/${baseName}.jpg`
+        sourcePath: `${privateBase}/source.${cleanSourceExtension}`,
+        imagePath: `${publicBase}/full.webp`,
+        mobileImagePath: `${publicBase}/mobile.webp`,
+        thumbnail43Path: `${publicBase}/thumbnail-4x3.webp`,
+        thumbnail11Path: `${publicBase}/thumbnail-1x1.webp`,
+        socialImagePath: `${publicBase}/social.jpg`
     };
 }
 

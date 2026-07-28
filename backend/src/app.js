@@ -12,9 +12,7 @@ const { portfolioRepository } = require('./repositories');
 const { env, validateEnv } = require('./config/env');
 const DEFAULTS = require('./config/defaults');
 const {
-    PUBLIC_UPLOADS_PREFIX,
-    SOCIAL_ROUTE_PREFIX,
-    THUMBNAILS_ROUTE_PREFIX
+    PUBLIC_UPLOADS_PREFIX
 } = require('./config/assetPaths');
 const {
     ensureR2Configured,
@@ -53,6 +51,12 @@ const limiter = rateLimit({
     max: rateLimitMaxRequests
 });
 app.use(limiter);
+
+function isNonIndexableDerivativePath(pathname) {
+    const normalized = String(pathname || '');
+    return /\/thumbnail-(?:4x3|1x1)\.webp$/.test(normalized)
+        || /\/social\.jpg$/.test(normalized);
+}
 
 const writeLimiter = rateLimit({
     windowMs: DEFAULTS.writeRateLimitWindowMs,
@@ -182,7 +186,7 @@ async function serveUploadsFromR2(req, res, next) {
             return next();
         }
 
-        if (req.path.startsWith(THUMBNAILS_ROUTE_PREFIX) || req.path.startsWith(SOCIAL_ROUTE_PREFIX)) {
+        if (isNonIndexableDerivativePath(req.path)) {
             res.setHeader('X-Robots-Tag', 'noimageindex, noindex');
         }
 
@@ -212,7 +216,7 @@ const uploadsMiddlewares = [
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET');
         res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
-        if (req.path.startsWith(THUMBNAILS_ROUTE_PREFIX) || req.path.startsWith(SOCIAL_ROUTE_PREFIX)) {
+        if (isNonIndexableDerivativePath(req.path)) {
             res.setHeader('X-Robots-Tag', 'noimageindex, noindex');
         }
         next();

@@ -27,9 +27,7 @@ function configureValidPreviewEnvironment() {
         r2Bucket: 'public-assets',
         r2PrivateBucket: 'private-assets',
         r2PublicUrl: 'https://uploads.example.com',
-        r2ObjectPrefix: '',
-        cloudflareZoneId: '',
-        cloudflareApiToken: ''
+        r2ObjectPrefix: ''
     });
 }
 

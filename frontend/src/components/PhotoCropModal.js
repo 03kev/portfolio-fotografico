@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Check, Crop as CropIcon, RotateCcw, X } from 'lucide-react';
-import { getPhotoAssetVersion, resolveVersionedAssetUrl } from '../utils/imageUrl';
+import { resolveAssetUrl } from '../utils/imageUrl';
 import {
   CROP_HANDLES,
   CROP_MAX_SCALE,
@@ -51,17 +51,16 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
   const pointerStateRef = useRef(null);
   const refreshRafRef = useRef(null);
 
-  const imageVersion = getPhotoAssetVersion(photo);
   const cropImageSrc = useMemo(
-    () => resolveVersionedAssetUrl(photo?.image, imageVersion),
-    [imageVersion, photo]
+    () => resolveAssetUrl(photo?.image),
+    [photo]
   );
   const { isLoaded: isFullImageLoaded, setIsLoaded: setIsFullImageLoaded, markLoaded: markFullImageLoaded } = useSharedImageLoadState(cropImageSrc, isOpen && Boolean(photo?.id));
 
   const workspacePreviewSrc = useMemo(() => {
     const previewCandidate = photo?.thumbnail43 || photo?.thumbnail11 || photo?.socialImage || '';
-    return previewCandidate ? resolveVersionedAssetUrl(previewCandidate, imageVersion, '') : '';
-  }, [imageVersion, photo]);
+    return previewCandidate ? resolveAssetUrl(previewCandidate, '') : '';
+  }, [photo]);
 
   const activePresetPreviewSrc = useMemo(() => {
     const previewCandidate = activePreset === 'r11'
@@ -70,8 +69,8 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
         ? (photo?.socialImage || photo?.thumbnail43 || photo?.thumbnail11 || '')
         : (photo?.thumbnail43 || photo?.thumbnail11 || photo?.socialImage || '');
 
-    return previewCandidate ? resolveVersionedAssetUrl(previewCandidate, imageVersion, '') : '';
-  }, [activePreset, imageVersion, photo]);
+    return previewCandidate ? resolveAssetUrl(previewCandidate, '') : '';
+  }, [activePreset, photo]);
 
   const activePresetConfig = useMemo(
     () => CROP_PRESETS.find((preset) => preset.key === activePreset) || CROP_PRESETS[0],

@@ -393,6 +393,42 @@ async function headUploadObject(uploadPath) {
     }
 }
 
+async function headPrivateObject(privatePath) {
+    if (!isR2Enabled()) {
+        return null;
+    }
+
+    const key = privatePathToObjectKey(privatePath);
+    if (!key) return null;
+
+    const client = getR2Client();
+    const { HeadObjectCommand } = s3Commands;
+
+    try {
+        const response = await client.send(
+            new HeadObjectCommand({
+                Bucket: getPrivateBucketName(),
+                Key: key
+            })
+        );
+
+        return {
+            key,
+            contentType: response.ContentType,
+            cacheControl: response.CacheControl,
+            contentLength: response.ContentLength,
+            etag: response.ETag,
+            lastModified: response.LastModified
+        };
+    } catch (error) {
+        const statusCode = error?.$metadata?.httpStatusCode;
+        if (statusCode === 404 || error?.name === 'NotFound' || error?.name === 'NoSuchKey' || error?.Code === 'NoSuchKey') {
+            return null;
+        }
+        throw error;
+    }
+}
+
 async function getPrivateObject(privatePath) {
     if (!isR2Enabled()) {
         return null;
@@ -437,6 +473,7 @@ module.exports = {
     deleteUploadObject,
     ensureR2Configured,
     getPrivateObject,
+    headPrivateObject,
     headUploadObject,
     getUploadObject,
     isR2Enabled,

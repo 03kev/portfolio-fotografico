@@ -4,7 +4,7 @@ import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Loader2 } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
-import { LOCAL_IMAGE_FALLBACK, resolveVersionedPhotoAssetUrl } from '../utils/imageUrl';
+import { LOCAL_IMAGE_FALLBACK, resolvePhotoAssetUrl } from '../utils/imageUrl';
 import { photoService, signExistingSourceUpload, uploadSourceToSignedUrl } from '../utils/api';
 import { useGalleryQueryState } from '../hooks/useGalleryQueryState';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
@@ -50,7 +50,7 @@ const LOAD_MORE_ROOT_MARGIN_WIDE = '700px 0px';
 const LOAD_MORE_ROOT_MARGIN_COMPACT = '350px 0px';
 
 const getThumbImageUrl = (photo) => {
-  return resolveVersionedPhotoAssetUrl(photo, 'thumbnail43');
+  return resolvePhotoAssetUrl(photo, 'thumbnail43');
 };
 
 const getPhotoCardUrl = (photo) => `/photo/${encodeURIComponent(String(photo.id))}`;

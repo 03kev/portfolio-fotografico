@@ -4,19 +4,19 @@ Portfolio fotografico full-stack con:
 
 - frontend React SPA
 - backend Express condiviso tra locale e Vercel
-- storage Cloudflare R2 per immagini e metadati
+- PostgreSQL/Neon per i metadati transazionali
+- Cloudflare R2 per gli asset immagine
 - source originali in bucket privata
 
-Il progetto e' pensato per usare R2 in tutti gli ambienti, incluso lo sviluppo locale. Non esiste piu' un fallback su storage locale.
+Il progetto usa Neon e R2 in tutti gli ambienti, incluso lo sviluppo locale. Non
+esiste più un fallback su storage locale.
 
 ## Quick Start
 
 Requisiti:
 
-- Node.js 18+ consigliato
-- npm 8+
-
-Nota: il root `package.json` consente ancora `node >=16`, ma il target pratico consigliato e' Node 18+.
+- Node.js 20+
+- npm 10+
 
 1. Installa le dipendenze:
 
@@ -50,8 +50,11 @@ Servizi locali:
 - `backend/`: API Express, logica immagini, auth admin, SEO runtime, accesso R2
 - `api/index.js`: entrypoint Vercel che monta il backend Express
 - `vercel.json`: rewrites SPA/API/SEO e header statici
+- Neon/PostgreSQL:
+  - metadati foto e serie
+  - integrità referenziale, concorrenza e audit admin
 - Cloudflare R2:
-  - bucket pubblica per derivate e metadati JSON
+  - bucket pubblica per le derivate
   - bucket privata per source full-res
 
 Flusso immagini:
@@ -60,7 +63,7 @@ Flusso immagini:
 2. il browser carica la source direttamente nella bucket privata
 3. il backend crea il record foto
 4. il backend genera le derivate pubbliche partendo sempre dalla source privata
-5. il frontend legge URL pubblici derivati a runtime da `photo.id`
+5. il frontend legge URL pubblici derivati da `photo.id` e dal relativo ULID
 
 ## Struttura progetto
 
@@ -113,6 +116,13 @@ PORT=5001
 NODE_ENV=development
 SITE_URL=http://localhost:3000
 
+# Metadata
+METADATA_BACKEND=postgres
+METADATA_WRITES_ENABLED=true
+DATABASE_URL=postgresql://...-pooler.../neondb?sslmode=require
+DATABASE_URL_UNPOOLED=postgresql://.../neondb?sslmode=require
+TEST_DATABASE_URL=postgresql://...branch-test.../neondb?sslmode=require
+
 # CORS
 CORS_ORIGINS=http://localhost:3000,http://localhost:3001
 
@@ -133,24 +143,24 @@ R2_BUCKET=portfolio-images
 R2_PRIVATE_BUCKET=portfolio-images-private
 R2_PUBLIC_URL=https://uploads.yourdomain.com
 R2_ENDPOINT=
+R2_OBJECT_PREFIX=
 R2_METADATA_PREFIX=data
-
-# Cloudflare cache purge (opzionale)
-CLOUDFLARE_ZONE_ID=
-CLOUDFLARE_API_TOKEN=
 ```
 
 Note importanti:
 
 - `SITE_URL` e' obbligatoria in tutti gli ambienti.
 - `PORT` e `CORS_ORIGINS` sono obbligatorie in sviluppo locale.
+- `DATABASE_URL` è la connessione pooled di runtime.
+- `DATABASE_URL_UNPOOLED` è usata da migration e import.
+- `TEST_DATABASE_URL` deve puntare a un branch Neon isolato.
 - Il backend e' R2-only in tutti gli ambienti.
 - In produzione sono obbligatorie:
   - `API_WRITE_TOKEN_HASH`
   - `API_SESSION_SECRET`
 - `API_WRITE_TOKEN` e' solo fallback locale.
 - `R2_PRIVATE_BUCKET` e' fortemente consigliata: la source full-res parte sempre da li'.
-- Se configuri `CLOUDFLARE_ZONE_ID` e `CLOUDFLARE_API_TOKEN`, il backend esegue purge automatico su create / replace-source / regenerate / delete.
+- `R2_OBJECT_PREFIX` isola fisicamente gli asset scritti da una Preview.
 
 Generazione hash token admin:
 
@@ -185,7 +195,7 @@ Configurazione consigliata:
   - bucket pubblica
   - contiene:
     - derivate pubbliche (`/uploads/...`)
-    - metadati JSON (`/data/photos.json`, `/data/series.json`)
+    - snapshot JSON soltanto durante la transizione dal vecchio adapter
 - `R2_PRIVATE_BUCKET`
   - bucket privata
   - contiene le source originali full-res (`/private/source/...`)
@@ -203,12 +213,20 @@ Esempio:
 R2_PUBLIC_URL=https://uploads.kevinmuka.dev
 ```
 
-Il backend deriva i path pubblici in modo fisso da `photo.id`, usando questi prefissi:
+Ogni set pubblico è identificato da un ULID e resta immutabile:
 
-- immagine principale: `/uploads/photo_<id>.webp`
-- thumbnail 4:3: `/uploads/thumbnails/4x3/photo_<id>.webp`
-- thumbnail 1:1: `/uploads/thumbnails/1x1/photo_<id>.webp`
-- social: `/uploads/social/photo_<id>.jpg`
+- immagine principale: `/uploads/photos/<id>/<ulid>/full.webp`
+- variante mobile: `/uploads/photos/<id>/<ulid>/mobile.webp`
+- thumbnail 4:3: `/uploads/photos/<id>/<ulid>/thumbnail-4x3.webp`
+- thumbnail 1:1: `/uploads/photos/<id>/<ulid>/thumbnail-1x1.webp`
+- social: `/uploads/photos/<id>/<ulid>/social.jpg`
+
+La source privata usa un ULID di revisione indipendente:
+
+- `/private/source/photos/<id>/<source-ulid>/source.<estensione>`
+
+Crop e rigenerazione creano un nuovo set pubblico senza duplicare la source.
+Il reupload crea invece una nuova revisione source e un nuovo set pubblico.
 
 La bucket privata non deve avere un dominio pubblico.
 
@@ -245,33 +263,50 @@ Se usi un dominio preview dedicato, aggiungilo esplicitamente.
 
 ### 4. Cache e indicizzazione sul dominio pubblico
 
-Le derivate pubbliche usano URL stabili. Il backend fa overwrite sugli stessi path e aggiorna `derivativesVersion` per il cache busting lato app.
+I path ULID non vengono sovrascritti e possono usare:
 
-Per questo:
-
-- non usare `immutable` sugli asset immagine pubblici
-- se possibile, configura `X-Robots-Tag: noindex, noimageindex` su:
-  - `/uploads/thumbnails/*`
-  - `/uploads/social/*`
-
-Questo evita che thumbnail e social image finiscano indicizzate come asset separati.
-
-### 5. Purge cache Cloudflare opzionale ma utile
-
-Se vuoi invalidazione immediata dopo overwrite delle immagini:
-
-```env
-CLOUDFLARE_ZONE_ID=...
-CLOUDFLARE_API_TOKEN=...
+```text
+Cache-Control: public, max-age=31536000, immutable
 ```
 
-Il backend fara' purge sugli asset pubblici quando necessario.
+Non è necessario eseguire purge Cloudflare quando cambia una foto: la
+transazione Postgres rende visibile un nuovo URL.
+
+Sul dominio R2 pubblico configura `X-Robots-Tag: noindex, noimageindex` per i
+file il cui path termina con:
+
+- `/thumbnail-4x3.webp`
+- `/thumbnail-1x1.webp`
+- `/social.jpg`
+
+La full image rimane indicizzabile tramite la pagina canonica `/photo/:id`.
+
+### 5. Migrazione una tantum dei path precedenti
+
+Il comando è dry-run per impostazione predefinita:
+
+```bash
+cd backend
+npm run media:paths:migrate
+npm run media:paths:migrate -- --execute
+```
+
+Gli asset canonici precedenti vanno rimossi solo dopo il cutover production e
+una verifica completa:
+
+```bash
+npm run media:paths:migrate -- \
+  --cleanup-old-assets \
+  --execute \
+  --confirm-cutover
+```
 
 ## Modalita admin
 
 Route principali:
 
 - login/admin UI: `https://tuodominio/admin`
+- storico modifiche: `https://tuodominio/admin/history`
 - logout rapido: `https://tuodominio/admin/logout`
 
 Le write API richiedono sessione admin valida. In sviluppo, se non configuri credenziali admin, il backend segnala la cosa e le write possono restare aperte: non e' un setup consigliato, ma e' previsto come fallback locale.
@@ -302,6 +337,10 @@ Vercel usa:
 - `API_WRITE_TOKEN_HASH`
 - `API_SESSION_SECRET`
 - `CORS_ORIGINS`
+- `METADATA_BACKEND=postgres`
+- `METADATA_WRITES_ENABLED`
+- `DATABASE_URL`
+- `DATABASE_URL_UNPOOLED`
 - `R2_ACCOUNT_ID`
 - `R2_ACCESS_KEY_ID`
 - `R2_SECRET_ACCESS_KEY`
@@ -310,9 +349,8 @@ Vercel usa:
 - `R2_PUBLIC_URL`
 - opzionali:
   - `R2_ENDPOINT`
+  - `R2_OBJECT_PREFIX`
   - `R2_METADATA_PREFIX`
-  - `CLOUDFLARE_ZONE_ID`
-  - `CLOUDFLARE_API_TOKEN`
   - `API_SESSION_TTL_MS`
   - `API_AUTH_RATE_LIMIT_*`
 - frontend:
@@ -341,16 +379,20 @@ La sitemap include automaticamente tutte le foto e le serie pubblicate con il
 relativo `lastmod`. Le serie sono esposte come pagine hub prima delle singole
 foto; le bozze non compaiono né nella sitemap né nelle pagine SEO server-side.
 
-## Dati su R2
+## Adapter JSON transitorio
 
-I metadati vengono salvati in R2 sotto `R2_METADATA_PREFIX` (default: `data`):
+PostgreSQL è lo storage autorevole quando `METADATA_BACKEND=postgres`.
+L’adapter JSON R2 è mantenuto temporaneamente per migrazione e rollback e verrà
+rimosso dopo il cutover verificato. I suoi snapshot si trovano sotto
+`R2_METADATA_PREFIX` (default: `data`):
 
 - `data/photos.json`
 - `data/series.json`
 
-### Schema canonico storage di una foto
+### Schema canonico dello snapshot foto
 
-Il backend salva su R2 uno schema canonico annidato. A runtime, l'API lo normalizza in un formato piu' semplice per il frontend.
+L’adapter transitorio salva uno schema annidato e lo normalizza nel formato
+runtime consumato dal frontend.
 
 Esempio storage:
 
@@ -383,16 +425,19 @@ Esempio storage:
   },
   "tags": ["Alpe di Siusi"],
   "source": {
-    "path": "/private/source/photo_1772709771525.jpeg",
+    "path": "/private/source/photos/1772709771525/01KYMPAMCGZG34TT5JX1BCBB9K/source.jpeg",
     "contentType": "image/jpeg"
   },
+  "mediaGeneration": "01KYMPAMCGZG34TT5JX1BCBB9K",
   "derivativesVersion": 1772709835199
 }
 ```
 
 ### Cosa viene derivato a runtime
 
-Nel JSON di storage non vengono salvati i path pubblici finali come campi canonici. L'API li costruisce a runtime a partire da `photo.id`:
+Nel metadata record non vengono salvati i path pubblici finali come campi
+canonici. L'API li costruisce a runtime a partire da `photo.id` e
+`mediaGeneration`:
 
 - `image`
 - `thumbnail43`
@@ -400,11 +445,12 @@ Nel JSON di storage non vengono salvati i path pubblici finali come campi canoni
 - `socialImage`
 - `url`
 
-Questo evita ridondanza e rende stabile il naming pubblico.
+Questo evita ridondanza; l’ULID rende ogni set pubblico immutabile.
 
 ### Schema canonico delle serie
 
-Il backend normalizza `data/series.json` sia in lettura sia prima di ogni scrittura:
+L’adapter JSON normalizza `data/series.json` sia in lettura sia prima di ogni
+scrittura. Il repository Postgres applica le stesse invarianti in transazione:
 
 - titoli e slug devono essere unici anche tra le bozze
 - `photos` contiene ID numerici unici

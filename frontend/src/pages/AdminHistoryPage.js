@@ -17,6 +17,7 @@ const OPERATION_LABELS = Object.freeze({
   'photo.media.crop': 'Crop foto aggiornato',
   'photo.media.regenerate': 'Derivate foto rigenerate',
   'photo.media.replace-source': 'Sorgente foto sostituita',
+  'photo.media.path-migration': 'Path media migrati',
   'series.create': 'Serie creata',
   'series.update': 'Serie modificata',
   'series.delete': 'Serie eliminata',

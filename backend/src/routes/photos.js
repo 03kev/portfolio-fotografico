@@ -22,6 +22,7 @@ const { getExpectedVersion } = require('../utils/expectedVersion');
 const { sanitizePhotoPayload } = require('../utils/inputSanitizers');
 const { protectWriteMethods } = require('../middleware/auth');
 const { portfolioRepository } = require('../repositories');
+const { createMediaGeneration } = require('../utils/mediaGeneration');
 const {
     describeDeleteError,
     getImageExtensionFromMimeType,
@@ -31,7 +32,6 @@ const {
     parseCoordinate,
     parseUploadSize,
     presentPhoto,
-    purgePublicAssetsBestEffort,
     readPrivateSourceBuffer,
     readPrivateSourceObject,
     sendRouteError,
@@ -46,7 +46,7 @@ router.use(protectWriteMethods);
 function createMediaIdentity() {
     return {
         operationId: crypto.randomUUID(),
-        generation: `${Date.now().toString(36)}-${crypto.randomBytes(8).toString('hex')}`
+        generation: createMediaGeneration()
     };
 }
 
@@ -531,11 +531,6 @@ router.post('/', upload.single('image'), async (req, res) => {
         }
         created = true;
 
-        await purgePublicAssetsBestEffort(
-            [assets.imagePath, assets.mobileImagePath, assets.thumbnail43Path, assets.thumbnail11Path, assets.socialImagePath],
-            'photo_create'
-        );
-        
         res.status(201).json({
             success: true,
             message: 'Foto caricata con successo',
@@ -941,12 +936,6 @@ router.delete('/:id', async (req, res) => {
                 });
             }
         }
-
-        const deletedPublicPaths = deletedAssets
-            .filter((asset) => asset.scope === 'public')
-            .map((asset) => asset.path);
-
-        await purgePublicAssetsBestEffort(deletedPublicPaths, 'photo_delete');
 
         if (failedAssets.length) {
             console.warn('[photo_delete_partial_cleanup]', {

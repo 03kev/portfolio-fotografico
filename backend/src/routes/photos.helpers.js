@@ -5,10 +5,6 @@ const {
     putUploadObject
 } = require('../services/r2Storage');
 const {
-    normalizeUploadPathToAbsoluteUrl,
-    purgeUrls
-} = require('../services/cloudflareCache');
-const {
     buildPhotoAssetPaths,
     normalizeUploadsPath
 } = require('../services/photoDerivatives');
@@ -274,20 +270,6 @@ async function readPrivateSourceObject(privatePath) {
     };
 }
 
-async function purgePublicAssetsBestEffort(uploadPaths = [], reason = 'photos_update') {
-    const urls = uploadPaths
-        .map((uploadPath) => normalizeUploadPathToAbsoluteUrl(uploadPath))
-        .filter(Boolean);
-
-    if (!urls.length) return;
-
-    try {
-        await purgeUrls(urls, { reason });
-    } catch (error) {
-        console.warn(`[cache] purge fallita (${reason}):`, error.message);
-    }
-}
-
 module.exports = {
     buildUploadFilename,
     describeDeleteError,
@@ -298,7 +280,6 @@ module.exports = {
     parseCoordinate,
     parseUploadSize,
     presentPhoto,
-    purgePublicAssetsBestEffort,
     readPrivateSourceBuffer,
     readPrivateSourceObject,
     sendRouteError,

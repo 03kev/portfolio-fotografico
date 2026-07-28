@@ -201,6 +201,7 @@ const { readMetadataFile, writeMetadataFile } = require('./metadataStorage');
 const PHOTOS_KEY = 'data/photos.json';
 const SERIES_KEY = 'data/series.json';
 const PHOTO_ID = 101;
+const TEST_MEDIA_GENERATION = '01JGFJJZ00XR5RF7YH2J5PVWBX';
 
 let server;
 let baseUrl;
@@ -219,11 +220,12 @@ function buildPhoto(id, overrides = {}) {
         resolution: '3000x2000',
         settings: {},
         tags: ['test'],
-        sourcePath: '',
-        sourceContentType: '',
+        sourcePath: `/private/source/photos/${id}/${TEST_MEDIA_GENERATION}/source.jpg`,
+        sourceContentType: 'image/jpeg',
         mobileImage: true,
         updatedAt: 1,
         derivativesVersion: 1,
+        mediaGeneration: TEST_MEDIA_GENERATION,
         ...overrides
     };
 }

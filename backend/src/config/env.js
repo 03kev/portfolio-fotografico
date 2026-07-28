@@ -92,10 +92,7 @@ const env = {
     r2PublicUrl: asString(process.env.R2_PUBLIC_URL).replace(/\/+$/, ''),
     r2Endpoint: asString(process.env.R2_ENDPOINT),
     r2ObjectPrefix: normalizeR2ObjectPrefix(process.env.R2_OBJECT_PREFIX),
-    r2MetadataPrefix: asString(process.env.R2_METADATA_PREFIX, DEFAULTS.r2MetadataPrefix).replace(/^\/+|\/+$/g, ''),
-
-    cloudflareZoneId: asString(process.env.CLOUDFLARE_ZONE_ID),
-    cloudflareApiToken: asString(process.env.CLOUDFLARE_API_TOKEN)
+    r2MetadataPrefix: asString(process.env.R2_METADATA_PREFIX, DEFAULTS.r2MetadataPrefix).replace(/^\/+|\/+$/g, '')
 };
 
 function validateEnv() {
@@ -173,18 +170,6 @@ function validateEnv() {
 
     if (env.isDevelopment && !env.apiWriteTokenHash && !env.apiWriteToken) {
         warnings.push('Nessuna credenziale admin configurata (API_WRITE_TOKEN_HASH / API_WRITE_TOKEN). In locale le write API saranno aperte.');
-    }
-
-    if (env.cloudflareZoneId && !env.cloudflareApiToken) {
-        warnings.push('CLOUDFLARE_ZONE_ID impostata ma CLOUDFLARE_API_TOKEN mancante: purge cache disattivata.');
-    }
-
-    if (env.cloudflareApiToken && !env.cloudflareZoneId) {
-        warnings.push('CLOUDFLARE_API_TOKEN impostata ma CLOUDFLARE_ZONE_ID mancante: purge cache disattivata.');
-    }
-
-    if ((env.cloudflareApiToken || env.cloudflareZoneId) && !env.r2PublicUrl) {
-        warnings.push('Cloudflare purge configurata ma R2_PUBLIC_URL mancante: impossibile costruire URL assoluti da purgare.');
     }
 
     if (env.isProduction && env.apiWriteToken) {

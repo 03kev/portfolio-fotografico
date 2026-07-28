@@ -1,6 +1,6 @@
 import React from 'react';
 import styled from 'styled-components';
-import { resolveVersionedPhotoAssetUrl } from '../../utils/imageUrl';
+import { resolvePhotoAssetUrl } from '../../utils/imageUrl';
 
 const Flow = styled.div`
   display: flex;
@@ -193,9 +193,9 @@ function getTextPresentation(block, textSizeMap, textFontMap) {
 
 function ResponsivePicture({ photo }) {
   const mobileSrc = photo?.mobileImage
-    ? resolveVersionedPhotoAssetUrl(photo, 'mobileImage')
+    ? resolvePhotoAssetUrl(photo, 'mobileImage')
     : '';
-  const fullSrc = resolveVersionedPhotoAssetUrl(photo, 'image');
+  const fullSrc = resolvePhotoAssetUrl(photo, 'image');
 
   return (
     <Picture>
@@ -312,11 +312,11 @@ export default function ResponsiveSeriesContent({
                           {photo.mobileImage && (
                             <source
                               media="(max-width: 1024px)"
-                              srcSet={resolveVersionedPhotoAssetUrl(photo, 'mobileImage')}
+                              srcSet={resolvePhotoAssetUrl(photo, 'mobileImage')}
                             />
                           )}
                           <GroupImage
-                            src={resolveVersionedPhotoAssetUrl(photo, 'image')}
+                            src={resolvePhotoAssetUrl(photo, 'image')}
                             alt={photo.title || 'Fotografia'}
                             loading="lazy"
                             decoding="async"
