@@ -5,7 +5,7 @@ const {
     namespaceObjectKey,
     normalizeR2ObjectPrefix,
     stripObjectNamespace
-} = require('./r2ObjectNamespace');
+} = require('../src/utils/r2ObjectNamespace');
 
 test('normalizes and applies an R2 namespace exactly once', () => {
     const prefix = normalizeR2ObjectPrefix('/_test/feature-database/');

@@ -6,7 +6,7 @@ import {
   normalizeSeriesEditorContent,
   removePhotoFromSeriesContent,
   togglePhotoInSeriesGroup
-} from './seriesEditorModel';
+} from '../utils/seriesEditorModel';
 
 describe('seriesEditorModel', () => {
   test('normalizes canonical and legacy photo group items without duplicates', () => {

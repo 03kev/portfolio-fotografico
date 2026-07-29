@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { beforeEach, test } = require('node:test');
-const { JsonPortfolioRepository } = require('./JsonPortfolioRepository');
+const { JsonPortfolioRepository } = require('../src/repositories/JsonPortfolioRepository');
 
 function createMemoryMetadataStorage() {
     const files = new Map();

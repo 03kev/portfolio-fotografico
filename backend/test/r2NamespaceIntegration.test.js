@@ -1,13 +1,13 @@
 const assert = require('node:assert/strict');
 const { afterEach, test } = require('node:test');
-const { env } = require('../config/env');
+const { env } = require('../src/config/env');
 const {
     objectKeyToPrivatePath,
     objectKeyToUploadPath,
     privatePathToObjectKey,
     uploadPathToObjectKey
-} = require('./r2Storage');
-const { buildPublicAssetUrl } = require('./publicAssetUrl');
+} = require('../src/services/r2Storage');
+const { buildPublicAssetUrl } = require('../src/services/publicAssetUrl');
 
 const originalEnvironment = {
     r2ObjectPrefix: env.r2ObjectPrefix,

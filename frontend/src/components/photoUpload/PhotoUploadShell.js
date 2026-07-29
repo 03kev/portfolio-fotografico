@@ -16,6 +16,7 @@ const PhotoUploadShell = ({
   isClosing,
   onInitClose,
   onStepSelect,
+  isStepDisabled,
   children,
   footer,
   onBackdropClick
@@ -93,14 +94,17 @@ const PhotoUploadShell = ({
         </button>
       </div>
 
-      <nav className="step-navbar">
+      <nav
+        className="step-navbar"
+        style={{ '--shell-step-count': steps.length }}
+      >
         {steps.map((step, index) => (
           <button
             type="button"
             key={step.id}
             className={`${currentStep === step.id ? 'active' : ''}${currentStep > step.id ? ' completed' : ''}`}
             onClick={() => onStepSelect(step.id)}
-            disabled={loading}
+            disabled={loading || isStepDisabled?.(step.id)}
             aria-current={currentStep === step.id ? 'step' : undefined}
           >
             <span className="step-index">{index + 1}</span>

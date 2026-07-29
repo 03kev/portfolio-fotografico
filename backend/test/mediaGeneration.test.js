@@ -3,7 +3,7 @@ const test = require('node:test');
 const {
     createMediaGeneration,
     normalizeMediaGeneration
-} = require('./mediaGeneration');
+} = require('../src/utils/mediaGeneration');
 
 test('creates lexicographically ordered ULIDs within the same millisecond', () => {
     const timestamp = 1_785_193_200_000;

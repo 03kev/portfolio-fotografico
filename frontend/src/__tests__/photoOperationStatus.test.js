@@ -1,7 +1,7 @@
 import {
   buildPhotoOperationStatus,
   getPhotoOperationProgress
-} from './photoOperationStatus';
+} from '../utils/photoOperationStatus';
 
 describe('photoOperationStatus', () => {
   test('builds consistent status milestones while allowing measured progress', () => {

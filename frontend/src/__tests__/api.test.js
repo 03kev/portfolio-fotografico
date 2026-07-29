@@ -1,3 +1,5 @@
+import { normalizeApiError } from '../utils/api';
+
 jest.mock('axios', () => ({
   create: () => ({
     interceptors: {
@@ -11,8 +13,6 @@ jest.mock('axios', () => ({
     delete: jest.fn()
   })
 }));
-
-import { normalizeApiError } from './api';
 
 describe('normalizeApiError', () => {
   test('preserves the application contract and request context', () => {

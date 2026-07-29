@@ -1,10 +1,10 @@
 const assert = require('node:assert/strict');
 const { afterEach, test } = require('node:test');
-const { env } = require('../config/env');
+const { env } = require('../src/config/env');
 const {
     protectWriteMethods,
     requireConcealedAdminAuth
-} = require('./auth');
+} = require('../src/middleware/auth');
 
 const originalMetadataWritesEnabled = env.metadataWritesEnabled;
 const originalApiWriteToken = env.apiWriteToken;

@@ -1,7 +1,7 @@
 import {
     buildGridClusters,
     buildProximityClusters
-} from './WorldMapClustering';
+} from '../utils/WorldMapClustering';
 
 const photo = (id, lat, lng) => ({ id, lat, lng });
 

@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const {
     translatePostgresError
-} = require('./PostgresPortfolioRepository');
+} = require('../src/repositories/PostgresPortfolioRepository');
 
 test('translates known check constraints into actionable validation errors', () => {
     const translated = translatePostgresError({

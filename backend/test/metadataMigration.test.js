@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const { analyzeMetadataSnapshot } = require('./metadataMigration');
+const { analyzeMetadataSnapshot } = require('../src/services/metadataMigration');
 
 function photo(id) {
     return {

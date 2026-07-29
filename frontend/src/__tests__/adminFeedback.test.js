@@ -1,4 +1,4 @@
-import { adminFeedback } from './adminFeedback';
+import { adminFeedback } from '../utils/adminFeedback';
 
 describe('adminFeedback', () => {
   test('describes successful mutations with the affected entity', () => {

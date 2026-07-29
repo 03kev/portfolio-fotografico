@@ -3,7 +3,7 @@ const { test } = require('node:test');
 const {
     getExpectedVersion,
     repositoryOptionsFromRequest
-} = require('./expectedVersion');
+} = require('../src/utils/expectedVersion');
 
 function request({ applicationHeader, httpHeader, body } = {}) {
     return {

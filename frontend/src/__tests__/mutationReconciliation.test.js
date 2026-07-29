@@ -3,7 +3,7 @@ import {
   findEntityById,
   includesEntityId,
   valuesEquivalent
-} from './mutationReconciliation';
+} from '../utils/mutationReconciliation';
 
 describe('mutation reconciliation', () => {
   test('compares JSON strings with structured API values', () => {

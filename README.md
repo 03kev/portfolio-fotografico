@@ -85,10 +85,12 @@ Flusso immagini:
 │   │   ├── routes/
 │   │   ├── services/
 │   │   └── utils/
+│   └── test/
 ├── frontend/
 │   ├── branding/
 │   ├── public/
 │   └── src/
+│       ├── __tests__/
 │       ├── components/
 │       ├── components/photoUpload/
 │       ├── contexts/

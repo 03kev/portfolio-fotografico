@@ -2,7 +2,7 @@ import {
   combineMediaQueries,
   inputQueries,
   viewportQueries
-} from './responsive';
+} from '../styles/responsive';
 
 describe('responsive query helpers', () => {
   it('builds viewport queries from the shared breakpoint scale', () => {

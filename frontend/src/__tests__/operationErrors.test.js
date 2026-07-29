@@ -3,7 +3,7 @@ import {
   getErrorCodeFromError,
   isAmbiguousMutationError,
   isConcurrencyError
-} from './operationErrors';
+} from '../utils/operationErrors';
 
 describe('operationErrors', () => {
   test('uses stable backend codes for actionable conflict messages', () => {

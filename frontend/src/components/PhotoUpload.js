@@ -1,7 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { AlertTriangle, Loader2, Save, Upload } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
-import exifr from 'exifr';
 import { usePhotos } from '../contexts/PhotoContext';
 import { signSourceUpload, uploadSourceToSignedUrl, uploadUtils } from '../utils/api';
 import {
@@ -9,6 +8,10 @@ import {
     isAmbiguousMutationError
 } from '../utils/operationErrors';
 import { buildPhotoOperationStatus } from '../utils/photoOperationStatus';
+import {
+    readPhotoMetadata,
+    reverseGeocodeCoordinates
+} from '../utils/photoMetadata';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { usePhotoUploadWizard } from '../hooks/usePhotoUploadWizard';
 import MapSelector from './MapSelector';
@@ -122,6 +125,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
     const fileInputRef = useRef(null);
     const metadataFileInputRef = useRef(null);
     const tagInputRef = useRef(null);
+    const metadataExtractionRef = useRef({ id: 0, controller: null });
     const hasActivePhotoOp = useMemo(
         () => Object.values(photoOpsByPhotoId || {}).some((entry) => Boolean(entry?.active)),
         [photoOpsByPhotoId]
@@ -135,23 +139,25 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         };
     }, []);
 
+    useEffect(() => () => {
+        metadataExtractionRef.current.controller?.abort();
+        metadataExtractionRef.current.id += 1;
+    }, []);
+
     const extractImageMetadata = useCallback(async (file, sourceLabel = 'file selezionato') => {
+        metadataExtractionRef.current.controller?.abort();
+        const extractionId = metadataExtractionRef.current.id + 1;
+        const controller = new AbortController();
+        metadataExtractionRef.current = { id: extractionId, controller };
+        const isCurrentExtraction = () => (
+            metadataExtractionRef.current.id === extractionId
+            && !controller.signal.aborted
+        );
+
         try {
-            const exifData = await exifr.parse(file, [
-                'Model',
-                'Make',
-                'LensModel',
-                'FNumber',
-                'ExposureTime',
-                'ISO',
-                'FocalLength',
-                'DateTimeOriginal',
-                'GPSLatitude',
-                'GPSLongitude',
-                'GPSLatitudeRef',
-                'GPSLongitudeRef'
-            ]);
-            if (!exifData || Object.keys(exifData).length === 0) {
+            const metadata = await readPhotoMetadata(file);
+            if (!isCurrentExtraction()) return false;
+            if (!metadata.hasMetadata) {
                 setMetadataStatus({
                     type: 'warning',
                     message: `Nessun metadato rilevato in ${sourceLabel}.`
@@ -159,81 +165,58 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                 return false;
             }
 
-            const cameraModel = exifData.Make && exifData.Model
-                ? `${exifData.Make} ${exifData.Model}`.trim()
-                : exifData.Model || '';
-            const lensModel = exifData.LensModel || '';
-
-            let photoDate = '';
-            if (exifData.DateTimeOriginal) {
-                const d = new Date(exifData.DateTimeOriginal);
-                if (!Number.isNaN(d.getTime())) {
-                    photoDate = d.toISOString().split('T')[0];
-                }
-            }
-
-            const aperture = exifData.FNumber ? `f/${exifData.FNumber}` : '';
-            let shutter = '';
-            if (exifData.ExposureTime) {
-                shutter = exifData.ExposureTime.toString();
-                if (exifData.ExposureTime < 1 && exifData.ExposureTime > 0) {
-                    const inv = Math.round(1 / exifData.ExposureTime);
-                    shutter = `1/${inv}s`;
-                } else if (exifData.ExposureTime >= 1) {
-                    shutter = `${exifData.ExposureTime}s`;
-                }
-            }
-            const iso = exifData.ISO ? exifData.ISO.toString() : '';
-            const focal = exifData.FocalLength ? `${exifData.FocalLength}mm` : '';
-
+            const extractedLocation = metadata.location || (
+                metadata.coordinates
+                    ? `${metadata.coordinates.latitude.toFixed(4)}, ${metadata.coordinates.longitude.toFixed(4)}`
+                    : ''
+            );
             setFormData((prev) => ({
                 ...prev,
-                date: photoDate || prev.date,
-                camera: cameraModel,
-                lens: lensModel,
+                date: metadata.date || prev.date,
+                camera: metadata.camera || prev.camera,
+                lens: metadata.lens || prev.lens,
+                location: extractedLocation || prev.location,
+                ...(metadata.coordinates ? {
+                    lat: metadata.coordinates.latitude.toFixed(6),
+                    lng: metadata.coordinates.longitude.toFixed(6)
+                } : {}),
                 settings: {
                     ...(prev.settings || {}),
-                    aperture,
-                    shutter,
-                    iso,
-                    focal
+                    ...Object.fromEntries(
+                        Object.entries(metadata.settings).filter(([, value]) => Boolean(value))
+                    )
                 }
             }));
 
-            const gps = await exifr.gps(file);
-            if (gps && gps.latitude && gps.longitude) {
+            if (metadata.coordinates) {
                 try {
-                    const res = await fetch(
-                        `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${gps.latitude}&longitude=${gps.longitude}&localityLanguage=it`
+                    const location = await reverseGeocodeCoordinates(
+                        metadata.coordinates.latitude,
+                        metadata.coordinates.longitude,
+                        { signal: controller.signal }
                     );
-                    const data = await res.json();
+                    if (!isCurrentExtraction()) return false;
                     setFormData((prev) => ({
                         ...prev,
-                        lat: gps.latitude.toFixed(6).toString(),
-                        lng: gps.longitude.toFixed(6).toString(),
-                        location:
-                            data.locality ||
-                            data.city ||
-                            data.principalSubdivision ||
-                            data.countryName ||
-                            `${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)}`
+                        location: !prev.location || prev.location === extractedLocation
+                            ? location
+                            : prev.location
                     }));
-                } catch {
-                    setFormData((prev) => ({
-                        ...prev,
-                        lat: gps.latitude.toFixed(6).toString(),
-                        lng: gps.longitude.toFixed(6).toString(),
-                        location: `${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)}`
-                    }));
+                } catch (geocodeError) {
+                    if (geocodeError?.name === 'AbortError' || !isCurrentExtraction()) {
+                        return false;
+                    }
                 }
             }
 
+            if (!isCurrentExtraction()) return false;
             setMetadataStatus({
                 type: 'success',
                 message: `Metadati estratti da ${sourceLabel}.`
             });
             return true;
         } catch (err) {
+            if (err?.name === 'AbortError' || !isCurrentExtraction()) return false;
             console.warn('Estrazione metadati EXIF fallita:', err);
             setMetadataStatus({
                 type: 'warning',
@@ -288,20 +271,12 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             async (position) => {
                 const { latitude, longitude } = position.coords;
                 try {
-                    const res = await fetch(
-                        `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=it`
-                    );
-                    const data = await res.json();
+                    const location = await reverseGeocodeCoordinates(latitude, longitude);
                     setFormData((prev) => ({
                         ...prev,
                         lat: latitude.toFixed(6).toString(),
                         lng: longitude.toFixed(6).toString(),
-                        location:
-                            data.locality ||
-                            data.city ||
-                            data.principalSubdivision ||
-                            data.countryName ||
-                            `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`
+                        location
                     }));
                 } catch {
                     setFormData((prev) => ({
@@ -612,7 +587,8 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         isFirstStep,
         isLastStep,
         actionsLayoutClass,
-        isNextDisabled
+        isNextDisabled,
+        isStepDisabled
     } = usePhotoUploadWizard({
         steps,
         initialStep,
@@ -687,6 +663,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             isClosing={isClosing}
             onInitClose={initClose}
             onStepSelect={selectStep}
+            isStepDisabled={isStepDisabled}
             onBackdropClick={() => !loading && initClose()}
             footer={footer}
         >

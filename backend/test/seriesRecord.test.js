@@ -4,7 +4,7 @@ const test = require('node:test');
 const {
     assertUniqueSeriesIdentity,
     normalizeSeriesRecord
-} = require('./seriesRecord');
+} = require('../src/services/seriesRecord');
 
 test('normalizeSeriesRecord produces canonical grid content', () => {
     const normalized = normalizeSeriesRecord({

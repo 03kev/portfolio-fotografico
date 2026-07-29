@@ -4,7 +4,7 @@ import {
     configureBoundaryMaskTexture,
     createWorldMapGlobeResources,
     selectWorldMapTextureSet
-} from './WorldMapGlobeResources';
+} from '../utils/WorldMapGlobeResources';
 
 const [SMALL_TEXTURE_SET, LARGE_TEXTURE_SET] = WORLD_MAP_TEXTURE_SETS;
 

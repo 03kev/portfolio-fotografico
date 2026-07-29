@@ -7,6 +7,7 @@ import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import { Check, LocateFixed, MapPinned, X } from 'lucide-react';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import { reverseGeocodeCoordinates } from '../utils/photoMetadata';
 import { media } from '../styles/responsive';
 import { insetPanelSurface, panelSurface, topAlignedModalBackdropSurface } from '../styles/surfaces';
 
@@ -277,16 +278,11 @@ const MapClickHandler = ({ onLocationSelect, selectedPosition }) => {
 };
 
 const MapSelector = ({ isOpen, onClose, onLocationSelect, initialLocation = null, initialFullAddress = '' }) => {
-    const [initialAddr, initialCtry = ''] = initialFullAddress
-    .split(',')
-    .map(s => s.trim());
-    
     const [selectedPosition, setSelectedPosition] = useState(
         initialLocation ? { lat: initialLocation.lat, lng: initialLocation.lng } : null
     );
     
-    const [address, setAddress] = useState(initialAddr);
-    const [country, setCountry] = useState(initialCtry);
+    const [address, setAddress] = useState(initialFullAddress.trim());
     const [loading, setLoading] = useState(false);
     
     const overlayRef = useRef();
@@ -305,10 +301,10 @@ const MapSelector = ({ isOpen, onClose, onLocationSelect, initialLocation = null
     const getCurrentLocation = () => {
         setLoading(true);
         navigator.geolocation.getCurrentPosition(
-            (position) => {
+            async (position) => {
                 const { latitude, longitude } = position.coords;
                 setSelectedPosition({ lat: latitude, lng: longitude });
-                reverseGeocode(latitude, longitude);
+                await reverseGeocode(latitude, longitude);
                 setLoading(false);
             },
             (error) => {
@@ -322,13 +318,7 @@ const MapSelector = ({ isOpen, onClose, onLocationSelect, initialLocation = null
     // Reverse geocoding per ottenere l'indirizzo
     const reverseGeocode = async (lat, lng) => {
         try {
-            const response = await fetch(
-                `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=it`
-            );
-            const data = await response.json();
-            const addressString = data.locality || data.city || data.countryName || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
-            setAddress(addressString);
-            setCountry(data.countryName || '');
+            setAddress(await reverseGeocodeCoordinates(lat, lng));
         } catch (error) {
             console.error('Errore reverse geocoding:', error);
             setAddress(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
@@ -342,21 +332,14 @@ const MapSelector = ({ isOpen, onClose, onLocationSelect, initialLocation = null
     
     const handleConfirm = useCallback(() => {
         if (selectedPosition && onLocationSelect) {
-            let base = address
-            ? address
-            : `${selectedPosition.lat.toFixed(4)}, ${selectedPosition.lng.toFixed(4)}`;
-            const fullAddress = country
-            ? `${base}, ${country}`
-            : base;
-            
             onLocationSelect({
                 lat: selectedPosition.lat,
                 lng: selectedPosition.lng,
-                address: fullAddress
+                address: address || `${selectedPosition.lat.toFixed(4)}, ${selectedPosition.lng.toFixed(4)}`
             });
         }
         onClose();
-    }, [address, country, onClose, onLocationSelect, selectedPosition]);
+    }, [address, onClose, onLocationSelect, selectedPosition]);
     
     // Conferma posizione premendo Invio
     useEffect(() => {
@@ -426,7 +409,7 @@ const MapSelector = ({ isOpen, onClose, onLocationSelect, initialLocation = null
             </div>
             {address && (
                 <div className="meta-address">
-                {address}{country ? `, ${country}` : ''}
+                {address}
                 </div>
             )}
             </>

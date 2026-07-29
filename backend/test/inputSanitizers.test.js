@@ -3,7 +3,7 @@ const test = require('node:test');
 const {
     sanitizePhotoPayload,
     sanitizeSeriesPayload
-} = require('./inputSanitizers');
+} = require('../src/utils/inputSanitizers');
 
 test('classifies field length errors with stable validation details', () => {
     assert.throws(

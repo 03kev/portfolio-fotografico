@@ -12,12 +12,12 @@ const {
     PostgresPortfolioRepository,
     extractContentPhotoIds,
     translatePostgresError
-} = require('./PostgresPortfolioRepository');
+} = require('../src/repositories/PostgresPortfolioRepository');
 const {
     normalizePostgresConnectionString
-} = require('../utils/postgresConnectionString');
+} = require('../src/utils/postgresConnectionString');
 
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const databaseUrl = String(process.env.TEST_DATABASE_URL || '').trim();
 const integrationTest = databaseUrl ? test : test.skip;
@@ -126,7 +126,7 @@ before(async () => {
     });
     await adminPool.query(`CREATE SCHEMA "${schemaName}"`);
     scopedPool = new SchemaScopedPool(adminPool, schemaName);
-    const migrationsDirectory = path.resolve(__dirname, '../../db/migrations');
+    const migrationsDirectory = path.resolve(__dirname, '../db/migrations');
     const migrationNames = (await fs.readdir(migrationsDirectory))
         .filter((name) => name.endsWith('.sql'))
         .sort();

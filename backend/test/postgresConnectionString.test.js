@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const {
     normalizePostgresConnectionString
-} = require('./postgresConnectionString');
+} = require('../src/utils/postgresConnectionString');
 
 test('upgrades Neon sslmode=require to explicit certificate and hostname verification', () => {
     const normalized = normalizePostgresConnectionString(

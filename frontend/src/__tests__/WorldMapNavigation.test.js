@@ -3,7 +3,7 @@ import {
     CAMERA_START_Z,
     GLOBE_RADIUS,
     createWorldMapNavigation
-} from './WorldMapNavigation';
+} from '../utils/WorldMapNavigation';
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const WORLD_FORWARD = new THREE.Vector3(0, 0, 1);

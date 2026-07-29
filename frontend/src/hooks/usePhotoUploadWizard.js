@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  canAccessPhotoUploadStep,
+  getPhotoUploadStepBlocker
+} from '../utils/photoUploadSteps';
 
 const DEFAULT_STEP_DESCRIPTIONS = {
   1: 'Seleziona il file iniziale da cui generare tutte le derivate pubbliche.',
@@ -29,32 +33,32 @@ export const usePhotoUploadWizard = ({
   const firstStep = steps[0].id;
   const lastStep = steps[steps.length - 1].id;
 
-  const nextStep = useCallback(() => {
+  const selectStep = useCallback((stepId) => {
     if (loading) return;
 
-    if (!isEditMode && currentStep === 1 && !selectedFile) {
-      setError('Seleziona un\'immagine prima di continuare');
+    const blocker = getPhotoUploadStepBlocker({
+      targetStep: stepId,
+      isEditMode,
+      selectedFile,
+      title
+    });
+    if (blocker) {
+      setError(blocker.message);
+      setCurrentStep(blocker.step);
       return;
     }
 
-    if (currentStep === 2) {
-      const normalizedTitle = title.trim();
-      if (!normalizedTitle) {
-        setError('Il campo Titolo è obbligatorio');
-        return;
-      }
-      if (normalizedTitle.length < 3) {
-        setError('Il titolo deve contenere almeno 3 caratteri');
-        return;
-      }
-    }
+    setError('');
+    setCurrentStep(stepId);
+  }, [isEditMode, loading, selectedFile, setError, title]);
 
+  const nextStep = useCallback(() => {
+    if (loading) return;
     const index = steps.findIndex((step) => step.id === currentStep);
     if (index >= 0 && index < steps.length - 1) {
-      setError('');
-      setCurrentStep(steps[index + 1].id);
+      selectStep(steps[index + 1].id);
     }
-  }, [loading, isEditMode, currentStep, selectedFile, title, steps, setError]);
+  }, [currentStep, loading, selectStep, steps]);
 
   const prevStep = useCallback(() => {
     if (loading) return;
@@ -64,12 +68,6 @@ export const usePhotoUploadWizard = ({
       setCurrentStep(steps[index - 1].id);
     }
   }, [loading, currentStep, steps, setError]);
-
-  const selectStep = useCallback((stepId) => {
-    if (loading) return;
-    setError('');
-    setCurrentStep(stepId);
-  }, [loading, setError]);
 
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -101,10 +99,7 @@ export const usePhotoUploadWizard = ({
       }
 
       if (currentStep !== lastStep) {
-        const disabledNext =
-          (!isEditMode && currentStep === 1 && !selectedFile) ||
-          (currentStep === 2 && title.trim().length < 3);
-        if (!disabledNext) nextStep();
+        nextStep();
         return;
       }
 
@@ -140,8 +135,21 @@ export const usePhotoUploadWizard = ({
     const actionsLayoutClass = isLastStep ? ' final-step' : (isFirstStep ? ' single-action' : ' dual-action');
     const isNextDisabled =
       loading ||
-      (!isEditMode && currentStep === 1 && !selectedFile) ||
-      (currentStep === 2 && title.trim().length < 3);
+      !canAccessPhotoUploadStep({
+        targetStep: steps[currentStepIndex + 1]?.id ?? currentStep,
+        isEditMode,
+        selectedFile,
+        title
+      });
+    const isStepDisabled = (stepId) => (
+      loading
+      || !canAccessPhotoUploadStep({
+        targetStep: stepId,
+        isEditMode,
+        selectedFile,
+        title
+      })
+    );
 
     return {
       currentStep,
@@ -157,7 +165,8 @@ export const usePhotoUploadWizard = ({
       isFirstStep,
       isLastStep,
       actionsLayoutClass,
-      isNextDisabled
+      isNextDisabled,
+      isStepDisabled
     };
   }, [
     currentStep,

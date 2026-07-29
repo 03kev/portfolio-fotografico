@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { afterEach, test } = require('node:test');
-const { env, validateEnv } = require('./env');
+const { env, validateEnv } = require('../src/config/env');
 
 const originalEnvironment = { ...env };
 

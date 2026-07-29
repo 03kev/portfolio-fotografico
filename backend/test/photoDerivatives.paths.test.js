@@ -3,7 +3,7 @@ const test = require('node:test');
 const {
     buildPhotoAssetPaths,
     normalizePrivateSourcePathForPhotoId
-} = require('./photoDerivatives');
+} = require('../src/services/photoDerivatives');
 
 const GENERATION = '01JGFJJZ00K4J3ZMA6VBYDT2QF';
 

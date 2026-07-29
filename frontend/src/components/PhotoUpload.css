@@ -215,7 +215,7 @@
   top: var(--shell-step-top);
   z-index: 11;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--shell-step-count, 3), minmax(0, 1fr));
   gap: var(--shell-step-gap);
   padding: var(--shell-step-pad);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
@@ -244,6 +244,11 @@
   color: rgba(255, 255, 255, 0.86);
   border-color: rgba(255, 255, 255, 0.14);
   background: rgba(255, 255, 255, 0.05);
+}
+
+.step-navbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
 }
 
 .step-navbar button.active {

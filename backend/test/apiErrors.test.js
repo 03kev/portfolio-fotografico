@@ -1,10 +1,10 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { VersionConflictError } = require('../repositories/errors');
+const { VersionConflictError } = require('../src/repositories/errors');
 const {
     createApiError,
     toApiErrorResponse
-} = require('./apiErrors');
+} = require('../src/utils/apiErrors');
 
 test('serializes a domain conflict with stable code and safe details', () => {
     const response = toApiErrorResponse(

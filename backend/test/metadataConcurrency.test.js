@@ -11,6 +11,7 @@ const {
 // behavior of the current read-modify-write storage model. When metadata
 // becomes transactional, these expectations must be inverted.
 process.env.NODE_ENV = 'test';
+process.env.METADATA_BACKEND = 'json';
 process.env.API_WRITE_TOKEN = '';
 process.env.API_WRITE_TOKEN_HASH = '';
 process.env.API_SESSION_SECRET = '';
@@ -172,7 +173,7 @@ function createControlledObjectStore() {
 }
 
 const objectStore = createControlledObjectStore();
-const r2StoragePath = require.resolve('./r2Storage');
+const r2StoragePath = require.resolve('../src/services/r2Storage');
 require.cache[r2StoragePath] = {
     id: r2StoragePath,
     filename: r2StoragePath,
@@ -192,11 +193,11 @@ require.cache[r2StoragePath] = {
 };
 
 const express = require('express');
-const photoRoutes = require('../routes/photos');
-const seriesRoutes = require('../routes/series');
-const { portfolioRepository } = require('../repositories');
-const { toStoragePhoto } = require('./photoRecord');
-const { readMetadataFile, writeMetadataFile } = require('./metadataStorage');
+const photoRoutes = require('../src/routes/photos');
+const seriesRoutes = require('../src/routes/series');
+const { portfolioRepository } = require('../src/repositories');
+const { toStoragePhoto } = require('../src/services/photoRecord');
+const { readMetadataFile, writeMetadataFile } = require('../src/services/metadataStorage');
 
 const PHOTOS_KEY = 'data/photos.json';
 const SERIES_KEY = 'data/series.json';
