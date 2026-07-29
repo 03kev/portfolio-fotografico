@@ -189,8 +189,8 @@ const AdminBarButton = styled(motion.button)`
   }
 
   &:disabled {
-    opacity: 0.6;
     cursor: not-allowed;
+    opacity: 0.45;
   }
 
   @media (max-width: 520px) {
@@ -1055,6 +1055,7 @@ function SeriesDetail() {
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [gridRowsOverride, setGridRowsOverride] = useState(null);
+  const layoutBaseVersionRef = useRef(null);
   const CANVAS_MAX_WIDTH = 1200;
   const EDITOR_MIN_CANVAS_WIDTH = 960;
   const [canvasWidth, setCanvasWidth] = useState(CANVAS_MAX_WIDTH);
@@ -1218,25 +1219,20 @@ function SeriesDetail() {
     }
   }, [currentSeries, photos]);
 
-  useEffect(() => {
-    if (!currentSeries) return;
+  useLayoutEffect(() => {
+    if (!currentSeries || layoutMode) return;
 
     const prepared = prepareContent(currentSeries.content || [], true);
     setDraftContent(prepared);
     // prepareContent intentionally follows the current canvas geometry; this
     // initialization runs only when the source series changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSeries]);
+  }, [currentSeries, layoutMode]);
 
   useEffect(() => {
-    if (!savedContentPreview || !currentSeries) return;
-
-    const serverContent = JSON.stringify(currentSeries.content || []);
-    const previewContent = JSON.stringify(savedContentPreview || []);
-    if (serverContent === previewContent) {
-      setSavedContentPreview(null);
-    }
-  }, [currentSeries, savedContentPreview]);
+    if (!savedContentPreview || isSavingLayout) return;
+    setSavedContentPreview(null);
+  }, [isSavingLayout, savedContentPreview]);
 
   useLayoutEffect(() => {
     const container = canvasFrameRef.current;
@@ -1731,9 +1727,11 @@ function SeriesDetail() {
     setIsSavingLayout(true);
 
     try {
-      await updateSeries(currentSeries.id, {
-        content: cleanContent,
-      });
+      await updateSeries(
+        currentSeries.id,
+        { content: cleanContent },
+        { expectedVersion: layoutBaseVersionRef.current ?? currentSeries.version }
+      );
       toast.success(adminFeedback.seriesLayoutSaved());
     } catch (err) {
       // rollback in caso di errore
@@ -1750,6 +1748,28 @@ function SeriesDetail() {
     if (!currentSeries) return;
     const prepared = prepareContent(currentSeries.content || [], true);
     setDraftContent(prepared);
+    layoutBaseVersionRef.current = currentSeries.version ?? null;
+  };
+
+  const handleOpenSeriesEditor = () => {
+    if (layoutMode || isSavingLayout) return;
+    setShowEditor(true);
+  };
+
+  const handleToggleLayoutMode = () => {
+    if (isSavingLayout) return;
+
+    if (layoutMode) {
+      setLayoutMode(false);
+      setSelectedId(null);
+      setQuickAddOpen(false);
+      return;
+    }
+
+    layoutBaseVersionRef.current = currentSeries?.version ?? null;
+    setSelectedId(null);
+    setQuickAddOpen(false);
+    setLayoutMode(true);
   };
 
   const getViewportInsertPoint = () => {
@@ -2109,28 +2129,26 @@ function SeriesDetail() {
 
           {isAdmin && (
             <AdminBar>
-              <AdminBarButton
-                type="button"
-                onClick={() => setShowEditor(true)}
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-              >
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                  <PencilLine size={16} /> Modifica
-                </span>
-              </AdminBarButton>
+              {!layoutMode && (
+                <AdminBarButton
+                  type="button"
+                  onClick={handleOpenSeriesEditor}
+                  disabled={isSavingLayout}
+                  title={isSavingLayout ? 'Attendi il salvataggio del layout' : 'Modifica serie'}
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                    <PencilLine size={16} /> Modifica
+                  </span>
+                </AdminBarButton>
+              )}
 
               {!isCompactSeriesLayout && (
                 <AdminBarButton
                   type="button"
-                  onClick={() => {
-                    if (isSavingLayout) return;
-                    if (!layoutMode) {
-                      setSelectedId(null);
-                      setQuickAddOpen(false);
-                    }
-                    setLayoutMode(v => !v);
-                  }}
+                  onClick={handleToggleLayoutMode}
+                  disabled={isSavingLayout}
                   whileHover={{ scale: 1.03 }}
                   whileTap={{ scale: 0.97 }}
                 >

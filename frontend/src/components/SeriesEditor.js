@@ -103,6 +103,7 @@ const SeriesEditor = ({ series, onClose }) => {
   const closeTimerRef = useRef(null);
   const blockElementRefs = useRef(new Map());
   const pendingBlockScrollRef = useRef(null);
+  const baseVersionRef = useRef(series?.version);
   const isEditMode = Boolean(series);
 
   const [formData, setFormData] = useState(() => buildInitialForm(series));
@@ -417,7 +418,9 @@ const SeriesEditor = ({ series, onClose }) => {
     setFormError('');
     try {
       if (isEditMode) {
-        const updatedSeries = await updateSeries(series.id, payload);
+        const updatedSeries = await updateSeries(series.id, payload, {
+          expectedVersion: baseVersionRef.current
+        });
         toast.success(adminFeedback.seriesUpdated(updatedSeries));
         onClose();
         return;

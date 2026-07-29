@@ -232,10 +232,11 @@ export function SeriesProvider({ children }) {
         }
     }, [refreshAfterConflict]);
 
-    const updateSeries = useCallback(async (id, seriesData) => {
+    const updateSeries = useCallback(async (id, seriesData, options = {}) => {
         try {
             const current = findCurrentSeries(id);
-            const response = await seriesService.update(id, seriesData, current?.version);
+            const expectedVersion = options.expectedVersion ?? current?.version;
+            const response = await seriesService.update(id, seriesData, expectedVersion);
             const updatedSeries = unwrapApiData(response, null);
             dispatch({ type: ACTIONS.UPDATE_SERIES, payload: updatedSeries });
             return updatedSeries;
