@@ -4,6 +4,9 @@ import { useAdaptiveHeaderPill } from '../../hooks/useAdaptiveHeaderPill';
 
 const PhotoUploadShell = ({
   isEditMode,
+  eyebrow,
+  title,
+  titleIcon,
   currentStepIndex,
   steps,
   currentStep,
@@ -17,6 +20,13 @@ const PhotoUploadShell = ({
   footer,
   onBackdropClick
 }) => {
+  const defaultTitle = isEditMode ? 'Modifica Foto' : 'Carica Nuova Foto';
+  const defaultEyebrow = isEditMode ? 'Editor foto' : 'Nuovo upload';
+  const headerTitle = title || defaultTitle;
+  const headerEyebrow = eyebrow || defaultEyebrow;
+  const headerIcon = titleIcon || (
+    isEditMode ? <PencilLine size={18} /> : <Upload size={18} />
+  );
   const stepFullLabel = `Step ${currentStepIndex + 1}/${steps.length}`;
   const stepShortLabel = `${currentStepIndex + 1}/${steps.length}`;
   const {
@@ -41,7 +51,7 @@ const PhotoUploadShell = ({
       <div ref={headerRef} className="upload-header">
         <div ref={headerCopyRef} className="upload-header-copy">
           <div ref={toplineRef} className="upload-header-topline">
-            <span ref={leadingRef} className="upload-eyebrow">{isEditMode ? 'Editor foto' : 'Nuovo upload'}</span>
+            <span ref={leadingRef} className="upload-eyebrow">{headerEyebrow}</span>
             {progressPillMode !== 'hidden' && (
               <span className="upload-progress-pill">
                 {progressPillMode === 'short' ? stepShortLabel : stepFullLabel}
@@ -59,10 +69,10 @@ const PhotoUploadShell = ({
           <h2 className="upload-header-title">
             <span className="upload-header-title-inner">
               <span className="upload-header-title-icon" aria-hidden="true">
-                {isEditMode ? <PencilLine size={18} /> : <Upload size={18} />}
+                {headerIcon}
               </span>
               <span className="upload-header-title-text">
-                {isEditMode ? 'Modifica Foto' : 'Carica Nuova Foto'}
+                {headerTitle}
               </span>
             </span>
           </h2>
@@ -72,6 +82,7 @@ const PhotoUploadShell = ({
           </p>
         </div>
         <button
+          type="button"
           ref={trailingRef}
           className="close-btn"
           onClick={() => !loading && onInitClose()}
@@ -85,6 +96,7 @@ const PhotoUploadShell = ({
       <nav className="step-navbar">
         {steps.map((step, index) => (
           <button
+            type="button"
             key={step.id}
             className={`${currentStep === step.id ? 'active' : ''}${currentStep > step.id ? ' completed' : ''}`}
             onClick={() => onStepSelect(step.id)}
