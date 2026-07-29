@@ -330,6 +330,7 @@ class JsonPortfolioRepository {
             referentialIntegrity: false,
             perEntityWrites: false,
             distributedMediaMutations: false,
+            distributedPhotoCreations: false,
             auditHistory: false
         });
         this.photos = new JsonPhotoRepository(metadataStorage);

@@ -377,7 +377,7 @@ async function importMetadataSnapshot(pool, snapshot, { dryRun = false } = {}) {
                     updated_at_ms, derivatives_version, created_at, media_generation
                  ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb,
-                    $12, $13, $14, $15, $16, $17, $18, $19
+                    $12, $13, $14, $15, $16, $17, CURRENT_TIMESTAMP, $18
                  )`,
                 [
                     photo.id,
@@ -397,11 +397,26 @@ async function importMetadataSnapshot(pool, snapshot, { dryRun = false } = {}) {
                     photo.mobileImage,
                     photo.updatedAt,
                     photo.derivativesVersion,
-                    new Date(photo.id).toISOString(),
                     photo.mediaGeneration || null
                 ]
             );
         }
+
+        await client.query(
+            `SELECT setval(
+                'portfolio_photo_id_seq',
+                GREATEST(
+                    COALESCE((SELECT MAX(id) FROM photos), 0),
+                    COALESCE((SELECT MAX(photo_id) FROM photo_creation_intents), 0),
+                    1
+                ),
+                EXISTS (
+                    SELECT 1 FROM photos
+                    UNION ALL
+                    SELECT 1 FROM photo_creation_intents
+                )
+            )`
+        );
 
         for (const item of report.normalized.series) {
             await client.query(

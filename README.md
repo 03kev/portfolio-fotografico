@@ -388,6 +388,11 @@ L’adapter JSON R2 è mantenuto temporaneamente per migrazione e rollback e ver
 rimosso dopo il cutover verificato. I suoi snapshot si trovano sotto
 `R2_METADATA_PREFIX` (default: `data`):
 
+Il nuovo upload admin non è disponibile con `METADATA_BACKEND=json`: la
+creazione idempotente richiede Postgres e restituisce
+`TRANSACTIONAL_PHOTO_CREATION_REQUIRED`. Per provare upload e finalizzazione in
+locale bisogna quindi usare esplicitamente `METADATA_BACKEND=postgres`.
+
 - `data/photos.json`
 - `data/series.json`
 

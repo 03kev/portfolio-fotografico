@@ -165,7 +165,7 @@ integrationTest('every domain check constraint has an actionable error message',
            AND model_constraint.contype = 'c'
            AND relation.relname = ANY($2::text[])
          ORDER BY model_constraint.conname`,
-        [schemaName, ['photos', 'series', 'series_photos']]
+        [schemaName, ['photos', 'series', 'series_photos', 'photo_creation_intents']]
     );
     const fallbackMessage = 'Uno dei dati inviati non rispetta i vincoli richiesti.';
     const missingMessages = result.rows

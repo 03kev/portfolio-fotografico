@@ -37,6 +37,26 @@ const STEP_DESCRIPTIONS = {
 
 const getCreateUploadStepLabel = (step = 'create') => CREATE_UPLOAD_STEP_LABELS[step] || 'creazione foto';
 
+const createUploadIntentId = () => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+    if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+        const bytes = crypto.getRandomValues(new Uint8Array(16));
+        bytes[6] = (bytes[6] & 0x0f) | 0x40;
+        bytes[8] = (bytes[8] & 0x3f) | 0x80;
+        const hex = [...bytes].map((value) => value.toString(16).padStart(2, '0'));
+        return [
+            hex.slice(0, 4).join(''),
+            hex.slice(4, 6).join(''),
+            hex.slice(6, 8).join(''),
+            hex.slice(8, 10).join(''),
+            hex.slice(10).join('')
+        ].join('-');
+    }
+    throw new Error('Il browser non supporta la generazione sicura della chiave di upload.');
+};
+
 const buildCreateUploadErrorMessage = (error, step = 'create') => {
     const stepLabel = getCreateUploadStepLabel(step);
     return buildOperationErrorMessage(error, stepLabel);
@@ -440,8 +460,8 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             tags: Array.isArray(formData.tags) ? [...formData.tags] : []
         };
         const pendingPreviewUrl = preview || '';
-        const photoId = Date.now();
-        const pendingId = photoId;
+        const uploadIntentId = createUploadIntentId();
+        const pendingId = `pending:${uploadIntentId}`;
 
         actions.addPendingUpload({
             id: pendingId,
@@ -464,6 +484,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         }
 
         let currentUploadStep = 'sign';
+        let finalizationPayload = null;
         let softTimer = null;
         const startSoftProgress = (from = 84, to = 95, intervalMs = 260) => {
             let current = Math.max(0, Math.min(100, from));
@@ -490,7 +511,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                 buildPhotoOperationStatus('create', 'sign')
             );
             const signedData = await signSourceUpload({
-                uploadId: String(photoId),
+                uploadIntentId,
                 file: selectedFileSnapshot
             });
 
@@ -516,16 +537,15 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             );
             startSoftProgress(84, 95);
 
-            const uploadData = {
+            finalizationPayload = {
                 ...formDataSnapshot,
-                photoId,
+                photoId: signedData.photoId,
+                uploadIntentId: signedData.uploadIntentId,
                 sourcePath: signedData.sourcePath,
-                mediaGeneration: signedData.mediaGeneration,
-                sourceContentType: selectedFileSnapshot.type,
                 settings: nextSettings,
                 tags: formDataSnapshot.tags
             };
-            const result = await actions.createPhotoInBackground(uploadData);
+            const result = await actions.createPhotoInBackground(finalizationPayload);
             stopSoftProgress();
 
             actions.setPhotoOpStatus(
@@ -537,28 +557,45 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                 actions.clearPhotoOpStatus(pendingId);
             }, 250);
             if (onUploadSuccess) onUploadSuccess(result);
-        } catch (err) {
+        } catch (caughtError) {
             stopSoftProgress();
-            console.error('Errore upload foto:', err);
+            let errorToReport = caughtError;
+            console.error('Errore upload foto:', caughtError);
             actions.removePendingUpload(pendingId);
             actions.clearPhotoOpStatus(pendingId);
-            if (isAmbiguousMutationError(err)) {
+            if (isAmbiguousMutationError(caughtError)) {
                 const refreshedPhotos = await actions.fetchPhotos({ force: true });
                 const createdPhoto = Array.isArray(refreshedPhotos)
-                    ? refreshedPhotos.find((photo) => String(photo.id) === String(photoId))
+                    ? refreshedPhotos.find(
+                        (photo) => String(photo.id) === String(finalizationPayload?.photoId)
+                    )
                     : null;
                 if (createdPhoto) {
                     if (onUploadSuccess) onUploadSuccess(createdPhoto);
                     return;
                 }
+                if (currentUploadStep === 'create' && finalizationPayload) {
+                    try {
+                        const replayedPhoto = await actions.createPhotoInBackground(
+                            finalizationPayload
+                        );
+                        if (onUploadSuccess) onUploadSuccess(replayedPhoto);
+                        return;
+                    } catch (replayError) {
+                        errorToReport = replayError;
+                    }
+                }
                 if (!Array.isArray(refreshedPhotos)) {
-                    err.outcomeUnknown = true;
+                    errorToReport.outcomeUnknown = true;
                 }
             }
-            const errorMessage = buildCreateUploadErrorMessage(err, currentUploadStep);
+            const errorMessage = buildCreateUploadErrorMessage(
+                errorToReport,
+                currentUploadStep
+            );
             if (onUploadError) {
                 onUploadError({
-                    ...err,
+                    ...errorToReport,
                     userMessage: errorMessage
                 });
             }

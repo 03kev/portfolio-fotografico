@@ -1,11 +1,24 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const {
+    buildPhotoCreationSourcePath,
     buildPhotoAssetPaths,
     normalizePrivateSourcePathForPhotoId
 } = require('../src/services/photoDerivatives');
 
 const GENERATION = '01JGFJJZ00K4J3ZMA6VBYDT2QF';
+const INTENT_ID = '10000000-0000-4000-8000-000000000001';
+
+test('isolates a pending source under its upload intent before publication', () => {
+    assert.equal(
+        buildPhotoCreationSourcePath(INTENT_ID, 'jpg'),
+        `/private/source/photo-creation-intents/${INTENT_ID}/source.jpg`
+    );
+    assert.throws(
+        () => buildPhotoCreationSourcePath('not-an-intent', 'jpg'),
+        /uploadIntentId/
+    );
+});
 
 test('requires one valid ULID generation for every photo path', () => {
     assert.throws(

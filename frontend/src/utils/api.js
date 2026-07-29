@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { API_BASE_URL, NETWORK_TIMEOUTS } from './constants';
+import { isAmbiguousMutationError } from './operationErrors';
 
 export const ADMIN_SESSION_INVALIDATED_EVENT = 'admin-session-invalidated';
 
@@ -117,16 +118,7 @@ export const photoService = {
   // Genera URL firmata per upload diretto su R2
   getUploadUrl: (payload) => api.post('/photos/upload-url', payload),
   
-  // Upload nuova foto
-  upload: (formData) => {
-    return api.post('/photos', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-  },
-
-  // Crea foto salvando solo metadata (file gia` caricato su R2)
+  // Finalizza una foto da una prenotazione e da una source già caricata su R2.
   create: (data) => api.post('/photos', data),
   
   // Aggiorna foto
@@ -253,16 +245,29 @@ export const auditService = {
   getById: (id) => api.get(`/audit/${id}`),
 };
 
-export async function signSourceUpload({ uploadId, file }) {
-  const response = await photoService.getUploadUrl({
-    uploadId: String(uploadId),
-    variant: 'source',
-    mimetype: file?.type,
-    fileSize: file?.size
-  });
+export async function signSourceUpload({ uploadIntentId, file }) {
+  const requestSignedUrl = () => photoService.getUploadUrl({
+      uploadIntentId,
+      variant: 'source',
+      mimetype: file?.type,
+      fileSize: file?.size
+    });
+  let response;
+  try {
+    response = await requestSignedUrl();
+  } catch (error) {
+    if (!isAmbiguousMutationError(error)) throw error;
+    response = await requestSignedUrl();
+  }
   const signedData = response?.data?.data || response?.data;
 
-  if (!signedData?.uploadUrl || !signedData?.sourcePath) {
+  if (
+    !signedData?.uploadIntentId
+    || !Number.isSafeInteger(Number(signedData?.photoId))
+    || Number(signedData.photoId) <= 0
+    || !signedData?.uploadUrl
+    || !signedData?.sourcePath
+  ) {
     const error = new Error('URL di upload source non valida ricevuta dal server.');
     error.code = 'UPLOAD_SIGN_INVALID_RESPONSE';
     throw error;

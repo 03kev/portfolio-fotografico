@@ -1,4 +1,3 @@
-const crypto = require('crypto');
 const {
     getPrivateObject,
     putPrivateObject,
@@ -151,21 +150,6 @@ function describeDeleteError(error) {
     };
 }
 
-function normalizeUploadId(value) {
-    const normalized = String(value || '')
-        .trim()
-        .replace(/[^a-zA-Z0-9_-]/g, '')
-        .slice(0, 48);
-    return normalized || null;
-}
-
-function buildUploadFilename(mimetype, uploadId) {
-    const safeUploadId = normalizeUploadId(uploadId) || `${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
-    const mimeExt = mimetype && mimetype.includes('/') ? `.${mimetype.split('/')[1]}` : '.bin';
-    const extension = mimeExt.toLowerCase();
-    return `photo_${safeUploadId}${extension}`;
-}
-
 function getImageExtensionFromMimeType(mimetype) {
     const subtype = String(mimetype || '')
         .split('/')
@@ -212,7 +196,6 @@ async function readPrivateSourceObject(privatePath) {
 }
 
 module.exports = {
-    buildUploadFilename,
     describeDeleteError,
     getImageExtensionFromMimeType,
     isAllowedMimeType,

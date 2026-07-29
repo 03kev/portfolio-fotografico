@@ -107,6 +107,17 @@ function buildPhotoAssetPaths(photoId, sourceExtension = 'bin', mediaGeneration)
     };
 }
 
+function buildPhotoCreationSourcePath(uploadIntentId, sourceExtension = 'bin') {
+    const normalizedIntentId = String(uploadIntentId || '').trim().toLowerCase();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(normalizedIntentId)) {
+        throw new TypeError('uploadIntentId non valido per il path source.');
+    }
+    const cleanSourceExtension = String(sourceExtension || 'bin')
+        .replace(/[^a-z0-9]/gi, '')
+        || 'bin';
+    return `${PRIVATE_SOURCE_PREFIX}/photo-creation-intents/${normalizedIntentId}/source.${cleanSourceExtension}`;
+}
+
 function clamp01(value) {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return null;
@@ -323,6 +334,7 @@ async function generatePhotoDerivatives(sourceBuffer, cropProfiles = null) {
 }
 
 module.exports = {
+    buildPhotoCreationSourcePath,
     buildPhotoAssetPaths,
     normalizeMediaGeneration,
     buildDefaultCropProfiles,

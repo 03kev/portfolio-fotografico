@@ -34,7 +34,7 @@ they benefit from uniqueness, ordering and foreign-key enforcement.
 
 | Operation | Transaction/concurrency rule | Conflict |
 | --- | --- | --- |
-| Create photo | Single insert; stable client-provided ID makes retry detectable | Duplicate ID: `409` |
+| Create photo | Persistent idempotency intent, expiring processing lease, lease-specific immutable generation, atomic intent+photo finalize | Different payload on replay, active lease or duplicate ID: `409`; expired intent: `410` |
 | Update photo | Transaction locks the photo, rejects active media work and applies the patch | Missing HTTP precondition: `428`; stale expected version: `409` |
 | Replace source/crop/regenerate | Short reservation transaction, immutable R2 generation, atomic finalize transaction | Active operation or stale version: `409` |
 | Delete photo | Serializable transaction locks the photo, rejects active media work, removes all series references, then deletes it | Missing HTTP precondition: `428`; stale expected version: `409`; serialization/deadlock is retried |
@@ -67,6 +67,42 @@ change.
 R2 cannot participate in a PostgreSQL transaction. Media writes therefore use
 ULID generation-specific immutable keys: failed work is never referenced, and
 a successful finalize changes the database pointer and version atomically.
+For a new photo, the direct-upload source first belongs to the persistent
+`photo_creation_intents` record. Each processing lease receives a different
+output generation and copies the source plus derivatives there. This is a
+fencing mechanism: the lease UUID authorizes database finalization, while its
+ULID generation isolates every R2 path. There is intentionally no lease
+counter. A worker that resumes after its lease expires can still write only to
+its own generation and cannot finalize unless its UUID is still the active
+lease. The short final transaction inserts the photo and marks that exact
+generation complete; replay returns the same row without invoking Sharp or R2
+again.
+
+## Photo creation intent retention
+
+`expires_at` is the retry window for unfinished work, not a lifetime for every
+intent:
+
+- a `pending` intent expires after the configured preparation TTL (currently
+  24 hours);
+- a `processing` intent keeps the same intent expiry and additionally has a
+  short lease expiry. An expired lease can be reclaimed only while the intent
+  itself is still valid;
+- a `completed` intent remains linked to its photo indefinitely and acts as the
+  authoritative idempotency record;
+- if that photo is later deleted, the completed intent remains as a tombstone,
+  so replay returns `PHOTO_UPLOAD_RESULT_GONE` and cannot recreate the photo.
+
+Preparing an already completed intent never emits another signed upload URL.
+It returns `PHOTO_UPLOAD_ALREADY_COMPLETED`, or
+`PHOTO_UPLOAD_RESULT_GONE` when its photo was deleted.
+
+A future storage-maintenance job may classify and remove only resources whose
+ownership is provable: expired pending intents, expired processing leases,
+abandoned staging objects and unreferenced output generations. Completed
+intents linked to live photos and deletion tombstones have different retention
+requirements and must not be treated as 24-hour temporary rows. That cleanup
+and any outbox are deliberately outside the current change.
 Public derivative generations and private source revisions are intentionally
 independent: crop/regenerate creates a new derivative generation without
 copying the full-resolution source, while source replacement creates both.

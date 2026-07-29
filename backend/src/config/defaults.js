@@ -16,6 +16,9 @@ const DEFAULTS = Object.freeze({
     publicAssetCacheControl: 'public, max-age=31536000, immutable',
     r2SignedUploadUrlExpiresSeconds: 600, // 10 minuti
     photoMediaMutationTtlMs: 20 * 60 * 1000, // 20 minuti
+    photoCreationLeaseTtlMs: 20 * 60 * 1000, // 20 minuti
+    // Scadenza della preparazione pending/processing; i completed restano tombstone.
+    photoCreationIntentTtlMs: 24 * 60 * 60 * 1000,
 
     r2MetadataPrefix: 'data'
 });

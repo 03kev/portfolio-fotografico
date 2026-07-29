@@ -70,6 +70,7 @@ function mapPhotoRow(row) {
         updatedAt: Number(row.updated_at_ms),
         derivativesVersion: Number(row.derivatives_version),
         mediaGeneration: row.media_generation || '',
+        createdAt: new Date(row.created_at).toISOString(),
         version: Number(row.version)
     };
 }
@@ -130,6 +131,29 @@ function mapAuditRow(row) {
     };
 }
 
+function mapPhotoCreationIntentRow(row) {
+    if (!row) return null;
+    return {
+        id: String(row.id),
+        photoId: Number(row.photo_id),
+        sourcePath: row.source_path,
+        sourceContentType: row.source_content_type,
+        payloadHash: row.payload_hash || null,
+        status: row.status,
+        leaseId: row.lease_id ? String(row.lease_id) : null,
+        leaseGeneration: row.lease_generation || null,
+        leaseExpiresAt: row.lease_expires_at
+            ? new Date(row.lease_expires_at).toISOString()
+            : null,
+        completedGeneration: row.completed_generation || null,
+        expiresAt: new Date(row.expires_at).toISOString(),
+        completedAt: row.completed_at
+            ? new Date(row.completed_at).toISOString()
+            : null,
+        createdAt: new Date(row.created_at).toISOString()
+    };
+}
+
 function buildAuditChanges(beforeState, afterState) {
     const before = beforeState || {};
     const after = afterState || {};
@@ -182,9 +206,73 @@ async function insertAuditEvent(queryable, {
     return mapAuditRow(result.rows[0]);
 }
 
-function createdAtFromId(id) {
-    const date = new Date(Number(id));
-    return Number.isFinite(date.getTime()) ? date.toISOString() : new Date(0).toISOString();
+function normalizeUuid(value, fieldName) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(normalized)) {
+        throw new TypeError(`${fieldName} deve essere un UUID valido.`);
+    }
+    return normalized;
+}
+
+function normalizePayloadHash(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(normalized)) {
+        throw new TypeError('payloadHash deve essere un hash SHA-256 valido.');
+    }
+    return normalized;
+}
+
+async function insertPhotoRow(queryable, photo, {
+    creationIntentId = null,
+    createdAt = null
+} = {}) {
+    const photoId = normalizePositiveId(photo?.id, 'photoId');
+    const result = await queryable.query(
+        `INSERT INTO photos (
+            id, title, description, date_taken, location_name,
+            latitude, longitude, camera, lens, resolution, settings,
+            tags, source_path, source_content_type, mobile_image,
+            updated_at_ms, derivatives_version, created_at, media_generation,
+            creation_intent_id
+         ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb,
+            $12, $13, $14, $15, $16, $17,
+            COALESCE(
+                $18::timestamptz,
+                (
+                    SELECT created_at
+                    FROM photo_creation_intents
+                    WHERE id = $20::uuid
+                ),
+                CURRENT_TIMESTAMP
+            ),
+            $19, $20::uuid
+         )
+         RETURNING *`,
+        [
+            photoId,
+            photo.title,
+            photo.description || '',
+            photo.date || '',
+            photo.location,
+            Number(photo.lat),
+            Number(photo.lng),
+            photo.camera || '',
+            photo.lens || '',
+            photo.resolution || '',
+            JSON.stringify(photo.settings || {}),
+            photo.tags || [],
+            photo.sourcePath || '',
+            photo.sourceContentType || '',
+            Boolean(photo.mobileImage),
+            Number(photo.updatedAt) || 0,
+            Number(photo.derivativesVersion) || photoId,
+            createdAt || photo.createdAt || null,
+            photo.mediaGeneration || null,
+            creationIntentId
+        ]
+    );
+    return mapPhotoRow(result.rows[0]);
 }
 
 function extractContentPhotoIds(content) {
@@ -270,7 +358,11 @@ function translatePostgresError(error) {
             series_pkey: 'SERIES_ID_CONFLICT',
             series_title_key_unique: 'SERIES_TITLE_CONFLICT',
             series_slug_unique: 'SERIES_SLUG_CONFLICT',
-            series_photos_pkey: 'SERIES_PHOTO_CONFLICT'
+            series_photos_pkey: 'SERIES_PHOTO_CONFLICT',
+            photo_creation_intents_pkey: 'PHOTO_UPLOAD_INTENT_CONFLICT',
+            photo_creation_intents_photo_id_unique: 'PHOTO_ID_CONFLICT',
+            photo_creation_intents_source_path_unique: 'PHOTO_SOURCE_PATH_CONFLICT',
+            photos_creation_intent_unique: 'PHOTO_UPLOAD_INTENT_CONFLICT'
         };
         return new RepositoryConflictError(
             'Una risorsa con la stessa identità esiste già.',
@@ -391,6 +483,40 @@ function translatePostgresError(error) {
                 message: 'La generazione dell’operazione sui file non è valida. Ripeti l’operazione.',
                 field: 'mediaGeneration',
                 rule: 'ulid'
+            },
+            photo_creation_intents_photo_id_check: {
+                message: 'L’identificativo della foto prenotata deve essere un numero positivo.',
+                field: 'photoId',
+                rule: 'positive'
+            },
+            photo_creation_intents_source_content_type_check: {
+                message: 'Il tipo del file sorgente non può essere vuoto.',
+                field: 'sourceContentType'
+            },
+            photo_creation_intents_lease_generation_ulid: {
+                message: 'La generazione della lease di upload non è un ULID valido.',
+                field: 'mediaGeneration',
+                rule: 'ulid'
+            },
+            photo_creation_intents_completed_generation_ulid: {
+                message: 'La generazione completata dell’upload non è un ULID valido.',
+                field: 'mediaGeneration',
+                rule: 'ulid'
+            },
+            photo_creation_intents_payload_hash_format: {
+                message: 'L’impronta della richiesta di upload non è valida.',
+                field: 'payloadHash',
+                rule: 'sha256'
+            },
+            photo_creation_intents_status_check: {
+                message: 'Lo stato della prenotazione di upload non è valido.',
+                field: 'uploadIntent',
+                rule: 'status'
+            },
+            photo_creation_intents_lifecycle_check: {
+                message: 'Lo stato della prenotazione di upload è incompleto.',
+                field: 'uploadIntent',
+                rule: 'lifecycle'
             }
         };
         const constraint = String(error.constraint || '');
@@ -557,40 +683,7 @@ class PostgresPhotoRepository {
         const photoId = normalizePositiveId(photo?.id, 'photoId');
         try {
             return await withTransaction(this.pool, async (client) => {
-                const result = await client.query(
-                    `INSERT INTO photos (
-                        id, title, description, date_taken, location_name,
-                        latitude, longitude, camera, lens, resolution, settings,
-                        tags, source_path, source_content_type, mobile_image,
-                        updated_at_ms, derivatives_version, created_at, media_generation
-                     ) VALUES (
-                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb,
-                        $12, $13, $14, $15, $16, $17, $18, $19
-                     )
-                     RETURNING *`,
-                    [
-                        photoId,
-                        photo.title,
-                        photo.description || '',
-                        photo.date || '',
-                        photo.location,
-                        Number(photo.lat),
-                        Number(photo.lng),
-                        photo.camera || '',
-                        photo.lens || '',
-                        photo.resolution || '',
-                        JSON.stringify(photo.settings || {}),
-                        photo.tags || [],
-                        photo.sourcePath || '',
-                        photo.sourceContentType || '',
-                        Boolean(photo.mobileImage),
-                        Number(photo.updatedAt) || 0,
-                        Number(photo.derivativesVersion) || photoId,
-                        createdAtFromId(photoId),
-                        photo.mediaGeneration || null
-                    ]
-                );
-                const created = mapPhotoRow(result.rows[0]);
+                const created = await insertPhotoRow(client, photo);
                 await insertAuditEvent(client, {
                     entityType: 'photo',
                     entityId: photoId,
@@ -837,6 +930,392 @@ class PostgresPhotoRepository {
             photo: mapPhotoRow(row),
             operation: activeMediaOperationFromRow(row)
         };
+    }
+}
+
+class PostgresPhotoCreationRepository {
+    constructor(pool) {
+        this.pool = pool;
+    }
+
+    async createOrGet({
+        id,
+        sourcePath,
+        sourceContentType,
+        ttlMs
+    }) {
+        const intentId = normalizeUuid(id, 'uploadIntentId');
+        const normalizedTtlMs = Math.max(
+            60_000,
+            Math.min(Number(ttlMs) || 86_400_000, 7 * 86_400_000)
+        );
+        try {
+            return await withTransaction(this.pool, async (client) => {
+                const validatePreparationReplay = async (existingIntent) => {
+                    if (existingIntent.source_content_type !== sourceContentType) {
+                        throw new RepositoryConflictError(
+                            'La chiave di idempotenza è già associata a un altro upload.',
+                            'PHOTO_UPLOAD_INTENT_MISMATCH',
+                            { uploadIntentId: intentId }
+                        );
+                    }
+                    if (
+                        existingIntent.status !== 'completed'
+                        && existingIntent.intent_expired
+                    ) {
+                        const expired = new Error('La prenotazione dell’upload è scaduta.');
+                        expired.status = 410;
+                        expired.code = 'PHOTO_UPLOAD_INTENT_EXPIRED';
+                        expired.details = { uploadIntentId: intentId };
+                        throw expired;
+                    }
+                    if (existingIntent.status === 'completed') {
+                        const completedPhoto = await client.query(
+                            'SELECT id FROM photos WHERE creation_intent_id = $1::uuid',
+                            [intentId]
+                        );
+                        if (!completedPhoto.rows[0]) {
+                            const deleted = new Error(
+                                'La foto creata da questa prenotazione è stata eliminata.'
+                            );
+                            deleted.status = 410;
+                            deleted.code = 'PHOTO_UPLOAD_RESULT_GONE';
+                            deleted.details = { uploadIntentId: intentId };
+                            throw deleted;
+                        }
+                        throw new RepositoryConflictError(
+                            'Questa prenotazione ha già completato la creazione della foto.',
+                            'PHOTO_UPLOAD_ALREADY_COMPLETED',
+                            {
+                                uploadIntentId: intentId,
+                                photoId: String(existingIntent.photo_id)
+                            }
+                        );
+                    }
+                    if (existingIntent.lease_active) {
+                        throw new RepositoryConflictError(
+                            'La foto è già in fase di elaborazione. Riprova tra poco.',
+                            'PHOTO_CREATE_IN_PROGRESS',
+                            { uploadIntentId: intentId }
+                        );
+                    }
+                    return mapPhotoCreationIntentRow(existingIntent);
+                };
+                const replay = await client.query(
+                    `SELECT *,
+                            expires_at <= CURRENT_TIMESTAMP AS intent_expired,
+                            (
+                                status = 'processing'
+                                AND lease_expires_at > CURRENT_TIMESTAMP
+                            ) AS lease_active
+                     FROM photo_creation_intents
+                     WHERE id = $1::uuid
+                     FOR UPDATE`,
+                    [intentId]
+                );
+                if (replay.rows[0]) {
+                    return validatePreparationReplay(replay.rows[0]);
+                }
+
+                const inserted = await client.query(
+                    `INSERT INTO photo_creation_intents (
+                        id, source_path, source_content_type, expires_at
+                     ) VALUES (
+                        $1::uuid, $2, $3,
+                        CURRENT_TIMESTAMP + ($4::bigint * INTERVAL '1 millisecond')
+                     )
+                     ON CONFLICT (id) DO NOTHING
+                     RETURNING *`,
+                    [
+                        intentId,
+                        sourcePath,
+                        sourceContentType,
+                        normalizedTtlMs
+                    ]
+                );
+                if (inserted.rows[0]) {
+                    return mapPhotoCreationIntentRow(inserted.rows[0]);
+                }
+                const row = (
+                    await client.query(
+                        `SELECT *,
+                                expires_at <= CURRENT_TIMESTAMP AS intent_expired,
+                                (
+                                    status = 'processing'
+                                    AND lease_expires_at > CURRENT_TIMESTAMP
+                                ) AS lease_active
+                         FROM photo_creation_intents
+                         WHERE id = $1::uuid
+                         FOR UPDATE`,
+                        [intentId]
+                    )
+                ).rows[0];
+                if (!row) {
+                    throw new RepositoryConflictError(
+                        'Impossibile recuperare la prenotazione dell’upload.',
+                        'PHOTO_UPLOAD_INTENT_CONFLICT'
+                    );
+                }
+
+                return validatePreparationReplay(row);
+            });
+        } catch (error) {
+            throw translatePostgresError(error);
+        }
+    }
+
+    async findById(id) {
+        const intentId = normalizeUuid(id, 'uploadIntentId');
+        const result = await this.pool.query(
+            'SELECT * FROM photo_creation_intents WHERE id = $1::uuid',
+            [intentId]
+        );
+        return mapPhotoCreationIntentRow(result.rows[0]);
+    }
+
+    async claim(id, {
+        leaseId,
+        photoId,
+        generation,
+        sourcePath,
+        payloadHash,
+        leaseTtlMs
+    }) {
+        const intentId = normalizeUuid(id, 'uploadIntentId');
+        const normalizedLeaseId = normalizeUuid(leaseId, 'leaseId');
+        const normalizedPhotoId = normalizePositiveId(photoId, 'photoId');
+        const normalizedPayloadHash = normalizePayloadHash(payloadHash);
+        const normalizedLeaseTtlMs = Math.max(
+            10_000,
+            Math.min(Number(leaseTtlMs) || 1_200_000, 3_600_000)
+        );
+
+        return withTransaction(this.pool, async (client) => {
+            const result = await client.query(
+                `SELECT *,
+                        expires_at <= CURRENT_TIMESTAMP AS intent_expired,
+                        (
+                            status = 'processing'
+                            AND lease_id IS NOT NULL
+                            AND lease_expires_at > CURRENT_TIMESTAMP
+                        ) AS lease_active,
+                        GREATEST(
+                            1,
+                            CEIL(EXTRACT(EPOCH FROM (
+                                lease_expires_at - CURRENT_TIMESTAMP
+                            )))
+                        )::int AS lease_retry_after_seconds
+                 FROM photo_creation_intents
+                 WHERE id = $1::uuid
+                 FOR UPDATE`,
+                [intentId]
+            );
+            const row = result.rows[0];
+            if (!row) return null;
+            const intent = mapPhotoCreationIntentRow(row);
+
+            if (
+                intent.photoId !== normalizedPhotoId
+                || intent.sourcePath !== sourcePath
+            ) {
+                throw new RepositoryConflictError(
+                    'La richiesta non corrisponde alla prenotazione dell’upload.',
+                    'PHOTO_UPLOAD_INTENT_MISMATCH',
+                    { uploadIntentId: intentId }
+                );
+            }
+            if (intent.payloadHash && intent.payloadHash !== normalizedPayloadHash) {
+                throw new RepositoryConflictError(
+                    'La stessa chiave di idempotenza è stata riutilizzata con dati differenti.',
+                    'PHOTO_UPLOAD_REPLAY_MISMATCH',
+                    { uploadIntentId: intentId }
+                );
+            }
+
+            if (intent.status === 'completed') {
+                const photoResult = await client.query(
+                    'SELECT * FROM photos WHERE creation_intent_id = $1::uuid',
+                    [intentId]
+                );
+                if (!photoResult.rows[0]) {
+                    const deleted = new Error(
+                        'La foto creata da questa prenotazione è stata eliminata.'
+                    );
+                    deleted.status = 410;
+                    deleted.code = 'PHOTO_UPLOAD_RESULT_GONE';
+                    deleted.details = { uploadIntentId: intentId };
+                    throw deleted;
+                }
+                return {
+                    status: 'completed',
+                    intent,
+                    photo: mapPhotoRow(photoResult.rows[0])
+                };
+            }
+
+            if (row.intent_expired) {
+                const expired = new Error('La prenotazione dell’upload è scaduta.');
+                expired.status = 410;
+                expired.code = 'PHOTO_UPLOAD_INTENT_EXPIRED';
+                expired.details = { uploadIntentId: intentId };
+                throw expired;
+            }
+
+            if (row.lease_active) {
+                throw new RepositoryConflictError(
+                    'La foto è già in fase di elaborazione. Riprova tra poco.',
+                    'PHOTO_CREATE_IN_PROGRESS',
+                    {
+                        uploadIntentId: intentId,
+                        retryAfter: Number(row.lease_retry_after_seconds) || 1
+                    }
+                );
+            }
+
+            const claimed = await client.query(
+                `UPDATE photo_creation_intents
+                 SET status = 'processing',
+                     payload_hash = COALESCE(payload_hash, $2),
+                     lease_id = $3::uuid,
+                     lease_generation = $4,
+                     lease_expires_at = CURRENT_TIMESTAMP
+                         + ($5::bigint * INTERVAL '1 millisecond'),
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = $1::uuid
+                 RETURNING *`,
+                [
+                    intentId,
+                    normalizedPayloadHash,
+                    normalizedLeaseId,
+                    generation,
+                    normalizedLeaseTtlMs
+                ]
+            );
+            return {
+                status: 'claimed',
+                intent: mapPhotoCreationIntentRow(claimed.rows[0])
+            };
+        });
+    }
+
+    async finalize(id, leaseId, photo, { payloadHash } = {}) {
+        const intentId = normalizeUuid(id, 'uploadIntentId');
+        const normalizedLeaseId = normalizeUuid(leaseId, 'leaseId');
+        const normalizedPayloadHash = normalizePayloadHash(payloadHash);
+
+        return withTransaction(this.pool, async (client) => {
+            const result = await client.query(
+                `SELECT *,
+                        (
+                            status = 'processing'
+                            AND lease_expires_at > CURRENT_TIMESTAMP
+                        ) AS lease_active
+                 FROM photo_creation_intents
+                 WHERE id = $1::uuid
+                 FOR UPDATE`,
+                [intentId]
+            );
+            const row = result.rows[0];
+            if (!row) return null;
+            const intent = mapPhotoCreationIntentRow(row);
+
+            if (intent.payloadHash !== normalizedPayloadHash) {
+                throw new RepositoryConflictError(
+                    'I dati della finalizzazione non corrispondono alla prenotazione.',
+                    'PHOTO_UPLOAD_REPLAY_MISMATCH',
+                    { uploadIntentId: intentId }
+                );
+            }
+            if (intent.status === 'completed') {
+                const existing = await client.query(
+                    'SELECT * FROM photos WHERE creation_intent_id = $1::uuid',
+                    [intentId]
+                );
+                if (!existing.rows[0]) {
+                    const deleted = new Error(
+                        'La foto creata da questa prenotazione è stata eliminata.'
+                    );
+                    deleted.status = 410;
+                    deleted.code = 'PHOTO_UPLOAD_RESULT_GONE';
+                    deleted.details = { uploadIntentId: intentId };
+                    throw deleted;
+                }
+                return {
+                    photo: mapPhotoRow(existing.rows[0]),
+                    replayed: true
+                };
+            }
+            if (
+                intent.status !== 'processing'
+                || intent.leaseId !== normalizedLeaseId
+                || !row.lease_active
+            ) {
+                throw new RepositoryConflictError(
+                    'La finalizzazione non possiede più la lease dell’upload.',
+                    'PHOTO_UPLOAD_LEASE_LOST',
+                    { uploadIntentId: intentId }
+                );
+            }
+            if (String(photo.mediaGeneration || '') !== intent.leaseGeneration) {
+                throw new RepositoryConflictError(
+                    'La generazione finale non appartiene alla lease attiva.',
+                    'MEDIA_GENERATION_MISMATCH',
+                    { uploadIntentId: intentId }
+                );
+            }
+
+            const created = await insertPhotoRow(client, photo, {
+                creationIntentId: intentId
+            });
+            await client.query(
+                `UPDATE photo_creation_intents
+                 SET status = 'completed',
+                     lease_id = NULL,
+                     lease_generation = NULL,
+                     lease_expires_at = NULL,
+                     completed_generation = $2,
+                     completed_at = CURRENT_TIMESTAMP,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = $1::uuid`,
+                [intentId, intent.leaseGeneration]
+            );
+            await insertAuditEvent(client, {
+                entityType: 'photo',
+                entityId: created.id,
+                operation: 'photo.create',
+                afterState: created,
+                operationId: intentId,
+                metadata: {
+                    uploadIntentId: intentId,
+                    mediaGeneration: intent.leaseGeneration
+                }
+            });
+            return {
+                photo: created,
+                replayed: false
+            };
+        }, {
+            isolation: 'SERIALIZABLE'
+        });
+    }
+
+    async release(id, leaseId) {
+        const intentId = normalizeUuid(id, 'uploadIntentId');
+        const normalizedLeaseId = normalizeUuid(leaseId, 'leaseId');
+        const result = await this.pool.query(
+            `UPDATE photo_creation_intents
+             SET status = 'pending',
+                 lease_id = NULL,
+                 lease_generation = NULL,
+                 lease_expires_at = NULL,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = $1::uuid
+               AND status = 'processing'
+               AND lease_id = $2::uuid
+             RETURNING *`,
+            [intentId, normalizedLeaseId]
+        );
+        return mapPhotoCreationIntentRow(result.rows[0]);
     }
 }
 
@@ -1098,9 +1577,11 @@ class PostgresPortfolioRepository {
             referentialIntegrity: true,
             perEntityWrites: true,
             distributedMediaMutations: true,
+            distributedPhotoCreations: true,
             auditHistory: true
         });
         this.photos = new PostgresPhotoRepository(pool);
+        this.photoCreations = new PostgresPhotoCreationRepository(pool);
         this.series = new PostgresSeriesRepository(pool);
         this.audit = new PostgresAuditRepository(pool);
     }

@@ -381,10 +381,7 @@ export function PhotoProvider({ children }) {
         addPhoto: async (photoData) => {
             try {
                 dispatch({ type: ACTIONS.SET_LOADING, payload: true });
-                const isFormData = typeof FormData !== 'undefined' && photoData instanceof FormData;
-                const response = isFormData
-                    ? await photoService.upload(photoData)
-                    : await photoService.create(photoData);
+                const response = await photoService.create(photoData);
                 const newPhoto = response.data?.data || response.data;
 
                 dispatch({ type: ACTIONS.ADD_PHOTO, payload: newPhoto });
@@ -407,10 +404,7 @@ export function PhotoProvider({ children }) {
         // Create a photo without toggling global loading (for background flows)
         createPhotoInBackground: async (photoData) => {
             try {
-                const isFormData = typeof FormData !== 'undefined' && photoData instanceof FormData;
-                const response = isFormData
-                    ? await photoService.upload(photoData)
-                    : await photoService.create(photoData);
+                const response = await photoService.create(photoData);
                 const newPhoto = response.data?.data || response.data;
 
                 dispatch({ type: ACTIONS.ADD_PHOTO, payload: newPhoto });

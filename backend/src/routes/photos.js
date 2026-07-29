@@ -1,6 +1,5 @@
 const express = require('express');
 const crypto = require('crypto');
-const multer = require('multer');
 const { pipeline } = require('stream/promises');
 const {
     createPrivateUploadPresignedPutUrl,
@@ -23,6 +22,8 @@ const { sanitizePhotoPayload } = require('../utils/inputSanitizers');
 const { protectWriteMethods } = require('../middleware/auth');
 const { portfolioRepository } = require('../repositories');
 const { createMediaGeneration } = require('../utils/mediaGeneration');
+const { PhotoCreationService } = require('../services/photoCreation');
+const { createPhotoCreationRouter } = require('./photoCreationRoutes');
 const {
     describeDeleteError,
     getImageExtensionFromMimeType,
@@ -50,15 +51,22 @@ function createMediaIdentity() {
     };
 }
 
-function normalizeMediaOperationId(value) {
-    const operationId = String(value || '').trim().toLowerCase();
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(operationId)) {
-        const error = new Error('operationId non valido.');
+function normalizeUuidInput(value, { fieldName, errorCode }) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(normalized)) {
+        const error = new Error(`${fieldName} non valido.`);
         error.status = 400;
-        error.code = 'INVALID_MEDIA_OPERATION_ID';
+        error.code = errorCode;
         throw error;
     }
-    return operationId;
+    return normalized;
+}
+
+function normalizeMediaOperationId(value) {
+    return normalizeUuidInput(value, {
+        fieldName: 'operationId',
+        errorCode: 'INVALID_MEDIA_OPERATION_ID'
+    });
 }
 
 function requireExpectedVersion(req) {
@@ -83,6 +91,28 @@ async function writeDerivativeSet(assets, derivatives) {
         writePublicObject(assets.thumbnail11Path, derivatives.thumbnail11, 'image/webp'),
         writePublicObject(assets.socialImagePath, derivatives.socialImage, 'image/jpeg')
     ]);
+}
+
+const photoCreationService = portfolioRepository.capabilities.distributedPhotoCreations
+    ? new PhotoCreationService({
+        repository: portfolioRepository,
+        createSignedUploadUrl: createPrivateUploadPresignedPutUrl,
+        readSourceObject: readPrivateSourceObject,
+        writeSourceObject: writePrivateObject,
+        generateDerivatives: generatePhotoDerivatives,
+        writeDerivatives: writeDerivativeSet,
+        createMediaGeneration
+    })
+    : null;
+
+function requirePhotoCreationService() {
+    if (photoCreationService) return photoCreationService;
+    const error = new Error(
+        'La creazione di nuove foto richiede METADATA_BACKEND=postgres.'
+    );
+    error.status = 503;
+    error.code = 'TRANSACTIONAL_PHOTO_CREATION_REQUIRED';
+    throw error;
 }
 
 function publicAssetPaths(assets) {
@@ -257,26 +287,12 @@ function buildDownloadFilename(photo, contentType) {
     };
 }
 
-// Configurazione multer per upload immagini
-const storage = multer.memoryStorage();
 const uploadMaxSize = DEFAULTS.uploadMaxSize;
 const allowedUploadTypes = parseAllowedUploadTypes();
-const upload = multer({
-    storage,
-    limits: {
-        fileSize: uploadMaxSize
-    },
-    fileFilter: (req, file, cb) => {
-        if (isAllowedMimeType(file.mimetype, allowedUploadTypes)) {
-            cb(null, true);
-        } else {
-            const error = new Error(`Tipo file non consentito. Tipi ammessi: ${allowedUploadTypes.join(', ')}`);
-            error.status = 415;
-            error.code = 'INVALID_FILE_TYPE';
-            cb(error, false);
-        }
-    }
-});
+
+router.use(createPhotoCreationRouter({
+    getPhotoCreationService: requirePhotoCreationService
+}));
 
 // GET - Ottieni tutte le foto
 router.get('/', async (req, res) => {
@@ -367,213 +383,6 @@ router.get('/:id', async (req, res) => {
             fallbackMessage: 'Errore nel recupero della foto',
             fallbackCode: 'PHOTO_READ_FAILED'
         });
-    }
-});
-
-// POST - Genera URL firmata per upload diretto su R2 (evita limiti body Vercel)
-router.post('/upload-url', async (req, res) => {
-    try {
-        const { uploadId, mimetype, contentType, fileSize, variant } = req.body || {};
-        const rawVariant = String(variant || 'source').trim().toLowerCase();
-        if (rawVariant !== 'source') {
-            return res.status(400).json({
-                success: false,
-                code: 'INVALID_UPLOAD_VARIANT',
-                message: 'variant non valido: usare solo "source".'
-            });
-        }
-        const effectiveMimeType = String(mimetype || contentType || '').trim();
-        if (!effectiveMimeType || !isAllowedMimeType(effectiveMimeType, allowedUploadTypes)) {
-            return res.status(415).json({
-                success: false,
-                code: 'INVALID_FILE_TYPE',
-                message: `Tipo file non consentito. Tipi ammessi: ${allowedUploadTypes.join(', ')}`
-            });
-        }
-
-        const parsedSize = parseUploadSize(fileSize);
-        if (parsedSize && parsedSize > uploadMaxSize) {
-            return res.status(413).json({
-                success: false,
-                message: `File troppo grande. Massimo ${uploadMaxSize} byte.`,
-                code: 'LIMIT_FILE_SIZE'
-            });
-        }
-
-        const photoId = parseNumericIdOrThrow(uploadId, 'uploadId');
-        const { generation } = createMediaIdentity();
-        const sourceExtension = getImageExtensionFromMimeType(effectiveMimeType);
-        const uploadPath = buildPhotoAssetPaths(
-            photoId,
-            sourceExtension,
-            generation
-        ).sourcePath;
-        const signed = await createPrivateUploadPresignedPutUrl(uploadPath, {
-            contentType: effectiveMimeType,
-            cacheControl: 'private, no-store',
-            expiresInSeconds: DEFAULTS.r2SignedUploadUrlExpiresSeconds
-        });
-
-        return res.json({
-            success: true,
-            data: {
-                uploadUrl: signed.uploadUrl,
-                sourcePath: signed.uploadPath,
-                mediaGeneration: generation,
-                expiresInSeconds: signed.expiresInSeconds
-            }
-        });
-    } catch (error) {
-        console.error('Errore generazione URL upload diretto:', error);
-        return sendRouteError(res, error, {
-            fallbackMessage: 'Errore nella generazione URL upload',
-            fallbackCode: 'PHOTO_UPLOAD_SIGNING_FAILED'
-        });
-    }
-});
-
-// POST - Upload nuova foto
-router.post('/', upload.single('image'), async (req, res) => {
-    let pendingAssets = null;
-    let pendingSourcePath = '';
-    let created = false;
-    let photoId = null;
-    try {
-        const { lat, lng } = req.body;
-        const sanitized = sanitizePhotoPayload(req.body, { partial: false });
-        const parsedLat = parseCoordinate(lat, 'Latitudine');
-        const parsedLng = parseCoordinate(lng, 'Longitudine');
-        const requestedPhotoId = Number.parseInt(String(req.body?.photoId || ''), 10);
-        photoId = Number.isFinite(requestedPhotoId) && requestedPhotoId > 0
-            ? requestedPhotoId
-            : Date.now();
-        const sourceExtension = getImageExtensionFromMimeType(req.file?.mimetype || req.body?.sourceContentType);
-        const requestedGeneration = req.file
-            ? createMediaIdentity().generation
-            : normalizeMediaGeneration(req.body?.mediaGeneration);
-        if (!requestedGeneration) {
-            const error = new Error('mediaGeneration mancante per l’upload diretto.');
-            error.status = 400;
-            error.code = 'MEDIA_GENERATION_REQUIRED';
-            throw error;
-        }
-        const cropProfiles = getCropProfilesFromSettings(sanitized.settings) || buildDefaultCropProfiles();
-        const normalizedSettings = {
-            ...(sanitized.settings && typeof sanitized.settings === 'object' ? sanitized.settings : {}),
-            cropProfiles
-        };
-        const assets = buildPhotoAssetPaths(photoId, sourceExtension, requestedGeneration);
-        pendingAssets = assets;
-        pendingSourcePath = normalizePrivateSourcePathForPhotoId(req.body?.sourcePath, photoId);
-        const existingPhoto = await portfolioRepository.photos.findById(photoId);
-        if (existingPhoto) {
-            return res.status(409).json({
-                success: false,
-                code: 'PHOTO_ID_CONFLICT',
-                message: 'photoId già esistente, riprova con un nuovo upload.'
-            });
-        }
-
-        let sourcePath = '';
-        let sourceContentType = String(req.file?.mimetype || req.body?.sourceContentType || '').trim();
-        let sourceBuffer = null;
-        if (req.file) {
-            sourcePath = assets.sourcePath;
-            pendingSourcePath = sourcePath;
-            sourceBuffer = req.file.buffer;
-            await writePrivateObject(sourcePath, req.file.buffer, sourceContentType || 'application/octet-stream');
-        } else {
-            const providedSourcePath = normalizePrivateSourcePathForPhotoId(req.body?.sourcePath, photoId);
-            if (!providedSourcePath || providedSourcePath !== assets.sourcePath) {
-                return res.status(400).json({
-                    success: false,
-                    code: 'INVALID_SOURCE_PATH',
-                    message: 'sourcePath non valido per la generazione media richiesta.'
-                });
-            }
-
-            sourcePath = providedSourcePath;
-            pendingSourcePath = sourcePath;
-            const sourceObject = await readPrivateSourceObject(sourcePath);
-            if (!sourceObject) {
-                return res.status(400).json({
-                    success: false,
-                    code: 'PHOTO_SOURCE_NOT_FOUND',
-                    message: 'sourcePath non trovato: carica prima il file originale su /api/photos/upload-url'
-                });
-            }
-            sourceBuffer = sourceObject.buffer;
-            if (!sourceContentType && sourceObject.contentType) {
-                sourceContentType = sourceObject.contentType;
-            }
-
-        }
-
-        const derivatives = await generatePhotoDerivatives(sourceBuffer, cropProfiles);
-        await writeDerivativeSet(assets, derivatives);
-
-        // Crea oggetto foto con valori di default
-        const newPhoto = {
-            id: photoId,
-            title: sanitized.title,
-            location: sanitized.location,
-            lat: parsedLat ?? 0,
-            lng: parsedLng ?? 0,
-            sourcePath,
-            sourceContentType: sourceContentType || '',
-            mobileImage: true,
-            updatedAt: Date.now(),
-            derivativesVersion: Date.now(),
-            mediaGeneration: requestedGeneration,
-            description: sanitized.description,
-            date: sanitized.date,
-            camera: sanitized.camera,
-            lens: sanitized.lens,
-            resolution: derivatives.resolution,
-            settings: normalizedSettings,
-            tags: sanitized.tags
-        };
-        
-        const createdPhoto = await portfolioRepository.photos.create(newPhoto);
-        if (!createdPhoto) {
-            return res.status(409).json({
-                success: false,
-                code: 'PHOTO_ID_CONFLICT',
-                message: 'photoId già esistente, riprova con un nuovo upload.'
-            });
-        }
-        created = true;
-
-        res.status(201).json({
-            success: true,
-            message: 'Foto caricata.',
-            data: presentPhoto(createdPhoto)
-        });
-        
-    } catch (error) {
-        console.error('Errore nell\'upload:', error);
-
-        if (error.code === 'LIMIT_FILE_SIZE') {
-            return res.status(413).json({
-                success: false,
-                message: `File troppo grande. Massimo ${uploadMaxSize} byte.`,
-                code: 'LIMIT_FILE_SIZE'
-            });
-        }
-
-        return sendRouteError(res, error, {
-            fallbackMessage: 'Errore nell\'upload della foto',
-            fallbackCode: 'PHOTO_CREATE_FAILED'
-        });
-    } finally {
-        if (!created && pendingAssets) {
-            await deleteMediaSetBestEffort({
-                assets: pendingAssets,
-                sourcePath: pendingSourcePath,
-                reason: 'photo_create_rollback',
-                photoId
-            });
-        }
     }
 });
 
