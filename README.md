@@ -132,6 +132,7 @@ CORS_ORIGINS=http://localhost:3000,http://localhost:3001
 API_WRITE_TOKEN_HASH=scrypt$16384$8$1$...
 API_WRITE_TOKEN=
 API_SESSION_SECRET=replace_with_long_random_secret
+CRON_SECRET=replace_with_another_random_secret
 API_SESSION_COOKIE_NAME=
 API_SESSION_TTL_MS=604800000
 API_AUTH_RATE_LIMIT_WINDOW_MS=600000
@@ -162,7 +163,12 @@ Note importanti:
   - `API_SESSION_SECRET`
 - `API_WRITE_TOKEN` e' solo fallback locale.
 - `R2_PRIVATE_BUCKET` e' fortemente consigliata: la source full-res parte sempre da li'.
-- `R2_OBJECT_PREFIX` isola fisicamente gli asset scritti da una Preview.
+- `R2_OBJECT_PREFIX` isola fisicamente gli asset scritti e ripuliti da una Preview.
+  Prima di ogni deploy scrivibile, il valore normalizzato della Preview deve
+  essere non vuoto e diverso da quello configurato in Production.
+- Con `METADATA_WRITES_ENABLED=false` una Preview non può eseguire manualmente
+  il cleanup; per abilitarlo servono Postgres, write abilitate e un
+  `R2_OBJECT_PREFIX` non vuoto.
 
 Generazione hash token admin:
 
@@ -338,6 +344,7 @@ Vercel usa:
 - `SITE_URL`
 - `API_WRITE_TOKEN_HASH`
 - `API_SESSION_SECRET`
+- `CRON_SECRET`
 - `CORS_ORIGINS`
 - `METADATA_BACKEND=postgres`
 - `METADATA_WRITES_ENABLED`
@@ -366,6 +373,31 @@ Non necessari su Vercel:
 - `NODE_ENV`
 
 Ogni modifica env richiede redeploy.
+
+`CRON_SECRET` protegge `GET /api/internal/media-cleanup/run`. Vercel lo invia
+automaticamente come Bearer token al cron giornaliero definito in
+`vercel.json`. In Preview, dove i cron non vengono eseguiti, il cleanup viene
+tentato dopo le operazioni admin e può essere avviato manualmente con una
+sessione admin tramite `POST /api/internal/media-cleanup/run`, purché
+`METADATA_WRITES_ENABLED=true` e `R2_OBJECT_PREFIX` sia configurato.
+
+Prima di distribuire una Preview con scritture abilitate, confrontare nelle
+Environment Variables di Vercel i due valori di `R2_OBJECT_PREFIX` dopo aver
+rimosso slash iniziali/finali e spazi:
+
+- Preview: deve essere non vuoto;
+- Preview e Production: devono essere diversi;
+- il namespace scelto deve appartenere esclusivamente a quella Preview.
+
+Il backend può validare il primo requisito, ma non può confrontare
+automaticamente due environment Vercel separati senza duplicare la
+configurazione Production nella Preview. Questo confronto resta quindi un gate
+operativo obbligatorio prima del deploy.
+
+Il batch cron/manuale smette di reclamare job dopo 8 secondi; i piccoli batch
+eseguiti dopo le operazioni admin hanno invece un budget di 1,5 secondi. Non
+viene ridotto globalmente `maxDuration` di `api/index.js`, perché la stessa
+funzione Express serve anche upload e altre API.
 
 ### Rewrites rilevanti
 

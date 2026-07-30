@@ -239,11 +239,7 @@ function requireConcealedAdminAuth(req, res, next) {
     return next();
 }
 
-function protectWriteMethods(req, res, next) {
-    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
-        return next();
-    }
-
+function requireMetadataWritesEnabled(_req, res, next) {
     if (!env.metadataWritesEnabled) {
         return res.status(503).json({
             success: false,
@@ -252,7 +248,19 @@ function protectWriteMethods(req, res, next) {
         });
     }
 
-    return requireWriteAuth(req, res, next);
+    return next();
+}
+
+function protectWriteMethods(req, res, next) {
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+        return next();
+    }
+
+    return requireMetadataWritesEnabled(
+        req,
+        res,
+        () => requireWriteAuth(req, res, next)
+    );
 }
 
 module.exports = {
@@ -263,6 +271,7 @@ module.exports = {
     isWriteTokenValid,
     protectWriteMethods,
     requireConcealedAdminAuth,
+    requireMetadataWritesEnabled,
     requireWriteAuth,
     setSessionCookie
 };

@@ -40,6 +40,7 @@ class PhotoCreationService {
         generateDerivatives,
         writeDerivatives,
         createMediaGeneration,
+        runCleanup = async () => null,
         createOperationId = () => crypto.randomUUID(),
         now = () => Date.now(),
         intentTtlMs = DEFAULTS.photoCreationIntentTtlMs,
@@ -59,10 +60,24 @@ class PhotoCreationService {
         this.generateDerivatives = generateDerivatives;
         this.writeDerivatives = writeDerivatives;
         this.createMediaGeneration = createMediaGeneration;
+        this.runCleanup = runCleanup;
         this.createOperationId = createOperationId;
         this.now = now;
         this.intentTtlMs = intentTtlMs;
         this.leaseTtlMs = leaseTtlMs;
+    }
+
+    async runCleanupBestEffort(uploadIntentId) {
+        try {
+            return await this.runCleanup({ limit: 10 });
+        } catch (error) {
+            console.warn('[photo_creation_cleanup_executor_failed]', {
+                uploadIntentId,
+                code: error?.code || null,
+                message: error?.message
+            });
+            return null;
+        }
     }
 
     async prepareUpload({
@@ -194,6 +209,7 @@ class PhotoCreationService {
                     'PHOTO_UPLOAD_INTENT_STALE'
                 );
             }
+            await this.runCleanupBestEffort(uploadIntentId);
             return finalized;
         } catch (error) {
             try {
@@ -205,6 +221,7 @@ class PhotoCreationService {
                     message: releaseError?.message
                 });
             }
+            await this.runCleanupBestEffort(uploadIntentId);
             throw error;
         }
     }

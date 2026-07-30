@@ -79,6 +79,7 @@ const env = {
     apiWriteToken: asString(process.env.API_WRITE_TOKEN),
     apiWriteTokenHash: asString(process.env.API_WRITE_TOKEN_HASH),
     apiSessionSecret: asString(process.env.API_SESSION_SECRET),
+    cronSecret: asString(process.env.CRON_SECRET),
     apiSessionCookieName: asString(process.env.API_SESSION_COOKIE_NAME),
     apiSessionTtlMs: asPositiveInt(process.env.API_SESSION_TTL_MS, DEFAULTS.apiSessionTtlMs),
     apiAuthRateLimitWindowMs: asPositiveInt(process.env.API_AUTH_RATE_LIMIT_WINDOW_MS, DEFAULTS.apiAuthRateLimitWindowMs),
@@ -158,6 +159,11 @@ function validateEnv() {
         }
         if (!env.apiSessionSecret) {
             errors.push('API_SESSION_SECRET non impostata in produzione.');
+        }
+        if (env.metadataBackend === 'postgres' && !env.cronSecret) {
+            warnings.push(
+                'CRON_SECRET non impostato: il cleanup media resta durevole ma il cron Vercel non potrà eseguirlo.'
+            );
         }
         if (!env.corsOrigins.length) {
             warnings.push('CORS_ORIGINS non impostata in produzione: verrà consentito solo VERCEL_URL.');

@@ -6,6 +6,7 @@ const { pipeline } = require('stream/promises');
 
 const authRoutes = require('./routes/auth');
 const auditRoutes = require('./routes/audit');
+const mediaCleanupRoutes = require('./routes/mediaCleanup');
 const photoRoutes = require('./routes/photos');
 const seriesRoutes = require('./routes/series');
 const { portfolioRepository } = require('./repositories');
@@ -230,6 +231,7 @@ app.use(PUBLIC_UPLOADS_PREFIX, ...uploadsMiddlewares);
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/audit', auditRoutes);
+app.use('/api/internal/media-cleanup', mediaCleanupRoutes);
 app.use('/api/photos', writeLimiter);
 app.use('/api/photos', photoRoutes);
 app.use('/api/series', writeLimiter);

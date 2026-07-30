@@ -14,11 +14,4 @@ describe('adminFeedback', () => {
     expect(adminFeedback.seriesCreated(null))
       .toBe('Serie creata: “Senza titolo”.');
   });
-
-  test('distinguishes partial storage cleanup from full success', () => {
-    expect(adminFeedback.photoDeletePartial(1))
-      .toContain('1 file non è stato rimosso');
-    expect(adminFeedback.photoDeletePartial(3))
-      .toContain('3 file non sono stati rimossi');
-  });
 });

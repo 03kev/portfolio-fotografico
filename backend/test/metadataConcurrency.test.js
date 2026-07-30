@@ -390,37 +390,7 @@ test('[known race] concurrent updates to different series lose one successful up
     assert.equal(persistedChanges, 1, 'series.json also has whole-document last-write-wins behavior');
 });
 
-test('[known race] photo update can resurrect a concurrently deleted photo', async () => {
-    await seedState({
-        photos: [buildPhoto(PHOTO_ID)]
-    });
-    objectStore.armReadBarrier(PHOTOS_KEY, 2);
-    objectStore.holdNextPuts(PHOTOS_KEY, 2);
-
-    const updatePromise = request('PUT', `/api/photos/${PHOTO_ID}`, {
-        title: 'Updated during delete'
-    });
-    const deletePromise = request('DELETE', `/api/photos/${PHOTO_ID}`);
-    const pendingPuts = await objectStore.waitForHeldPuts(PHOTOS_KEY);
-    const deletePut = pendingPuts.find((pending) => pending.json.length === 0);
-    const updatePut = pendingPuts.find((pending) => pending.json.length === 1);
-
-    assert.ok(deletePut);
-    assert.ok(updatePut);
-    deletePut.commit();
-    updatePut.commit();
-
-    const [updateResult, deleteResult] = await Promise.all([updatePromise, deletePromise]);
-    assertSuccessfulMutation(updateResult);
-    assertSuccessfulMutation(deleteResult);
-
-    const storedPhotos = await portfolioRepository.photos.list();
-    assert.equal(storedPhotos.length, 1);
-    assert.equal(storedPhotos[0].id, PHOTO_ID);
-    assert.equal(storedPhotos[0].title, 'Updated during delete');
-});
-
-test('[known race] series update after cleanup can restore a dangling reference to a deleted photo', async () => {
+test('JSON mode fails closed before media replacement or photo deletion without durable cleanup', async () => {
     await seedState({
         photos: [buildPhoto(PHOTO_ID)],
         series: [buildSeries('1', [PHOTO_ID], {
@@ -430,111 +400,31 @@ test('[known race] series update after cleanup can restore a dangling reference 
             description: 'Original description'
         })]
     });
-    objectStore.armReadBarrier(SERIES_KEY, 2);
-    objectStore.holdNextPuts(SERIES_KEY, 2);
-
-    const seriesUpdatePromise = request('PUT', '/api/series/1', {
-        description: 'Concurrent edit'
-    });
-    const photoDeletePromise = request('DELETE', `/api/photos/${PHOTO_ID}`);
-    const pendingPuts = await objectStore.waitForHeldPuts(SERIES_KEY);
-    const cleanupPut = pendingPuts.find((pending) => !pending.json[0].photos.includes(PHOTO_ID));
-    const updatePut = pendingPuts.find((pending) => pending.json[0].photos.includes(PHOTO_ID));
-
-    assert.ok(cleanupPut);
-    assert.ok(updatePut);
-    cleanupPut.commit();
-    updatePut.commit();
-
-    const [seriesUpdate, photoDelete] = await Promise.all([
-        seriesUpdatePromise,
-        photoDeletePromise
-    ]);
-    assertSuccessfulMutation(seriesUpdate);
-    assertSuccessfulMutation(photoDelete);
-
-    const storedPhotos = await portfolioRepository.photos.list();
-    const [storedSeries] = await readMetadataFile('series.json', []);
-    assert.equal(storedPhotos.some((photo) => photo.id === PHOTO_ID), false);
-    assert.equal(storedSeries.photos.includes(PHOTO_ID), true);
-    assert.equal(storedSeries.description, 'Concurrent edit');
-});
-
-test('[known race] cleanup after a series update removes the photo but loses the successful edit', async () => {
-    await seedState({
-        photos: [buildPhoto(PHOTO_ID)],
-        series: [buildSeries('1', [PHOTO_ID], {
-            id: '1',
-            title: 'Referenced series',
-            slug: 'referenced-series',
-            description: 'Original description'
-        })]
-    });
-    objectStore.armReadBarrier(SERIES_KEY, 2);
-    objectStore.holdNextPuts(SERIES_KEY, 2);
-
-    const seriesUpdatePromise = request('PUT', '/api/series/1', {
-        description: 'Concurrent edit'
-    });
-    const photoDeletePromise = request('DELETE', `/api/photos/${PHOTO_ID}`);
-    const pendingPuts = await objectStore.waitForHeldPuts(SERIES_KEY);
-    const cleanupPut = pendingPuts.find((pending) => !pending.json[0].photos.includes(PHOTO_ID));
-    const updatePut = pendingPuts.find((pending) => pending.json[0].photos.includes(PHOTO_ID));
-
-    assert.ok(cleanupPut);
-    assert.ok(updatePut);
-    updatePut.commit();
-    cleanupPut.commit();
-
-    const [seriesUpdate, photoDelete] = await Promise.all([
-        seriesUpdatePromise,
-        photoDeletePromise
-    ]);
-    assertSuccessfulMutation(seriesUpdate);
-    assertSuccessfulMutation(photoDelete);
-
-    const [storedSeries] = await readMetadataFile('series.json', []);
-    assert.equal(storedSeries.photos.includes(PHOTO_ID), false);
-    assert.equal(storedSeries.description, 'Original description');
-});
-
-test('[known race] photo cleanup can resurrect a concurrently deleted series', async () => {
-    await seedState({
-        photos: [buildPhoto(PHOTO_ID)],
-        series: [buildSeries('1', [PHOTO_ID], {
-            id: '1',
-            title: 'Series being deleted',
-            slug: 'series-being-deleted'
-        })]
-    });
-    objectStore.armReadBarrier(SERIES_KEY, 2);
-    objectStore.holdNextPuts(SERIES_KEY, 2);
-
-    const seriesDeletePromise = request('DELETE', '/api/series/1');
-    const photoDeletePromise = request('DELETE', `/api/photos/${PHOTO_ID}`);
-    const pendingPuts = await objectStore.waitForHeldPuts(SERIES_KEY);
-    const seriesDeletePut = pendingPuts.find((pending) => pending.json.length === 0);
-    const cleanupPut = pendingPuts.find((pending) => (
-        pending.json.length === 1
-        && !pending.json[0].photos.includes(PHOTO_ID)
-    ));
-
-    assert.ok(seriesDeletePut);
-    assert.ok(cleanupPut);
-    seriesDeletePut.commit();
-    cleanupPut.commit();
-
-    const [seriesDelete, photoDelete] = await Promise.all([
-        seriesDeletePromise,
-        photoDeletePromise
-    ]);
-    assertSuccessfulMutation(seriesDelete);
-    assertSuccessfulMutation(photoDelete);
-
+    const reupload = await request(
+        'POST',
+        `/api/photos/${PHOTO_ID}/source-upload-url`,
+        {
+            mimetype: 'image/jpeg',
+            fileSize: 1024
+        }
+    );
+    const deletion = await request('DELETE', `/api/photos/${PHOTO_ID}`);
     const storedSeries = await readMetadataFile('series.json', []);
+    const storedPhotos = await portfolioRepository.photos.list();
+
+    assert.equal(reupload.response.status, 503);
+    assert.equal(
+        reupload.payload.code,
+        'TRANSACTIONAL_MEDIA_LIFECYCLE_REQUIRED'
+    );
+    assert.equal(deletion.response.status, 503);
+    assert.equal(
+        deletion.payload.code,
+        'TRANSACTIONAL_MEDIA_LIFECYCLE_REQUIRED'
+    );
+    assert.equal(storedPhotos.length, 1);
     assert.equal(storedSeries.length, 1);
-    assert.equal(storedSeries[0].id, '1');
-    assert.deepEqual(storedSeries[0].photos, []);
+    assert.deepEqual(storedSeries[0].photos, [PHOTO_ID]);
 });
 
 test('[known dangling references] cleanup does not remove canonical photo and photo-group blocks', async () => {

@@ -12,11 +12,6 @@ export const adminFeedback = Object.freeze({
   photoCreated: (photo) => `Foto caricata: ${quotedLabel(photo?.title, 'Senza titolo')}.`,
   photoUpdated: (photo) => `Dettagli aggiornati: ${quotedLabel(photo?.title, 'Foto')}.`,
   photoDeleted: (photo) => `Foto eliminata: ${quotedLabel(photo?.title, 'Foto')}.`,
-  photoDeletePartial: (failedAssetCount) => {
-    const count = Math.max(1, Number(failedAssetCount) || 1);
-    const noun = count === 1 ? 'file non è stato rimosso' : 'file non sono stati rimossi';
-    return `Foto eliminata, ma ${count} ${noun} dallo storage. Controlla i log prima di riprovare.`;
-  },
   photoSourceReplaced: (photo) => (
     `Originale sostituito: ${quotedLabel(photo?.title, 'Foto')}. Le varianti sono state rigenerate.`
   ),

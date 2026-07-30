@@ -3,7 +3,8 @@ const { afterEach, test } = require('node:test');
 const { env } = require('../src/config/env');
 const {
     protectWriteMethods,
-    requireConcealedAdminAuth
+    requireConcealedAdminAuth,
+    requireMetadataWritesEnabled
 } = require('../src/middleware/auth');
 
 const originalMetadataWritesEnabled = env.metadataWritesEnabled;
@@ -63,6 +64,20 @@ test('read-only metadata mode rejects mutations before authentication', () => {
         code: 'METADATA_READ_ONLY',
         message: 'Le modifiche ai contenuti sono temporaneamente disabilitate.'
     });
+});
+
+test('read-only metadata mode also rejects internal mutation executors', () => {
+    env.metadataWritesEnabled = false;
+    const response = createResponse();
+    let nextCalled = false;
+
+    requireMetadataWritesEnabled({}, response, () => {
+        nextCalled = true;
+    });
+
+    assert.equal(nextCalled, false);
+    assert.equal(response.statusCode, 503);
+    assert.equal(response.payload.code, 'METADATA_READ_ONLY');
 });
 
 test('concealed admin routes return 404 to unauthenticated requests', () => {

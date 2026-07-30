@@ -595,17 +595,8 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
 
     setDeletingPhoto(true);
     try {
-      const deletionResult = await actions.deletePhoto(photoPendingDelete.id);
-      const failedAssets = Array.isArray(deletionResult?.failedAssets)
-        ? deletionResult.failedAssets
-        : [];
-      if (failedAssets.length > 0) {
-        notify?.warning?.(
-          adminFeedback.photoDeletePartial(failedAssets.length)
-        );
-      } else {
-        notify?.success?.(adminFeedback.photoDeleted(photoPendingDelete));
-      }
+      await actions.deletePhoto(photoPendingDelete.id);
+      notify?.success?.(adminFeedback.photoDeleted(photoPendingDelete));
       setPhotoPendingDelete(null);
     } catch (error) {
       console.error('Errore nell\'eliminazione della foto:', error);

@@ -282,7 +282,7 @@ async function createPrivateUploadPresignedPutUrl(privatePath, options = {}) {
     };
 }
 
-async function deleteUploadObject(uploadPath) {
+async function deleteUploadObject(uploadPath, { abortSignal } = {}) {
     if (!isR2Enabled()) {
         return;
     }
@@ -297,11 +297,12 @@ async function deleteUploadObject(uploadPath) {
         new DeleteObjectCommand({
             Bucket: env.r2Bucket,
             Key: key
-        })
+        }),
+        { abortSignal }
     );
 }
 
-async function deletePrivateObject(privatePath) {
+async function deletePrivateObject(privatePath, { abortSignal } = {}) {
     if (!isR2Enabled()) {
         return;
     }
@@ -316,7 +317,8 @@ async function deletePrivateObject(privatePath) {
         new DeleteObjectCommand({
             Bucket: getPrivateBucketName(),
             Key: key
-        })
+        }),
+        { abortSignal }
     );
 }
 

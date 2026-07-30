@@ -142,14 +142,6 @@ function sendRouteError(res, error, options = {}) {
     return sendApiError(res, error, options);
 }
 
-function describeDeleteError(error) {
-    return {
-        message: error?.message || 'Errore sconosciuto',
-        code: error?.code || error?.name || 'UNKNOWN_ERROR',
-        statusCode: error?.$metadata?.httpStatusCode || null
-    };
-}
-
 function getImageExtensionFromMimeType(mimetype) {
     const subtype = String(mimetype || '')
         .split('/')
@@ -196,7 +188,6 @@ async function readPrivateSourceObject(privatePath) {
 }
 
 module.exports = {
-    describeDeleteError,
     getImageExtensionFromMimeType,
     isAllowedMimeType,
     normalizePhotoForApiList,

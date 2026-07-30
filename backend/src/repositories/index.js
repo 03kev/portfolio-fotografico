@@ -38,7 +38,10 @@ function createPortfolioRepository({
 
     if (backend === 'postgres') {
         const { PostgresPortfolioRepository } = require('./PostgresPortfolioRepository');
-        return new PostgresPortfolioRepository(postgresPool || createPostgresPool());
+        return new PostgresPortfolioRepository(
+            postgresPool || createPostgresPool(),
+            { mediaNamespace: env.r2ObjectPrefix }
+        );
     }
 
     throw new Error(`Metadata backend non supportato: ${backend}`);

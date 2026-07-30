@@ -143,7 +143,14 @@ before(async () => {
 beforeEach(async () => {
     if (!databaseUrl) return;
     await scopedPool.query(
-        'TRUNCATE admin_audit_events, series_photos, series, photos CASCADE'
+        `TRUNCATE
+            media_cleanup_jobs,
+            admin_audit_events,
+            series_photos,
+            series,
+            photos,
+            photo_creation_intents
+         CASCADE`
     );
 });
 

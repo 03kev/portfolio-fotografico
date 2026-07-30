@@ -331,6 +331,7 @@ class JsonPortfolioRepository {
             perEntityWrites: false,
             distributedMediaMutations: false,
             distributedPhotoCreations: false,
+            durableMediaCleanup: false,
             auditHistory: false
         });
         this.photos = new JsonPhotoRepository(metadataStorage);

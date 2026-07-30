@@ -5,6 +5,15 @@ const {
     normalizeSeriesTitleKey
 } = require('../services/seriesRecord');
 const {
+    buildPhotoAssetPaths
+} = require('../services/photoDerivatives');
+const {
+    DEFAULT_STALE_WRITER_GRACE_MS,
+    PostgresMediaCleanupRepository,
+    cancelMediaOperationCleanupJobs,
+    enqueueMediaCleanupJobs
+} = require('./PostgresMediaCleanupRepository');
+const {
     MediaMutationConflictError,
     ReferenceIntegrityError,
     RepositoryConflictError,
@@ -31,6 +40,93 @@ const PHOTO_PATCH_COLUMNS = Object.freeze({
     derivativesVersion: ['derivatives_version', Number],
     mediaGeneration: ['media_generation', (value) => String(value || '') || null]
 });
+
+function sourceExtensionFromContentType(contentType) {
+    return String(contentType || '')
+        .split('/')
+        .pop()
+        ?.replace(/^jpeg$/i, 'jpg')
+        ?.replace(/[^a-z0-9]/gi, '')
+        || 'bin';
+}
+
+function buildGenerationCleanupJobs({
+    namespace,
+    photoId,
+    generation,
+    ownerKey,
+    reason,
+    mediaOperationId = null,
+    sourcePath = '',
+    sourceContentType = '',
+    includePublic = true,
+    includeGeneratedSource = false,
+    availableAt = new Date()
+}) {
+    if (!generation) return [];
+    const assets = buildPhotoAssetPaths(
+        photoId,
+        sourceExtensionFromContentType(sourceContentType),
+        generation
+    );
+    const jobs = [];
+    if (includePublic) {
+        for (const path of [
+            assets.imagePath,
+            assets.mobileImagePath,
+            assets.thumbnail43Path,
+            assets.thumbnail11Path,
+            assets.socialImagePath
+        ]) {
+            jobs.push({
+                namespace,
+                ownerKey,
+                scope: 'public',
+                path,
+                reason,
+                guardType: 'photo-generation',
+                photoId,
+                generation,
+                mediaOperationId,
+                availableAt
+            });
+        }
+    }
+    const privatePath = sourcePath || (includeGeneratedSource ? assets.sourcePath : '');
+    if (privatePath) {
+        jobs.push({
+            namespace,
+            ownerKey,
+            scope: 'private',
+            path: privatePath,
+            reason,
+            guardType: 'photo-generation',
+            photoId,
+            generation,
+            mediaOperationId,
+            availableAt
+        });
+    }
+    return jobs;
+}
+
+function buildCreationStagingCleanupJob({
+    namespace,
+    uploadIntentId,
+    sourcePath,
+    availableAt
+}) {
+    return {
+        namespace,
+        ownerKey: `photo-creation-staging:${uploadIntentId}`,
+        scope: 'private',
+        path: sourcePath,
+        reason: 'photo-creation-staging',
+        guardType: 'creation-staging',
+        uploadIntentId,
+        availableAt
+    };
+}
 
 function normalizePositiveId(value, fieldName) {
     const parsed = Number(value);
@@ -662,8 +758,13 @@ async function persistSeriesAggregate(queryable, series, nextVersion) {
 }
 
 class PostgresPhotoRepository {
-    constructor(pool) {
+    constructor(pool, {
+        cleanupNamespace = '',
+        cleanupGraceMs = DEFAULT_STALE_WRITER_GRACE_MS
+    } = {}) {
         this.pool = pool;
+        this.cleanupNamespace = cleanupNamespace;
+        this.cleanupGraceMs = cleanupGraceMs;
     }
 
     async list() {
@@ -770,6 +871,19 @@ class PostgresPhotoRepository {
             if (expectedVersion !== null && current.version !== expectedVersion) {
                 throw new VersionConflictError('photo', photoId, expectedVersion, current.version);
             }
+            await enqueueMediaCleanupJobs(
+                client,
+                buildGenerationCleanupJobs({
+                    namespace: this.cleanupNamespace,
+                    photoId,
+                    generation: current.mediaGeneration,
+                    ownerKey: `photo-delete-direct:${photoId}:${current.version}`,
+                    reason: 'photo-delete',
+                    sourcePath: current.sourcePath,
+                    sourceContentType: current.sourceContentType,
+                    includePublic: true
+                })
+            );
             await client.query('DELETE FROM photos WHERE id = $1', [photoId]);
             await insertAuditEvent(client, {
                 entityType: 'photo',
@@ -795,7 +909,12 @@ class PostgresPhotoRepository {
         const normalizedTtlMs = Math.max(10_000, Math.min(Number(ttlMs) || 1_200_000, 3_600_000));
         return withTransaction(this.pool, async (client) => {
             const result = await client.query(
-                'SELECT * FROM photos WHERE id = $1 FOR UPDATE',
+                `SELECT *,
+                        media_operation_expires_at <= CURRENT_TIMESTAMP
+                            AS media_operation_expired
+                 FROM photos
+                 WHERE id = $1
+                 FOR UPDATE`,
                 [photoId]
             );
             const row = result.rows[0];
@@ -820,6 +939,23 @@ class PostgresPhotoRepository {
                  RETURNING *`,
                 [photoId, operationId, kind, generation, normalizedTtlMs]
             );
+            await enqueueMediaCleanupJobs(
+                client,
+                buildGenerationCleanupJobs({
+                    namespace: this.cleanupNamespace,
+                    photoId,
+                    generation,
+                    ownerKey: `media-operation:${operationId}:tentative`,
+                    reason: `${kind}-abandoned`,
+                    mediaOperationId: operationId,
+                    sourceContentType: current.sourceContentType,
+                    includePublic: true,
+                    availableAt: new Date(
+                        new Date(updated.rows[0].media_operation_expires_at).getTime()
+                        + this.cleanupGraceMs
+                    )
+                })
+            );
             return {
                 photo: mapPhotoRow(updated.rows[0]),
                 operation: {
@@ -837,7 +973,12 @@ class PostgresPhotoRepository {
         const expectedVersion = normalizeExpectedVersion(options.expectedVersion);
         return withTransaction(this.pool, async (client) => {
             const result = await client.query(
-                'SELECT * FROM photos WHERE id = $1 FOR UPDATE',
+                `SELECT *,
+                        media_operation_expires_at <= CURRENT_TIMESTAMP
+                            AS media_operation_expired
+                 FROM photos
+                 WHERE id = $1
+                 FOR UPDATE`,
                 [photoId]
             );
             const row = result.rows[0];
@@ -850,8 +991,18 @@ class PostgresPhotoRepository {
                 );
             }
             if (
-                changes.mediaGeneration !== undefined
-                && String(changes.mediaGeneration) !== String(row.media_operation_generation)
+                !row.media_operation_expires_at
+                || row.media_operation_expired
+            ) {
+                throw new RepositoryConflictError(
+                    'L’operazione media è scaduta e non può più pubblicare la generazione.',
+                    'MEDIA_OPERATION_STALE',
+                    { entity: 'photo', id: String(photoId) }
+                );
+            }
+            if (
+                String(changes.mediaGeneration || '')
+                !== String(row.media_operation_generation || '')
             ) {
                 throw new RepositoryConflictError(
                     'La generazione media non corrisponde alla prenotazione attiva.',
@@ -886,6 +1037,26 @@ class PostgresPhotoRepository {
                 values
             );
             const nextPhoto = mapPhotoRow(updated.rows[0]);
+            await enqueueMediaCleanupJobs(
+                client,
+                buildGenerationCleanupJobs({
+                    namespace: this.cleanupNamespace,
+                    photoId,
+                    generation: current.mediaGeneration,
+                    ownerKey: `media-operation:${operationId}:replaced`,
+                    reason: `${row.media_operation_kind}-previous-generation`,
+                    sourcePath: row.media_operation_kind === 'replace-source'
+                        ? current.sourcePath
+                        : '',
+                    sourceContentType: current.sourceContentType,
+                    includePublic: true
+                })
+            );
+            await cancelMediaOperationCleanupJobs(
+                client,
+                operationId,
+                'La generazione dell’operazione è diventata quella attiva.'
+            );
             await insertAuditEvent(client, {
                 entityType: 'photo',
                 entityId: photoId,
@@ -905,17 +1076,67 @@ class PostgresPhotoRepository {
 
     async abortMediaMutation(id, operationId) {
         const photoId = normalizePositiveId(id, 'photoId');
-        const result = await this.pool.query(
-            `UPDATE photos
-             SET media_operation_id = NULL,
-                 media_operation_kind = NULL,
-                 media_operation_generation = NULL,
-                 media_operation_expires_at = NULL
-             WHERE id = $1 AND media_operation_id = $2::uuid
-             RETURNING *`,
-            [photoId, operationId]
-        );
-        return mapPhotoRow(result.rows[0]);
+        return withTransaction(this.pool, async (client) => {
+            const result = await client.query(
+                `UPDATE photos
+                 SET media_operation_id = NULL,
+                     media_operation_kind = NULL,
+                     media_operation_generation = NULL,
+                     media_operation_expires_at = NULL
+                 WHERE id = $1 AND media_operation_id = $2::uuid
+                 RETURNING *`,
+                [photoId, operationId]
+            );
+            if (!result.rows[0]) return null;
+            return mapPhotoRow(result.rows[0]);
+        });
+    }
+
+    async registerMediaMutationCleanupAssets(id, operationId, jobs) {
+        const photoId = normalizePositiveId(id, 'photoId');
+        return withTransaction(this.pool, async (client) => {
+            const result = await client.query(
+                `SELECT *,
+                        media_operation_expires_at <= CURRENT_TIMESTAMP
+                            AS media_operation_expired
+                 FROM photos
+                 WHERE id = $1
+                 FOR UPDATE`,
+                [photoId]
+            );
+            const row = result.rows[0];
+            if (
+                !row
+                || String(row.media_operation_id || '') !== String(operationId || '')
+                || !row.media_operation_expires_at
+                || row.media_operation_expired
+            ) {
+                throw new RepositoryConflictError(
+                    'L’operazione media non è più attiva.',
+                    'MEDIA_OPERATION_STALE',
+                    { entity: 'photo', id: String(photoId) }
+                );
+            }
+            const normalizedJobs = (Array.isArray(jobs) ? jobs : []).map((job) => ({
+                ...job,
+                namespace: this.cleanupNamespace,
+                ownerKey: `media-operation:${operationId}:tentative`,
+                reason: `${row.media_operation_kind}-abandoned`,
+                guardType: 'photo-generation',
+                photoId,
+                generation: row.media_operation_generation,
+                mediaOperationId: operationId,
+                availableAt: new Date(
+                    new Date(row.media_operation_expires_at).getTime()
+                    + this.cleanupGraceMs
+                )
+            }));
+            await enqueueMediaCleanupJobs(client, normalizedJobs);
+            return {
+                photo: mapPhotoRow(row),
+                operation: activeMediaOperationFromRow(row)
+            };
+        });
     }
 
     async getMediaMutation(id) {
@@ -934,8 +1155,13 @@ class PostgresPhotoRepository {
 }
 
 class PostgresPhotoCreationRepository {
-    constructor(pool) {
+    constructor(pool, {
+        cleanupNamespace = '',
+        cleanupGraceMs = DEFAULT_STALE_WRITER_GRACE_MS
+    } = {}) {
         this.pool = pool;
+        this.cleanupNamespace = cleanupNamespace;
+        this.cleanupGraceMs = cleanupGraceMs;
     }
 
     async createOrGet({
@@ -951,6 +1177,22 @@ class PostgresPhotoCreationRepository {
         );
         try {
             return await withTransaction(this.pool, async (client) => {
+                const ensureStagingCleanup = async (intentRow) => {
+                    const availableAt = intentRow.status === 'completed'
+                        ? new Date()
+                        : new Date(
+                            new Date(intentRow.expires_at).getTime()
+                            + this.cleanupGraceMs
+                        );
+                    await enqueueMediaCleanupJobs(client, [
+                        buildCreationStagingCleanupJob({
+                            namespace: this.cleanupNamespace,
+                            uploadIntentId: intentId,
+                            sourcePath: intentRow.source_path,
+                            availableAt
+                        })
+                    ]);
+                };
                 const validatePreparationReplay = async (existingIntent) => {
                     if (existingIntent.source_content_type !== sourceContentType) {
                         throw new RepositoryConflictError(
@@ -1014,6 +1256,7 @@ class PostgresPhotoCreationRepository {
                     [intentId]
                 );
                 if (replay.rows[0]) {
+                    await ensureStagingCleanup(replay.rows[0]);
                     return validatePreparationReplay(replay.rows[0]);
                 }
 
@@ -1034,6 +1277,7 @@ class PostgresPhotoCreationRepository {
                     ]
                 );
                 if (inserted.rows[0]) {
+                    await ensureStagingCleanup(inserted.rows[0]);
                     return mapPhotoCreationIntentRow(inserted.rows[0]);
                 }
                 const row = (
@@ -1057,6 +1301,7 @@ class PostgresPhotoCreationRepository {
                     );
                 }
 
+                await ensureStagingCleanup(row);
                 return validatePreparationReplay(row);
             });
         } catch (error) {
@@ -1191,6 +1436,24 @@ class PostgresPhotoCreationRepository {
                     normalizedLeaseTtlMs
                 ]
             );
+            await enqueueMediaCleanupJobs(
+                client,
+                buildGenerationCleanupJobs({
+                    namespace: this.cleanupNamespace,
+                    photoId: intent.photoId,
+                    generation,
+                    ownerKey: `photo-creation-lease:${normalizedLeaseId}`,
+                    reason: 'photo-creation-abandoned',
+                    mediaOperationId: normalizedLeaseId,
+                    sourceContentType: intent.sourceContentType,
+                    includePublic: true,
+                    includeGeneratedSource: true,
+                    availableAt: new Date(
+                        new Date(claimed.rows[0].lease_expires_at).getTime()
+                        + this.cleanupGraceMs
+                    )
+                })
+            );
             return {
                 status: 'claimed',
                 intent: mapPhotoCreationIntentRow(claimed.rows[0])
@@ -1279,6 +1542,11 @@ class PostgresPhotoCreationRepository {
                  WHERE id = $1::uuid`,
                 [intentId, intent.leaseGeneration]
             );
+            await cancelMediaOperationCleanupJobs(
+                client,
+                normalizedLeaseId,
+                'La generazione della lease è diventata quella attiva.'
+            );
             await insertAuditEvent(client, {
                 entityType: 'photo',
                 entityId: created.id,
@@ -1302,20 +1570,23 @@ class PostgresPhotoCreationRepository {
     async release(id, leaseId) {
         const intentId = normalizeUuid(id, 'uploadIntentId');
         const normalizedLeaseId = normalizeUuid(leaseId, 'leaseId');
-        const result = await this.pool.query(
-            `UPDATE photo_creation_intents
-             SET status = 'pending',
-                 lease_id = NULL,
-                 lease_generation = NULL,
-                 lease_expires_at = NULL,
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE id = $1::uuid
-               AND status = 'processing'
-               AND lease_id = $2::uuid
-             RETURNING *`,
-            [intentId, normalizedLeaseId]
-        );
-        return mapPhotoCreationIntentRow(result.rows[0]);
+        return withTransaction(this.pool, async (client) => {
+            const result = await client.query(
+                `UPDATE photo_creation_intents
+                 SET status = 'pending',
+                     lease_id = NULL,
+                     lease_generation = NULL,
+                     lease_expires_at = NULL,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = $1::uuid
+                   AND status = 'processing'
+                   AND lease_id = $2::uuid
+                 RETURNING *`,
+                [intentId, normalizedLeaseId]
+            );
+            if (!result.rows[0]) return null;
+            return mapPhotoCreationIntentRow(result.rows[0]);
+        });
     }
 }
 
@@ -1566,7 +1837,10 @@ class PostgresAuditRepository {
 }
 
 class PostgresPortfolioRepository {
-    constructor(pool) {
+    constructor(pool, {
+        mediaNamespace = '',
+        mediaCleanupGraceMs = DEFAULT_STALE_WRITER_GRACE_MS
+    } = {}) {
         if (!pool || typeof pool.query !== 'function' || typeof pool.connect !== 'function') {
             throw new TypeError('PostgresPortfolioRepository richiede un pool PostgreSQL.');
         }
@@ -1578,10 +1852,19 @@ class PostgresPortfolioRepository {
             perEntityWrites: true,
             distributedMediaMutations: true,
             distributedPhotoCreations: true,
+            durableMediaCleanup: true,
             auditHistory: true
         });
-        this.photos = new PostgresPhotoRepository(pool);
-        this.photoCreations = new PostgresPhotoCreationRepository(pool);
+        const cleanupOptions = {
+            cleanupNamespace: mediaNamespace,
+            cleanupGraceMs: mediaCleanupGraceMs
+        };
+        this.photos = new PostgresPhotoRepository(pool, cleanupOptions);
+        this.photoCreations = new PostgresPhotoCreationRepository(pool, cleanupOptions);
+        this.mediaCleanup = new PostgresMediaCleanupRepository(pool, {
+            namespace: mediaNamespace,
+            staleWriterGraceMs: mediaCleanupGraceMs
+        });
         this.series = new PostgresSeriesRepository(pool);
         this.audit = new PostgresAuditRepository(pool);
     }
@@ -1630,6 +1913,19 @@ class PostgresPortfolioRepository {
                 });
             }
 
+            await enqueueMediaCleanupJobs(
+                client,
+                buildGenerationCleanupJobs({
+                    namespace: this.mediaCleanup.namespace,
+                    photoId: id,
+                    generation: photo.mediaGeneration,
+                    ownerKey: `photo-delete:${id}:${photo.version}`,
+                    reason: 'photo-delete',
+                    sourcePath: photo.sourcePath,
+                    sourceContentType: photo.sourceContentType,
+                    includePublic: true
+                })
+            );
             await client.query('DELETE FROM photos WHERE id = $1', [id]);
             await insertAuditEvent(client, {
                 entityType: 'photo',
