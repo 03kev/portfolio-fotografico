@@ -371,9 +371,9 @@ export default function PhotoSeries({
                     whileTap={{ scale: 0.99 }}
                   >
                     <Cover>
-                      {cover?.thumbnail43 && (
+                      {cover?.assets?.['thumbnail-4x3']?.url && (
                         <CoverImage
-                          src={resolvePhotoAssetUrl(cover, 'thumbnail43')}
+                          src={resolvePhotoAssetUrl(cover, 'thumbnail-4x3')}
                           alt={s.title}
                           loading="lazy"
                         />
@@ -432,9 +432,9 @@ export default function PhotoSeries({
                         whileTap={{ scale: 0.99 }}
                       >
                         <Cover>
-                          {cover?.thumbnail43 && (
+                          {cover?.assets?.['thumbnail-4x3']?.url && (
                             <CoverImage
-                              src={resolvePhotoAssetUrl(cover, 'thumbnail43')}
+                              src={resolvePhotoAssetUrl(cover, 'thumbnail-4x3')}
                               alt={s.title}
                               loading="lazy"
                             />

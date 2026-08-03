@@ -6,10 +6,11 @@ const {
     getUploadObject
 } = require('../services/r2Storage');
 const {
-    buildPhotoAssetPaths,
     buildDefaultCropProfiles,
     generatePhotoDerivatives,
     getCropProfilesFromSettings,
+    materializePhotoAssets,
+    PHOTO_ASSET_REPLACEMENT_GROUPS,
     normalizeMediaGeneration,
     normalizePrivateSourcePathForPhotoId
 } = require('../services/photoDerivatives');
@@ -30,6 +31,7 @@ const {
 const { createPhotoCreationRouter } = require('./photoCreationRoutes');
 const {
     getImageExtensionFromMimeType,
+    getPhotoAsset,
     isAllowedMimeType,
     normalizePhotoForApiList,
     parseAllowedUploadTypes,
@@ -39,7 +41,6 @@ const {
     readPrivateSourceBuffer,
     readPrivateSourceObject,
     sendRouteError,
-    withDefaultPhotoVariants,
     writePrivateObject,
     writePublicObject
 } = require('./photos.helpers');
@@ -89,14 +90,14 @@ function requireExpectedVersion(req) {
     return expectedVersion;
 }
 
-async function writeDerivativeSet(assets, derivatives) {
-    const writes = await Promise.allSettled([
-        writePublicObject(assets.imagePath, derivatives.image, 'image/webp'),
-        writePublicObject(assets.mobileImagePath, derivatives.mobileImage, 'image/webp'),
-        writePublicObject(assets.thumbnail43Path, derivatives.thumbnail43, 'image/webp'),
-        writePublicObject(assets.thumbnail11Path, derivatives.thumbnail11, 'image/webp'),
-        writePublicObject(assets.socialImagePath, derivatives.socialImage, 'image/jpeg')
-    ]);
+async function writePhotoAssets(assets) {
+    const writes = await Promise.allSettled(
+        assets.map((asset) => (
+            asset.scope === 'private'
+                ? writePrivateObject(asset.path, asset.buffer, asset.contentType)
+                : writePublicObject(asset.path, asset.buffer, asset.contentType)
+        ))
+    );
     const failed = writes.find((result) => result.status === 'rejected');
     if (failed) throw failed.reason;
 }
@@ -106,9 +107,8 @@ const photoCreationService = portfolioRepository.capabilities.distributedPhotoCr
         repository: portfolioRepository,
         createSignedUploadUrl: createPrivateUploadPresignedPutUrl,
         readSourceObject: readPrivateSourceObject,
-        writeSourceObject: writePrivateObject,
         generateDerivatives: generatePhotoDerivatives,
-        writeDerivatives: writeDerivativeSet,
+        writeAssets: writePhotoAssets,
         createMediaGeneration,
         runCleanup: runMediaCleanupBestEffort
     })
@@ -155,10 +155,10 @@ async function regeneratePhotoMedia({
     if (!reservation) return null;
 
     const currentPhoto = reservation.photo;
-    const nextAssets = buildPhotoAssetPaths(photoId, 'bin', generation);
     let finalized = false;
     try {
-        const sourcePath = normalizePrivateSourcePathForPhotoId(currentPhoto.sourcePath, photoId);
+        const sourceAsset = currentPhoto.assets?.find((asset) => asset.role === 'source');
+        const sourcePath = normalizePrivateSourcePathForPhotoId(sourceAsset?.path, photoId);
         if (!sourcePath) {
             const error = new Error('Source full-res non disponibile o non conforme al formato atteso.');
             error.status = 400;
@@ -176,7 +176,17 @@ async function regeneratePhotoMedia({
         const effectiveSettings = settings ?? currentPhoto.settings;
         const cropProfiles = getCropProfilesFromSettings(effectiveSettings);
         const derivatives = await generatePhotoDerivatives(sourceBuffer, cropProfiles);
-        await writeDerivativeSet(nextAssets, derivatives);
+        const nextAssets = materializePhotoAssets(photoId, generation, derivatives.assets);
+        await portfolioRepository.photos.registerMediaMutationAssets(
+            photoId,
+            operationId,
+            nextAssets
+        );
+        await writePhotoAssets(nextAssets);
+        await portfolioRepository.photos.markMediaMutationAssetsStored(
+            photoId,
+            operationId
+        );
 
         const updatedPhoto = await portfolioRepository.photos.completeMediaMutation(
             photoId,
@@ -184,7 +194,6 @@ async function regeneratePhotoMedia({
             {
                 ...(settings === undefined ? {} : { settings }),
                 resolution: derivatives.resolution,
-                mobileImage: true,
                 mediaGeneration: generation,
                 updatedAt: Date.now(),
                 derivativesVersion: Date.now()
@@ -298,8 +307,8 @@ router.get('/:id/download', async (req, res) => {
             });
         }
 
-        const publicPhoto = withDefaultPhotoVariants(photo);
-        const object = await getUploadObject(publicPhoto.image);
+        const fullAsset = getPhotoAsset(photo, 'full', 'public');
+        const object = fullAsset ? await getUploadObject(fullAsset.path) : null;
         if (!object?.stream) {
             return res.status(404).json({
                 success: false,
@@ -394,24 +403,24 @@ router.post('/:id/source-upload-url', requireDurableMediaLifecycle, async (req, 
         }
 
         const sourceExtension = getImageExtensionFromMimeType(effectiveMimeType);
-        const sourcePath = buildPhotoAssetPaths(
+        const [sourceAsset] = materializePhotoAssets(photoId, identity.generation, [{
+            role: 'source',
+            replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.SOURCE,
+            scope: 'private',
+            fileName: `source.${sourceExtension}`,
+            contentType: effectiveMimeType
+        }]);
+        await portfolioRepository.photos.registerMediaMutationAssets(
             photoId,
-            sourceExtension,
-            identity.generation
-        ).sourcePath;
+            operationId,
+            [sourceAsset]
+        );
+        const sourcePath = sourceAsset.path;
         const signed = await createPrivateUploadPresignedPutUrl(sourcePath, {
             contentType: effectiveMimeType,
             cacheControl: 'private, no-store',
             expiresInSeconds: DEFAULTS.r2SignedUploadUrlExpiresSeconds
         });
-        await portfolioRepository.photos.registerMediaMutationCleanupAssets(
-            photoId,
-            operationId,
-            [{
-                scope: 'private',
-                path: signed.uploadPath
-            }]
-        );
         return res.json({
             success: true,
             data: {
@@ -496,26 +505,26 @@ router.post('/:id/replace-source', requireDurableMediaLifecycle, async (req, res
             throw error;
         }
 
-        const nextAssets = buildPhotoAssetPaths(photoId, 'bin', generation);
         const derivatives = await generatePhotoDerivatives(
             sourceObject.buffer,
             getCropProfilesFromSettings(currentPhoto.settings)
         );
         timer.mark('generate_derivatives');
-        await writeDerivativeSet(nextAssets, derivatives);
+        const nextAssets = materializePhotoAssets(photoId, generation, derivatives.assets);
+        await portfolioRepository.photos.registerMediaMutationAssets(
+            photoId,
+            operationId,
+            nextAssets
+        );
+        await writePhotoAssets(nextAssets);
+        await portfolioRepository.photos.markMediaMutationAssetsStored(photoId, operationId);
         timer.mark('write_public_derivatives');
 
         const updatedPhoto = await portfolioRepository.photos.completeMediaMutation(
             photoId,
             operationId,
             {
-                sourcePath: nextSourcePath,
-                sourceContentType: sourceObject.contentType
-                    || String(req.body?.sourceContentType || '').trim()
-                    || currentPhoto.sourceContentType
-                    || '',
                 resolution: derivatives.resolution,
-                mobileImage: true,
                 mediaGeneration: generation,
                 updatedAt: Date.now(),
                 derivativesVersion: Date.now()

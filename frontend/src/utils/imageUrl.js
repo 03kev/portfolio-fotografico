@@ -9,6 +9,15 @@ export function resolveAssetUrl(value, fallback = LOCAL_IMAGE_FALLBACK) {
   return `${IMAGES_BASE_URL}${src}`;
 }
 
-export function resolvePhotoAssetUrl(photo, assetKey, fallback = LOCAL_IMAGE_FALLBACK) {
-  return resolveAssetUrl(photo?.[assetKey], fallback);
+export function getPhotoAsset(photo, role) {
+  const asset = photo?.assets?.[role];
+  return asset && typeof asset === 'object' ? asset : null;
+}
+
+export function hasPhotoAsset(photo, role) {
+  return Boolean(getPhotoAsset(photo, role)?.url);
+}
+
+export function resolvePhotoAssetUrl(photo, role, fallback = LOCAL_IMAGE_FALLBACK) {
+  return resolveAssetUrl(getPhotoAsset(photo, role)?.url, fallback);
 }

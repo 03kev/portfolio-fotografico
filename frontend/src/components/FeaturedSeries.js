@@ -123,9 +123,9 @@ export default function FeaturedSeries({ limit = 6 }) {
   const getCover = (s) => {
     const coverId = s.coverImage || s.photos?.[0];
     const photo = photos.find(p => p.id === coverId);
-    if (!photo || !photo.thumbnail11) return null;
+    if (!photo?.assets?.['thumbnail-1x1']?.url) return null;
     return {
-      url: resolvePhotoAssetUrl(photo, 'thumbnail11'),
+      url: resolvePhotoAssetUrl(photo, 'thumbnail-1x1'),
       alt: s.title
     };
   };

@@ -22,6 +22,9 @@ const {
 const {
     normalizePostgresConnectionString
 } = require('../src/utils/postgresConnectionString');
+const {
+    PHOTO_ASSET_REPLACEMENT_GROUPS
+} = require('../src/services/photoAssetLifecycle');
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -132,33 +135,34 @@ function createService({ derivativeGate = null, marker = 'default' } = {}) {
                 ? { buffer: sources.get(sourcePath), contentType: 'image/jpeg' }
                 : null
         ),
-        writeSourceObject: async (sourcePath, buffer) => {
-            finalizedSources.set(sourcePath, buffer);
-        },
         generateDerivatives: async () => {
             derivativeRuns += 1;
             const activeGate = derivativeGate || processingGate;
             if (activeGate) await activeGate.promise;
             return {
-                image: Buffer.from(`full-${marker}`),
-                mobileImage: Buffer.from(`mobile-${marker}`),
-                thumbnail43: Buffer.from(`43-${marker}`),
-                thumbnail11: Buffer.from(`11-${marker}`),
-                socialImage: Buffer.from(`social-${marker}`),
+                assets: [
+                    { role: 'full', replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.DERIVATIVES, scope: 'public', fileName: 'full.webp', contentType: 'image/webp', buffer: Buffer.from(`full-${marker}`) },
+                    { role: 'mobile', replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.DERIVATIVES, scope: 'public', fileName: 'mobile.webp', contentType: 'image/webp', buffer: Buffer.from(`mobile-${marker}`) },
+                    { role: 'thumbnail-4x3', replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.DERIVATIVES, scope: 'public', fileName: 'thumbnail-4x3.webp', contentType: 'image/webp', buffer: Buffer.from(`43-${marker}`) },
+                    { role: 'thumbnail-1x1', replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.DERIVATIVES, scope: 'public', fileName: 'thumbnail-1x1.webp', contentType: 'image/webp', buffer: Buffer.from(`11-${marker}`) },
+                    { role: 'social', replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.DERIVATIVES, scope: 'public', fileName: 'social.jpg', contentType: 'image/jpeg', buffer: Buffer.from(`social-${marker}`) }
+                ],
                 resolution: '3000x2000'
             };
         },
-        writeDerivatives: async (assets, output) => {
+        writeAssets: async (assets) => {
             writeRuns += 1;
-            derivatives.set(assets.imagePath, output.image);
-            if (failNextWrite) {
-                failNextWrite = false;
-                throw new Error('simulated partial R2 failure');
+            for (const asset of assets) {
+                if (asset.scope === 'private') {
+                    finalizedSources.set(asset.path, asset.buffer);
+                } else {
+                    derivatives.set(asset.path, asset.buffer);
+                }
+                if (failNextWrite) {
+                    failNextWrite = false;
+                    throw new Error('simulated partial R2 failure');
+                }
             }
-            derivatives.set(assets.mobileImagePath, output.mobileImage);
-            derivatives.set(assets.thumbnail43Path, output.thumbnail43);
-            derivatives.set(assets.thumbnail11Path, output.thumbnail11);
-            derivatives.set(assets.socialImagePath, output.socialImage);
         },
         createMediaGeneration: () => GENERATIONS[generationIndex++],
         createOperationId: () => LEASE_IDS[leaseIndex++],
@@ -248,6 +252,7 @@ beforeEach(async () => {
     if (!databaseUrl) return;
     await scopedPool.query(
         `TRUNCATE
+            photo_assets,
             media_cleanup_jobs,
             admin_audit_events,
             series_photos,
@@ -345,10 +350,15 @@ integrationTest('photo paths, final record and created_at use the allocated inte
     const intentBeforeFinalize = await repository.photoCreations.findById(INTENT_ID);
     const result = await finalize(service, prepared);
     const stored = await scopedPool.query(
-        `SELECT id, source_path, created_at
-         FROM photos
-         WHERE creation_intent_id = $1::uuid`,
-        [INTENT_ID]
+        `SELECT p.id, p.created_at, a.logical_path AS source_path
+         FROM photos p
+         JOIN photo_assets a
+           ON a.photo_id = p.id
+          AND a.object_namespace = $2
+          AND a.role = 'source'
+          AND a.state = 'active'
+         WHERE p.creation_intent_id = $1::uuid`,
+        [INTENT_ID, '']
     );
 
     assert.equal(result.photo.id, prepared.photoId);
@@ -477,7 +487,7 @@ integrationTest('partial derivative failure releases the lease and a retry overw
         /simulated partial R2 failure/
     );
     assert.equal(sources.has(prepared.sourcePath), true);
-    assert.equal(derivatives.size, 1);
+    assert.equal(derivatives.size, 0);
     assert.equal(await repository.photos.findById(prepared.photoId), null);
     const released = await repository.photoCreations.findById(INTENT_ID);
     assert.equal(released.status, 'pending');
@@ -488,7 +498,7 @@ integrationTest('partial derivative failure releases the lease and a retry overw
     assert.equal(retried.photo.id, prepared.photoId);
     assert.equal(derivativeRuns, 2);
     assert.equal(writeRuns, 2);
-    assert.equal(derivatives.size, 6);
+    assert.equal(derivatives.size, 5);
     assert.equal(finalizedSources.size, 2);
 });
 
@@ -696,11 +706,13 @@ integrationTest('an expired worker can never overwrite the generation committed 
 
     const winner = await finalize(winningService, prepared);
     staleGate.resolve();
-    const staleResult = await stalePromise;
+    await assert.rejects(
+        stalePromise,
+        (error) => error.code === 'PHOTO_UPLOAD_LEASE_LOST'
+    );
     const stored = await repository.photos.findById(prepared.photoId);
 
     assert.equal(winner.replayed, false);
-    assert.equal(staleResult.replayed, true);
     assert.equal(stored.mediaGeneration, winner.photo.mediaGeneration);
     assert.notEqual(stored.mediaGeneration, GENERATIONS[0]);
     const winningFullPath = `/uploads/photos/${prepared.photoId}/${stored.mediaGeneration}/full.webp`;

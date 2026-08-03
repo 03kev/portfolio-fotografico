@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Check, Crop as CropIcon, RotateCcw, X } from 'lucide-react';
-import { resolveAssetUrl } from '../utils/imageUrl';
+import { resolvePhotoAssetUrl } from '../utils/imageUrl';
 import {
   CROP_HANDLES,
   CROP_MAX_SCALE,
@@ -52,24 +52,26 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
   const refreshRafRef = useRef(null);
 
   const cropImageSrc = useMemo(
-    () => resolveAssetUrl(photo?.image),
+    () => resolvePhotoAssetUrl(photo, 'full'),
     [photo]
   );
   const { isLoaded: isFullImageLoaded, setIsLoaded: setIsFullImageLoaded, markLoaded: markFullImageLoaded } = useSharedImageLoadState(cropImageSrc, isOpen && Boolean(photo?.id));
 
   const workspacePreviewSrc = useMemo(() => {
-    const previewCandidate = photo?.thumbnail43 || photo?.thumbnail11 || photo?.socialImage || '';
-    return previewCandidate ? resolveAssetUrl(previewCandidate, '') : '';
+    return resolvePhotoAssetUrl(photo, 'thumbnail-4x3', '')
+      || resolvePhotoAssetUrl(photo, 'thumbnail-1x1', '')
+      || resolvePhotoAssetUrl(photo, 'social', '');
   }, [photo]);
 
   const activePresetPreviewSrc = useMemo(() => {
-    const previewCandidate = activePreset === 'r11'
-      ? (photo?.thumbnail11 || photo?.thumbnail43 || photo?.socialImage || '')
+    const roles = activePreset === 'r11'
+      ? ['thumbnail-1x1', 'thumbnail-4x3', 'social']
       : activePreset === 'social'
-        ? (photo?.socialImage || photo?.thumbnail43 || photo?.thumbnail11 || '')
-        : (photo?.thumbnail43 || photo?.thumbnail11 || photo?.socialImage || '');
-
-    return previewCandidate ? resolveAssetUrl(previewCandidate, '') : '';
+        ? ['social', 'thumbnail-4x3', 'thumbnail-1x1']
+        : ['thumbnail-4x3', 'thumbnail-1x1', 'social'];
+    return roles
+      .map((role) => resolvePhotoAssetUrl(photo, role, ''))
+      .find(Boolean) || '';
   }, [activePreset, photo]);
 
   const activePresetConfig = useMemo(

@@ -16,6 +16,10 @@ const {
 const {
     normalizePostgresConnectionString
 } = require('../src/utils/postgresConnectionString');
+const {
+    materializePhotoAssets,
+    PHOTO_ASSET_REPLACEMENT_GROUPS
+} = require('../src/services/photoDerivatives');
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -144,6 +148,7 @@ beforeEach(async () => {
     if (!databaseUrl) return;
     await scopedPool.query(
         `TRUNCATE
+            photo_assets,
             media_cleanup_jobs,
             admin_audit_events,
             series_photos,
@@ -158,6 +163,144 @@ after(async () => {
     if (!adminPool) return;
     await adminPool.query(`DROP SCHEMA "${schemaName}" CASCADE`);
     await adminPool.end();
+});
+
+integrationTest('asset registry migration backfills historical metadata before removing duplicate path columns', async () => {
+    const migrationSchema = `${schemaName}_asset_backfill`;
+    const migrationsDirectory = path.resolve(__dirname, '../db/migrations');
+    await adminPool.query(`CREATE SCHEMA "${migrationSchema}"`);
+    const legacyPool = new SchemaScopedPool(adminPool, migrationSchema);
+    try {
+        const migrationNames = (await fs.readdir(migrationsDirectory))
+            .filter((name) => name.endsWith('.sql') && name < '008_')
+            .sort();
+        for (const migrationName of migrationNames) {
+            await legacyPool.query(
+                await fs.readFile(path.join(migrationsDirectory, migrationName), 'utf8')
+            );
+        }
+
+        const photoId = 9_900_001;
+        const photoWithoutMobileId = 9_900_002;
+        const sourcePath = `/private/source/photos/${photoId}/${MEDIA_GENERATIONS.a}/source.jpg`;
+        const sourceWithoutMobilePath = `/private/source/photos/${photoWithoutMobileId}/${MEDIA_GENERATIONS.a}/source.jpg`;
+        const abandonedPath = `/uploads/photos/${photoId}/${MEDIA_GENERATIONS.b}/panorama-preview.avif`;
+        await legacyPool.query(
+            `INSERT INTO photos (
+                id, title, date_taken, location_name, latitude, longitude, settings, tags,
+                source_path, source_content_type, mobile_image, updated_at_ms,
+                derivatives_version, created_at, media_generation
+             ) VALUES (
+                $1, 'Historical photo', '2026-01-01', 'Roma', 41.9, 12.5,
+                '{}'::jsonb, ARRAY['migration'], $2, 'image/jpeg', TRUE,
+                1, 1, CURRENT_TIMESTAMP, $3
+             )`,
+            [photoId, sourcePath, MEDIA_GENERATIONS.a]
+        );
+        await legacyPool.query(
+            `INSERT INTO photos (
+                id, title, date_taken, location_name, latitude, longitude, settings, tags,
+                source_path, source_content_type, mobile_image, updated_at_ms,
+                derivatives_version, created_at, media_generation
+             ) VALUES (
+                $1, 'Historical photo without mobile', '2026-01-01', 'Roma', 41.9, 12.5,
+                '{}'::jsonb, ARRAY['migration'], $2, 'image/jpeg', FALSE,
+                1, 1, CURRENT_TIMESTAMP, $3
+             )`,
+            [photoWithoutMobileId, sourceWithoutMobilePath, MEDIA_GENERATIONS.a]
+        );
+        await legacyPool.query(
+            `INSERT INTO media_cleanup_jobs (
+                dedupe_key, object_namespace, storage_scope, logical_path,
+                reason, guard_type, photo_id, generation
+             ) VALUES (
+                'migration-backfill-job', 'preview/migration-test', 'public', $1,
+                'regenerate-abandoned', 'photo-generation', $2, $3
+             )`,
+            [abandonedPath, photoId, MEDIA_GENERATIONS.b]
+        );
+
+        const client = await adminPool.connect();
+        try {
+            await client.query(`SET search_path TO "${migrationSchema}"`);
+            await client.query('BEGIN');
+            await client.query(
+                "SELECT set_config('app.r2_object_prefix', $1, true)",
+                ['preview/migration-test']
+            );
+            await client.query(
+                await fs.readFile(
+                    path.join(migrationsDirectory, '008_photo_asset_registry.sql'),
+                    'utf8'
+                )
+            );
+            await client.query('COMMIT');
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
+
+        const activeRoles = await legacyPool.query(
+            `SELECT role, replacement_group
+             FROM photo_assets
+             WHERE photo_id = $1 AND state = 'active'
+             ORDER BY role`,
+            [photoId]
+        );
+        assert.deepEqual(
+            activeRoles.rows,
+            [
+                { role: 'full', replacement_group: 'derivatives' },
+                { role: 'mobile', replacement_group: 'derivatives' },
+                { role: 'social', replacement_group: 'derivatives' },
+                { role: 'source', replacement_group: 'source' },
+                { role: 'thumbnail-1x1', replacement_group: 'derivatives' },
+                { role: 'thumbnail-4x3', replacement_group: 'derivatives' }
+            ]
+        );
+        const rolesWithoutMobile = await legacyPool.query(
+            `SELECT role
+             FROM photo_assets
+             WHERE photo_id = $1 AND state = 'active'
+             ORDER BY role`,
+            [photoWithoutMobileId]
+        );
+        assert.deepEqual(
+            rolesWithoutMobile.rows.map((row) => row.role),
+            ['full', 'social', 'source', 'thumbnail-1x1', 'thumbnail-4x3']
+        );
+        const importedJob = await legacyPool.query(
+            `SELECT a.logical_path, a.role, a.state
+             FROM media_cleanup_jobs j
+             JOIN photo_assets a ON a.id = j.asset_id`
+        );
+        assert.deepEqual(importedJob.rows[0], {
+            logical_path: abandonedPath,
+            role: 'historical-asset-1',
+            state: 'retired'
+        });
+        const removedColumns = await legacyPool.query(
+            `SELECT table_name, column_name
+             FROM information_schema.columns
+             WHERE table_schema = $1
+               AND (
+                   (table_name = 'photos' AND column_name IN (
+                       'source_path', 'source_content_type', 'mobile_image'
+                   ))
+                   OR
+                   (table_name = 'media_cleanup_jobs' AND column_name IN (
+                       'storage_scope', 'logical_path', 'guard_type', 'photo_id',
+                       'generation', 'upload_intent_id', 'media_operation_id'
+                   ))
+               )`,
+            [migrationSchema]
+        );
+        assert.deepEqual(removedColumns.rows, []);
+    } finally {
+        await adminPool.query(`DROP SCHEMA "${migrationSchema}" CASCADE`);
+    }
 });
 
 integrationTest('every domain check constraint has an actionable error message', async () => {
@@ -270,6 +413,18 @@ integrationTest('media finalization atomically switches generation and increment
         expectedVersion: 1,
         ttlMs: 60_000
     });
+    await repository.photos.registerMediaMutationAssets(
+        113,
+        operationId,
+        materializePhotoAssets(113, MEDIA_GENERATIONS.d, [{
+            role: 'full',
+            replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.DERIVATIVES,
+            scope: 'public',
+            fileName: 'full.webp',
+            contentType: 'image/webp'
+        }])
+    );
+    await repository.photos.markMediaMutationAssetsStored(113, operationId);
 
     const updated = await repository.photos.completeMediaMutation(
         113,

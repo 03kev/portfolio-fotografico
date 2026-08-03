@@ -53,7 +53,7 @@ const LOAD_MORE_ROOT_MARGIN_WIDE = '700px 0px';
 const LOAD_MORE_ROOT_MARGIN_COMPACT = '350px 0px';
 
 const getThumbImageUrl = (photo) => {
-  return resolvePhotoAssetUrl(photo, 'thumbnail43');
+  return resolvePhotoAssetUrl(photo, 'thumbnail-4x3');
 };
 
 const getPhotoCardUrl = (photo) => `/photo/${encodeURIComponent(String(photo.id))}`;

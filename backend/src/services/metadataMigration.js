@@ -1,6 +1,11 @@
 const crypto = require('node:crypto');
 const { toRuntimePhoto } = require('./photoRecord');
 const {
+    listPhotoDerivativeAssetDescriptors,
+    materializePhotoAssets,
+    PHOTO_ASSET_REPLACEMENT_GROUPS
+} = require('./photoDerivatives');
+const {
     createSeriesSlug,
     normalizeSeriesRecord,
     normalizeSeriesTitleKey
@@ -340,7 +345,10 @@ function analyzeMetadataSnapshot({ photos, series }) {
     return report;
 }
 
-async function importMetadataSnapshot(pool, snapshot, { dryRun = false } = {}) {
+async function importMetadataSnapshot(pool, snapshot, {
+    dryRun = false,
+    objectNamespace = ''
+} = {}) {
     const report = analyzeMetadataSnapshot(snapshot);
     if (report.errors.length > 0 || dryRun) {
         return {
@@ -357,10 +365,16 @@ async function importMetadataSnapshot(pool, snapshot, { dryRun = false } = {}) {
             `SELECT
                 (SELECT count(*)::int FROM photos) AS photos,
                 (SELECT count(*)::int FROM series) AS series,
-                (SELECT count(*)::int FROM series_photos) AS memberships`
+                (SELECT count(*)::int FROM series_photos) AS memberships,
+                (SELECT count(*)::int FROM photo_assets) AS assets`
         );
         const existingCounts = existing.rows[0];
-        if (existingCounts.photos || existingCounts.series || existingCounts.memberships) {
+        if (
+            existingCounts.photos
+            || existingCounts.series
+            || existingCounts.memberships
+            || existingCounts.assets
+        ) {
             const error = new Error(
                 'Import rifiutato: il database target non è vuoto. Non vengono eseguiti upsert.'
             );
@@ -373,11 +387,10 @@ async function importMetadataSnapshot(pool, snapshot, { dryRun = false } = {}) {
                 `INSERT INTO photos (
                     id, title, description, date_taken, location_name,
                     latitude, longitude, camera, lens, resolution, settings,
-                    tags, source_path, source_content_type, mobile_image,
-                    updated_at_ms, derivatives_version, created_at, media_generation
+                    tags, updated_at_ms, derivatives_version, created_at, media_generation
                  ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb,
-                    $12, $13, $14, $15, $16, $17, CURRENT_TIMESTAMP, $18
+                    $12, $13, $14, CURRENT_TIMESTAMP, $15
                  )`,
                 [
                     photo.id,
@@ -392,14 +405,51 @@ async function importMetadataSnapshot(pool, snapshot, { dryRun = false } = {}) {
                     photo.resolution,
                     JSON.stringify(photo.settings || {}),
                     photo.tags,
-                    photo.sourcePath,
-                    photo.sourceContentType,
-                    photo.mobileImage,
                     photo.updatedAt,
                     photo.derivativesVersion,
                     photo.mediaGeneration || null
                 ]
             );
+
+            const importedAssets = photo.mediaGeneration
+                ? materializePhotoAssets(
+                    photo.id,
+                    photo.mediaGeneration,
+                    listPhotoDerivativeAssetDescriptors()
+                )
+                : [];
+            if (photo.sourcePath) {
+                importedAssets.push({
+                    role: 'source',
+                    replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.SOURCE,
+                    scope: 'private',
+                    path: photo.sourcePath,
+                    contentType: photo.sourceContentType || 'application/octet-stream',
+                    generation: photo.mediaGeneration || null
+                });
+            }
+            for (const asset of importedAssets) {
+                await client.query(
+                    `INSERT INTO photo_assets (
+                        object_namespace, photo_id, generation, role, replacement_group,
+                        storage_scope, logical_path, content_type, state,
+                        stored_at, activated_at
+                     ) VALUES (
+                        $1, $2, $3, $4, $5, $6, $7, $8, 'active',
+                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                     )`,
+                    [
+                        String(objectNamespace || '').trim().replace(/^\/+|\/+$/g, ''),
+                        photo.id,
+                        asset.generation || photo.mediaGeneration || null,
+                        asset.role,
+                        asset.replacementGroup,
+                        asset.scope,
+                        asset.path,
+                        asset.contentType
+                    ]
+                );
+            }
         }
 
         await client.query(

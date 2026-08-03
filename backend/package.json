@@ -10,7 +10,6 @@
     "db:migrate": "node scripts/migrate-postgres.js",
     "metadata:validate": "node scripts/import-metadata-postgres.js --dry-run",
     "metadata:import": "node scripts/import-metadata-postgres.js",
-    "media:paths:migrate": "node scripts/migrate-photo-assets-ulid.js",
     "token:hash": "node scripts/hash-write-token.js"
   },
   "dependencies": {

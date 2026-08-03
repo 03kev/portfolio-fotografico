@@ -1,3 +1,9 @@
+const {
+    listPhotoDerivativeAssetDescriptors,
+    materializePhotoAssets,
+    PHOTO_ASSET_REPLACEMENT_GROUPS
+} = require('./photoDerivatives');
+
 function isPlainObject(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -67,8 +73,33 @@ function toRuntimePhoto(record) {
     const compositionObject = isPlainObject(record.composition) ? record.composition : {};
     const cropProfiles = isPlainObject(compositionObject.cropProfiles) ? compositionObject.cropProfiles : null;
 
+    const mediaGeneration = toTrimmedString(record.mediaGeneration);
+    const photoId = Number.isFinite(Number(record.id)) ? Number(record.id) : record.id;
+    const assets = mediaGeneration && Number.isSafeInteger(photoId) && photoId > 0
+        ? materializePhotoAssets(
+            photoId,
+            mediaGeneration,
+            listPhotoDerivativeAssetDescriptors()
+        )
+        : [];
+    const sourcePath = pickFirstNonEmpty(sourceObject.path);
+    if (sourcePath) {
+        assets.push({
+            role: 'source',
+            replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.SOURCE,
+            scope: 'private',
+            path: sourcePath,
+            contentType: pickFirstNonEmpty(
+                sourceObject.contentType,
+                'application/octet-stream'
+            ),
+            generation: mediaGeneration || null,
+            photoId
+        });
+    }
+
     const runtimePhoto = {
-        id: Number.isFinite(Number(record.id)) ? Number(record.id) : record.id,
+        id: photoId,
         title: toTrimmedString(record.title, 'Foto senza titolo'),
         description: toTrimmedString(record.description),
         date: toTrimmedString(record.date),
@@ -80,7 +111,7 @@ function toRuntimePhoto(record) {
         resolution: pickFirstNonEmpty(exifObject.resolution),
         settings: normalizeSettings({}, exifObject, cropProfiles),
         tags: normalizeTags(record.tags),
-        sourcePath: pickFirstNonEmpty(sourceObject.path),
+        sourcePath,
         sourceContentType: pickFirstNonEmpty(sourceObject.contentType),
         mobileImage: Boolean(record.mobileImage),
         updatedAt: Number.isFinite(Number(record.updatedAt))
@@ -89,7 +120,8 @@ function toRuntimePhoto(record) {
         derivativesVersion: Number.isFinite(Number(record.derivativesVersion))
             ? Number(record.derivativesVersion)
             : (Number.isFinite(Number(record.id)) ? Number(record.id) : 0),
-        mediaGeneration: toTrimmedString(record.mediaGeneration)
+        mediaGeneration,
+        assets
     };
 
     return runtimePhoto;

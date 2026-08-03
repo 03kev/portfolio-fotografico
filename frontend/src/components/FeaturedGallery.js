@@ -114,7 +114,7 @@ export default function FeaturedGallery({ limit = 18 }) {
             aria-label={p.title || 'Apri foto'}
           >
             <Img 
-              src={resolvePhotoAssetUrl(p, 'thumbnail11')}
+              src={resolvePhotoAssetUrl(p, 'thumbnail-1x1')}
               alt={p.title || 'Foto'} 
               loading="lazy" 
             />

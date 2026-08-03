@@ -289,25 +289,13 @@ file il cui path termina con:
 
 La full image rimane indicizzabile tramite la pagina canonica `/photo/:id`.
 
-### 5. Migrazione una tantum dei path precedenti
+### 5. Registro asset e migrazione metadata
 
-Il comando è dry-run per impostazione predefinita:
-
-```bash
-cd backend
-npm run media:paths:migrate
-npm run media:paths:migrate -- --execute
-```
-
-Gli asset canonici precedenti vanno rimossi solo dopo il cutover production e
-una verifica completa:
-
-```bash
-npm run media:paths:migrate -- \
-  --cleanup-old-assets \
-  --execute \
-  --confirm-cutover
-```
+Postgres registra ogni oggetto R2 in `photo_assets`; i path non vengono più
+ricostruiti da una lista di varianti nelle route. La migration `008` importa i
+path correnti e quelli già presenti nella coda di cleanup. Per ownership,
+lifecycle, riconciliazione e procedura di aggiunta di una variante consulta
+[`backend/src/repositories/README.md`](backend/src/repositories/README.md).
 
 ## Modalita admin
 
@@ -472,19 +460,16 @@ Esempio storage:
 }
 ```
 
-### Cosa viene derivato a runtime
+### Cosa viene esposto a runtime
 
-Nel metadata record non vengono salvati i path pubblici finali come campi
-canonici. L'API li costruisce a runtime a partire da `photo.id` e
-`mediaGeneration`:
+Postgres usa `photo_assets` come source of truth per path, ruolo, scope e
+content type. L’API restituisce le varianti pubbliche dinamicamente in
+`photo.assets`, indicizzate per ruolo; per esempio `full`, `mobile`,
+`thumbnail-4x3`, `thumbnail-1x1` e `social`. Il source privato non viene esposto.
 
-- `image`
-- `thumbnail43`
-- `thumbnail11`
-- `socialImage`
-- `url`
-
-Questo evita ridondanza; l’ULID rende ogni set pubblico immutabile.
+Il vecchio snapshot JSON non è una seconda source of truth: l’adapter
+transitorio ricostruisce in lettura i ruoli storici dal catalogo corrente e da
+`mediaGeneration`. L’ULID rende ogni set di file immutabile.
 
 ### Schema canonico delle serie
 
@@ -613,9 +598,9 @@ curl -fsS "https://kevinmuka.dev/api/series?all=false" | head
 
 5. Asset R2:
 
-- verifica almeno una `image`
-- verifica almeno una `thumbnail43`
-- verifica almeno una `socialImage`
+- verifica almeno un asset `full`
+- verifica almeno un asset `thumbnail-4x3`
+- verifica almeno un asset `social`
 - controlla assenza di `403/404`
 
 ## Troubleshooting rapido

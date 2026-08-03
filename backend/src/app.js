@@ -19,7 +19,6 @@ const {
     ensureR2Configured,
     getUploadObject
 } = require('./services/r2Storage');
-const { buildPhotoAssetPaths } = require('./services/photoDerivatives');
 const { buildPublicAssetUrl } = require('./services/publicAssetUrl');
 
 const app = express();
@@ -272,10 +271,10 @@ function toAbsoluteSiteUrl(value, siteBaseUrl) {
     return `${siteBaseUrl}/${src}`;
 }
 
-function resolvePhotoImageUrl(photo, siteBaseUrl, assetKey = 'socialImagePath') {
-    const photoId = String(photo?.id || '').trim();
-    if (!photoId) return '';
-    const raw = buildPhotoAssetPaths(photoId, 'bin', photo.mediaGeneration)[assetKey];
+function resolvePhotoImageUrl(photo, siteBaseUrl, role = 'social') {
+    const raw = (Array.isArray(photo?.assets) ? photo.assets : [])
+        .find((asset) => asset.scope === 'public' && asset.role === role)
+        ?.path;
     if (!raw) return '';
 
     const normalized = buildPublicAssetUrl(raw);
@@ -413,7 +412,7 @@ async function handlePhotoSeoPage(req, res, next) {
         const title = `${photoTitle} - Kevin Muka`;
         const description = buildPhotoCaption(photo);
         const imageUrl = resolvePhotoImageUrl(photo, siteBaseUrl);
-        const contentUrl = resolvePhotoImageUrl(photo, siteBaseUrl, 'imagePath');
+        const contentUrl = resolvePhotoImageUrl(photo, siteBaseUrl, 'full');
         const rightsUrl = `${siteBaseUrl}/rights`;
         const imageObjectId = `${canonicalUrl}#primary-image`;
         const structuredData = {
@@ -482,7 +481,7 @@ async function handleSeriesIndexSeoPage(req, res, next) {
         const title = 'Kevin Muka | Serie Fotografiche';
         const description = 'Serie fotografiche di Kevin Muka: progetti visivi organizzati per tema, luogo e narrazione.';
         const imageUrl = entries[0]?.coverPhoto
-            ? resolvePhotoImageUrl(entries[0].coverPhoto, siteBaseUrl, 'socialImagePath')
+            ? resolvePhotoImageUrl(entries[0].coverPhoto, siteBaseUrl, 'social')
             : '';
         const itemListId = `${canonicalUrl}#series-list`;
         const structuredData = {
@@ -515,7 +514,7 @@ async function handleSeriesIndexSeoPage(req, res, next) {
             '      <ul>',
             ...entries.map((entry) => {
                 const coverUrl = entry.coverPhoto
-                    ? resolvePhotoImageUrl(entry.coverPhoto, siteBaseUrl, 'imagePath')
+                    ? resolvePhotoImageUrl(entry.coverPhoto, siteBaseUrl, 'full')
                     : '';
                 return [
                     '        <li>',
@@ -589,7 +588,7 @@ async function handleSeriesSeoPage(req, res, next) {
         const title = `Kevin Muka | Serie: ${series.title}`;
         const description = buildSeriesDescription(series);
         const imageUrl = coverPhoto
-            ? resolvePhotoImageUrl(coverPhoto, siteBaseUrl, 'socialImagePath')
+            ? resolvePhotoImageUrl(coverPhoto, siteBaseUrl, 'social')
             : '';
         const rightsUrl = `${siteBaseUrl}/rights`;
         const contactUrl = `${siteBaseUrl}/contact`;
@@ -602,7 +601,7 @@ async function handleSeriesSeoPage(req, res, next) {
                 '@id': `${photoUrl}#primary-image`,
                 name: String(photo.title || series.title || 'Fotografia').trim(),
                 description: buildPhotoCaption(photo),
-                contentUrl: resolvePhotoImageUrl(photo, siteBaseUrl, 'imagePath'),
+                contentUrl: resolvePhotoImageUrl(photo, siteBaseUrl, 'full'),
                 url: photoUrl,
                 creator: { '@type': 'Person', name: 'Kevin Muka' },
                 creditText: 'Kevin Muka',
@@ -661,7 +660,7 @@ async function handleSeriesSeoPage(req, res, next) {
         const galleryContent = seriesPhotos
             .map((photo) => {
                 const photoUrl = `${siteBaseUrl}/photo/${encodeURIComponent(String(photo.id))}`;
-                const contentUrl = resolvePhotoImageUrl(photo, siteBaseUrl, 'imagePath');
+                const contentUrl = resolvePhotoImageUrl(photo, siteBaseUrl, 'full');
                 return [
                     '    <figure>',
                     `      <a href="${escapeXml(photoUrl)}">`,
@@ -790,9 +789,10 @@ async function handleSitemapImages(req, res) {
                 const photoId = String(photo.id || '').trim();
                 if (!photoId) return '';
 
-                let fullImage = buildPublicAssetUrl(
-                    buildPhotoAssetPaths(photoId, 'bin', photo.mediaGeneration).imagePath
-                );
+                const fullPath = (Array.isArray(photo.assets) ? photo.assets : [])
+                    .find((asset) => asset.scope === 'public' && asset.role === 'full')
+                    ?.path;
+                let fullImage = buildPublicAssetUrl(fullPath);
                 if (!fullImage) return '';
                 if (!/^https?:\/\//i.test(fullImage)) {
                     if (fullImage.startsWith('/')) {

@@ -27,8 +27,8 @@ import PhotoModalPager from './photoModal/PhotoModalPager';
 const prefetchedMobileImageSources = new Set();
 
 const getMobileImageSource = (photo) => {
-  if (!photo?.mobileImage) return '';
-  return resolvePhotoAssetUrl(photo, 'mobileImage', '');
+  if (!photo?.assets?.mobile?.url) return '';
+  return resolvePhotoAssetUrl(photo, 'mobile', '');
 };
 
 const canPrefetchMobileImages = () => {
@@ -373,9 +373,9 @@ const PhotoModal = () => {
     const [showFullResolution, setShowFullResolution] = useState(false);
     const [isQualitySwitching, setIsQualitySwitching] = useState(false);
     const selectedPhotoId = selectedPhoto?.id;
-    const fullImageSrc = resolvePhotoAssetUrl(selectedPhoto, 'image');
-    const mobileImageSrc = selectedPhoto?.mobileImage
-      ? resolvePhotoAssetUrl(selectedPhoto, 'mobileImage', '')
+    const fullImageSrc = resolvePhotoAssetUrl(selectedPhoto, 'full');
+    const mobileImageSrc = selectedPhoto?.assets?.mobile?.url
+      ? resolvePhotoAssetUrl(selectedPhoto, 'mobile', '')
       : '';
     const imageSrc = isNarrowViewport && mobileImageSrc && !showFullResolution && !useFullImageFallback
       ? mobileImageSrc
@@ -384,7 +384,9 @@ const PhotoModal = () => {
       ? `${API_BASE_URL}/photos/${encodeURIComponent(String(selectedPhotoId))}/download`
       : '';
     const previewSrc = resolveAssetUrl(
-      selectedPhoto?.thumbnail43 || selectedPhoto?.thumbnail11 || '',
+      selectedPhoto?.assets?.['thumbnail-4x3']?.url
+        || selectedPhoto?.assets?.['thumbnail-1x1']?.url
+        || '',
       ''
     );
     const { isLoaded: isFullImageLoaded, setIsLoaded: setIsFullImageLoaded, markLoaded: markFullImageLoaded } = useSharedImageLoadState(imageSrc, modalOpen && Boolean(selectedPhotoId));

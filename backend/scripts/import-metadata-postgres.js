@@ -103,7 +103,9 @@ async function main() {
     });
     try {
         if (!options.verifyOnly) {
-            const result = await importMetadataSnapshot(pool, snapshot);
+            const result = await importMetadataSnapshot(pool, snapshot, {
+                objectNamespace: process.env.R2_OBJECT_PREFIX || ''
+            });
             console.log(`[import] completato: ${result.report.checksum}`);
         }
         const verification = await verifyImportedSnapshot(pool, snapshot);

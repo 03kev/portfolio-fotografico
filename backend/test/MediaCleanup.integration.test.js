@@ -18,6 +18,12 @@ const {
 const {
     normalizePostgresConnectionString
 } = require('../src/utils/postgresConnectionString');
+const {
+    generatePhotoDerivatives,
+    materializePhotoAssets,
+    PHOTO_ASSET_REPLACEMENT_GROUPS
+} = require('../src/services/photoDerivatives');
+const { presentPhoto } = require('../src/routes/photos.helpers');
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -65,6 +71,7 @@ class SchemaScopedPool {
 }
 
 function photoRecord(id, generation = generations[0], overrides = {}) {
+    const assets = generatedAssets(id, generation, { includeSource: true });
     return {
         id,
         title: `Foto ${id}`,
@@ -84,8 +91,30 @@ function photoRecord(id, generation = generations[0], overrides = {}) {
         updatedAt: Date.now(),
         derivativesVersion: Date.now(),
         mediaGeneration: generation,
+        assets,
         ...overrides
     };
+}
+
+function generatedAssets(id, generation, { includeSource = false } = {}) {
+    return materializePhotoAssets(id, generation, [
+        ...(includeSource ? [
+        {
+            role: 'source',
+            replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.SOURCE,
+            scope: 'private',
+            fileName: 'source.jpg',
+            contentType: 'image/jpeg'
+        },
+        ] : []),
+        ...['full', 'mobile', 'thumbnail-4x3', 'thumbnail-1x1', 'social'].map((role) => ({
+            role,
+            replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.DERIVATIVES,
+            scope: 'public',
+            fileName: `${role}.${role === 'social' ? 'jpg' : 'webp'}`,
+            contentType: role === 'social' ? 'image/jpeg' : 'image/webp'
+        }))
+    ]);
 }
 
 function cleanupJob({
@@ -107,6 +136,41 @@ function cleanupJob({
         photoId,
         generation
     };
+}
+
+async function enqueueJobs(jobs) {
+    const queued = [];
+    for (const job of jobs) {
+        const asset = await scopedPool.query(
+            `INSERT INTO photo_assets (
+                object_namespace, photo_id, generation, role, replacement_group,
+                storage_scope,
+                logical_path, content_type, state, retired_at
+             ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, 'retired', CURRENT_TIMESTAMP
+             )
+             ON CONFLICT (object_namespace, storage_scope, logical_path)
+             DO UPDATE SET updated_at = CURRENT_TIMESTAMP
+             RETURNING id`,
+            [
+                job.namespace,
+                job.photoId,
+                job.generation,
+                `test-asset-${job.photoId}`,
+                PHOTO_ASSET_REPLACEMENT_GROUPS.HISTORICAL,
+                job.scope,
+                job.path,
+                job.scope === 'public' ? 'image/webp' : 'application/octet-stream'
+            ]
+        );
+        queued.push({
+            assetId: Number(asset.rows[0].id),
+            namespace: job.namespace,
+            ownerKey: job.ownerKey,
+            reason: job.reason
+        });
+    }
+    return repository.mediaCleanup.enqueue(queued);
 }
 
 function createExecutor({
@@ -170,6 +234,7 @@ beforeEach(async () => {
     if (!databaseUrl) return;
     await scopedPool.query(
         `TRUNCATE
+            photo_assets,
             media_cleanup_jobs,
             admin_audit_events,
             series_photos,
@@ -191,8 +256,8 @@ after(async () => {
 integrationTest('concurrent executors claim a job once and duplicate enqueue is idempotent', async () => {
     const job = cleanupJob({ ownerKey: 'duplicate-owner' });
     await Promise.all([
-        repository.mediaCleanup.enqueue([job]),
-        repository.mediaCleanup.enqueue([job])
+        enqueueJobs([job]),
+        enqueueJobs([job])
     ]);
     assert.equal((await cleanupRows()).length, 1);
 
@@ -209,7 +274,7 @@ integrationTest('concurrent executors claim a job once and duplicate enqueue is 
 });
 
 integrationTest('a crashed executor lease is reclaimed while attempts remain and an absent object succeeds', async () => {
-    await repository.mediaCleanup.enqueue([
+    await enqueueJobs([
         cleanupJob({ ownerKey: 'crash-recovery' })
     ]);
     const abandonedLease = crypto.randomUUID();
@@ -239,7 +304,7 @@ integrationTest('a crashed executor lease is reclaimed while attempts remain and
 });
 
 integrationTest('an expired lease at maxAttempts becomes an observable terminal failure', async () => {
-    await repository.mediaCleanup.enqueue([
+    await enqueueJobs([
         cleanupJob({ ownerKey: 'crash-exhausted' })
     ]);
     const claimed = await repository.mediaCleanup.claimNext({
@@ -266,7 +331,7 @@ integrationTest('an expired lease at maxAttempts becomes an observable terminal 
 
 integrationTest('transient failures retry with backoff while permanent failures remain observable', async () => {
     let transientAttempts = 0;
-    await repository.mediaCleanup.enqueue([
+    await enqueueJobs([
         cleanupJob({ ownerKey: 'transient' })
     ]);
     const transientExecutor = createExecutor({
@@ -290,7 +355,7 @@ integrationTest('transient failures retry with backoff while permanent failures 
     const second = await transientExecutor.runBatch({ limit: 1 });
     assert.equal(second.succeeded, 1);
 
-    await repository.mediaCleanup.enqueue([
+    await enqueueJobs([
         cleanupJob({ ownerKey: 'permanent', generation: generations[1] })
     ]);
     const permanentExecutor = createExecutor({
@@ -311,7 +376,7 @@ integrationTest('transient failures retry with backoff while permanent failures 
 });
 
 integrationTest('the executor refuses jobs from another production or preview namespace', async () => {
-    await repository.mediaCleanup.enqueue([
+    await enqueueJobs([
         cleanupJob({
             ownerKey: 'namespace-fence',
             jobNamespace: namespace
@@ -329,7 +394,7 @@ integrationTest('the executor refuses jobs from another production or preview na
 });
 
 integrationTest('a production repository cannot claim preview jobs from a shared database', async () => {
-    await repository.mediaCleanup.enqueue([
+    await enqueueJobs([
         cleanupJob({ ownerKey: 'shared-database-namespace' })
     ]);
     const productionRepository = new PostgresPortfolioRepository(scopedPool, {
@@ -362,13 +427,15 @@ integrationTest('a production repository cannot claim preview jobs from a shared
 
 integrationTest('the active photo generation is cancelled rather than deleted', async () => {
     const photoId = 9_000_002;
-    await repository.photos.create(photoRecord(photoId));
+    const photo = await repository.photos.create(photoRecord(photoId));
+    const fullAsset = photo.assets.find((asset) => asset.role === 'full');
     await repository.mediaCleanup.enqueue([
-        cleanupJob({
+        {
+            assetId: fullAsset.id,
+            namespace,
             ownerKey: 'active-generation',
-            photoId,
-            generation: generations[0]
-        })
+            reason: 'integration-cleanup'
+        }
     ]);
 
     const result = await createExecutor().runBatch({ limit: 1 });
@@ -382,13 +449,15 @@ integrationTest('the active photo generation is cancelled rather than deleted', 
 
 integrationTest('an active winner remains protected even after an exhausted worker lease', async () => {
     const photoId = 9_000_009;
-    await repository.photos.create(photoRecord(photoId));
+    const photo = await repository.photos.create(photoRecord(photoId));
+    const fullAsset = photo.assets.find((asset) => asset.role === 'full');
     await repository.mediaCleanup.enqueue([
-        cleanupJob({
+        {
+            assetId: fullAsset.id,
+            namespace,
             ownerKey: 'active-generation-exhausted',
-            photoId,
-            generation: generations[0]
-        })
+            reason: 'integration-cleanup'
+        }
     ]);
     await scopedPool.query(
         `UPDATE media_cleanup_jobs
@@ -396,7 +465,9 @@ integrationTest('an active winner remains protected even after an exhausted work
              attempts = max_attempts,
              lease_id = $1::uuid,
              lease_expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second'
-         WHERE photo_id = $2`,
+         WHERE asset_id IN (
+             SELECT id FROM photo_assets WHERE photo_id = $2
+         )`,
         [crypto.randomUUID(), photoId]
     );
 
@@ -454,7 +525,10 @@ integrationTest('photo deletion and its six cleanup jobs commit or roll back tog
         );
         assert.equal((await repository.photos.findById(rollbackId)).id, rollbackId);
         const rolledBackJobs = await scopedPool.query(
-            'SELECT count(*)::int AS count FROM media_cleanup_jobs WHERE photo_id = $1',
+            `SELECT count(*)::int AS count
+             FROM media_cleanup_jobs j
+             JOIN photo_assets a ON a.id = j.asset_id
+             WHERE a.photo_id = $1`,
             [rollbackId]
         );
         assert.equal(rolledBackJobs.rows[0].count, 0);
@@ -477,11 +551,20 @@ integrationTest('abort cleans only the losing media-operation generation', async
         expectedVersion: photo.version,
         ttlMs: 10_000
     });
+    await repository.photos.registerMediaMutationAssets(
+        photoId,
+        operationId,
+        generatedAssets(photoId, generations[1])
+    );
     await repository.photos.abortMediaMutation(photoId, operationId);
     await scopedPool.query(
         `UPDATE media_cleanup_jobs
          SET available_at = CURRENT_TIMESTAMP
-         WHERE media_operation_id = $1::uuid`,
+         WHERE asset_id IN (
+             SELECT id
+             FROM photo_assets
+             WHERE owner_media_operation_id = $1::uuid
+         )`,
         [operationId]
     );
     const cleanup = await createExecutor().runBatch({ limit: 10 });
@@ -509,6 +592,11 @@ integrationTest('an expired media operation is cleaned and can no longer publish
         expectedVersion: photo.version,
         ttlMs: 10_000
     });
+    await repository.photos.registerMediaMutationAssets(
+        photoId,
+        operationId,
+        generatedAssets(photoId, generations[1])
+    );
     await scopedPool.query(
         `UPDATE photos
          SET media_operation_expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second'
@@ -518,7 +606,11 @@ integrationTest('an expired media operation is cleaned and can no longer publish
     await scopedPool.query(
         `UPDATE media_cleanup_jobs
          SET available_at = CURRENT_TIMESTAMP
-         WHERE media_operation_id = $1::uuid`,
+         WHERE asset_id IN (
+             SELECT id
+             FROM photo_assets
+             WHERE owner_media_operation_id = $1::uuid
+         )`,
         [operationId]
     );
 
@@ -587,11 +679,12 @@ integrationTest('successful source replacement protects the winner and deletes t
         ttlMs: 10_000
     });
     const nextSourcePath = `/private/source/photos/${photoId}/${generations[1]}/source.jpg`;
-    await repository.photos.registerMediaMutationCleanupAssets(
+    await repository.photos.registerMediaMutationAssets(
         photoId,
         operationId,
-        [{ scope: 'private', path: nextSourcePath }]
+        generatedAssets(photoId, generations[1], { includeSource: true })
     );
+    await repository.photos.markMediaMutationAssetsStored(photoId, operationId);
     const updated = await repository.photos.completeMediaMutation(
         photoId,
         operationId,
@@ -624,6 +717,198 @@ integrationTest('successful source replacement protects the winner and deletes t
     );
 });
 
+integrationTest('publishing fewer derivative variants retires removed roles without touching source', async () => {
+    const photoId = 9_000_011;
+    const photo = await repository.photos.create(photoRecord(photoId));
+    const operationId = crypto.randomUUID();
+    await repository.photos.beginMediaMutation(photoId, {
+        operationId,
+        kind: 'regenerate',
+        generation: generations[1],
+        expectedVersion: photo.version,
+        ttlMs: 10_000
+    });
+    const nextAssets = materializePhotoAssets(photoId, generations[1], [{
+        role: 'full',
+        replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.DERIVATIVES,
+        scope: 'public',
+        fileName: 'full.webp',
+        contentType: 'image/webp',
+        buffer: Buffer.from('next-full')
+    }]);
+    await repository.photos.registerMediaMutationAssets(
+        photoId,
+        operationId,
+        nextAssets
+    );
+    await repository.photos.markMediaMutationAssetsStored(photoId, operationId);
+    const updated = await repository.photos.completeMediaMutation(
+        photoId,
+        operationId,
+        {
+            mediaGeneration: generations[1],
+            updatedAt: Date.now(),
+            derivativesVersion: Date.now()
+        },
+        { expectedVersion: photo.version }
+    );
+
+    assert.deepEqual(
+        updated.assets.map((asset) => asset.role).sort(),
+        ['full', 'source']
+    );
+    const retired = await scopedPool.query(
+        `SELECT role
+         FROM photo_assets
+         WHERE photo_id = $1 AND state = 'retired'
+         ORDER BY role`,
+        [photoId]
+    );
+    assert.deepEqual(
+        retired.rows.map((row) => row.role),
+        ['full', 'mobile', 'social', 'thumbnail-1x1', 'thumbnail-4x3']
+    );
+
+    const cleanup = await createExecutor().runBatch({ limit: 10 });
+    assert.equal(cleanup.succeeded, 5);
+    assert.equal(deletedPublic.length, 5);
+    assert.equal(deletedPrivate.length, 0);
+    assert.equal(
+        (await repository.photos.findById(photoId)).assets
+            .some((asset) => asset.role === 'source' && asset.state === 'active'),
+        true
+    );
+});
+
+integrationTest('catalog rename flows through production, registry, API and cleanup', async () => {
+    const photoId = 9_000_012;
+    const photo = await repository.photos.create(photoRecord(photoId));
+    const sourceBuffer = Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="60"><rect width="80" height="60" fill="#c9aa63"/></svg>'
+    );
+    const renamedCatalog = [
+        {
+            role: 'full',
+            replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.DERIVATIVES,
+            scope: 'public',
+            fileName: 'full.webp',
+            contentType: 'image/webp',
+            produce: ({ base }) => base.clone().webp().toBuffer()
+        },
+        {
+            role: 'social-card',
+            replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.DERIVATIVES,
+            scope: 'public',
+            fileName: 'social-card.webp',
+            contentType: 'image/webp',
+            produce: ({ base }) => base.clone().resize(40, 30).webp().toBuffer()
+        }
+    ];
+    const produced = await generatePhotoDerivatives(sourceBuffer, null, renamedCatalog);
+    const renamedAssets = materializePhotoAssets(
+        photoId,
+        generations[1],
+        produced.assets
+    );
+    const writtenAssets = new Map(
+        renamedAssets.map((asset) => [asset.path, asset.buffer])
+    );
+    const renameOperationId = crypto.randomUUID();
+    await repository.photos.beginMediaMutation(photoId, {
+        operationId: renameOperationId,
+        kind: 'regenerate',
+        generation: generations[1],
+        expectedVersion: photo.version,
+        ttlMs: 10_000
+    });
+    await repository.photos.registerMediaMutationAssets(
+        photoId,
+        renameOperationId,
+        renamedAssets
+    );
+    await repository.photos.markMediaMutationAssetsStored(photoId, renameOperationId);
+    const renamedPhoto = await repository.photos.completeMediaMutation(
+        photoId,
+        renameOperationId,
+        {
+            resolution: produced.resolution,
+            mediaGeneration: generations[1],
+            updatedAt: Date.now(),
+            derivativesVersion: Date.now()
+        },
+        { expectedVersion: photo.version }
+    );
+    const renamedApiPhoto = presentPhoto(renamedPhoto);
+
+    assert.equal(renamedApiPhoto.assets.social, undefined);
+    assert.match(renamedApiPhoto.assets['social-card'].url, /social-card\.webp$/);
+    assert.equal(writtenAssets.get(renamedAssets[1].path).length > 0, true);
+    assert.equal(
+        renamedPhoto.assets.some((asset) => asset.role === 'source'),
+        true
+    );
+
+    await createExecutor().runBatch({ limit: 10 });
+    assert.equal(
+        deletedPublic.some((logicalPath) => logicalPath.endsWith('/social.jpg')),
+        true
+    );
+    deletedPublic = [];
+
+    const reduced = await generatePhotoDerivatives(
+        sourceBuffer,
+        null,
+        [renamedCatalog[0]]
+    );
+    const reducedAssets = materializePhotoAssets(
+        photoId,
+        generations[2],
+        reduced.assets
+    );
+    for (const asset of reducedAssets) writtenAssets.set(asset.path, asset.buffer);
+    const removalOperationId = crypto.randomUUID();
+    await repository.photos.beginMediaMutation(photoId, {
+        operationId: removalOperationId,
+        kind: 'regenerate',
+        generation: generations[2],
+        expectedVersion: renamedPhoto.version,
+        ttlMs: 10_000
+    });
+    await repository.photos.registerMediaMutationAssets(
+        photoId,
+        removalOperationId,
+        reducedAssets
+    );
+    await repository.photos.markMediaMutationAssetsStored(photoId, removalOperationId);
+    const reducedPhoto = await repository.photos.completeMediaMutation(
+        photoId,
+        removalOperationId,
+        {
+            resolution: reduced.resolution,
+            mediaGeneration: generations[2],
+            updatedAt: Date.now(),
+            derivativesVersion: Date.now()
+        },
+        { expectedVersion: renamedPhoto.version }
+    );
+
+    assert.equal(presentPhoto(reducedPhoto).assets['social-card'], undefined);
+    const secondCleanup = await createExecutor({
+        deletePublicObject: async (logicalPath) => {
+            deletedPublic.push(logicalPath);
+            writtenAssets.delete(logicalPath);
+        }
+    }).runBatch({ limit: 10 });
+    assert.equal(secondCleanup.succeeded, 2);
+    assert.equal(
+        deletedPublic.some((logicalPath) => logicalPath.endsWith('/social-card.webp')),
+        true
+    );
+    assert.equal(writtenAssets.has(renamedAssets[1].path), false);
+    assert.equal(writtenAssets.has(reducedAssets[0].path), true);
+    assert.equal(deletedPrivate.length, 0);
+});
+
 integrationTest('failed photo creation cleans its lease generation but keeps valid staging', async () => {
     const intentId = crypto.randomUUID();
     const leaseId = crypto.randomUUID();
@@ -642,13 +927,22 @@ integrationTest('failed photo creation cleans its lease generation but keeps val
         payloadHash: 'a'.repeat(64),
         leaseTtlMs: 10_000
     });
+    await repository.photoCreations.registerOutputAssets(
+        intentId,
+        leaseId,
+        generatedAssets(intent.photoId, generations[2], { includeSource: true })
+    );
     await repository.photoCreations.release(intentId, leaseId);
 
     assert.equal(deletedPublic.length, 0);
     await scopedPool.query(
         `UPDATE media_cleanup_jobs
          SET available_at = CURRENT_TIMESTAMP
-         WHERE media_operation_id = $1::uuid`,
+         WHERE asset_id IN (
+             SELECT id
+             FROM photo_assets
+             WHERE owner_media_operation_id = $1::uuid
+         )`,
         [leaseId]
     );
     const cleanup = await createExecutor().runBatch({ limit: 10 });
@@ -660,8 +954,10 @@ integrationTest('failed photo creation cleans its lease generation but keeps val
     const staging = (
         await scopedPool.query(
             `SELECT *
-             FROM media_cleanup_jobs
-             WHERE guard_type = 'creation-staging'`
+             FROM media_cleanup_jobs j
+             JOIN photo_assets a ON a.id = j.asset_id
+             WHERE a.role = 'creation-source'
+               AND a.generation IS NULL`
         )
     ).rows[0];
     assert.equal(staging.status, 'pending');
@@ -686,6 +982,11 @@ integrationTest('an expired photo-creation lease generation is reclaimed without
         payloadHash: 'b'.repeat(64),
         leaseTtlMs: 10_000
     });
+    await repository.photoCreations.registerOutputAssets(
+        intentId,
+        leaseId,
+        generatedAssets(intent.photoId, generations[2], { includeSource: true })
+    );
     await scopedPool.query(
         `UPDATE photo_creation_intents
          SET lease_expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second'
@@ -695,7 +996,11 @@ integrationTest('an expired photo-creation lease generation is reclaimed without
     await scopedPool.query(
         `UPDATE media_cleanup_jobs
          SET available_at = CURRENT_TIMESTAMP
-         WHERE media_operation_id = $1::uuid`,
+         WHERE asset_id IN (
+             SELECT id
+             FROM photo_assets
+             WHERE owner_media_operation_id = $1::uuid
+         )`,
         [leaseId]
     );
 
@@ -706,10 +1011,66 @@ integrationTest('an expired photo-creation lease generation is reclaimed without
         (
             await scopedPool.query(
                 `SELECT status
-                 FROM media_cleanup_jobs
-                 WHERE guard_type = 'creation-staging'`
+                 FROM media_cleanup_jobs j
+                 JOIN photo_assets a ON a.id = j.asset_id
+                 WHERE a.role = 'creation-source'
+                   AND a.generation IS NULL`
             )
         ).rows[0].status,
         'pending'
     );
+});
+
+integrationTest('a newly produced variant is registered and cleaned without cleanup role changes', async () => {
+    const photoId = 9_000_010;
+    const photo = await repository.photos.create(photoRecord(photoId));
+    const operationId = crypto.randomUUID();
+    await repository.photos.beginMediaMutation(photoId, {
+        operationId,
+        kind: 'regenerate',
+        generation: generations[1],
+        expectedVersion: photo.version,
+        ttlMs: 10_000
+    });
+    const [customVariant] = materializePhotoAssets(photoId, generations[1], [{
+        role: 'panorama-preview',
+        replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.DERIVATIVES,
+        scope: 'public',
+        fileName: 'panorama-preview.avif',
+        contentType: 'image/avif',
+        buffer: Buffer.from('generated panorama preview')
+    }]);
+    const registration = await repository.photos.registerMediaMutationAssets(
+        photoId,
+        operationId,
+        [customVariant]
+    );
+    const [registered] = registration.assets;
+    // This is the same descriptor (including its produced buffer) consumed by
+    // the generic writer; cleanup never needs to know the custom role.
+    const writtenPath = customVariant.path;
+    assert.equal(customVariant.buffer.toString(), 'generated panorama preview');
+    await repository.photos.markMediaMutationAssetsStored(
+        photoId,
+        operationId,
+        [registered.id]
+    );
+    await repository.photos.abortMediaMutation(photoId, operationId);
+    await scopedPool.query(
+        `UPDATE media_cleanup_jobs
+         SET available_at = CURRENT_TIMESTAMP
+         WHERE asset_id = $1`,
+        [registered.id]
+    );
+
+    const cleanup = await createExecutor().runBatch({ limit: 1 });
+    const asset = await scopedPool.query(
+        'SELECT state FROM photo_assets WHERE id = $1',
+        [registered.id]
+    );
+
+    assert.equal(cleanup.succeeded, 1);
+    assert.equal(writtenPath, customVariant.path);
+    assert.deepEqual(deletedPublic, [customVariant.path]);
+    assert.equal(asset.rows[0].state, 'deleted');
 });

@@ -1141,7 +1141,7 @@ function SeriesDetail() {
     const images = seriesPhotos
       .slice(0, 120)
       .map((photo) => {
-        const full = toAbsoluteImageUrl(photo.image);
+        const full = toAbsoluteImageUrl(photo.assets?.full?.url);
         if (!full) return null;
         const imageData = {
           '@type': 'ImageObject',
@@ -1181,7 +1181,7 @@ function SeriesDetail() {
         ? `Serie fotografica "${currentSeries.title}" di Kevin Muka.`
         : 'Dettaglio serie fotografica di Kevin Muka.'),
     ogType: 'website',
-    image: seriesSeoCover ? toAbsoluteImageUrl(seriesSeoCover.socialImage) : '',
+    image: seriesSeoCover ? toAbsoluteImageUrl(seriesSeoCover.assets?.social?.url) : '',
     noindex: detailFetchState === 'error' || currentSeries?.published === false,
     structuredData: seriesStructuredData,
   });
@@ -1672,7 +1672,7 @@ function SeriesDetail() {
     if (!interactive) {
       return (
         <ThumbImage
-          src={resolvePhotoAssetUrl(photo, 'image')}
+          src={resolvePhotoAssetUrl(photo, 'full')}
           alt={photo.title}
           loading="lazy"
         />
@@ -1708,7 +1708,7 @@ function SeriesDetail() {
         title={photo.title || ''}
       >
         <ThumbImage
-          src={resolvePhotoAssetUrl(photo, 'image')}
+          src={resolvePhotoAssetUrl(photo, 'full')}
           alt={photo.title}
           loading="lazy"
         />
@@ -2097,9 +2097,9 @@ function SeriesDetail() {
         <HeroSection>
           {coverPhoto && (
             <CoverImage
-              src={resolvePhotoAssetUrl(coverPhoto, 'image')}
-              $mobileSrc={coverPhoto.mobileImage
-                ? resolvePhotoAssetUrl(coverPhoto, 'mobileImage')
+              src={resolvePhotoAssetUrl(coverPhoto, 'full')}
+              $mobileSrc={coverPhoto.assets?.mobile?.url
+                ? resolvePhotoAssetUrl(coverPhoto, 'mobile')
                 : undefined}
               initial={{ scale: 1.2 }}
               animate={{ scale: 1 }}
@@ -2366,7 +2366,7 @@ function SeriesDetail() {
                               title={p.title || ''}
                             >
                               <InspectorImg
-                                src={p.thumbnail43 ? resolvePhotoAssetUrl(p, 'thumbnail43') : '/photo-fallback.svg'}
+                                src={resolvePhotoAssetUrl(p, 'thumbnail-4x3')}
                                 alt={p.title}
                                 loading="lazy"
                               />
@@ -2504,7 +2504,7 @@ function SeriesDetail() {
                             <PhotoFrame>
                               <PhotoMedia>
                                 <CanvasPhoto
-                                  src={resolvePhotoAssetUrl(photo, 'image')}
+                                  src={resolvePhotoAssetUrl(photo, 'full')}
                                   alt={photo.title}
                                   loading="lazy"
                                 />
@@ -2764,7 +2764,7 @@ function SeriesDetail() {
               ✕
             </LightboxClose>
             <LightboxImage
-              src={resolvePhotoAssetUrl(lightboxPhoto, 'image')}
+              src={resolvePhotoAssetUrl(lightboxPhoto, 'full')}
               alt={lightboxPhoto.title}
               onClick={(e) => e.stopPropagation()}
             />

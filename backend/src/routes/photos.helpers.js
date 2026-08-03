@@ -3,10 +3,7 @@ const {
     putPrivateObject,
     putUploadObject
 } = require('../services/r2Storage');
-const {
-    buildPhotoAssetPaths,
-    normalizeUploadsPath
-} = require('../services/photoDerivatives');
+const { normalizeUploadsPath } = require('../services/photoDerivatives');
 const { buildPublicAssetUrl } = require('../services/publicAssetUrl');
 const DEFAULTS = require('../config/defaults');
 const { readStreamToBuffer } = require('../utils/streams');
@@ -17,47 +14,37 @@ const {
 
 const PUBLIC_ASSET_CACHE_CONTROL = DEFAULTS.publicAssetCacheControl;
 
-function withDefaultPhotoVariants(photo) {
-    const photoId = String(photo?.id || '').trim();
-    const assets = photoId
-        ? buildPhotoAssetPaths(photoId, 'bin', photo?.mediaGeneration)
-        : null;
-    const imagePath = assets ? normalizeUploadsPath(assets.imagePath) : '';
-    const mobileImagePath = photo?.mobileImage && assets
-        ? normalizeUploadsPath(assets.mobileImagePath)
-        : '';
-    const thumbnail43Path = assets ? normalizeUploadsPath(assets.thumbnail43Path) : '';
-    const thumbnail11Path = assets ? normalizeUploadsPath(assets.thumbnail11Path) : '';
-    const socialImagePath = assets ? normalizeUploadsPath(assets.socialImagePath) : '';
-
-    return {
-        ...photo,
-        image: imagePath,
-        mobileImage: mobileImagePath,
-        thumbnail43: thumbnail43Path,
-        thumbnail11: thumbnail11Path,
-        socialImage: socialImagePath,
-        url: imagePath
-    };
+function getPhotoAsset(photo, role, scope = null) {
+    return (Array.isArray(photo?.assets) ? photo.assets : []).find((asset) => (
+        asset?.role === role && (!scope || asset?.scope === scope)
+    )) || null;
 }
 
 function presentPhoto(photo) {
-    const normalized = withDefaultPhotoVariants(photo);
-    const image = buildPublicAssetUrl(normalized.image, { preferRelativeInDevelopment: true });
-    const mobileImage = buildPublicAssetUrl(normalized.mobileImage, { preferRelativeInDevelopment: true });
-    const thumbnail43 = buildPublicAssetUrl(normalized.thumbnail43, { preferRelativeInDevelopment: true });
-    const thumbnail11 = buildPublicAssetUrl(normalized.thumbnail11, { preferRelativeInDevelopment: true });
-    const socialImage = buildPublicAssetUrl(normalized.socialImage, { preferRelativeInDevelopment: true });
-    const { sourcePath, sourceContentType, ...publicPhoto } = normalized;
+    const publicAssets = Object.fromEntries(
+        (Array.isArray(photo?.assets) ? photo.assets : [])
+            .filter((asset) => asset.scope === 'public')
+            .map((asset) => {
+                const path = normalizeUploadsPath(asset.path);
+                return [asset.role, {
+                    role: asset.role,
+                    contentType: asset.contentType,
+                    generation: asset.generation,
+                    url: buildPublicAssetUrl(path, { preferRelativeInDevelopment: true })
+                }];
+            })
+    );
+    const {
+        sourcePath,
+        sourceContentType,
+        mobileImage,
+        assets,
+        ...publicPhoto
+    } = photo;
 
     return {
         ...publicPhoto,
-        image,
-        mobileImage,
-        thumbnail43,
-        thumbnail11,
-        socialImage,
-        url: buildPublicAssetUrl(normalized.url, { preferRelativeInDevelopment: true })
+        assets: publicAssets
     };
 }
 
@@ -198,7 +185,7 @@ module.exports = {
     readPrivateSourceBuffer,
     readPrivateSourceObject,
     sendRouteError,
-    withDefaultPhotoVariants,
+    getPhotoAsset,
     writePrivateObject,
     writePublicObject
 };

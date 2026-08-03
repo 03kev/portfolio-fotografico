@@ -285,7 +285,7 @@ const GalleryModal = () => {
   };
 
   const getPhotoSrc = (photo) => {
-    return resolvePhotoAssetUrl(photo, 'image');
+    return resolvePhotoAssetUrl(photo, 'full');
   };
 
   if (!galleryPhotos || galleryPhotos.length === 0) {

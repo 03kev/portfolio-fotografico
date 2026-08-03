@@ -59,6 +59,10 @@ async function main() {
             const client = await pool.connect();
             try {
                 await client.query('BEGIN');
+                await client.query(
+                    "SELECT set_config('app.r2_object_prefix', $1, true)",
+                    [String(process.env.R2_OBJECT_PREFIX || '').trim().replace(/^\/+|\/+$/g, '')]
+                );
                 await client.query(sql);
                 await client.query(
                     `INSERT INTO portfolio_schema_migrations (name, checksum)

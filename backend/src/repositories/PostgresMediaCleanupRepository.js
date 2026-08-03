@@ -16,64 +16,21 @@ function normalizeNamespace(value) {
     return normalized;
 }
 
-function normalizeJobPath(scope, value) {
-    const path = String(value || '').trim();
-    const expectedPrefix = scope === 'private' ? '/private/' : '/uploads/';
-    if (
-        !path.startsWith(expectedPrefix)
-        || path.includes('\\')
-        || path.split('/').includes('..')
-        || path.includes('?')
-        || path.includes('#')
-    ) {
-        throw new TypeError(`Path cleanup ${scope} non valido.`);
-    }
-    return path;
-}
-
 function normalizeCleanupJob(job) {
-    const scope = String(job?.scope || '').trim();
-    if (!['public', 'private'].includes(scope)) {
-        throw new TypeError('scope cleanup deve essere "public" oppure "private".');
+    const assetId = Number(job?.assetId);
+    if (!Number.isSafeInteger(assetId) || assetId <= 0) {
+        throw new TypeError('assetId cleanup non valido.');
     }
     const reason = String(job?.reason || '').trim();
     if (!/^[a-z][a-z0-9-]{1,79}$/.test(reason)) {
         throw new TypeError('reason cleanup non valido.');
     }
-    const guardType = String(job?.guardType || '').trim();
-    if (!['photo-generation', 'creation-staging'].includes(guardType)) {
-        throw new TypeError('guardType cleanup non valido.');
-    }
-    const generation = job?.generation
-        ? String(job.generation).trim().toUpperCase()
-        : null;
-    const photoId = job?.photoId === null || job?.photoId === undefined
-        ? null
-        : Number(job.photoId);
-    const uploadIntentId = job?.uploadIntentId
-        ? String(job.uploadIntentId).trim().toLowerCase()
-        : null;
-    if (guardType === 'photo-generation') {
-        if (!Number.isSafeInteger(photoId) || photoId <= 0) {
-            throw new TypeError('photoId cleanup non valido.');
-        }
-        if (!/^[0-9A-HJKMNP-TV-Z]{26}$/.test(generation || '')) {
-            throw new TypeError('generation cleanup non valida.');
-        }
-    }
-    if (
-        guardType === 'creation-staging'
-        && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(uploadIntentId || '')
-    ) {
-        throw new TypeError('uploadIntentId cleanup non valido.');
-    }
     const ownerKey = String(job?.ownerKey || '').trim();
     if (!ownerKey) throw new TypeError('ownerKey cleanup mancante.');
     const namespace = normalizeNamespace(job?.namespace);
-    const path = normalizeJobPath(scope, job?.path);
     const dedupeKey = crypto
         .createHash('sha256')
-        .update(JSON.stringify([ownerKey, namespace, scope, path]))
+        .update(JSON.stringify([ownerKey, namespace, assetId]))
         .digest('hex');
     const availableAt = job?.availableAt
         ? new Date(job.availableAt)
@@ -88,17 +45,9 @@ function normalizeCleanupJob(job) {
 
     return {
         dedupeKey,
+        assetId,
         namespace,
-        scope,
-        path,
         reason,
-        guardType,
-        photoId: guardType === 'photo-generation' ? photoId : null,
-        generation: guardType === 'photo-generation' ? generation : null,
-        uploadIntentId: guardType === 'creation-staging' ? uploadIntentId : null,
-        mediaOperationId: job?.mediaOperationId
-            ? String(job.mediaOperationId).trim().toLowerCase()
-            : null,
         availableAt: availableAt.toISOString(),
         maxAttempts
     };
@@ -108,19 +57,26 @@ function mapCleanupJob(row) {
     if (!row) return null;
     return {
         id: Number(row.id),
+        assetId: Number(row.asset_id),
         dedupeKey: row.dedupe_key,
         namespace: row.object_namespace,
-        scope: row.storage_scope,
-        path: row.logical_path,
+        scope: row.asset_storage_scope,
+        path: row.asset_logical_path,
+        role: row.asset_role || null,
+        assetState: row.asset_state || null,
         reason: row.reason,
-        guardType: row.guard_type,
-        photoId: row.photo_id === null ? null : Number(row.photo_id),
-        generation: row.generation || null,
-        uploadIntentId: row.upload_intent_id
-            ? String(row.upload_intent_id)
+        guardType: row.asset_role === 'creation-source' && !row.asset_generation
+            ? 'creation-staging'
+            : 'photo-generation',
+        photoId: row.asset_photo_id === null
+            ? null
+            : Number(row.asset_photo_id),
+        generation: row.asset_generation || null,
+        uploadIntentId: row.asset_upload_intent_id
+            ? String(row.asset_upload_intent_id)
             : null,
-        mediaOperationId: row.media_operation_id
-            ? String(row.media_operation_id)
+        mediaOperationId: row.asset_media_operation_id
+            ? String(row.asset_media_operation_id)
             : null,
         status: row.status,
         attempts: Number(row.attempts),
@@ -140,6 +96,21 @@ function mapCleanupJob(row) {
     };
 }
 
+function withAssetFields(row, asset) {
+    if (!row || !asset) return row;
+    return {
+        ...row,
+        asset_storage_scope: asset.storage_scope,
+        asset_logical_path: asset.logical_path,
+        asset_role: asset.role,
+        asset_state: asset.state,
+        asset_photo_id: asset.photo_id,
+        asset_generation: asset.generation,
+        asset_upload_intent_id: asset.owner_upload_intent_id,
+        asset_media_operation_id: asset.owner_media_operation_id
+    };
+}
+
 async function enqueueMediaCleanupJobs(queryable, jobs) {
     const normalizedJobs = (Array.isArray(jobs) ? jobs : [])
         .filter(Boolean)
@@ -147,27 +118,52 @@ async function enqueueMediaCleanupJobs(queryable, jobs) {
     const inserted = [];
     for (const job of normalizedJobs) {
         const result = await queryable.query(
-            `INSERT INTO media_cleanup_jobs (
-                dedupe_key, object_namespace, storage_scope, logical_path,
-                reason, guard_type, photo_id, generation, upload_intent_id,
-                media_operation_id, available_at, max_attempts
-             ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9::uuid,
-                $10::uuid, $11::timestamptz, $12
+            `WITH inserted AS (
+                INSERT INTO media_cleanup_jobs (
+                    asset_id, dedupe_key, object_namespace, reason,
+                    available_at, max_attempts
+                )
+                SELECT a.id, $2, $3, $4, $5::timestamptz, $6
+                FROM photo_assets a
+                WHERE a.id = $1
+                  AND a.object_namespace = $3
+                ON CONFLICT (dedupe_key) DO UPDATE
+                SET status = 'pending',
+                    reason = EXCLUDED.reason,
+                    available_at = EXCLUDED.available_at,
+                    attempts = 0,
+                    max_attempts = EXCLUDED.max_attempts,
+                    lease_id = NULL,
+                    lease_expires_at = NULL,
+                    last_error_code = NULL,
+                    last_error_message = NULL,
+                    completed_at = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE media_cleanup_jobs.status = 'cancelled'
+                  AND EXISTS (
+                      SELECT 1
+                      FROM photo_assets owned_asset
+                      WHERE owned_asset.id = EXCLUDED.asset_id
+                        AND owned_asset.state IN ('planned', 'retired')
+                  )
+                RETURNING *
              )
-             ON CONFLICT (dedupe_key) DO NOTHING
-             RETURNING *`,
+             SELECT inserted.*,
+                    a.storage_scope AS asset_storage_scope,
+                    a.logical_path AS asset_logical_path,
+                    a.role AS asset_role,
+                    a.state AS asset_state,
+                    a.photo_id AS asset_photo_id,
+                    a.generation AS asset_generation,
+                    a.owner_upload_intent_id AS asset_upload_intent_id,
+                    a.owner_media_operation_id AS asset_media_operation_id
+             FROM inserted
+             JOIN photo_assets a ON a.id = inserted.asset_id`,
             [
+                job.assetId,
                 job.dedupeKey,
                 job.namespace,
-                job.scope,
-                job.path,
                 job.reason,
-                job.guardType,
-                job.photoId,
-                job.generation,
-                job.uploadIntentId,
-                job.mediaOperationId,
                 job.availableAt,
                 job.maxAttempts
             ]
@@ -175,22 +171,6 @@ async function enqueueMediaCleanupJobs(queryable, jobs) {
         if (result.rows[0]) inserted.push(mapCleanupJob(result.rows[0]));
     }
     return inserted;
-}
-
-async function cancelMediaOperationCleanupJobs(queryable, operationId, message) {
-    await queryable.query(
-        `UPDATE media_cleanup_jobs
-         SET status = 'cancelled',
-             lease_id = NULL,
-             lease_expires_at = NULL,
-             last_error_code = 'ACTIVE_GENERATION_PROTECTED',
-             last_error_message = $2,
-             completed_at = CURRENT_TIMESTAMP,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE media_operation_id = $1::uuid
-           AND status IN ('pending', 'processing')`,
-        [operationId, message]
-    );
 }
 
 async function runTransaction(pool, callback) {
@@ -208,7 +188,7 @@ async function runTransaction(pool, callback) {
     }
 }
 
-async function cancelClaimedJob(client, jobId, message) {
+async function cancelClaimedJob(client, jobId, message, asset) {
     const result = await client.query(
         `UPDATE media_cleanup_jobs
          SET status = 'cancelled',
@@ -224,11 +204,11 @@ async function cancelClaimedJob(client, jobId, message) {
     );
     return {
         action: 'cancelled',
-        job: mapCleanupJob(result.rows[0])
+        job: mapCleanupJob(withAssetFields(result.rows[0], asset))
     };
 }
 
-async function rescheduleClaimedJob(client, jobId, protectedUntil, graceMs) {
+async function rescheduleClaimedJob(client, jobId, protectedUntil, graceMs, asset) {
     const result = await client.query(
         `UPDATE media_cleanup_jobs
          SET status = 'pending',
@@ -245,11 +225,11 @@ async function rescheduleClaimedJob(client, jobId, protectedUntil, graceMs) {
     );
     return {
         action: 'deferred',
-        job: mapCleanupJob(result.rows[0])
+        job: mapCleanupJob(withAssetFields(result.rows[0], asset))
     };
 }
 
-async function failExhaustedLease(client, jobId) {
+async function failExhaustedLease(client, jobId, asset) {
     const result = await client.query(
         `UPDATE media_cleanup_jobs
          SET status = 'failed',
@@ -268,7 +248,7 @@ async function failExhaustedLease(client, jobId) {
     );
     return {
         action: 'failed',
-        job: mapCleanupJob(result.rows[0])
+        job: mapCleanupJob(withAssetFields(result.rows[0], asset))
     };
 }
 
@@ -306,22 +286,31 @@ class PostgresMediaCleanupRepository {
         );
         return runTransaction(this.pool, async (client) => {
             const candidate = await client.query(
-                `SELECT *
-                 FROM media_cleanup_jobs
-                 WHERE object_namespace = $1
+                `SELECT j.*,
+                        a.storage_scope AS asset_storage_scope,
+                        a.logical_path AS asset_logical_path,
+                        a.role AS asset_role,
+                        a.state AS asset_state,
+                        a.photo_id AS asset_photo_id,
+                        a.generation AS asset_generation,
+                        a.owner_upload_intent_id AS asset_upload_intent_id,
+                        a.owner_media_operation_id AS asset_media_operation_id
+                 FROM media_cleanup_jobs j
+                 JOIN photo_assets a ON a.id = j.asset_id
+                 WHERE j.object_namespace = $1
                    AND (
                        (
-                           status = 'pending'
-                           AND attempts < max_attempts
-                           AND available_at <= CURRENT_TIMESTAMP
+                           j.status = 'pending'
+                           AND j.attempts < j.max_attempts
+                           AND j.available_at <= CURRENT_TIMESTAMP
                        )
                        OR
                        (
-                           status = 'processing'
-                           AND lease_expires_at <= CURRENT_TIMESTAMP
+                           j.status = 'processing'
+                           AND j.lease_expires_at <= CURRENT_TIMESTAMP
                        )
                    )
-                 ORDER BY available_at, id
+                 ORDER BY j.available_at, j.id
                  LIMIT 1`,
                 [this.namespace]
             );
@@ -331,26 +320,27 @@ class PostgresMediaCleanupRepository {
             let photo = null;
             let creation = null;
             let intent = null;
-            if (candidateRow.guard_type === 'photo-generation') {
+            if (candidateRow.asset_media_operation_id || candidateRow.asset_generation) {
                 const creationResult = await client.query(
-                    `SELECT lease_generation, lease_expires_at,
+                    `SELECT lease_id, lease_generation, lease_expires_at,
                             lease_expires_at > CURRENT_TIMESTAMP AS lease_active
                      FROM photo_creation_intents
                      WHERE photo_id = $1
                        AND status = 'processing'
                      FOR UPDATE`,
-                    [candidateRow.photo_id]
+                    [candidateRow.asset_photo_id]
                 );
                 creation = creationResult.rows[0] || null;
                 const photoResult = await client.query(
-                    `SELECT media_generation, media_operation_generation,
+                    `SELECT media_generation, media_operation_id,
+                            media_operation_generation,
                             media_operation_expires_at,
                             media_operation_expires_at > CURRENT_TIMESTAMP
                                 AS media_operation_active
                      FROM photos
                      WHERE id = $1
                      FOR UPDATE`,
-                    [candidateRow.photo_id]
+                    [candidateRow.asset_photo_id]
                 );
                 photo = photoResult.rows[0] || null;
             } else {
@@ -361,10 +351,17 @@ class PostgresMediaCleanupRepository {
                      FROM photo_creation_intents
                      WHERE id = $1::uuid
                      FOR UPDATE`,
-                    [candidateRow.upload_intent_id]
+                    [candidateRow.asset_upload_intent_id]
                 );
                 intent = intentResult.rows[0] || null;
             }
+
+            const assetResult = await client.query(
+                `SELECT * FROM photo_assets WHERE id = $1 FOR UPDATE`,
+                [candidateRow.asset_id]
+            );
+            const asset = assetResult.rows[0];
+            if (!asset) return null;
 
             // Domain transactions lock the creation intent (when present)
             // and/or photo before touching cleanup rows. Preserve that order
@@ -393,34 +390,55 @@ class PostgresMediaCleanupRepository {
             const row = locked.rows[0];
             if (!row) return null;
 
-            if (row.guard_type === 'photo-generation') {
-                if (photo?.media_generation === row.generation) {
+            if (asset.state === 'active') {
+                return cancelClaimedJob(
+                    client,
+                    row.id,
+                    'L’asset è attualmente attivo e non può essere eliminato.',
+                    asset
+                );
+            }
+            if (asset.state === 'deleted') {
+                return cancelClaimedJob(
+                    client,
+                    row.id,
+                    'L’asset risulta già eliminato.',
+                    asset
+                );
+            }
+            if (asset.generation) {
+                if (photo?.media_generation === asset.generation && asset.state !== 'retired') {
                     return cancelClaimedJob(
                         client,
                         row.id,
-                        'La generazione è attualmente pubblicata dalla foto.'
+                        'La generazione è attualmente pubblicata dalla foto.',
+                        asset
                     );
                 }
                 if (
-                    photo?.media_operation_generation === row.generation
+                    photo?.media_operation_generation === asset.generation
+                    && String(photo?.media_operation_id || '') === String(asset.owner_media_operation_id || '')
                     && photo?.media_operation_active
                 ) {
                     return rescheduleClaimedJob(
                         client,
                         row.id,
                         photo.media_operation_expires_at,
-                        this.staleWriterGraceMs
+                        this.staleWriterGraceMs,
+                        asset
                     );
                 }
                 if (
-                    creation?.lease_generation === row.generation
+                    creation?.lease_generation === asset.generation
+                    && String(creation?.lease_id || '') === String(asset.owner_media_operation_id || '')
                     && creation?.lease_active
                 ) {
                     return rescheduleClaimedJob(
                         client,
                         row.id,
                         creation.lease_expires_at,
-                        this.staleWriterGraceMs
+                        this.staleWriterGraceMs,
+                        asset
                     );
                 }
             } else {
@@ -434,7 +452,8 @@ class PostgresMediaCleanupRepository {
                             client,
                             row.id,
                             protectedUntil,
-                            this.staleWriterGraceMs
+                            this.staleWriterGraceMs,
+                            asset
                         );
                     }
                 }
@@ -447,7 +466,21 @@ class PostgresMediaCleanupRepository {
                 row.status === 'processing'
                 && Number(row.attempts) >= Number(row.max_attempts)
             ) {
-                return failExhaustedLease(client, row.id);
+                return failExhaustedLease(client, row.id, asset);
+            }
+
+            // Fence publication before the executor leaves the transaction to
+            // perform the R2 delete. Activation only accepts planned assets, so
+            // a stale writer cannot publish an object already being removed.
+            if (asset.state !== 'deleting') {
+                await client.query(
+                    `UPDATE photo_assets
+                     SET state = 'deleting',
+                         updated_at = CURRENT_TIMESTAMP
+                     WHERE id = $1`,
+                    [asset.id]
+                );
+                asset.state = 'deleting';
             }
 
             const claimed = await client.query(
@@ -464,28 +497,54 @@ class PostgresMediaCleanupRepository {
             );
             return {
                 action: 'claimed',
-                job: mapCleanupJob(claimed.rows[0])
+                job: mapCleanupJob(withAssetFields(claimed.rows[0], asset))
             };
         });
     }
 
     async complete(jobId, leaseId) {
-        const result = await this.pool.query(
-            `UPDATE media_cleanup_jobs
-             SET status = 'succeeded',
-                 lease_id = NULL,
-                 lease_expires_at = NULL,
-                 last_error_code = NULL,
-                 last_error_message = NULL,
-                 completed_at = CURRENT_TIMESTAMP,
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE id = $1
-               AND status = 'processing'
-               AND lease_id = $2::uuid
-             RETURNING *`,
-            [jobId, leaseId]
-        );
-        return mapCleanupJob(result.rows[0]);
+        return runTransaction(this.pool, async (client) => {
+            const locked = await client.query(
+                `SELECT *
+                 FROM media_cleanup_jobs
+                 WHERE id = $1
+                   AND status = 'processing'
+                   AND lease_id = $2::uuid
+                 FOR UPDATE`,
+                [jobId, leaseId]
+            );
+            const row = locked.rows[0];
+            if (!row) return null;
+            const deletedAsset = await client.query(
+                `UPDATE photo_assets
+                 SET state = 'deleted',
+                     deleted_at = CURRENT_TIMESTAMP,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = $1
+                   AND state = 'deleting'
+                 RETURNING *`,
+                [row.asset_id]
+            );
+            if (!deletedAsset.rows[0]) {
+                throw new Error('Lo stato dell’asset non consente di completare il cleanup.');
+            }
+            const result = await client.query(
+                `UPDATE media_cleanup_jobs
+                 SET status = 'succeeded',
+                     lease_id = NULL,
+                     lease_expires_at = NULL,
+                     last_error_code = NULL,
+                     last_error_message = NULL,
+                     completed_at = CURRENT_TIMESTAMP,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = $1
+                   AND status = 'processing'
+                   AND lease_id = $2::uuid
+                 RETURNING *`,
+                [jobId, leaseId]
+            );
+            return mapCleanupJob(withAssetFields(result.rows[0], deletedAsset.rows[0]));
+        });
     }
 
     async fail(jobId, leaseId, {
@@ -496,10 +555,19 @@ class PostgresMediaCleanupRepository {
     }) {
         return runTransaction(this.pool, async (client) => {
             const locked = await client.query(
-                `SELECT *
-                 FROM media_cleanup_jobs
-                 WHERE id = $1
-                 FOR UPDATE`,
+                `SELECT j.*,
+                        a.storage_scope AS asset_storage_scope,
+                        a.logical_path AS asset_logical_path,
+                        a.role AS asset_role,
+                        a.state AS asset_state,
+                        a.photo_id AS asset_photo_id,
+                        a.generation AS asset_generation,
+                        a.owner_upload_intent_id AS asset_upload_intent_id,
+                        a.owner_media_operation_id AS asset_media_operation_id
+                 FROM media_cleanup_jobs j
+                 JOIN photo_assets a ON a.id = j.asset_id
+                 WHERE j.id = $1
+                 FOR UPDATE OF j`,
                 [jobId]
             );
             const row = locked.rows[0];
@@ -535,7 +603,7 @@ class PostgresMediaCleanupRepository {
                     String(message || 'Eliminazione R2 non riuscita.').slice(0, 4000)
                 ]
             );
-            return mapCleanupJob(result.rows[0]);
+            return mapCleanupJob({ ...row, ...result.rows[0] });
         });
     }
 
@@ -549,11 +617,20 @@ class PostgresMediaCleanupRepository {
                 [this.namespace]
             ),
             this.pool.query(
-                `SELECT *
-                 FROM media_cleanup_jobs
-                 WHERE status = 'failed'
-                   AND object_namespace = $2
-                 ORDER BY updated_at DESC, id DESC
+                `SELECT j.*,
+                        a.storage_scope AS asset_storage_scope,
+                        a.logical_path AS asset_logical_path,
+                        a.role AS asset_role,
+                        a.state AS asset_state,
+                        a.photo_id AS asset_photo_id,
+                        a.generation AS asset_generation,
+                        a.owner_upload_intent_id AS asset_upload_intent_id,
+                        a.owner_media_operation_id AS asset_media_operation_id
+                 FROM media_cleanup_jobs j
+                 JOIN photo_assets a ON a.id = j.asset_id
+                 WHERE j.status = 'failed'
+                   AND j.object_namespace = $2
+                 ORDER BY j.updated_at DESC, j.id DESC
                  LIMIT $1`,
                 [
                     Math.max(1, Math.min(Number(failedLimit) || 25, 100)),
@@ -580,6 +657,5 @@ class PostgresMediaCleanupRepository {
 module.exports = {
     DEFAULT_STALE_WRITER_GRACE_MS,
     PostgresMediaCleanupRepository,
-    cancelMediaOperationCleanupJobs,
     enqueueMediaCleanupJobs
 };

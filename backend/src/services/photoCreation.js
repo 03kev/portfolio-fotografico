@@ -1,7 +1,8 @@
 const crypto = require('node:crypto');
 const {
     buildPhotoCreationSourcePath,
-    buildPhotoAssetPaths
+    materializePhotoAssets,
+    PHOTO_ASSET_REPLACEMENT_GROUPS
 } = require('./photoDerivatives');
 const { PRIVATE_SOURCE_PREFIX } = require('../config/assetPaths');
 const DEFAULTS = require('../config/defaults');
@@ -36,9 +37,8 @@ class PhotoCreationService {
         repository,
         createSignedUploadUrl,
         readSourceObject,
-        writeSourceObject,
         generateDerivatives,
-        writeDerivatives,
+        writeAssets,
         createMediaGeneration,
         runCleanup = async () => null,
         createOperationId = () => crypto.randomUUID(),
@@ -56,9 +56,8 @@ class PhotoCreationService {
         this.repository = repository;
         this.createSignedUploadUrl = createSignedUploadUrl;
         this.readSourceObject = readSourceObject;
-        this.writeSourceObject = writeSourceObject;
         this.generateDerivatives = generateDerivatives;
-        this.writeDerivatives = writeDerivatives;
+        this.writeAssets = writeAssets;
         this.createMediaGeneration = createMediaGeneration;
         this.runCleanup = runCleanup;
         this.createOperationId = createOperationId;
@@ -173,17 +172,32 @@ class PhotoCreationService {
                 ?.replace(/^jpeg$/i, 'jpg')
                 ?.replace(/[^a-z0-9]/gi, '')
                 || 'bin';
-            const assets = buildPhotoAssetPaths(
+            const assets = materializePhotoAssets(
                 claim.intent.photoId,
-                sourceExtension,
-                claim.intent.leaseGeneration
+                claim.intent.leaseGeneration,
+                [
+                    {
+                        role: 'source',
+                        replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.SOURCE,
+                        scope: 'private',
+                        fileName: `source.${sourceExtension}`,
+                        contentType: claim.intent.sourceContentType,
+                        buffer: sourceObject.buffer
+                    },
+                    ...derivatives.assets
+                ]
             );
-            await this.writeSourceObject(
-                assets.sourcePath,
-                sourceObject.buffer,
-                claim.intent.sourceContentType
+            const registeredAssets = await this.repository.photoCreations.registerOutputAssets(
+                uploadIntentId,
+                leaseId,
+                assets
             );
-            await this.writeDerivatives(assets, derivatives);
+            await this.writeAssets(assets);
+            await this.repository.photoCreations.markOutputAssetsStored(
+                uploadIntentId,
+                leaseId,
+                registeredAssets.map((asset) => asset.id)
+            );
 
             const timestamp = this.now();
             const finalized = await this.repository.photoCreations.finalize(
@@ -192,10 +206,7 @@ class PhotoCreationService {
                 {
                     ...photoDraft,
                     id: claim.intent.photoId,
-                    sourcePath: assets.sourcePath,
-                    sourceContentType: claim.intent.sourceContentType,
                     resolution: derivatives.resolution,
-                    mobileImage: true,
                     mediaGeneration: claim.intent.leaseGeneration,
                     updatedAt: timestamp,
                     derivativesVersion: timestamp

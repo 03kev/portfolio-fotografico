@@ -7,6 +7,10 @@ const {
 const {
     normalizeMediaGeneration
 } = require('../utils/mediaGeneration');
+const {
+    PHOTO_ASSET_REPLACEMENT_GROUPS,
+    normalizePhotoAssetReplacementGroup
+} = require('./photoAssetLifecycle');
 
 function normalizeUploadsPath(value) {
     const raw = String(value || '').trim();
@@ -87,24 +91,66 @@ function normalizePrivateSourcePathForPhotoId(value, photoId) {
     return normalized;
 }
 
-function buildPhotoAssetPaths(photoId, sourceExtension = 'bin', mediaGeneration) {
+function normalizeAssetFileName(value) {
+    const fileName = String(value || '').trim();
+    if (
+        !/^[a-z0-9][a-z0-9._-]{0,119}$/i.test(fileName)
+        || fileName.includes('..')
+    ) {
+        throw new TypeError('Nome file asset non valido.');
+    }
+    return fileName;
+}
+
+function materializePhotoAsset(photoId, mediaGeneration, producedAsset) {
     const normalizedPhotoId = String(photoId || '').trim();
     if (!/^[1-9][0-9]*$/.test(normalizedPhotoId)) {
         throw new TypeError('ID foto non valido per il path media.');
     }
-    const cleanSourceExtension = String(sourceExtension || 'bin').replace(/[^a-z0-9]/gi, '') || 'bin';
     const generation = normalizeMediaGeneration(mediaGeneration, { required: true });
-    const publicBase = `${PUBLIC_UPLOADS_PREFIX}/photos/${normalizedPhotoId}/${generation}`;
-    const privateBase = `${PRIVATE_SOURCE_PREFIX}/photos/${normalizedPhotoId}/${generation}`;
-
+    const role = String(producedAsset?.role || '').trim().toLowerCase();
+    const scope = String(producedAsset?.scope || '').trim().toLowerCase();
+    const contentType = String(producedAsset?.contentType || '').trim().toLowerCase();
+    const replacementGroup = normalizePhotoAssetReplacementGroup(
+        producedAsset?.replacementGroup
+    );
+    if (!/^[a-z][a-z0-9-]{1,79}$/.test(role)) {
+        throw new TypeError('Ruolo asset non valido.');
+    }
+    if (!['public', 'private'].includes(scope)) {
+        throw new TypeError('Scope asset non valido.');
+    }
+    if (!/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(contentType)) {
+        throw new TypeError('Content-Type asset non valido.');
+    }
+    const fileName = normalizeAssetFileName(producedAsset?.fileName);
+    const base = scope === 'public'
+        ? `${PUBLIC_UPLOADS_PREFIX}/photos/${normalizedPhotoId}/${generation}`
+        : `${PRIVATE_SOURCE_PREFIX}/photos/${normalizedPhotoId}/${generation}`;
     return {
-        sourcePath: `${privateBase}/source.${cleanSourceExtension}`,
-        imagePath: `${publicBase}/full.webp`,
-        mobileImagePath: `${publicBase}/mobile.webp`,
-        thumbnail43Path: `${publicBase}/thumbnail-4x3.webp`,
-        thumbnail11Path: `${publicBase}/thumbnail-1x1.webp`,
-        socialImagePath: `${publicBase}/social.jpg`
+        ...producedAsset,
+        role,
+        scope,
+        contentType,
+        replacementGroup,
+        fileName,
+        path: `${base}/${fileName}`,
+        photoId: Number(normalizedPhotoId),
+        generation
     };
+}
+
+function materializePhotoAssets(photoId, mediaGeneration, producedAssets) {
+    const assets = (Array.isArray(producedAssets) ? producedAssets : [])
+        .map((asset) => materializePhotoAsset(photoId, mediaGeneration, asset));
+    const roles = new Set();
+    for (const asset of assets) {
+        if (roles.has(asset.role)) {
+            throw new TypeError(`Ruolo asset duplicato: ${asset.role}.`);
+        }
+        roles.add(asset.role);
+    }
+    return assets;
 }
 
 function buildPhotoCreationSourcePath(uploadIntentId, sourceExtension = 'bin') {
@@ -240,7 +286,90 @@ function generateMobileImageDerivative(sourceBuffer) {
         .toBuffer();
 }
 
-async function generatePhotoDerivatives(sourceBuffer, cropProfiles = null) {
+// This catalog is the only place that defines generated photo variants. A new
+// variant supplies its storage metadata and producer here; writing, registry,
+// API projection and cleanup all consume the resulting asset descriptors.
+function definePhotoDerivativeVariant(definition) {
+    return Object.freeze({
+        ...definition,
+        replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.DERIVATIVES
+    });
+}
+
+const PHOTO_DERIVATIVE_VARIANTS = Object.freeze([
+    definePhotoDerivativeVariant({
+        role: 'full',
+        scope: 'public',
+        fileName: 'full.webp',
+        contentType: 'image/webp',
+        produce: ({ base }) => base
+            .clone()
+            .resize(3840, 2160, { fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: 92, effort: 6 })
+            .toBuffer()
+    }),
+    definePhotoDerivativeVariant({
+        role: 'mobile',
+        scope: 'public',
+        fileName: 'mobile.webp',
+        contentType: 'image/webp',
+        produce: ({ sourceBuffer }) => generateMobileImageDerivative(sourceBuffer)
+    }),
+    definePhotoDerivativeVariant({
+        role: 'thumbnail-4x3',
+        scope: 'public',
+        fileName: 'thumbnail-4x3.webp',
+        contentType: 'image/webp',
+        produce: ({ createCoverDerivative, cropProfiles }) => createCoverDerivative(
+            400,
+            300,
+            normalizeCropProfile(cropProfiles?.r43) || DEFAULT_CROP_PROFILE,
+            (pipeline) => pipeline.webp({ quality: 84, effort: 5 }).toBuffer()
+        )
+    }),
+    definePhotoDerivativeVariant({
+        role: 'thumbnail-1x1',
+        scope: 'public',
+        fileName: 'thumbnail-1x1.webp',
+        contentType: 'image/webp',
+        produce: ({ createCoverDerivative, cropProfiles }) => createCoverDerivative(
+            400,
+            400,
+            normalizeCropProfile(cropProfiles?.r11) || DEFAULT_CROP_PROFILE,
+            (pipeline) => pipeline.webp({ quality: 84, effort: 5 }).toBuffer()
+        )
+    }),
+    definePhotoDerivativeVariant({
+        role: 'social',
+        scope: 'public',
+        fileName: 'social.jpg',
+        contentType: 'image/jpeg',
+        produce: ({ createCoverDerivative, cropProfiles }) => createCoverDerivative(
+            1200,
+            630,
+            normalizeCropProfile(cropProfiles?.social) || DEFAULT_CROP_PROFILE,
+            (pipeline) => pipeline
+                .jpeg({ quality: 84, mozjpeg: true, progressive: true })
+                .toBuffer()
+        )
+    })
+]);
+
+function listPhotoDerivativeAssetDescriptors() {
+    return PHOTO_DERIVATIVE_VARIANTS.map(({
+        role,
+        scope,
+        fileName,
+        contentType,
+        replacementGroup
+    }) => ({ role, scope, fileName, contentType, replacementGroup }));
+}
+
+async function generatePhotoDerivatives(
+    sourceBuffer,
+    cropProfiles = null,
+    variants = PHOTO_DERIVATIVE_VARIANTS
+) {
     const base = sharp(sourceBuffer).rotate();
     const metadata = await base.metadata();
 
@@ -276,57 +405,27 @@ async function generatePhotoDerivatives(sourceBuffer, cropProfiles = null) {
         );
     };
 
-    const imagePromise = base
-        .clone()
-        .resize(3840, 2160, { fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: 92, effort: 6 })
-        .toBuffer();
-
-    // 1280px covers a 420px mobile viewport even at 3x DPR, without forcing
-    // phones to transfer and decode the 4K desktop derivative in the modal.
-    const mobileImagePromise = generateMobileImageDerivative(sourceBuffer);
-
-    const thumbnail43Promise = createCoverDerivative(
-        400,
-        300,
-        normalizeCropProfile(normalizedProfiles?.r43) || DEFAULT_CROP_PROFILE,
-        (pipeline) => (
-        pipeline.webp({ quality: 84, effort: 5 }).toBuffer()
-    ));
-
-    const thumbnail11Promise = createCoverDerivative(
-        400,
-        400,
-        normalizeCropProfile(normalizedProfiles?.r11) || DEFAULT_CROP_PROFILE,
-        (pipeline) => (
-        pipeline.webp({ quality: 84, effort: 5 }).toBuffer()
-    ));
-
-    const socialImagePromise = createCoverDerivative(
-        1200,
-        630,
-        normalizeCropProfile(normalizedProfiles?.social) || DEFAULT_CROP_PROFILE,
-        (pipeline) => (
-        pipeline.jpeg({ quality: 84, mozjpeg: true, progressive: true }).toBuffer()
-    ));
-
-    const [image, mobileImage, thumbnail43, thumbnail11, socialImage] = await Promise.all([
-        imagePromise,
-        mobileImagePromise,
-        thumbnail43Promise,
-        thumbnail11Promise,
-        socialImagePromise
-    ]);
+    const assets = await Promise.all(variants.map(async (variant) => ({
+        role: variant.role,
+        scope: variant.scope,
+        fileName: variant.fileName,
+        contentType: variant.contentType,
+        replacementGroup: normalizePhotoAssetReplacementGroup(
+            variant.replacementGroup
+        ),
+        buffer: await variant.produce({
+            base,
+            sourceBuffer,
+            cropProfiles: normalizedProfiles,
+            createCoverDerivative
+        })
+    })));
 
     const width = Math.round(sourceWidth);
     const height = Math.round(sourceHeight);
 
     return {
-        image,
-        mobileImage,
-        thumbnail43,
-        thumbnail11,
-        socialImage,
+        assets,
         width,
         height,
         resolution: `${width}x${height}`
@@ -335,7 +434,11 @@ async function generatePhotoDerivatives(sourceBuffer, cropProfiles = null) {
 
 module.exports = {
     buildPhotoCreationSourcePath,
-    buildPhotoAssetPaths,
+    PHOTO_DERIVATIVE_VARIANTS,
+    PHOTO_ASSET_REPLACEMENT_GROUPS,
+    listPhotoDerivativeAssetDescriptors,
+    materializePhotoAsset,
+    materializePhotoAssets,
     normalizeMediaGeneration,
     buildDefaultCropProfiles,
     generateMobileImageDerivative,

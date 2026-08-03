@@ -192,10 +192,10 @@ function getTextPresentation(block, textSizeMap, textFontMap) {
 }
 
 function ResponsivePicture({ photo }) {
-  const mobileSrc = photo?.mobileImage
-    ? resolvePhotoAssetUrl(photo, 'mobileImage')
+  const mobileSrc = photo?.assets?.mobile?.url
+    ? resolvePhotoAssetUrl(photo, 'mobile')
     : '';
-  const fullSrc = resolvePhotoAssetUrl(photo, 'image');
+  const fullSrc = resolvePhotoAssetUrl(photo, 'full');
 
   return (
     <Picture>
@@ -309,14 +309,14 @@ export default function ResponsiveSeriesContent({
                         aria-label={photo.title ? `Apri ${photo.title}` : 'Apri fotografia'}
                       >
                         <Picture>
-                          {photo.mobileImage && (
+                          {photo.assets?.mobile?.url && (
                             <source
                               media="(max-width: 1024px)"
-                              srcSet={resolvePhotoAssetUrl(photo, 'mobileImage')}
+                              srcSet={resolvePhotoAssetUrl(photo, 'mobile')}
                             />
                           )}
                           <GroupImage
-                            src={resolvePhotoAssetUrl(photo, 'image')}
+                            src={resolvePhotoAssetUrl(photo, 'full')}
                             alt={photo.title || 'Fotografia'}
                             loading="lazy"
                             decoding="async"

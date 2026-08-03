@@ -488,8 +488,8 @@ const SeriesEditor = ({ series, onClose }) => {
               title={selected ? `Rimuovi ${photo.title}` : `Seleziona ${photo.title}`}
             >
               <img
-                src={photo.thumbnail43
-                  ? resolvePhotoAssetUrl(photo, 'thumbnail43')
+                src={photo.assets?.['thumbnail-4x3']?.url
+                  ? resolvePhotoAssetUrl(photo, 'thumbnail-4x3')
                   : '/photo-fallback.svg'}
                 alt=""
                 loading="lazy"
@@ -570,9 +570,9 @@ const SeriesEditor = ({ series, onClose }) => {
 
         <aside className="series-status-card">
           <div className="series-cover-preview">
-            {coverPhoto?.thumbnail43 ? (
+            {coverPhoto?.assets?.['thumbnail-4x3']?.url ? (
               <img
-                src={resolvePhotoAssetUrl(coverPhoto, 'thumbnail43')}
+                src={resolvePhotoAssetUrl(coverPhoto, 'thumbnail-4x3')}
                 alt=""
               />
             ) : (
