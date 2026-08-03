@@ -1,8 +1,8 @@
 const {
-    listPhotoDerivativeAssetDescriptors,
-    materializePhotoAssets,
+    normalizeOperationalPhotoAssetDescriptor,
+    normalizePublishedPhotoAssetInventory,
     PHOTO_ASSET_REPLACEMENT_GROUPS
-} = require('./photoDerivatives');
+} = require('./photoAssetLifecycle');
 
 function isPlainObject(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -64,7 +64,32 @@ function normalizeSettings(settingsValue, exif = {}, cropProfiles = null) {
     return nextSettings;
 }
 
-function toRuntimePhoto(record) {
+function buildLegacyAssetInventory(record, photoId, mediaGeneration) {
+    if (Array.isArray(record.assets)) {
+        return normalizePublishedPhotoAssetInventory(record.assets, {
+            photoId,
+            mediaGeneration
+        });
+    }
+    const sourceObject = isPlainObject(record.source) ? record.source : {};
+    const sourcePath = pickFirstNonEmpty(sourceObject.path);
+    if (sourcePath && sourcePath.startsWith('/private/')) {
+        return [normalizeOperationalPhotoAssetDescriptor({
+            role: 'source',
+            replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.SOURCE,
+            scope: 'private',
+            path: sourcePath,
+            contentType: pickFirstNonEmpty(
+                sourceObject.contentType,
+                'application/octet-stream'
+            ),
+            generation: mediaGeneration || null
+        }, { photoId })];
+    }
+    return [];
+}
+
+function toRuntimePhotoInternal(record, { legacy = false } = {}) {
     if (!isPlainObject(record)) return record;
 
     const locationObject = isPlainObject(record.location) ? record.location : {};
@@ -75,28 +100,15 @@ function toRuntimePhoto(record) {
 
     const mediaGeneration = toTrimmedString(record.mediaGeneration);
     const photoId = Number.isFinite(Number(record.id)) ? Number(record.id) : record.id;
-    const assets = mediaGeneration && Number.isSafeInteger(photoId) && photoId > 0
-        ? materializePhotoAssets(
+    const assets = legacy
+        ? buildLegacyAssetInventory(record, photoId, mediaGeneration)
+        : normalizePublishedPhotoAssetInventory(record.assets, {
             photoId,
-            mediaGeneration,
-            listPhotoDerivativeAssetDescriptors()
-        )
-        : [];
-    const sourcePath = pickFirstNonEmpty(sourceObject.path);
-    if (sourcePath) {
-        assets.push({
-            role: 'source',
-            replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.SOURCE,
-            scope: 'private',
-            path: sourcePath,
-            contentType: pickFirstNonEmpty(
-                sourceObject.contentType,
-                'application/octet-stream'
-            ),
-            generation: mediaGeneration || null,
-            photoId
+            mediaGeneration
         });
-    }
+    const sourceAsset = assets.find((asset) => asset.role === 'source');
+    const sourcePath = sourceAsset?.path
+        || (legacy ? pickFirstNonEmpty(sourceObject.path) : '');
 
     const runtimePhoto = {
         id: photoId,
@@ -112,8 +124,10 @@ function toRuntimePhoto(record) {
         settings: normalizeSettings({}, exifObject, cropProfiles),
         tags: normalizeTags(record.tags),
         sourcePath,
-        sourceContentType: pickFirstNonEmpty(sourceObject.contentType),
-        mobileImage: Boolean(record.mobileImage),
+        sourceContentType: sourceAsset?.contentType
+            || (legacy ? pickFirstNonEmpty(sourceObject.contentType) : ''),
+        mobileImage: assets.some((asset) => asset.role === 'mobile')
+            || (legacy && Boolean(record.mobileImage)),
         updatedAt: Number.isFinite(Number(record.updatedAt))
             ? Number(record.updatedAt)
             : 0,
@@ -125,6 +139,16 @@ function toRuntimePhoto(record) {
     };
 
     return runtimePhoto;
+}
+
+function toRuntimePhoto(record) {
+    return toRuntimePhotoInternal(record);
+}
+
+// Temporary read-only bridge for the JSON adapter until the Postgres cutover.
+// It never invents public derivatives and canonical snapshots never use it.
+function toLegacyRuntimePhoto(record) {
+    return toRuntimePhotoInternal(record, { legacy: true });
 }
 
 function compactObject(input) {
@@ -139,14 +163,41 @@ function compactObject(input) {
     return Object.fromEntries(entries);
 }
 
-function toStoragePhoto(runtimePhoto) {
+function toStoragePhotoInternal(runtimePhoto, { legacy = false } = {}) {
     if (!isPlainObject(runtimePhoto)) return runtimePhoto;
 
     const settings = isPlainObject(parseJsonIfString(runtimePhoto.settings, {}))
         ? parseJsonIfString(runtimePhoto.settings, {})
         : {};
+    const photoId = Number.isFinite(Number(runtimePhoto.id))
+        ? Number(runtimePhoto.id)
+        : runtimePhoto.id;
+    const mediaGeneration = toTrimmedString(runtimePhoto.mediaGeneration);
+    const hasExplicitInventory = Array.isArray(runtimePhoto.assets)
+        && runtimePhoto.assets.length > 0;
+    const inventory = legacy && !hasExplicitInventory
+        ? []
+        : normalizePublishedPhotoAssetInventory(runtimePhoto.assets, {
+            photoId,
+            mediaGeneration
+        });
+    const storageAssets = inventory.map(({
+        role,
+        replacementGroup,
+        scope,
+        path,
+        contentType,
+        generation
+    }) => ({
+        role,
+        replacementGroup,
+        scope,
+        path,
+        contentType,
+        generation
+    }));
     const photo = {
-        id: Number.isFinite(Number(runtimePhoto.id)) ? Number(runtimePhoto.id) : runtimePhoto.id,
+        id: photoId,
         title: toTrimmedString(runtimePhoto.title, 'Foto senza titolo'),
         description: toTrimmedString(runtimePhoto.description),
         date: toTrimmedString(runtimePhoto.date),
@@ -158,16 +209,14 @@ function toStoragePhoto(runtimePhoto) {
         resolution: toTrimmedString(runtimePhoto.resolution),
         settings,
         tags: normalizeTags(runtimePhoto.tags),
-        sourcePath: toTrimmedString(runtimePhoto.sourcePath),
-        sourceContentType: toTrimmedString(runtimePhoto.sourceContentType),
-        mobileImage: Boolean(runtimePhoto.mobileImage),
         updatedAt: Number.isFinite(Number(runtimePhoto.updatedAt))
             ? Number(runtimePhoto.updatedAt)
             : 0,
         derivativesVersion: Number.isFinite(Number(runtimePhoto.derivativesVersion))
             ? Number(runtimePhoto.derivativesVersion)
             : Date.now(),
-        mediaGeneration: toTrimmedString(runtimePhoto.mediaGeneration)
+        mediaGeneration,
+        assets: storageAssets
     };
 
     const cropProfiles = isPlainObject(photo.settings?.cropProfiles) ? photo.settings.cropProfiles : null;
@@ -179,11 +228,6 @@ function toStoragePhoto(runtimePhoto) {
         shutter: toTrimmedString(photo.settings?.shutter),
         iso: toTrimmedString(photo.settings?.iso),
         focal: toTrimmedString(photo.settings?.focal)
-    });
-
-    const source = compactObject({
-        path: toTrimmedString(photo.sourcePath),
-        contentType: toTrimmedString(photo.sourceContentType)
     });
 
     return {
@@ -199,8 +243,19 @@ function toStoragePhoto(runtimePhoto) {
         ...(Object.keys(exif).length ? { exif } : {}),
         ...(cropProfiles ? { composition: { cropProfiles } } : {}),
         tags: normalizeTags(photo.tags),
-        ...(Object.keys(source).length ? { source } : {}),
-        ...(photo.mobileImage ? { mobileImage: true } : {}),
+        ...(photo.assets.length ? { assets: photo.assets } : {}),
+        ...(legacy && !photo.assets.length && toTrimmedString(runtimePhoto.sourcePath)
+            ? {
+                source: {
+                    path: toTrimmedString(runtimePhoto.sourcePath),
+                    contentType: toTrimmedString(
+                        runtimePhoto.sourceContentType,
+                        'application/octet-stream'
+                    )
+                },
+                mobileImage: Boolean(runtimePhoto.mobileImage)
+            }
+            : {}),
         ...(photo.updatedAt > 0 ? { updatedAt: photo.updatedAt } : {}),
         derivativesVersion: Number.isFinite(Number(photo.derivativesVersion))
             ? Number(photo.derivativesVersion)
@@ -209,7 +264,17 @@ function toStoragePhoto(runtimePhoto) {
     };
 }
 
+function toStoragePhoto(runtimePhoto) {
+    return toStoragePhotoInternal(runtimePhoto);
+}
+
+function toLegacyStoragePhoto(runtimePhoto) {
+    return toStoragePhotoInternal(runtimePhoto, { legacy: true });
+}
+
 module.exports = {
+    toLegacyRuntimePhoto,
+    toLegacyStoragePhoto,
     toRuntimePhoto,
     toStoragePhoto
 };

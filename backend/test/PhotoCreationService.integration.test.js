@@ -119,6 +119,17 @@ function photoDraft(overrides = {}) {
     };
 }
 
+function publishedFullAsset(photoId, generation) {
+    return [{
+        role: 'full',
+        replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.DERIVATIVES,
+        scope: 'public',
+        path: `/uploads/photos/${photoId}/${generation}/full.webp`,
+        contentType: 'image/webp',
+        generation
+    }];
+}
+
 function createService({ derivativeGate = null, marker = 'default' } = {}) {
     return new PhotoCreationService({
         repository,
@@ -301,15 +312,17 @@ integrationTest('Postgres allocates distinct photo IDs for concurrent intents', 
 
 integrationTest('the allocator skips explicit imported IDs and preserves them unchanged', async () => {
     const importedId = 4_000_000_000_000_000;
+    const mediaGeneration = '01JGFJJZ00XR5RF7YH2J5PVWC4';
     await repository.photos.create({
         ...photoDraft(),
         id: importedId,
-        sourcePath: `/private/source/photos/${importedId}/01JGFJJZ00XR5RF7YH2J5PVWC4/source.jpg`,
+        sourcePath: `/private/source/photos/${importedId}/${mediaGeneration}/source.jpg`,
         sourceContentType: 'image/jpeg',
         mobileImage: true,
         updatedAt: 1,
         derivativesVersion: 1,
-        mediaGeneration: '01JGFJJZ00XR5RF7YH2J5PVWC4'
+        mediaGeneration,
+        assets: publishedFullAsset(importedId, mediaGeneration)
     });
     await scopedPool.query(
         `SELECT setval('portfolio_photo_id_seq', $1, FALSE)`,
@@ -505,6 +518,7 @@ integrationTest('partial derivative failure releases the lease and a retry overw
 integrationTest('a database conflict after media writes preserves the existing photo and leaves intent-owned output untouched', async () => {
     const service = createService();
     const prepared = await prepareSource(service);
+    const mediaGeneration = '01JGFJJZ00XR5RF7YH2J5PVWC4';
     await repository.photos.create({
         id: prepared.photoId,
         title: 'Foto già presente',
@@ -518,12 +532,13 @@ integrationTest('a database conflict after media writes preserves the existing p
         resolution: '100x100',
         settings: {},
         tags: [],
-        sourcePath: `/private/source/photos/${prepared.photoId}/01JGFJJZ00XR5RF7YH2J5PVWC4/source.jpg`,
+        sourcePath: `/private/source/photos/${prepared.photoId}/${mediaGeneration}/source.jpg`,
         sourceContentType: 'image/jpeg',
         mobileImage: true,
         updatedAt: prepared.photoId,
         derivativesVersion: prepared.photoId,
-        mediaGeneration: '01JGFJJZ00XR5RF7YH2J5PVWC4'
+        mediaGeneration,
+        assets: publishedFullAsset(prepared.photoId, mediaGeneration)
     });
 
     await assert.rejects(

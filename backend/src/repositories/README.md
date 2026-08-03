@@ -36,6 +36,16 @@ The application depends on domain operations, not on metadata documents.
 - `mediaCleanup.getStatus(filters?)`
 - `deletePhotoWithReferences(photoId, options?)`
 
+`photos.create` is a strict import/seed boundary for a photo that is already
+publishable. The caller must provide the explicit active asset inventory,
+including a public `full` derivative coherent with `mediaGeneration`; an absent
+or empty inventory is rejected and the whole transaction is rolled back. Each
+asset keeps its own validated generation: published derivatives use the
+photo's current generation, while an unchanged private `source` may legitimately
+belong to an earlier generation. The normal admin upload does not use this
+shortcut: it publishes through `photo_creation_intents`, planned assets and
+lease-fenced finalization.
+
 Write operations accept an options object so a transactional implementation can
 support an opaque `expectedVersion` and an `idempotencyKey` without changing the
 domain operation names. Transaction ownership stays inside aggregate repository
@@ -145,6 +155,12 @@ Generated variants are defined only in `services/photoDerivatives.js`, inside
 - `scope`, `fileName` and `contentType`;
 - a `produce(context)` function returning its buffer.
 
+The catalog helper marks a variant as `secondary` for search indexing unless
+the entry explicitly declares `searchIndexing: 'canonical'`. `full` is the
+current canonical image contract. A newly added public preview therefore fails
+closed and receives `X-Robots-Tag: noindex, noimageindex` from the application
+proxy without requiring another filename allowlist.
+
 The catalog helper assigns every generated variant to the `derivatives`
 replacement group. Do not create another group for an ordinary generated
 variant: doing so would declare it to be an independently published asset set.
@@ -156,11 +172,10 @@ repository registers them, the API exposes public roles under `photo.assets`,
 and cleanup follows `asset_id`. Frontend code only needs a change if the new
 role must actually be displayed by a new UI feature.
 
-If the role is public, also decide explicitly whether search engines may index
-it. Cloudflare response-header rules are infrastructure configuration and cannot
-be inferred from this catalog; secondary previews normally need
-`X-Robots-Tag: noindex, noimageindex`, while the canonical `full` asset follows
-the image SEO policy of the photo page.
+Cloudflare response-header rules remain infrastructure configuration. They must
+mirror the same fail-closed contract: only the immutable generated `full.webp`
+path is image-indexable and every other object on the public asset hostname is
+non-indexable. Do not add a filename list for secondary variants.
 
 The private `source` and temporary `creation-source` are not Sharp derivatives;
 their upload flows create descriptors explicitly because their content type and
@@ -187,9 +202,30 @@ This is a presentation concern only: registration and cleanup remain dynamic.
 
 ### Historical data and reconciliation
 
+The production catalog and the historical inventory are deliberately separate:
+
+- `PHOTO_DERIVATIVE_VARIANTS` says what a new generation produces today;
+- `photo_assets` says which objects the application currently owns;
+- canonical JSON snapshots persist their active inventory in `photo.assets`;
+- import consumes only that explicit inventory and never materializes current
+  catalog entries from `mediaGeneration`, `mobileImage` or a filename pattern.
+
+A snapshot without `photo.assets`, without an active `full`, or with an
+incoherent owner/generation is rejected before the import transaction starts.
+It cannot enter the operational database in a partially reconciled state. A new
+catalog role added after the snapshot was created is therefore never registered
+as active by accident.
+
+`source.path` and `mobileImage` are accepted only by the explicitly named
+`toLegacyRuntimePhoto` / `toLegacyStoragePhoto` bridge used by the old JSON
+backend. They are not accepted by the canonical snapshot/import path and are
+never promoted to canonical inventory. Remove that bridge together with the
+JSON repository after the Postgres cutover.
+
 Migration `008_photo_asset_registry.sql` performs the one-time bridge:
 
-- current generated paths are imported as active rows;
+- the generated paths guaranteed by the pre-registry pipeline are imported as
+  active rows using its frozen historical filename set;
 - historical `mobile` is imported only when the former `mobile_image` flag was
   true, so migration never invents an active object that was not generated;
 - current private sources are imported as active rows;
@@ -199,8 +235,21 @@ Migration `008_photo_asset_registry.sql` performs the one-time bridge:
 
 The fixed filenames inside that migration describe only the schema that existed
 before the registry. Runtime code must not reuse that list. Fresh JSON snapshot
-imports derive generated rows from the current variant catalog and import source
-descriptors separately.
+imports persist and restore the explicit `assets` array instead.
+
+If an older snapshot has no inventory, reconciliation must enumerate or `HEAD`
+the relevant R2 namespace first and produce a reviewed canonical snapshot (or
+insert reviewed registry rows) containing only confirmed objects. The catalog
+may suggest candidate paths for that external check, but a candidate becomes an
+active row only after R2 has confirmed it exists. Never run cleanup against
+guessed rows. Objects that cannot be attributed to a photo/generation remain
+outside registry ownership until manually classified.
+
+Every canonical derivative path must encode the enclosing photo ID and the
+photo's published `mediaGeneration`; the whole active derivative set is one
+atomic generation. A private `source` may retain an older generation, because a
+derivative-only crop or regeneration does not replace the original. Staging,
+cleanup-only and operation-owned assets are never valid snapshot entries.
 
 Before cutover, verify at minimum:
 
@@ -229,6 +278,16 @@ This backfill can only register historical paths derivable from metadata and the
 old outbox. Objects placed directly in R2 outside the application require a
 separate inventory reconciliation before deletion; the application must not
 guess ownership from a filename.
+
+### Stable lifecycle contracts
+
+The states `planned`, `active`, `retired`, `deleting` and `deleted`, the scopes
+`public` and `private`, and the infrastructure roles `source` and
+`creation-source` are protocol contracts rather than catalog options. Changing
+them requires a database/protocol migration. Product roles consumed directly by
+the UI or SEO (currently including `full`, `mobile`, `social` and the thumbnail
+roles) may use the generic registry lifecycle, but renaming or removing them
+still requires an intentional migration of their consumers.
 
 ## Intended SQL ownership
 

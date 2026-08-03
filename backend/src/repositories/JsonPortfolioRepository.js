@@ -1,5 +1,8 @@
 const Series = require('../models/Series');
-const { toRuntimePhoto, toStoragePhoto } = require('../services/photoRecord');
+const {
+    toLegacyRuntimePhoto,
+    toLegacyStoragePhoto
+} = require('../services/photoRecord');
 const {
     removePhotoReferencesFromSeriesRecord
 } = require('../services/seriesPhotoReferences');
@@ -29,7 +32,7 @@ class JsonPhotoRepository {
     async list() {
         const records = await this.metadataStorage.readMetadataFile(PHOTOS_METADATA_FILE, []);
         return Array.isArray(records)
-            ? records.map((photo) => toRuntimePhoto(photo))
+            ? records.map((photo) => toLegacyRuntimePhoto(photo))
             : [];
     }
 
@@ -161,7 +164,7 @@ class JsonPhotoRepository {
 
     async #writeAll(photos) {
         const records = Array.isArray(photos)
-            ? photos.map((photo) => toStoragePhoto(photo))
+            ? photos.map((photo) => toLegacyStoragePhoto(photo))
             : [];
         await this.metadataStorage.writeMetadataFile(PHOTOS_METADATA_FILE, records);
     }

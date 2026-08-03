@@ -291,6 +291,7 @@ function generateMobileImageDerivative(sourceBuffer) {
 // API projection and cleanup all consume the resulting asset descriptors.
 function definePhotoDerivativeVariant(definition) {
     return Object.freeze({
+        searchIndexing: 'secondary',
         ...definition,
         replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.DERIVATIVES
     });
@@ -302,6 +303,7 @@ const PHOTO_DERIVATIVE_VARIANTS = Object.freeze([
         scope: 'public',
         fileName: 'full.webp',
         contentType: 'image/webp',
+        searchIndexing: 'canonical',
         produce: ({ base }) => base
             .clone()
             .resize(3840, 2160, { fit: 'inside', withoutEnlargement: true })
@@ -354,16 +356,6 @@ const PHOTO_DERIVATIVE_VARIANTS = Object.freeze([
         )
     })
 ]);
-
-function listPhotoDerivativeAssetDescriptors() {
-    return PHOTO_DERIVATIVE_VARIANTS.map(({
-        role,
-        scope,
-        fileName,
-        contentType,
-        replacementGroup
-    }) => ({ role, scope, fileName, contentType, replacementGroup }));
-}
 
 async function generatePhotoDerivatives(
     sourceBuffer,
@@ -436,7 +428,6 @@ module.exports = {
     buildPhotoCreationSourcePath,
     PHOTO_DERIVATIVE_VARIANTS,
     PHOTO_ASSET_REPLACEMENT_GROUPS,
-    listPhotoDerivativeAssetDescriptors,
     materializePhotoAsset,
     materializePhotoAssets,
     normalizeMediaGeneration,

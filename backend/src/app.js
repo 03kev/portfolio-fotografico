@@ -20,6 +20,9 @@ const {
     getUploadObject
 } = require('./services/r2Storage');
 const { buildPublicAssetUrl } = require('./services/publicAssetUrl');
+const {
+    shouldNoIndexPublicPhotoAssetPath
+} = require('./services/photoAssetSeo');
 
 const app = express();
 validateEnv();
@@ -51,12 +54,6 @@ const limiter = rateLimit({
     max: rateLimitMaxRequests
 });
 app.use(limiter);
-
-function isNonIndexableDerivativePath(pathname) {
-    const normalized = String(pathname || '');
-    return /\/thumbnail-(?:4x3|1x1)\.webp$/.test(normalized)
-        || /\/social\.jpg$/.test(normalized);
-}
 
 const writeLimiter = rateLimit({
     windowMs: DEFAULTS.writeRateLimitWindowMs,
@@ -186,7 +183,7 @@ async function serveUploadsFromR2(req, res, next) {
             return next();
         }
 
-        if (isNonIndexableDerivativePath(req.path)) {
+        if (shouldNoIndexPublicPhotoAssetPath(req.path)) {
             res.setHeader('X-Robots-Tag', 'noimageindex, noindex');
         }
 
@@ -216,7 +213,7 @@ const uploadsMiddlewares = [
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET');
         res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
-        if (isNonIndexableDerivativePath(req.path)) {
+        if (shouldNoIndexPublicPhotoAssetPath(req.path)) {
             res.setHeader('X-Robots-Tag', 'noimageindex, noindex');
         }
         next();

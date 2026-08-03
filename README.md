@@ -280,14 +280,24 @@ Cache-Control: public, max-age=31536000, immutable
 Non è necessario eseguire purge Cloudflare quando cambia una foto: la
 transazione Postgres rende visibile un nuovo URL.
 
-Sul dominio R2 pubblico configura `X-Robots-Tag: noindex, noimageindex` per i
-file il cui path termina con:
+Sul dominio R2 pubblico usa una policy fail-closed: soltanto l'asset canonico
+generato `photos/<id>/<ulid>/full.webp` resta image-indexable; ogni altro oggetto
+riceve `X-Robots-Tag: noindex, noimageindex`. In una Cloudflare Response Header
+Transform Rule, per il dominio attuale, la condizione può essere espressa come:
 
-- `/thumbnail-4x3.webp`
-- `/thumbnail-1x1.webp`
-- `/social.jpg`
+```text
+http.host eq "uploads.kevinmuka.dev"
+and not (
+  http.request.uri.path contains "/photos/"
+  and ends_with(http.request.uri.path, "/full.webp")
+)
+```
 
-La full image rimane indicizzabile tramite la pagina canonica `/photo/:id`.
+Questa regola copre automaticamente thumbnail, social, future preview e la root
+del dominio senza mantenere una lista di filename e funziona anche con un
+namespace R2 anteposto al path. La full image viene scoperta tramite la pagina
+canonica `/photo/:id`; aggiungere un'altra eccezione indicizzabile è una
+decisione SEO esplicita, non il default di una nuova variante.
 
 ### 5. Registro asset e migrazione metadata
 
@@ -451,10 +461,24 @@ Esempio storage:
     }
   },
   "tags": ["Alpe di Siusi"],
-  "source": {
-    "path": "/private/source/photos/1772709771525/01KYMPAMCGZG34TT5JX1BCBB9K/source.jpeg",
-    "contentType": "image/jpeg"
-  },
+  "assets": [
+    {
+      "role": "full",
+      "replacementGroup": "derivatives",
+      "scope": "public",
+      "path": "/uploads/photos/1772709771525/01KYMPAMCGZG34TT5JX1BCBB9K/full.webp",
+      "contentType": "image/webp",
+      "generation": "01KYMPAMCGZG34TT5JX1BCBB9K"
+    },
+    {
+      "role": "source",
+      "replacementGroup": "source",
+      "scope": "private",
+      "path": "/private/source/photos/1772709771525/01KYMPAMCGZG34TT5JX1BCBB9K/source.jpeg",
+      "contentType": "image/jpeg",
+      "generation": "01KYMPAMCGZG34TT5JX1BCBB9K"
+    }
+  ],
   "mediaGeneration": "01KYMPAMCGZG34TT5JX1BCBB9K",
   "derivativesVersion": 1772709835199
 }
@@ -467,9 +491,16 @@ content type. L’API restituisce le varianti pubbliche dinamicamente in
 `photo.assets`, indicizzate per ruolo; per esempio `full`, `mobile`,
 `thumbnail-4x3`, `thumbnail-1x1` e `social`. Il source privato non viene esposto.
 
-Il vecchio snapshot JSON non è una seconda source of truth: l’adapter
-transitorio ricostruisce in lettura i ruoli storici dal catalogo corrente e da
-`mediaGeneration`. L’ULID rende ogni set di file immutabile.
+Il vecchio snapshot JSON non è una seconda source of truth. Lo snapshot
+canonico conserva l'inventario attivo esplicito in `assets`; l’adapter non
+ricostruisce ruoli dal catalogo corrente o dal solo `mediaGeneration`. Uno
+snapshot legacy privo di inventario deve essere riconciliato con gli oggetti R2
+prima del cutover: una variante candidata viene registrata soltanto dopo averne
+verificato l’esistenza. L’import rifiuta snapshot senza inventario o senza
+`full`, anziché importarli in uno stato implicitamente non pubblicabile.
+`source.path` e `mobileImage` restano confinati nell’adapter esplicitamente
+legacy del repository JSON e saranno rimossi insieme a quell’adapter dopo il
+cutover. L’ULID rende ogni set di file immutabile.
 
 ### Schema canonico delle serie
 

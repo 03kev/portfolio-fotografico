@@ -20,6 +20,10 @@ const {
     materializePhotoAssets,
     PHOTO_ASSET_REPLACEMENT_GROUPS
 } = require('../src/services/photoDerivatives');
+const {
+    importMetadataSnapshot,
+    verifyImportedSnapshot
+} = require('../src/services/metadataMigration');
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -70,6 +74,7 @@ class SchemaScopedPool {
 }
 
 function buildPhoto(id, overrides = {}) {
+    const generation = MEDIA_GENERATIONS.a;
     return {
         id,
         title: `Photo ${id}`,
@@ -88,6 +93,14 @@ function buildPhoto(id, overrides = {}) {
         mobileImage: true,
         updatedAt: id,
         derivativesVersion: id,
+        mediaGeneration: generation,
+        assets: materializePhotoAssets(id, generation, [{
+            role: 'full',
+            replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.DERIVATIVES,
+            scope: 'public',
+            fileName: 'full.webp',
+            contentType: 'image/webp'
+        }]),
         ...overrides
     };
 }
@@ -163,6 +176,175 @@ after(async () => {
     if (!adminPool) return;
     await adminPool.query(`DROP SCHEMA "${schemaName}" CASCADE`);
     await adminPool.end();
+});
+
+integrationTest('snapshot import persists only the explicit historical asset inventory', async () => {
+    const photoId = 8_100_001;
+    const generation = MEDIA_GENERATIONS.a;
+    const snapshot = {
+        photos: [{
+            id: photoId,
+            title: 'Historical inventory',
+            description: '',
+            date: '2026-01-01',
+            location: { name: 'Roma', lat: 41.9, lng: 12.5 },
+            tags: [],
+            derivativesVersion: photoId,
+            mediaGeneration: generation,
+            mobileImage: true,
+            assets: [{
+                role: 'full',
+                replacementGroup: 'derivatives',
+                scope: 'public',
+                path: `/uploads/photos/${photoId}/${generation}/full.webp`,
+                contentType: 'image/webp',
+                generation
+            }, {
+                role: 'source',
+                replacementGroup: 'source',
+                scope: 'private',
+                path: `/private/source/photos/${photoId}/${generation}/source.jpg`,
+                contentType: 'image/jpeg',
+                generation
+            }]
+        }],
+        series: []
+    };
+
+    const imported = await importMetadataSnapshot(scopedPool, snapshot, {
+        objectNamespace: 'preview/historical-import'
+    });
+    assert.equal(imported.imported, true);
+
+    const stored = await scopedPool.query(
+        `SELECT role, state, object_namespace
+         FROM photo_assets
+         WHERE photo_id = $1
+         ORDER BY role`,
+        [photoId]
+    );
+    assert.deepEqual(stored.rows, [{
+        role: 'full',
+        state: 'active',
+        object_namespace: 'preview/historical-import'
+    }, {
+        role: 'source',
+        state: 'active',
+        object_namespace: 'preview/historical-import'
+    }]);
+    assert.equal(
+        stored.rows.some((row) => row.role === 'mobile'),
+        false
+    );
+
+    const verification = await verifyImportedSnapshot(scopedPool, snapshot, {
+        objectNamespace: 'preview/historical-import'
+    });
+    assert.equal(verification.valid, true);
+    assert.equal(verification.actual.assets, 2);
+
+    await scopedPool.query(
+        `UPDATE photo_assets
+         SET content_type = 'image/avif'
+         WHERE photo_id = $1 AND role = 'full'`,
+        [photoId]
+    );
+    const alteredVerification = await verifyImportedSnapshot(scopedPool, snapshot, {
+        objectNamespace: 'preview/historical-import'
+    });
+    assert.equal(alteredVerification.valid, false);
+    assert.equal(
+        alteredVerification.errors.some((entry) => entry.code === 'ASSET_INVENTORY_MISMATCH'),
+        true
+    );
+});
+
+integrationTest('photos.create preserves the independently validated generation of each active asset', async () => {
+    const photoId = 8_100_002;
+    const derivativeGenerationA = MEDIA_GENERATIONS.b;
+    const previousSourceGenerationB = MEDIA_GENERATIONS.a;
+    const assets = [
+        ...materializePhotoAssets(photoId, derivativeGenerationA, [{
+            role: 'full',
+            replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.DERIVATIVES,
+            scope: 'public',
+            fileName: 'full.webp',
+            contentType: 'image/webp'
+        }, {
+            role: 'mobile',
+            replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.DERIVATIVES,
+            scope: 'public',
+            fileName: 'mobile.webp',
+            contentType: 'image/webp'
+        }]),
+        ...materializePhotoAssets(photoId, previousSourceGenerationB, [{
+            role: 'source',
+            replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.SOURCE,
+            scope: 'private',
+            fileName: 'source.jpg',
+            contentType: 'image/jpeg'
+        }])
+    ];
+
+    const created = await repository.photos.create(buildPhoto(photoId, {
+        mediaGeneration: derivativeGenerationA,
+        assets
+    }));
+
+    const source = created.assets.find((asset) => asset.role === 'source');
+    const derivatives = created.assets.filter(
+        (asset) => asset.replacementGroup === PHOTO_ASSET_REPLACEMENT_GROUPS.DERIVATIVES
+    );
+    assert.equal(source.generation, previousSourceGenerationB);
+    assert.equal(
+        source.path,
+        `/private/source/photos/${photoId}/${previousSourceGenerationB}/source.jpg`
+    );
+    assert.equal(derivatives.length, 2);
+    assert.equal(
+        derivatives.every((asset) => asset.generation === derivativeGenerationA),
+        true
+    );
+    assert.equal(
+        derivatives.every((asset) => asset.path.includes(`/${derivativeGenerationA}/`)),
+        true
+    );
+
+    const registry = await scopedPool.query(
+        `SELECT role, generation, logical_path
+         FROM photo_assets
+         WHERE photo_id = $1
+         ORDER BY role`,
+        [photoId]
+    );
+    assert.deepEqual(registry.rows, [{
+        role: 'full',
+        generation: derivativeGenerationA,
+        logical_path: `/uploads/photos/${photoId}/${derivativeGenerationA}/full.webp`
+    }, {
+        role: 'mobile',
+        generation: derivativeGenerationA,
+        logical_path: `/uploads/photos/${photoId}/${derivativeGenerationA}/mobile.webp`
+    }, {
+        role: 'source',
+        generation: previousSourceGenerationB,
+        logical_path: `/private/source/photos/${photoId}/${previousSourceGenerationB}/source.jpg`
+    }]);
+});
+
+integrationTest('photos.create rejects an empty published inventory and rolls the photo back', async () => {
+    const photoId = 8_100_003;
+    await assert.rejects(
+        () => repository.photos.create(buildPhoto(photoId, { assets: [] })),
+        /derivata full attiva/
+    );
+
+    assert.equal(await repository.photos.findById(photoId), null);
+    const registry = await scopedPool.query(
+        'SELECT COUNT(*)::int AS count FROM photo_assets WHERE photo_id = $1',
+        [photoId]
+    );
+    assert.equal(registry.rows[0].count, 0);
 });
 
 integrationTest('asset registry migration backfills historical metadata before removing duplicate path columns', async () => {

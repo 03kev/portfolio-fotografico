@@ -102,13 +102,16 @@ async function main() {
         max: 1
     });
     try {
+        const objectNamespace = process.env.R2_OBJECT_PREFIX || '';
         if (!options.verifyOnly) {
             const result = await importMetadataSnapshot(pool, snapshot, {
-                objectNamespace: process.env.R2_OBJECT_PREFIX || ''
+                objectNamespace
             });
             console.log(`[import] completato: ${result.report.checksum}`);
         }
-        const verification = await verifyImportedSnapshot(pool, snapshot);
+        const verification = await verifyImportedSnapshot(pool, snapshot, {
+            objectNamespace
+        });
         console.log(JSON.stringify({ verification }, null, 2));
         if (!verification.valid) process.exitCode = 1;
     } finally {

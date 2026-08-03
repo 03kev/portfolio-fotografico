@@ -2,7 +2,8 @@ const {
     enqueueMediaCleanupJobs
 } = require('./PostgresMediaCleanupRepository');
 const {
-    normalizePhotoAssetReplacementGroup
+    normalizeOperationalPhotoAssetDescriptor,
+    normalizePublishedPhotoAssetInventory
 } = require('../services/photoAssetLifecycle');
 
 function mapPhotoAssetRow(row) {
@@ -27,30 +28,6 @@ function mapPhotoAssetRow(row) {
     };
 }
 
-function normalizeAssetDescriptor(asset) {
-    const role = String(asset?.role || '').trim().toLowerCase();
-    const scope = String(asset?.scope || '').trim().toLowerCase();
-    const path = String(asset?.path || '').trim();
-    const contentType = String(asset?.contentType || '').trim().toLowerCase();
-    const replacementGroup = normalizePhotoAssetReplacementGroup(
-        asset?.replacementGroup
-    );
-    if (!/^[a-z][a-z0-9-]{1,79}$/.test(role)) {
-        throw new TypeError('Ruolo asset non valido.');
-    }
-    if (!['public', 'private'].includes(scope)) {
-        throw new TypeError('Scope asset non valido.');
-    }
-    const expectedPrefix = scope === 'public' ? '/uploads/' : '/private/';
-    if (!path.startsWith(expectedPrefix) || path.includes('..') || path.includes('\\')) {
-        throw new TypeError('Path asset non valido.');
-    }
-    if (!/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(contentType)) {
-        throw new TypeError('Content-Type asset non valido.');
-    }
-    return { role, replacementGroup, scope, path, contentType };
-}
-
 async function registerPlannedPhotoAssets(queryable, {
     namespace,
     photoId,
@@ -63,7 +40,17 @@ async function registerPlannedPhotoAssets(queryable, {
 }) {
     const registered = [];
     for (const rawAsset of Array.isArray(assets) ? assets : []) {
-        const asset = normalizeAssetDescriptor(rawAsset);
+        const asset = normalizeOperationalPhotoAssetDescriptor(rawAsset, {
+            defaultGeneration: generation,
+            photoId,
+            uploadIntentId,
+            allowCreationStaging: true
+        });
+        if (asset.generation !== generation) {
+            throw new TypeError(
+                'La generazione dell’asset non coincide con quella dell’operazione.'
+            );
+        }
         const result = await queryable.query(
             `INSERT INTO photo_assets (
                 object_namespace, photo_id, generation, role, replacement_group,
@@ -136,9 +123,12 @@ async function importActivePhotoAssets(queryable, {
     generation,
     assets
 }) {
+    const normalizedAssets = normalizePublishedPhotoAssetInventory(assets, {
+        photoId,
+        mediaGeneration: generation
+    });
     const imported = [];
-    for (const rawAsset of Array.isArray(assets) ? assets : []) {
-        const asset = normalizeAssetDescriptor(rawAsset);
+    for (const asset of normalizedAssets) {
         const result = await queryable.query(
             `INSERT INTO photo_assets (
                 object_namespace, photo_id, generation, role, replacement_group,
@@ -154,7 +144,7 @@ async function importActivePhotoAssets(queryable, {
             [
                 namespace,
                 photoId,
-                generation,
+                asset.generation,
                 asset.role,
                 asset.replacementGroup,
                 asset.scope,

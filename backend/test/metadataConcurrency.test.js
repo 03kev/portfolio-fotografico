@@ -227,6 +227,28 @@ function buildPhoto(id, overrides = {}) {
         updatedAt: 1,
         derivativesVersion: 1,
         mediaGeneration: TEST_MEDIA_GENERATION,
+        assets: [{
+            role: 'full',
+            replacementGroup: 'derivatives',
+            scope: 'public',
+            path: `/uploads/photos/${id}/${TEST_MEDIA_GENERATION}/full.webp`,
+            contentType: 'image/webp',
+            generation: TEST_MEDIA_GENERATION
+        }, {
+            role: 'mobile',
+            replacementGroup: 'derivatives',
+            scope: 'public',
+            path: `/uploads/photos/${id}/${TEST_MEDIA_GENERATION}/mobile.webp`,
+            contentType: 'image/webp',
+            generation: TEST_MEDIA_GENERATION
+        }, {
+            role: 'source',
+            replacementGroup: 'source',
+            scope: 'private',
+            path: `/private/source/photos/${id}/${TEST_MEDIA_GENERATION}/source.jpg`,
+            contentType: 'image/jpeg',
+            generation: TEST_MEDIA_GENERATION
+        }],
         ...overrides
     };
 }

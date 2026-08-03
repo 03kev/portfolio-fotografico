@@ -7,6 +7,11 @@ const {
     PHOTO_ASSET_REPLACEMENT_GROUPS
 } = require('../src/services/photoDerivatives');
 const { presentPhoto } = require('../src/routes/photos.helpers');
+const {
+    PHOTO_ASSET_INDEXING,
+    classifyPublicPhotoAssetPath,
+    shouldNoIndexPublicPhotoAssetPath
+} = require('../src/services/photoAssetSeo');
 
 const GENERATION = '01JGFJJZ00K4J3ZMA6VBYDT2QF';
 const INTENT_ID = '10000000-0000-4000-8000-000000000001';
@@ -109,4 +114,36 @@ test('API projection exposes registered public roles without a fixed variant lis
         `/uploads/photos/101/${GENERATION}/panorama-preview.avif`
     );
     assert.equal(presented.assets.source, undefined);
+});
+
+test('image indexing is fail-closed for every secondary or unknown public asset', () => {
+    assert.equal(
+        classifyPublicPhotoAssetPath(
+            `/photos/101/${GENERATION}/full.webp`
+        ),
+        PHOTO_ASSET_INDEXING.CANONICAL
+    );
+    for (const fileName of [
+        'mobile.webp',
+        'thumbnail-4x3.webp',
+        'thumbnail-1x1.webp',
+        'social.jpg',
+        'panorama-preview.avif'
+    ]) {
+        assert.equal(
+            shouldNoIndexPublicPhotoAssetPath(
+                `/photos/101/${GENERATION}/${fileName}`
+            ),
+            true,
+            `${fileName} deve essere non indicizzabile per default`
+        );
+    }
+    assert.equal(
+        shouldNoIndexPublicPhotoAssetPath('/'),
+        true
+    );
+    assert.equal(
+        shouldNoIndexPublicPhotoAssetPath('/photos/101/not-a-ulid/full.webp'),
+        true
+    );
 });

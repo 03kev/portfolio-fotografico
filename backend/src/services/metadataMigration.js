@@ -1,10 +1,8 @@
 const crypto = require('node:crypto');
 const { toRuntimePhoto } = require('./photoRecord');
 const {
-    listPhotoDerivativeAssetDescriptors,
-    materializePhotoAssets,
-    PHOTO_ASSET_REPLACEMENT_GROUPS
-} = require('./photoDerivatives');
+    normalizePublishedPhotoAssetInventory
+} = require('./photoAssetLifecycle');
 const {
     createSeriesSlug,
     normalizeSeriesRecord,
@@ -22,6 +20,32 @@ function numericId(value) {
 
 function issue(code, message, context = {}) {
     return { code, message, ...context };
+}
+
+function normalizeObjectNamespace(value) {
+    return String(value || '').trim().replace(/^\/+|\/+$/g, '');
+}
+
+function canonicalAssetIdentity(asset) {
+    return {
+        objectNamespace: normalizeObjectNamespace(asset.objectNamespace),
+        photoId: Number(asset.photoId),
+        generation: asset.generation || null,
+        role: asset.role,
+        replacementGroup: asset.replacementGroup,
+        scope: asset.scope,
+        path: asset.path,
+        contentType: asset.contentType,
+        state: asset.state || 'active',
+        uploadIntentId: asset.uploadIntentId || null,
+        mediaOperationId: asset.mediaOperationId || null
+    };
+}
+
+function sortAssetInventory(assets) {
+    return assets
+        .map(canonicalAssetIdentity)
+        .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
 }
 
 function inspectContentReferences(rawSeries, photoIds, membership, report) {
@@ -181,7 +205,8 @@ function analyzeMetadataSnapshot({ photos, series }) {
             photos: Array.isArray(photos) ? photos.length : 0,
             series: Array.isArray(series) ? series.length : 0,
             memberships: 0,
-            contentPhotoReferences: 0
+            contentPhotoReferences: 0,
+            assets: 0
         },
         normalized: {
             photos: [],
@@ -213,11 +238,39 @@ function analyzeMetadataSnapshot({ photos, series }) {
             return;
         }
         photoIds.add(id);
-        const photo = toRuntimePhoto(record);
-        if (!photo.sourcePath) {
+        if (!Array.isArray(record.assets)) {
+            report.errors.push(issue(
+                'MISSING_EXPLICIT_ASSET_INVENTORY',
+                'La foto non contiene l’inventario canonico degli asset attivi.',
+                { photoId: id }
+            ));
+            return;
+        }
+        if (!record.assets.some((asset) => (
+            String(asset?.role || '').trim().toLowerCase() === 'full'
+        ))) {
+            report.errors.push(issue(
+                'MISSING_CANONICAL_FULL_ASSET',
+                'Lo snapshot canonico deve contenere la derivata full attiva.',
+                { photoId: id }
+            ));
+            return;
+        }
+        let photo;
+        try {
+            photo = toRuntimePhoto(record);
+        } catch (error) {
+            report.errors.push(issue(
+                'INVALID_PHOTO_ASSET_INVENTORY',
+                error?.message || 'L’inventario asset della foto non è valido.',
+                { photoId: id }
+            ));
+            return;
+        }
+        if (!photo.assets.some((asset) => asset.role === 'source')) {
             report.warnings.push(issue(
-                'MISSING_SOURCE_PATH',
-                'La foto non ha una source privata associata.',
+                'MISSING_SOURCE_ASSET_INVENTORY',
+                'La foto non ha una source privata confermata nell’inventario.',
                 { photoId: id }
             ));
         }
@@ -228,6 +281,7 @@ function analyzeMetadataSnapshot({ photos, series }) {
                 { photoId: id }
             ));
         }
+        report.counts.assets += photo.assets.length;
         report.normalized.photos.push(photo);
     });
 
@@ -411,24 +465,7 @@ async function importMetadataSnapshot(pool, snapshot, {
                 ]
             );
 
-            const importedAssets = photo.mediaGeneration
-                ? materializePhotoAssets(
-                    photo.id,
-                    photo.mediaGeneration,
-                    listPhotoDerivativeAssetDescriptors()
-                )
-                : [];
-            if (photo.sourcePath) {
-                importedAssets.push({
-                    role: 'source',
-                    replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.SOURCE,
-                    scope: 'private',
-                    path: photo.sourcePath,
-                    contentType: photo.sourceContentType || 'application/octet-stream',
-                    generation: photo.mediaGeneration || null
-                });
-            }
-            for (const asset of importedAssets) {
+            for (const asset of photo.assets) {
                 await client.query(
                     `INSERT INTO photo_assets (
                         object_namespace, photo_id, generation, role, replacement_group,
@@ -439,9 +476,9 @@ async function importMetadataSnapshot(pool, snapshot, {
                         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                      )`,
                     [
-                        String(objectNamespace || '').trim().replace(/^\/+|\/+$/g, ''),
+                        normalizeObjectNamespace(objectNamespace),
                         photo.id,
-                        asset.generation || photo.mediaGeneration || null,
+                        asset.generation,
                         asset.role,
                         asset.replacementGroup,
                         asset.scope,
@@ -515,7 +552,9 @@ async function importMetadataSnapshot(pool, snapshot, {
     }
 }
 
-async function verifyImportedSnapshot(pool, snapshot) {
+async function verifyImportedSnapshot(pool, snapshot, {
+    objectNamespace = ''
+} = {}) {
     const report = analyzeMetadataSnapshot(snapshot);
     if (report.errors.length > 0) {
         return {
@@ -529,6 +568,7 @@ async function verifyImportedSnapshot(pool, snapshot) {
             (SELECT count(*)::int FROM photos) AS photos,
             (SELECT count(*)::int FROM series) AS series,
             (SELECT count(*)::int FROM series_photos) AS memberships,
+            (SELECT count(*)::int FROM photo_assets) AS assets,
             (
                 SELECT count(*)::int
                 FROM series s
@@ -547,7 +587,7 @@ async function verifyImportedSnapshot(pool, snapshot) {
     );
     const actual = result.rows[0];
     const errors = [];
-    for (const key of ['photos', 'series', 'memberships']) {
+    for (const key of ['photos', 'series', 'memberships', 'assets']) {
         if (Number(actual[key]) !== Number(report.counts[key])) {
             errors.push(issue(
                 'COUNT_MISMATCH',
@@ -561,6 +601,95 @@ async function verifyImportedSnapshot(pool, snapshot) {
     }
     if (actual.dangling_memberships) {
         errors.push(issue('DANGLING_IMPORTED_MEMBERSHIP', 'Sono presenti membership dangling.'));
+    }
+
+    const expectedAssets = sortAssetInventory(
+        report.normalized.photos.flatMap((photo) => photo.assets.map((asset) => ({
+            ...asset,
+            objectNamespace,
+            photoId: photo.id,
+            state: 'active'
+        })))
+    );
+    const storedAssetsResult = await pool.query(
+        `SELECT
+            object_namespace, photo_id, generation, role, replacement_group,
+            storage_scope, logical_path, content_type, state,
+            owner_upload_intent_id, owner_media_operation_id
+         FROM photo_assets`
+    );
+    const actualAssets = sortAssetInventory(storedAssetsResult.rows.map((row) => ({
+        objectNamespace: row.object_namespace,
+        photoId: row.photo_id,
+        generation: row.generation,
+        role: row.role,
+        replacementGroup: row.replacement_group,
+        scope: row.storage_scope,
+        path: row.logical_path,
+        contentType: row.content_type,
+        state: row.state,
+        uploadIntentId: row.owner_upload_intent_id,
+        mediaOperationId: row.owner_media_operation_id
+    })));
+    if (JSON.stringify(actualAssets) !== JSON.stringify(expectedAssets)) {
+        const expectedKeys = new Set(expectedAssets.map((asset) => JSON.stringify(asset)));
+        const actualKeys = new Set(actualAssets.map((asset) => JSON.stringify(asset)));
+        errors.push(issue(
+            'ASSET_INVENTORY_MISMATCH',
+            'L’inventario asset importato non coincide con lo snapshot canonico.',
+            {
+                missing: expectedAssets.filter((asset) => !actualKeys.has(JSON.stringify(asset))),
+                unexpected: actualAssets.filter((asset) => !expectedKeys.has(JSON.stringify(asset)))
+            }
+        ));
+    }
+
+    const storedPhotoGenerations = await pool.query(
+        'SELECT id, media_generation FROM photos ORDER BY id'
+    );
+    const expectedGenerationByPhoto = new Map(
+        report.normalized.photos.map((photo) => [Number(photo.id), photo.mediaGeneration])
+    );
+    for (const row of storedPhotoGenerations.rows) {
+        const photoId = Number(row.id);
+        const expectedGeneration = expectedGenerationByPhoto.get(photoId);
+        if (row.media_generation !== expectedGeneration) {
+            errors.push(issue(
+                'PHOTO_MEDIA_GENERATION_MISMATCH',
+                'La mediaGeneration importata non coincide con lo snapshot.',
+                {
+                    photoId,
+                    expected: expectedGeneration || null,
+                    actual: row.media_generation || null
+                }
+            ));
+            continue;
+        }
+        try {
+            normalizePublishedPhotoAssetInventory(
+                actualAssets
+                    .filter((asset) => asset.photoId === photoId)
+                    .map((asset) => ({
+                        role: asset.role,
+                        replacementGroup: asset.replacementGroup,
+                        scope: asset.scope,
+                        path: asset.path,
+                        contentType: asset.contentType,
+                        generation: asset.generation,
+                        state: asset.state
+                    })),
+                {
+                    photoId,
+                    mediaGeneration: row.media_generation
+                }
+            );
+        } catch (error) {
+            errors.push(issue(
+                'INVALID_IMPORTED_ASSET_INVENTORY',
+                error?.message || 'L’inventario importato non è semanticamente valido.',
+                { photoId }
+            ));
+        }
     }
 
     const storedSeries = await pool.query(
@@ -602,6 +731,7 @@ async function verifyImportedSnapshot(pool, snapshot) {
             photos: Number(actual.photos),
             series: Number(actual.series),
             memberships: Number(actual.memberships),
+            assets: Number(actual.assets),
             invalidCovers: Number(actual.invalid_covers),
             danglingMemberships: Number(actual.dangling_memberships)
         },
