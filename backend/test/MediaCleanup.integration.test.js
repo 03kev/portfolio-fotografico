@@ -581,6 +581,61 @@ integrationTest('abort cleans only the losing media-operation generation', async
     );
 });
 
+integrationTest('a rejected replace-source keeps its reserved source in durable cleanup', async () => {
+    const photoId = 9_000_015;
+    const photo = await repository.photos.create(photoRecord(photoId));
+    const operationId = crypto.randomUUID();
+    await repository.photos.beginMediaMutation(photoId, {
+        operationId,
+        kind: 'replace-source',
+        generation: generations[1],
+        expectedVersion: photo.version,
+        ttlMs: 10_000
+    });
+    const [nextSource] = materializePhotoAssets(photoId, generations[1], [{
+        role: 'source',
+        replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.SOURCE,
+        scope: 'private',
+        fileName: 'source.jpg',
+        contentType: 'image/jpeg'
+    }]);
+    await repository.photos.registerMediaMutationAssets(
+        photoId,
+        operationId,
+        [nextSource]
+    );
+
+    const reserved = await repository.photos.getMediaMutation(photoId);
+    assert.equal(reserved.assets.length, 1);
+    assert.equal(reserved.assets[0].path, nextSource.path);
+    assert.equal(reserved.assets[0].contentType, 'image/jpeg');
+
+    await repository.photos.abortMediaMutation(photoId, operationId);
+    await scopedPool.query(
+        `UPDATE media_cleanup_jobs
+         SET available_at = CURRENT_TIMESTAMP
+         WHERE asset_id IN (
+             SELECT id
+             FROM photo_assets
+             WHERE owner_media_operation_id = $1::uuid
+         )`,
+        [operationId]
+    );
+    const cleanup = await createExecutor().runBatch({ limit: 10 });
+
+    assert.equal(cleanup.succeeded, 1);
+    assert.deepEqual(deletedPrivate, [nextSource.path]);
+    assert.equal(
+        (await repository.photos.findById(photoId)).assets
+            .some((asset) => (
+                asset.role === 'source'
+                && asset.generation === generations[0]
+                && asset.state === 'active'
+            )),
+        true
+    );
+});
+
 integrationTest('an expired media operation is cleaned and can no longer publish its generation', async () => {
     const photoId = 9_000_007;
     const photo = await repository.photos.create(photoRecord(photoId));

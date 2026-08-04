@@ -8,6 +8,12 @@ const { buildPublicAssetUrl } = require('../services/publicAssetUrl');
 const DEFAULTS = require('../config/defaults');
 const { readStreamToBuffer } = require('../utils/streams');
 const {
+    PHOTO_UPLOAD_MAX_BYTES
+} = require('@portfolio/photo-upload-contract');
+const {
+    assertPhotoUploadSize
+} = require('../services/photoUploadPolicy');
+const {
     sendApiError,
     toApiErrorResponse
 } = require('../utils/apiErrors');
@@ -90,20 +96,6 @@ function normalizePhotoForApiList(photo) {
     };
 }
 
-function parseAllowedUploadTypes() {
-    return DEFAULTS.uploadAllowedTypes;
-}
-
-function isAllowedMimeType(mimetype, allowedTypes) {
-    return allowedTypes.some((allowedType) => {
-        if (allowedType.endsWith('/*')) {
-            const prefix = allowedType.slice(0, -1);
-            return mimetype.startsWith(prefix);
-        }
-        return mimetype === allowedType;
-    });
-}
-
 function parseCoordinate(value, fieldName) {
     if (value === undefined || value === null || value === '') return null;
 
@@ -117,30 +109,10 @@ function parseCoordinate(value, fieldName) {
     return parsed;
 }
 
-function parseUploadSize(value) {
-    const parsed = Number.parseInt(String(value || ''), 10);
-    if (!Number.isFinite(parsed) || parsed <= 0) return null;
-    return parsed;
-}
-
 const toRouteErrorResponse = toApiErrorResponse;
 
 function sendRouteError(res, error, options = {}) {
     return sendApiError(res, error, options);
-}
-
-function getImageExtensionFromMimeType(mimetype) {
-    const subtype = String(mimetype || '')
-        .split('/')
-        .slice(1)
-        .join('/')
-        .split(';')[0]
-        .trim()
-        .toLowerCase();
-
-    if (!subtype) return 'bin';
-    if (subtype === 'jpeg') return 'jpg';
-    return subtype.replace(/[^a-z0-9]/g, '') || 'bin';
 }
 
 async function writePublicObject(uploadPath, buffer, contentType, cacheControl = PUBLIC_ASSET_CACHE_CONTROL) {
@@ -163,25 +135,48 @@ async function readPrivateSourceBuffer(privatePath) {
 }
 
 async function readPrivateSourceObject(privatePath) {
+    return readPrivateSourceObjectWithOptions(privatePath);
+}
+
+async function readPrivateSourceObjectWithOptions(privatePath, {
+    maxBytes = null
+} = {}) {
     const object = await getPrivateObject(privatePath);
     if (!object || !object.stream) {
         return null;
     }
-    const buffer = await readStreamToBuffer(object.stream);
+    if (maxBytes !== null && object.contentLength !== undefined && object.contentLength !== null) {
+        assertPhotoUploadSize(Number(object.contentLength), maxBytes);
+    }
+    let buffer;
+    try {
+        buffer = await readStreamToBuffer(object.stream, { maxBytes });
+    } catch (error) {
+        if (error?.code === 'STREAM_MAX_BYTES_EXCEEDED') {
+            assertPhotoUploadSize(error.actualBytes, maxBytes);
+        }
+        throw error;
+    }
     return {
         buffer,
-        contentType: String(object.contentType || '').trim()
+        contentType: String(object.contentType || '').trim(),
+        contentLength: object.contentLength === undefined || object.contentLength === null
+            ? buffer.length
+            : Number(object.contentLength)
     };
 }
 
+async function readPrivatePhotoUploadSourceObject(privatePath) {
+    return readPrivateSourceObjectWithOptions(privatePath, {
+        maxBytes: PHOTO_UPLOAD_MAX_BYTES
+    });
+}
+
 module.exports = {
-    getImageExtensionFromMimeType,
-    isAllowedMimeType,
     normalizePhotoForApiList,
-    parseAllowedUploadTypes,
     parseCoordinate,
-    parseUploadSize,
     presentPhoto,
+    readPrivatePhotoUploadSourceObject,
     readPrivateSourceBuffer,
     readPrivateSourceObject,
     sendRouteError,

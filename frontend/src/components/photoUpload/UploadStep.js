@@ -1,5 +1,9 @@
 import React from 'react';
 import { FolderOpen } from 'lucide-react';
+import {
+  PHOTO_UPLOAD_ACCEPT,
+  PHOTO_UPLOAD_HINT
+} from '@portfolio/photo-upload-contract';
 
 const UploadStep = ({
   loading,
@@ -41,14 +45,14 @@ const UploadStep = ({
               <FolderOpen size={28} />
             </div>
             <p>Clicca per selezionare un'immagine</p>
-            <p className="upload-hint">Formati JPG, PNG, WebP · Max 50MB</p>
+            <p className="upload-hint">{PHOTO_UPLOAD_HINT}</p>
           </div>
         )}
       </div>
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept={PHOTO_UPLOAD_ACCEPT}
         style={{ display: 'none' }}
         onChange={handleFileSelect}
       />

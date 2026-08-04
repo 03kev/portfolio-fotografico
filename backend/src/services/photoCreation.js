@@ -6,6 +6,9 @@ const {
 } = require('./photoDerivatives');
 const { PRIVATE_SOURCE_PREFIX } = require('../config/assetPaths');
 const DEFAULTS = require('../config/defaults');
+const {
+    validateUploadedPhotoSourceObject
+} = require('./photoUploadPolicy');
 
 function stableJsonValue(value) {
     if (Array.isArray(value)) return value.map(stableJsonValue);
@@ -39,6 +42,7 @@ class PhotoCreationService {
         readSourceObject,
         generateDerivatives,
         writeAssets,
+        validateSourceObject = validateUploadedPhotoSourceObject,
         createMediaGeneration,
         runCleanup = async () => null,
         createOperationId = () => crypto.randomUUID(),
@@ -58,6 +62,7 @@ class PhotoCreationService {
         this.readSourceObject = readSourceObject;
         this.generateDerivatives = generateDerivatives;
         this.writeAssets = writeAssets;
+        this.validateSourceObject = validateSourceObject;
         this.createMediaGeneration = createMediaGeneration;
         this.runCleanup = runCleanup;
         this.createOperationId = createOperationId;
@@ -104,6 +109,7 @@ class PhotoCreationService {
             photoId: intent.photoId,
             uploadUrl: signed.uploadUrl,
             sourcePath: intent.sourcePath,
+            contentType: intent.sourceContentType,
             expiresInSeconds: signed.expiresInSeconds
         };
     }
@@ -162,16 +168,13 @@ class PhotoCreationService {
                     'PHOTO_SOURCE_NOT_FOUND'
                 );
             }
+            const validatedSource = await this.validateSourceObject(sourceObject, {
+                expectedContentType: claim.intent.sourceContentType
+            });
             const derivatives = await this.generateDerivatives(
-                sourceObject.buffer,
+                validatedSource.buffer,
                 photoDraft.settings?.cropProfiles
             );
-            const sourceExtension = String(claim.intent.sourceContentType || '')
-                .split('/')
-                .pop()
-                ?.replace(/^jpeg$/i, 'jpg')
-                ?.replace(/[^a-z0-9]/gi, '')
-                || 'bin';
             const assets = materializePhotoAssets(
                 claim.intent.photoId,
                 claim.intent.leaseGeneration,
@@ -180,9 +183,9 @@ class PhotoCreationService {
                         role: 'source',
                         replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.SOURCE,
                         scope: 'private',
-                        fileName: `source.${sourceExtension}`,
-                        contentType: claim.intent.sourceContentType,
-                        buffer: sourceObject.buffer
+                        fileName: `source.${validatedSource.extension}`,
+                        contentType: validatedSource.contentType,
+                        buffer: validatedSource.buffer
                     },
                     ...derivatives.assets
                 ]

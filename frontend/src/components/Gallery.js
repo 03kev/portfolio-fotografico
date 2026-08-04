@@ -3,9 +3,15 @@ import { useOutletContext } from 'react-router-dom';
 import styled from 'styled-components';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Search } from 'lucide-react';
+import { PHOTO_UPLOAD_ACCEPT } from '@portfolio/photo-upload-contract';
 import { usePhotos } from '../contexts/PhotoContext';
 import { LOCAL_IMAGE_FALLBACK, resolvePhotoAssetUrl } from '../utils/imageUrl';
-import { photoService, signExistingSourceUpload, uploadSourceToSignedUrl } from '../utils/api';
+import {
+  photoService,
+  signExistingSourceUpload,
+  uploadSourceToSignedUrl
+} from '../utils/api';
+import { validateImageFile } from '../utils/photoUploadPolicy';
 import { useGalleryQueryState } from '../hooks/useGalleryQueryState';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import {
@@ -30,8 +36,6 @@ import { LazyPhotoCropModal, LazyPhotoUpload } from './lazyAdminComponents';
 import AdminConfirmDialog from './AdminConfirmDialog';
 
 const DEBOUNCE_DELAY_FILTER = 200;
-const SOURCE_REUPLOAD_ACCEPT = 'image/jpeg,image/jpg,image/png,image/webp';
-
 const REUPLOAD_STEP_LABELS = {
   sign: 'preparazione sostituzione',
   upload: 'caricamento del nuovo originale',
@@ -690,6 +694,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     let currentStep = 'sign';
     let signedData = null;
     try {
+      validateImageFile(file);
       currentStep = 'sign';
       actions.setPhotoOpStatus(
         targetPhotoId,
@@ -710,6 +715,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       await uploadSourceToSignedUrl({
         uploadUrl: signedData.uploadUrl,
         file,
+        contentType: signedData.contentType,
         signal: uploadAbortController.signal,
         onProgress: ({ ratio }) => {
           const normalized = Math.max(0, Math.min(1, Number(ratio) || 0));
@@ -727,7 +733,6 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       startSoftProgress(targetPhotoId, 74, 95);
       const replaceResponse = await photoService.replaceSource(targetPhoto.id, {
         sourcePath: signedData.sourcePath,
-        sourceContentType: file.type,
         operationId: signedData.operationId,
         mediaGeneration: signedData.mediaGeneration
       }, targetPhoto.version);
@@ -858,7 +863,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
         <input
           ref={sourceFileInputRef}
           type="file"
-          accept={SOURCE_REUPLOAD_ACCEPT}
+          accept={PHOTO_UPLOAD_ACCEPT}
           style={{ display: 'none' }}
           onChange={handleReuploadSourceSelected}
         />

@@ -6,14 +6,13 @@ const {
     normalizeCropProfilesForStorage
 } = require('../services/photoDerivatives');
 const {
-    getImageExtensionFromMimeType,
-    isAllowedMimeType,
-    parseAllowedUploadTypes,
     parseCoordinate,
-    parseUploadSize,
     presentPhoto,
     sendRouteError
 } = require('./photos.helpers');
+const {
+    validateDeclaredPhotoUpload
+} = require('../services/photoUploadPolicy');
 
 function normalizeUploadIntentId(value) {
     const normalized = String(value || '').trim().toLowerCase();
@@ -49,9 +48,6 @@ function createPhotoCreationRouter({ getPhotoCreationService }) {
     }
 
     const router = express.Router();
-    const uploadMaxSize = DEFAULTS.uploadMaxSize;
-    const allowedUploadTypes = parseAllowedUploadTypes();
-
     router.post('/upload-url', async (req, res) => {
         try {
             const {
@@ -70,31 +66,18 @@ function createPhotoCreationRouter({ getPhotoCreationService }) {
                 });
             }
             const effectiveMimeType = String(mimetype || contentType || '').trim();
-            if (!effectiveMimeType || !isAllowedMimeType(effectiveMimeType, allowedUploadTypes)) {
-                return res.status(415).json({
-                    success: false,
-                    code: 'INVALID_FILE_TYPE',
-                    message: `Tipo file non consentito. Tipi ammessi: ${allowedUploadTypes.join(', ')}`
-                });
-            }
-
-            const parsedSize = parseUploadSize(fileSize);
-            if (parsedSize && parsedSize > uploadMaxSize) {
-                return res.status(413).json({
-                    success: false,
-                    message: `File troppo grande. Massimo ${uploadMaxSize} byte.`,
-                    code: 'LIMIT_FILE_SIZE'
-                });
-            }
+            const declaration = validateDeclaredPhotoUpload({
+                contentType: effectiveMimeType,
+                fileSize
+            });
 
             const intentId = normalizeUploadIntentId(uploadIntentId);
-            const sourceExtension = getImageExtensionFromMimeType(effectiveMimeType);
             const prepared = await getPhotoCreationService().prepareUpload({
                 uploadIntentId: intentId,
-                sourceContentType: effectiveMimeType,
-                sourceExtension,
+                sourceContentType: declaration.contentType,
+                sourceExtension: declaration.extension,
                 signedUrlOptions: {
-                    contentType: effectiveMimeType,
+                    contentType: declaration.contentType,
                     cacheControl: 'private, no-store',
                     expiresInSeconds: DEFAULTS.r2SignedUploadUrlExpiresSeconds
                 }

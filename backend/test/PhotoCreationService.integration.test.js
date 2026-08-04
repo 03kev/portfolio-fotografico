@@ -3,6 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const dotenv = require('dotenv');
 const express = require('express');
+const sharp = require('sharp');
 const {
     after,
     before,
@@ -25,6 +26,9 @@ const {
 const {
     PHOTO_ASSET_REPLACEMENT_GROUPS
 } = require('../src/services/photoAssetLifecycle');
+const {
+    validateUploadedPhotoSourceObject
+} = require('../src/services/photoUploadPolicy');
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -130,7 +134,15 @@ function publishedFullAsset(photoId, generation) {
     }];
 }
 
-function createService({ derivativeGate = null, marker = 'default' } = {}) {
+function createService({
+    derivativeGate = null,
+    marker = 'default',
+    validateSourceObject = async (sourceObject) => ({
+        ...sourceObject,
+        extension: 'jpg',
+        contentType: 'image/jpeg'
+    })
+} = {}) {
     return new PhotoCreationService({
         repository,
         createSignedUploadUrl: async (sourcePath) => {
@@ -143,9 +155,14 @@ function createService({ derivativeGate = null, marker = 'default' } = {}) {
         },
         readSourceObject: async (sourcePath) => (
             sources.has(sourcePath)
-                ? { buffer: sources.get(sourcePath), contentType: 'image/jpeg' }
+                ? {
+                    buffer: sources.get(sourcePath),
+                    contentType: 'image/jpeg',
+                    contentLength: sources.get(sourcePath).length
+                }
                 : null
         ),
+        validateSourceObject,
         generateDerivatives: async () => {
             derivativeRuns += 1;
             const activeGate = derivativeGate || processingGate;
@@ -513,6 +530,56 @@ integrationTest('partial derivative failure releases the lease and a retry overw
     assert.equal(writeRuns, 2);
     assert.equal(derivatives.size, 5);
     assert.equal(finalizedSources.size, 2);
+});
+
+integrationTest('a rejected R2 object remains durably queued and the same intent can be retried safely', async () => {
+    const service = createService({
+        validateSourceObject: validateUploadedPhotoSourceObject
+    });
+    const prepared = await prepareSource(service);
+
+    await assert.rejects(
+        finalize(service, prepared),
+        (error) => error.code === 'PHOTO_SOURCE_INVALID'
+    );
+    assert.equal(derivativeRuns, 0);
+    assert.equal(await repository.photos.findById(prepared.photoId), null);
+    const released = await repository.photoCreations.findById(INTENT_ID);
+    assert.equal(released.status, 'pending');
+    assert.equal(released.leaseId, null);
+
+    const cleanup = await scopedPool.query(
+        `SELECT a.role, a.state, j.status, j.available_at, i.expires_at
+         FROM photo_assets a
+         JOIN media_cleanup_jobs j ON j.asset_id = a.id
+         JOIN photo_creation_intents i ON i.id = a.owner_upload_intent_id
+         WHERE a.owner_upload_intent_id = $1::uuid
+           AND a.role = 'creation-source'`,
+        [INTENT_ID]
+    );
+    assert.equal(cleanup.rows.length, 1);
+    assert.equal(cleanup.rows[0].state, 'planned');
+    assert.equal(cleanup.rows[0].status, 'pending');
+    assert.equal(
+        new Date(cleanup.rows[0].available_at).getTime()
+            >= new Date(cleanup.rows[0].expires_at).getTime(),
+        true
+    );
+
+    const validJpeg = await sharp({
+        create: {
+            width: 8,
+            height: 6,
+            channels: 3,
+            background: { r: 20, g: 40, b: 60 }
+        }
+    }).jpeg().toBuffer();
+    sources.set(prepared.sourcePath, validJpeg);
+
+    const retried = await finalize(service, prepared);
+    assert.equal(retried.replayed, false);
+    assert.equal(retried.photo.id, prepared.photoId);
+    assert.equal(derivativeRuns, 1);
 });
 
 integrationTest('a database conflict after media writes preserves the existing photo and leaves intent-owned output untouched', async () => {

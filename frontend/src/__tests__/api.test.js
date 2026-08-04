@@ -1,4 +1,4 @@
-import { normalizeApiError } from '../utils/api';
+import { normalizeApiError, uploadSourceToSignedUrl } from '../utils/api';
 
 jest.mock('axios', () => ({
   create: () => ({
@@ -77,5 +77,50 @@ describe('normalizeApiError', () => {
       retryAfter: '30',
       retryable: true
     });
+  });
+});
+
+describe('uploadSourceToSignedUrl', () => {
+  test('uses the canonical content type returned by the backend for the signed PUT', async () => {
+    const requests = [];
+    class FakeXMLHttpRequest {
+      constructor() {
+        this.headers = {};
+        this.upload = {};
+        requests.push(this);
+      }
+
+      open(method, url) {
+        this.method = method;
+        this.url = url;
+      }
+
+      setRequestHeader(name, value) {
+        this.headers[name] = value;
+      }
+
+      send(file) {
+        this.file = file;
+        this.status = 200;
+        this.onload();
+      }
+    }
+    const previousXMLHttpRequest = global.XMLHttpRequest;
+    global.XMLHttpRequest = FakeXMLHttpRequest;
+    const file = { type: 'image/jpg', size: 1024 };
+
+    try {
+      await uploadSourceToSignedUrl({
+        uploadUrl: 'https://r2.example.test/signed',
+        file,
+        contentType: 'image/jpeg'
+      });
+    } finally {
+      global.XMLHttpRequest = previousXMLHttpRequest;
+    }
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0].headers['Content-Type']).toBe('image/jpeg');
+    expect(requests[0].headers['Content-Type']).not.toBe(file.type);
   });
 });

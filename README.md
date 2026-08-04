@@ -537,6 +537,42 @@ round-trip dell’editor, ma sono ignorati da Sharp: questo evita perdita o
 reinterpretazione silenziosa dei dati storici e lascia la migrazione come scelta
 esplicita.
 
+### Contratto degli upload fotografici
+
+Formati source, alias MIME, estensioni, limite, attributo `accept` e testo
+mostrato nell'admin sono definiti una sola volta in
+`packages/photo-upload-contract`. Il contratto corrente accetta JPEG, PNG e
+WebP fino al limite dichiarato dallo stesso contratto; `image/jpg` e' un alias
+intenzionale di `image/jpeg`, mentre
+il path usa sempre l'estensione canonica `jpg`.
+
+Il frontend usa questo contratto soltanto per feedback immediato e file picker.
+Il backend resta l'autorita': prima firma soltanto una dichiarazione conforme,
+poi, durante la finalizzazione, controlla sull'oggetto R2:
+
+- `Content-Length` prima di accumulare lo stream e byte realmente letti;
+- `Content-Type` registrato rispetto alla prenotazione;
+- formato riconosciuto da Sharp rispetto al MIME canonico;
+- dimensioni decodificate valide.
+
+Upload iniziale e replace-source passano dallo stesso validatore. Il source di
+un replace e' confrontato con l'asset `planned` appartenente all'operazione
+Postgres, non con un MIME reinviato dal client. Nessuna derivata viene scritta o
+attivata se questi controlli falliscono.
+
+Per aggiungere o rimuovere un formato, o cambiare il limite, modificare soltanto
+`packages/photo-upload-contract/index.js`. Non aggiornare manualmente route,
+`accept`, validatori frontend, messaggi o normalizzazione delle estensioni. Una
+nuova voce deve dichiarare anche il nome formato restituito da Sharp: il fatto
+che un browser assegni un MIME non rende automaticamente il decoder compatibile.
+
+La prenotazione Postgres registra asset e cleanup job prima di esporre la signed
+URL. Un PUT R2 interrotto, ambiguo o successivamente rifiutato resta quindi
+tracciato: lo staging della creazione e' eliminabile dopo la scadenza
+dell'intent, mentre un replace fallito conserva il job dell'operazione media.
+Il client puo' ritentare lo stesso creation intent e sovrascrivere il medesimo
+staging prima della finalizzazione; la pubblicazione resta idempotente.
+
 Il vecchio snapshot JSON non è una seconda source of truth. Lo snapshot
 canonico conserva l'inventario attivo esplicito in `assets`; l’adapter non
 ricostruisce ruoli dal catalogo corrente o dal solo `mediaGeneration`. Uno

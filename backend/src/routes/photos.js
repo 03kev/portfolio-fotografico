@@ -11,8 +11,6 @@ const {
     materializePhotoAssets,
     mergePhotoSettingsForStorage,
     normalizeCropProfilesForStorage,
-    PHOTO_ASSET_REPLACEMENT_GROUPS,
-    normalizeMediaGeneration,
     normalizePrivateSourcePathForPhotoId
 } = require('../services/photoDerivatives');
 const DEFAULTS = require('../config/defaults');
@@ -26,26 +24,22 @@ const {
 const { portfolioRepository } = require('../repositories');
 const { createMediaGeneration } = require('../utils/mediaGeneration');
 const { PhotoCreationService } = require('../services/photoCreation');
+const { PhotoSourceReplacementService } = require('../services/photoSourceReplacement');
 const {
     runMediaCleanupBestEffort
 } = require('../services/mediaCleanupRuntime');
 const { createPhotoCreationRouter } = require('./photoCreationRoutes');
 const {
-    getImageExtensionFromMimeType,
     getPhotoAsset,
-    isAllowedMimeType,
     normalizePhotoForApiList,
-    parseAllowedUploadTypes,
     parseCoordinate,
-    parseUploadSize,
     presentPhoto,
+    readPrivatePhotoUploadSourceObject,
     readPrivateSourceBuffer,
-    readPrivateSourceObject,
     sendRouteError,
     writePrivateObject,
     writePublicObject
 } = require('./photos.helpers');
-
 const router = express.Router();
 router.use(protectWriteMethods);
 const requireDurableMediaLifecycle = createRequireDurableMediaLifecycle(
@@ -107,13 +101,33 @@ const photoCreationService = portfolioRepository.capabilities.distributedPhotoCr
     ? new PhotoCreationService({
         repository: portfolioRepository,
         createSignedUploadUrl: createPrivateUploadPresignedPutUrl,
-        readSourceObject: readPrivateSourceObject,
+        readSourceObject: readPrivatePhotoUploadSourceObject,
         generateDerivatives: generatePhotoDerivatives,
         writeAssets: writePhotoAssets,
         createMediaGeneration,
         runCleanup: runMediaCleanupBestEffort
     })
     : null;
+
+const photoSourceReplacementService = portfolioRepository.capabilities.durableMediaCleanup
+    ? new PhotoSourceReplacementService({
+        repository: portfolioRepository,
+        createSignedUploadUrl: createPrivateUploadPresignedPutUrl,
+        readSourceObject: readPrivatePhotoUploadSourceObject,
+        generateDerivatives: generatePhotoDerivatives,
+        writeAssets: writePhotoAssets,
+        runCleanup: runMediaCleanupBestEffort,
+        createGeneration: createMediaGeneration
+    })
+    : null;
+
+function requirePhotoSourceReplacementService() {
+    if (photoSourceReplacementService) return photoSourceReplacementService;
+    const error = new Error('La sostituzione della source richiede METADATA_BACKEND=postgres.');
+    error.status = 503;
+    error.code = 'DURABLE_MEDIA_LIFECYCLE_REQUIRED';
+    throw error;
+}
 
 function requirePhotoCreationService() {
     if (photoCreationService) return photoCreationService;
@@ -268,9 +282,6 @@ function buildDownloadFilename(photo, contentType) {
     };
 }
 
-const uploadMaxSize = DEFAULTS.uploadMaxSize;
-const allowedUploadTypes = parseAllowedUploadTypes();
-
 router.use(createPhotoCreationRouter({
     getPhotoCreationService: requirePhotoCreationService
 }));
@@ -369,74 +380,28 @@ router.get('/:id', async (req, res) => {
 
 // Prenota un reupload in modo distribuito prima di esporre una URL R2 firmata.
 router.post('/:id/source-upload-url', requireDurableMediaLifecycle, async (req, res) => {
-    let photoId = null;
-    let operationId = null;
     try {
-        photoId = parseNumericIdOrThrow(req.params.id, 'ID foto');
+        const photoId = parseNumericIdOrThrow(req.params.id, 'ID foto');
         const expectedVersion = requireExpectedVersion(req);
         const effectiveMimeType = String(req.body?.mimetype || req.body?.contentType || '').trim();
-        if (!effectiveMimeType || !isAllowedMimeType(effectiveMimeType, allowedUploadTypes)) {
-            const error = new Error(`Tipo file non consentito. Tipi ammessi: ${allowedUploadTypes.join(', ')}`);
-            error.status = 415;
-            error.code = 'INVALID_FILE_TYPE';
-            throw error;
-        }
-        const parsedSize = parseUploadSize(req.body?.fileSize);
-        if (parsedSize && parsedSize > uploadMaxSize) {
-            const error = new Error(`File troppo grande. Massimo ${uploadMaxSize} byte.`);
-            error.status = 413;
-            error.code = 'LIMIT_FILE_SIZE';
-            throw error;
-        }
-
-        const identity = createMediaIdentity();
-        operationId = identity.operationId;
-        const reservation = await portfolioRepository.photos.beginMediaMutation(photoId, {
-            ...identity,
-            kind: 'replace-source',
+        const prepared = await requirePhotoSourceReplacementService().prepare({
+            photoId,
             expectedVersion,
-            ttlMs: DEFAULTS.photoMediaMutationTtlMs
+            contentType: effectiveMimeType,
+            fileSize: req.body?.fileSize
         });
-        if (!reservation) {
+        if (!prepared) {
             return res.status(404).json({
                 success: false,
                 code: 'PHOTO_NOT_FOUND',
                 message: 'Foto non trovata'
             });
         }
-
-        const sourceExtension = getImageExtensionFromMimeType(effectiveMimeType);
-        const [sourceAsset] = materializePhotoAssets(photoId, identity.generation, [{
-            role: 'source',
-            replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.SOURCE,
-            scope: 'private',
-            fileName: `source.${sourceExtension}`,
-            contentType: effectiveMimeType
-        }]);
-        await portfolioRepository.photos.registerMediaMutationAssets(
-            photoId,
-            operationId,
-            [sourceAsset]
-        );
-        const sourcePath = sourceAsset.path;
-        const signed = await createPrivateUploadPresignedPutUrl(sourcePath, {
-            contentType: effectiveMimeType,
-            cacheControl: 'private, no-store',
-            expiresInSeconds: DEFAULTS.r2SignedUploadUrlExpiresSeconds
-        });
         return res.json({
             success: true,
-            data: {
-                uploadUrl: signed.uploadUrl,
-                sourcePath: signed.uploadPath,
-                operationId,
-                mediaGeneration: identity.generation,
-                expectedVersion,
-                expiresInSeconds: signed.expiresInSeconds
-            }
+            data: prepared
         });
     } catch (error) {
-        await abortMediaMutationBestEffort(photoId, operationId);
         return sendRouteError(res, error, {
             fallbackMessage: 'Errore nella preparazione del reupload',
             fallbackCode: 'PHOTO_REUPLOAD_PREPARE_FAILED'
@@ -451,8 +416,10 @@ router.delete(
         try {
             const photoId = parseNumericIdOrThrow(req.params.id, 'ID foto');
             const operationId = normalizeMediaOperationId(req.params.operationId);
-            await portfolioRepository.photos.abortMediaMutation(photoId, operationId);
-            const cleanup = await runMediaCleanupBestEffort({ limit: 10 });
+            const { cleanup } = await requirePhotoSourceReplacementService().abort(
+                photoId,
+                operationId
+            );
             return res.json({
                 success: true,
                 data: { cleanup }
@@ -467,77 +434,19 @@ router.delete(
 );
 
 router.post('/:id/replace-source', requireDurableMediaLifecycle, async (req, res) => {
-    let photoId = null;
-    let operationId = '';
-    let nextSourcePath = '';
-    let finalized = false;
     const timer = createPhotoOperationTimer('replace-source', req.params.id);
     try {
-        photoId = parseNumericIdOrThrow(req.params.id, 'ID foto');
+        const photoId = parseNumericIdOrThrow(req.params.id, 'ID foto');
         const expectedVersion = requireExpectedVersion(req);
-        operationId = normalizeMediaOperationId(req.body?.operationId);
-        const generation = normalizeMediaGeneration(req.body?.mediaGeneration);
-        nextSourcePath = normalizePrivateSourcePathForPhotoId(req.body?.sourcePath, photoId);
-        if (!operationId || !generation || !nextSourcePath) {
-            const error = new Error('Prenotazione reupload non valida o incompleta.');
-            error.status = 400;
-            error.code = 'INVALID_MEDIA_OPERATION';
-            throw error;
-        }
-
-        const active = await portfolioRepository.photos.getMediaMutation(photoId);
-        if (
-            !active?.operation
-            || active.operation.id !== operationId
-            || active.operation.generation !== generation
-            || active.operation.kind !== 'replace-source'
-            || !nextSourcePath.includes(`/${generation}/`)
-        ) {
-            const error = new Error('La prenotazione del reupload non è più valida.');
-            error.status = 409;
-            error.code = 'MEDIA_OPERATION_STALE';
-            throw error;
-        }
-        const currentPhoto = active.photo;
-        const sourceObject = await readPrivateSourceObject(nextSourcePath);
-        timer.mark('read_private_source');
-        if (!sourceObject) {
-            const error = new Error('Source privata non trovata nello storage.');
-            error.status = 404;
-            error.code = 'PHOTO_SOURCE_NOT_FOUND';
-            throw error;
-        }
-
-        const derivatives = await generatePhotoDerivatives(
-            sourceObject.buffer,
-            getCropProfilesFromSettings(currentPhoto.settings)
-        );
-        timer.mark('generate_derivatives');
-        const nextAssets = materializePhotoAssets(photoId, generation, derivatives.assets);
-        await portfolioRepository.photos.registerMediaMutationAssets(
+        const operationId = normalizeMediaOperationId(req.body?.operationId);
+        const updatedPhoto = await requirePhotoSourceReplacementService().finalize({
             photoId,
+            expectedVersion,
             operationId,
-            nextAssets
-        );
-        await writePhotoAssets(nextAssets);
-        await portfolioRepository.photos.markMediaMutationAssetsStored(photoId, operationId);
-        timer.mark('write_public_derivatives');
-
-        const updatedPhoto = await portfolioRepository.photos.completeMediaMutation(
-            photoId,
-            operationId,
-            {
-                resolution: derivatives.resolution,
-                mediaGeneration: generation,
-                updatedAt: Date.now(),
-                derivativesVersion: Date.now()
-            },
-            { expectedVersion }
-        );
-        finalized = true;
-        timer.mark('commit_photo_generation');
-
-        await runMediaCleanupBestEffort({ limit: 10 });
+            mediaGeneration: req.body?.mediaGeneration,
+            sourcePath: req.body?.sourcePath,
+            onStage: (stage) => timer.mark(stage)
+        });
         timer.flush('success', { derivativesVersion: updatedPhoto.derivativesVersion });
         return res.json({
             success: true,
@@ -550,10 +459,6 @@ router.post('/:id/replace-source', requireDurableMediaLifecycle, async (req, res
             fallbackMessage: 'Errore durante il reupload della source privata',
             fallbackCode: 'PHOTO_REUPLOAD_FAILED'
         });
-    } finally {
-        if (!finalized && photoId && operationId) {
-            await abortMediaMutationBestEffort(photoId, operationId);
-        }
     }
 });
 

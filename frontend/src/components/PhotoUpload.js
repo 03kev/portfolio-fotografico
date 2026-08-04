@@ -2,7 +2,8 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { AlertTriangle, Loader2, Save, Upload } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import { usePhotos } from '../contexts/PhotoContext';
-import { signSourceUpload, uploadSourceToSignedUrl, uploadUtils } from '../utils/api';
+import { signSourceUpload, uploadSourceToSignedUrl } from '../utils/api';
+import { validateImageFile } from '../utils/photoUploadPolicy';
 import {
     buildOperationErrorMessage,
     isAmbiguousMutationError
@@ -251,7 +252,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         if (!file) return;
 
         try {
-            uploadUtils.validateImageFile(file);
+            validateImageFile(file);
             setSelectedFile(file);
             setError('');
 
@@ -523,6 +524,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             await uploadSourceToSignedUrl({
                 uploadUrl: signedData.uploadUrl,
                 file: selectedFileSnapshot,
+                contentType: signedData.contentType,
                 onProgress: ({ ratio }) => {
                     const normalized = Math.max(0, Math.min(1, Number(ratio) || 0));
                     const mapped = Math.round(12 + normalized * 66);

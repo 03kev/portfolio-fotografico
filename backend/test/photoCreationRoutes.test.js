@@ -4,6 +4,9 @@ const { test } = require('node:test');
 const {
     createPhotoCreationRouter
 } = require('../src/routes/photoCreationRoutes');
+const {
+    PHOTO_UPLOAD_MAX_BYTES
+} = require('@portfolio/photo-upload-contract');
 
 async function withServer(getPhotoCreationService, callback) {
     const app = express();
@@ -48,6 +51,84 @@ test('JSON mode exposes the transactional upload requirement over HTTP', async (
         assert.equal(body.success, false);
         assert.equal(body.code, 'TRANSACTIONAL_PHOTO_CREATION_REQUIRED');
     });
+});
+
+test('upload preparation canonicalizes JPG aliases and forwards one authoritative policy', async () => {
+    let preparedPayload = null;
+    const service = {
+        prepareUpload: async (payload) => {
+            preparedPayload = payload;
+            return {
+                uploadIntentId: payload.uploadIntentId,
+                photoId: 101,
+                uploadUrl: 'https://r2.test/source',
+                sourcePath: `/private/source/photo-creation-intents/${payload.uploadIntentId}/source.jpg`,
+                contentType: payload.sourceContentType,
+                expiresInSeconds: 600
+            };
+        }
+    };
+
+    await withServer(() => service, async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/photos/upload-url`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                uploadIntentId: '10000000-0000-4000-8000-000000000001',
+                variant: 'source',
+                mimetype: 'image/jpg',
+                fileSize: 1024
+            })
+        });
+        const body = await response.json();
+
+        assert.equal(response.status, 200);
+        assert.equal(body.data.contentType, 'image/jpeg');
+    });
+
+    assert.equal(preparedPayload.sourceContentType, 'image/jpeg');
+    assert.equal(preparedPayload.sourceExtension, 'jpg');
+    assert.equal(preparedPayload.signedUrlOptions.contentType, 'image/jpeg');
+});
+
+test('upload preparation rejects unsupported, missing-size and oversized declarations before signing', async () => {
+    let prepareRuns = 0;
+    const service = {
+        prepareUpload: async () => {
+            prepareRuns += 1;
+            throw new Error('should not sign');
+        }
+    };
+    const cases = [
+        { mimetype: 'application/pdf', fileSize: 100, status: 415, code: 'INVALID_FILE_TYPE' },
+        { mimetype: 'image/jpeg', status: 400, code: 'INVALID_FILE_SIZE' },
+        {
+            mimetype: 'image/jpeg',
+            fileSize: PHOTO_UPLOAD_MAX_BYTES + 1,
+            status: 413,
+            code: 'LIMIT_FILE_SIZE'
+        }
+    ];
+
+    await withServer(() => service, async (baseUrl) => {
+        for (const item of cases) {
+            const response = await fetch(`${baseUrl}/photos/upload-url`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    uploadIntentId: '10000000-0000-4000-8000-000000000001',
+                    variant: 'source',
+                    mimetype: item.mimetype,
+                    ...(item.fileSize === undefined ? {} : { fileSize: item.fileSize })
+                })
+            });
+            const body = await response.json();
+            assert.equal(response.status, item.status);
+            assert.equal(body.code, item.code);
+        }
+    });
+
+    assert.equal(prepareRuns, 0);
 });
 
 test('photo finalization normalizes current presets without dropping historical ones', async () => {

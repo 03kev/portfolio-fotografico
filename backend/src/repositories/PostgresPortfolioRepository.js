@@ -12,6 +12,7 @@ const {
     activatePhotoAssets,
     importActivePhotoAssets,
     loadActivePhotoAssets,
+    mapPhotoAssetRow,
     markPhotoAssetsStored,
     registerPlannedPhotoAssets,
     retireAllActivePhotoAssets
@@ -1096,13 +1097,26 @@ class PostgresPhotoRepository {
         );
         const row = result.rows[0];
         if (!row) return null;
+        const operationAssets = row.media_operation_id
+            ? await this.pool.query(
+                `SELECT *
+                 FROM photo_assets
+                 WHERE object_namespace = $1
+                   AND photo_id = $2
+                   AND owner_media_operation_id = $3::uuid
+                   AND state = 'planned'
+                 ORDER BY id`,
+                [this.cleanupNamespace, photoId, row.media_operation_id]
+            )
+            : { rows: [] };
         return {
             photo: await attachActiveAssets(
                 this.pool,
                 this.cleanupNamespace,
                 mapPhotoRow(row)
             ),
-            operation: activeMediaOperationFromRow(row)
+            operation: activeMediaOperationFromRow(row),
+            assets: operationAssets.rows.map(mapPhotoAssetRow)
         };
     }
 }

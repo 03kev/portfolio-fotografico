@@ -1,4 +1,7 @@
 import axios from 'axios';
+import {
+  normalizePhotoUploadMimeType
+} from '@portfolio/photo-upload-contract';
 import { API_BASE_URL, NETWORK_TIMEOUTS } from './constants';
 import { isAmbiguousMutationError } from './operationErrors';
 
@@ -267,6 +270,7 @@ export async function signSourceUpload({ uploadIntentId, file }) {
     || Number(signedData.photoId) <= 0
     || !signedData?.uploadUrl
     || !signedData?.sourcePath
+    || !signedData?.contentType
   ) {
     const error = new Error('URL di upload source non valida ricevuta dal server.');
     error.code = 'UPLOAD_SIGN_INVALID_RESPONSE';
@@ -291,6 +295,7 @@ export async function signExistingSourceUpload({ photo, file }) {
     || !signedData?.sourcePath
     || !signedData?.operationId
     || !signedData?.mediaGeneration
+    || !signedData?.contentType
   ) {
     const error = new Error('Prenotazione upload source non valida ricevuta dal server.');
     error.code = 'UPLOAD_SIGN_INVALID_RESPONSE';
@@ -302,6 +307,7 @@ export async function signExistingSourceUpload({ photo, file }) {
 export async function uploadSourceToSignedUrl({
   uploadUrl,
   file,
+  contentType,
   timeoutMs = NETWORK_TIMEOUTS.signedUploadMs,
   onProgress,
   signal
@@ -360,7 +366,10 @@ export async function uploadSourceToSignedUrl({
     xhr.timeout = timeoutMs;
 
     try {
-      xhr.setRequestHeader('Content-Type', file?.type || 'application/octet-stream');
+      xhr.setRequestHeader(
+        'Content-Type',
+        normalizePhotoUploadMimeType(contentType || file?.type) || 'application/octet-stream'
+      );
       xhr.setRequestHeader('Cache-Control', 'private, no-store');
     } catch {
       // Non blocchiamo l'upload se il browser rifiuta un header non essenziale.
@@ -440,25 +449,6 @@ export async function uploadSourceToSignedUrl({
     xhr.send(file);
   });
 }
-
-// Utility functions
-export const uploadUtils = {
-  // Valida file immagine
-  validateImageFile: (file) => {
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    const maxSize = 50 * 1024 * 1024; // 50MB
-    
-    if (!allowedTypes.includes(file.type)) {
-      throw new Error('Tipo di file non supportato. Usa JPG, PNG o WebP.');
-    }
-    
-    if (file.size > maxSize) {
-      throw new Error('File troppo grande. Massimo 50MB.');
-    }
-    
-    return true;
-  }
-};
 
 // Error handling utilities
 export const errorUtils = {
