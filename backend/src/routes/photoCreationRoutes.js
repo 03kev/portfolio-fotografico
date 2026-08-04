@@ -3,8 +3,7 @@ const DEFAULTS = require('../config/defaults');
 const { parseNumericIdOrThrow } = require('../utils/ids');
 const { sanitizePhotoPayload } = require('../utils/inputSanitizers');
 const {
-    buildDefaultCropProfiles,
-    getCropProfilesFromSettings
+    normalizeCropProfilesForStorage
 } = require('../services/photoDerivatives');
 const {
     getImageExtensionFromMimeType,
@@ -130,13 +129,11 @@ function createPhotoCreationRouter({ getPhotoCreationService }) {
             const parsedLng = parseCoordinate(lng, 'Longitudine');
             const photoId = parseNumericIdOrThrow(req.body?.photoId, 'photoId');
             const uploadIntentId = normalizeUploadIntentId(req.body?.uploadIntentId);
-            const cropProfiles = getCropProfilesFromSettings(sanitized.settings)
-                || buildDefaultCropProfiles();
             const normalizedSettings = {
                 ...(sanitized.settings && typeof sanitized.settings === 'object'
                     ? sanitized.settings
                     : {}),
-                cropProfiles
+                cropProfiles: normalizeCropProfilesForStorage(sanitized.settings)
             };
             const result = await getPhotoCreationService().finalize({
                 uploadIntentId,

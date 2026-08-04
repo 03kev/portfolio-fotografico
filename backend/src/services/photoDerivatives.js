@@ -1,5 +1,13 @@
 const sharp = require('sharp');
 const {
+    DEFAULT_CROP_PROFILE,
+    PHOTO_CROP_PRESETS,
+    buildDefaultCropProfiles,
+    findPhotoCropPreset,
+    normalizeCropProfiles,
+    parseCropProfile
+} = require('@portfolio/photo-crop-contract');
+const {
     PRIVATE_PREFIX,
     PRIVATE_SOURCE_PREFIX,
     PUBLIC_UPLOADS_PREFIX
@@ -164,41 +172,6 @@ function buildPhotoCreationSourcePath(uploadIntentId, sourceExtension = 'bin') {
     return `${PRIVATE_SOURCE_PREFIX}/photo-creation-intents/${normalizedIntentId}/source.${cleanSourceExtension}`;
 }
 
-function clamp01(value) {
-    const numeric = Number(value);
-    if (!Number.isFinite(numeric)) return null;
-    return Math.max(0, Math.min(1, numeric));
-}
-
-function clampScale(value) {
-    const numeric = Number(value);
-    if (!Number.isFinite(numeric)) return null;
-    return Math.max(1, Math.min(5, numeric));
-}
-
-function normalizeCropProfile(rawProfile) {
-    if (!rawProfile || typeof rawProfile !== 'object') return null;
-    const x = clamp01(rawProfile.x);
-    const y = clamp01(rawProfile.y);
-    const scale = clampScale(rawProfile.scale);
-    if (x === null || y === null || scale === null) return null;
-    return { x, y, scale };
-}
-
-const DEFAULT_CROP_PROFILE = Object.freeze({
-    x: 0.5,
-    y: 0.5,
-    scale: 1
-});
-
-function buildDefaultCropProfiles() {
-    return {
-        r43: { ...DEFAULT_CROP_PROFILE },
-        r11: { ...DEFAULT_CROP_PROFILE },
-        social: { ...DEFAULT_CROP_PROFILE }
-    };
-}
-
 function getCropProfilesFromSettings(settings) {
     if (typeof settings === 'string') {
         try {
@@ -210,17 +183,64 @@ function getCropProfilesFromSettings(settings) {
     if (!settings || typeof settings !== 'object') return null;
     const rawProfiles = settings.cropProfiles;
     if (!rawProfiles || typeof rawProfiles !== 'object') return null;
-
-    const profiles = {};
-    const r43 = normalizeCropProfile(rawProfiles.r43);
-    const r11 = normalizeCropProfile(rawProfiles.r11);
-    const social = normalizeCropProfile(rawProfiles.social);
-
-    if (r43) profiles.r43 = r43;
-    if (r11) profiles.r11 = r11;
-    if (social) profiles.social = social;
-
+    const profiles = normalizeCropProfiles(rawProfiles, {
+        includeDefaults: false,
+        preserveUnknown: false
+    });
     return Object.keys(profiles).length > 0 ? profiles : null;
+}
+
+function normalizeCropProfilesForStorage(settings) {
+    const rawProfiles = settings && typeof settings === 'object'
+        ? settings.cropProfiles
+        : null;
+    return normalizeCropProfiles(rawProfiles, {
+        includeDefaults: true,
+        preserveUnknown: true
+    });
+}
+
+function mergePhotoSettingsForStorage(currentSettings, settingsPatch) {
+    const current = currentSettings && typeof currentSettings === 'object'
+        && !Array.isArray(currentSettings)
+        ? currentSettings
+        : {};
+    const patch = settingsPatch && typeof settingsPatch === 'object'
+        && !Array.isArray(settingsPatch)
+        ? settingsPatch
+        : {};
+    const merged = {
+        ...current,
+        ...patch
+    };
+
+    if (!Object.prototype.hasOwnProperty.call(patch, 'cropProfiles')) {
+        return merged;
+    }
+
+    const currentProfiles = current.cropProfiles
+        && typeof current.cropProfiles === 'object'
+        && !Array.isArray(current.cropProfiles)
+        ? current.cropProfiles
+        : {};
+    const incomingProfiles = patch.cropProfiles
+        && typeof patch.cropProfiles === 'object'
+        && !Array.isArray(patch.cropProfiles)
+        ? patch.cropProfiles
+        : {};
+    const currentPresetKeys = new Set(PHOTO_CROP_PRESETS.map((preset) => preset.key));
+    const historicalProfiles = Object.fromEntries(
+        Object.entries(currentProfiles).filter(([key]) => !currentPresetKeys.has(key))
+    );
+
+    merged.cropProfiles = normalizeCropProfiles({
+        ...historicalProfiles,
+        ...incomingProfiles
+    }, {
+        includeDefaults: true,
+        preserveUnknown: true
+    });
+    return merged;
 }
 
 function computeCoverCropRegion(sourceWidth, sourceHeight, targetWidth, targetHeight, cropProfile = null) {
@@ -251,7 +271,7 @@ function computeCoverCropRegion(sourceWidth, sourceHeight, targetWidth, targetHe
     cropWidth = Math.max(1, Math.min(srcW, cropWidth));
     cropHeight = Math.max(1, Math.min(srcH, cropHeight));
 
-    const normalizedProfile = normalizeCropProfile(cropProfile);
+    const normalizedProfile = parseCropProfile(cropProfile);
     const scale = normalizedProfile?.scale || 1;
     if (scale > 1) {
         cropWidth = Math.max(1, Math.min(srcW, Math.round(cropWidth / scale)));
@@ -286,15 +306,60 @@ function generateMobileImageDerivative(sourceBuffer) {
         .toBuffer();
 }
 
-// This catalog is the only place that defines generated photo variants. A new
-// variant supplies its storage metadata and producer here; writing, registry,
-// API projection and cleanup all consume the resulting asset descriptors.
-function definePhotoDerivativeVariant(definition) {
-    return Object.freeze({
+// This catalog is the only place that defines generated photo variants. Crop
+// preset definitions live in the shared contract; cropPresetKey is the explicit
+// relation between the two catalogs. Writing, registry, API projection and
+// cleanup all consume the resulting asset descriptors.
+function definePhotoDerivativeVariant(definition, {
+    cropPresets = PHOTO_CROP_PRESETS
+} = {}) {
+    const cropPresetKey = definition?.cropPresetKey === undefined
+        || definition?.cropPresetKey === null
+        || String(definition.cropPresetKey).trim() === ''
+        ? null
+        : String(definition.cropPresetKey).trim().toLowerCase();
+    const variant = {
         searchIndexing: 'secondary',
         ...definition,
+        cropPresetKey,
         replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.DERIVATIVES
-    });
+    };
+
+    if (cropPresetKey) {
+        const preset = findPhotoCropPreset(cropPresetKey, cropPresets);
+        if (!preset) {
+            throw new TypeError(
+                `La variante ${variant.role || '(senza ruolo)'} usa un preset crop inesistente: ${cropPresetKey}.`
+            );
+        }
+        const outputWidth = Number(variant.outputWidth);
+        const outputHeight = Number(variant.outputHeight);
+        if (
+            !Number.isSafeInteger(outputWidth)
+            || !Number.isSafeInteger(outputHeight)
+            || outputWidth <= 0
+            || outputHeight <= 0
+        ) {
+            throw new TypeError(`Dimensioni crop non valide per la variante ${variant.role}.`);
+        }
+        if (Math.abs((outputWidth / outputHeight) - preset.ratioValue) > 1e-9) {
+            throw new TypeError(
+                `Il rapporto della variante ${variant.role} non coincide con il preset ${cropPresetKey}.`
+            );
+        }
+        if (typeof variant.encode !== 'function') {
+            throw new TypeError(`Encoder crop mancante per la variante ${variant.role}.`);
+        }
+        if (typeof variant.produce === 'function') {
+            throw new TypeError(
+                `La variante ${variant.role} non può definire sia cropPresetKey sia produce.`
+            );
+        }
+    } else if (typeof variant.produce !== 'function') {
+        throw new TypeError(`Producer mancante per la variante ${variant.role}.`);
+    }
+
+    return Object.freeze(variant);
 }
 
 const PHOTO_DERIVATIVE_VARIANTS = Object.freeze([
@@ -322,45 +387,40 @@ const PHOTO_DERIVATIVE_VARIANTS = Object.freeze([
         scope: 'public',
         fileName: 'thumbnail-4x3.webp',
         contentType: 'image/webp',
-        produce: ({ createCoverDerivative, cropProfiles }) => createCoverDerivative(
-            400,
-            300,
-            normalizeCropProfile(cropProfiles?.r43) || DEFAULT_CROP_PROFILE,
-            (pipeline) => pipeline.webp({ quality: 84, effort: 5 }).toBuffer()
-        )
+        cropPresetKey: 'r43',
+        outputWidth: 400,
+        outputHeight: 300,
+        encode: (pipeline) => pipeline.webp({ quality: 84, effort: 5 }).toBuffer()
     }),
     definePhotoDerivativeVariant({
         role: 'thumbnail-1x1',
         scope: 'public',
         fileName: 'thumbnail-1x1.webp',
         contentType: 'image/webp',
-        produce: ({ createCoverDerivative, cropProfiles }) => createCoverDerivative(
-            400,
-            400,
-            normalizeCropProfile(cropProfiles?.r11) || DEFAULT_CROP_PROFILE,
-            (pipeline) => pipeline.webp({ quality: 84, effort: 5 }).toBuffer()
-        )
+        cropPresetKey: 'r11',
+        outputWidth: 400,
+        outputHeight: 400,
+        encode: (pipeline) => pipeline.webp({ quality: 84, effort: 5 }).toBuffer()
     }),
     definePhotoDerivativeVariant({
         role: 'social',
         scope: 'public',
         fileName: 'social.jpg',
         contentType: 'image/jpeg',
-        produce: ({ createCoverDerivative, cropProfiles }) => createCoverDerivative(
-            1200,
-            630,
-            normalizeCropProfile(cropProfiles?.social) || DEFAULT_CROP_PROFILE,
-            (pipeline) => pipeline
-                .jpeg({ quality: 84, mozjpeg: true, progressive: true })
-                .toBuffer()
-        )
+        cropPresetKey: 'social',
+        outputWidth: 1200,
+        outputHeight: 630,
+        encode: (pipeline) => pipeline
+            .jpeg({ quality: 84, mozjpeg: true, progressive: true })
+            .toBuffer()
     })
 ]);
 
 async function generatePhotoDerivatives(
     sourceBuffer,
     cropProfiles = null,
-    variants = PHOTO_DERIVATIVE_VARIANTS
+    variants = PHOTO_DERIVATIVE_VARIANTS,
+    { cropPresets = PHOTO_CROP_PRESETS } = {}
 ) {
     const base = sharp(sourceBuffer).rotate();
     const metadata = await base.metadata();
@@ -373,7 +433,14 @@ async function generatePhotoDerivatives(
     if (!Number.isFinite(sourceWidth) || !Number.isFinite(sourceHeight) || sourceWidth <= 0 || sourceHeight <= 0) {
         throw new Error('Impossibile estrarre una risoluzione valida dal source originale.');
     }
-    const normalizedProfiles = cropProfiles && typeof cropProfiles === 'object' ? cropProfiles : null;
+    const normalizedProfiles = normalizeCropProfiles(cropProfiles, {
+        presets: cropPresets,
+        includeDefaults: false,
+        preserveUnknown: false
+    });
+    const normalizedVariants = variants.map((variant) => (
+        definePhotoDerivativeVariant(variant, { cropPresets })
+    ));
 
     const createCoverDerivative = async (targetWidth, targetHeight, profile, outputBuilder) => {
         const cropRegion = computeCoverCropRegion(
@@ -397,21 +464,32 @@ async function generatePhotoDerivatives(
         );
     };
 
-    const assets = await Promise.all(variants.map(async (variant) => ({
-        role: variant.role,
-        scope: variant.scope,
-        fileName: variant.fileName,
-        contentType: variant.contentType,
-        replacementGroup: normalizePhotoAssetReplacementGroup(
-            variant.replacementGroup
-        ),
-        buffer: await variant.produce({
-            base,
-            sourceBuffer,
-            cropProfiles: normalizedProfiles,
-            createCoverDerivative
-        })
-    })));
+    const assets = await Promise.all(normalizedVariants.map(async (variant) => {
+        const buffer = variant.cropPresetKey
+            ? await createCoverDerivative(
+                variant.outputWidth,
+                variant.outputHeight,
+                parseCropProfile(normalizedProfiles[variant.cropPresetKey])
+                    || DEFAULT_CROP_PROFILE,
+                variant.encode
+            )
+            : await variant.produce({
+                base,
+                sourceBuffer,
+                cropProfiles: normalizedProfiles,
+                createCoverDerivative
+            });
+        return {
+            role: variant.role,
+            scope: variant.scope,
+            fileName: variant.fileName,
+            contentType: variant.contentType,
+            replacementGroup: normalizePhotoAssetReplacementGroup(
+                variant.replacementGroup
+            ),
+            buffer
+        };
+    }));
 
     const width = Math.round(sourceWidth);
     const height = Math.round(sourceHeight);
@@ -426,15 +504,20 @@ async function generatePhotoDerivatives(
 
 module.exports = {
     buildPhotoCreationSourcePath,
+    DEFAULT_CROP_PROFILE,
+    PHOTO_CROP_PRESETS,
     PHOTO_DERIVATIVE_VARIANTS,
     PHOTO_ASSET_REPLACEMENT_GROUPS,
     materializePhotoAsset,
     materializePhotoAssets,
     normalizeMediaGeneration,
     buildDefaultCropProfiles,
+    definePhotoDerivativeVariant,
     generateMobileImageDerivative,
     generatePhotoDerivatives,
     getCropProfilesFromSettings,
+    mergePhotoSettingsForStorage,
+    normalizeCropProfilesForStorage,
     normalizePrivateSourcePath,
     normalizePrivateSourcePathForPhotoId,
     normalizePrivatePath,

@@ -455,9 +455,9 @@ Esempio storage:
   },
   "composition": {
     "cropProfiles": {
-      "r43": {},
-      "r11": {},
-      "social": {}
+      "r43": { "x": 0.5, "y": 0.5, "scale": 1 },
+      "r11": { "x": 0.5, "y": 0.5, "scale": 1 },
+      "social": { "x": 0.5, "y": 0.5, "scale": 1 }
     }
   },
   "tags": ["Alpe di Siusi"],
@@ -490,6 +490,52 @@ Postgres usa `photo_assets` come source of truth per path, ruolo, scope e
 content type. L’API restituisce le varianti pubbliche dinamicamente in
 `photo.assets`, indicizzate per ruolo; per esempio `full`, `mobile`,
 `thumbnail-4x3`, `thumbnail-1x1` e `social`. Il source privato non viene esposto.
+
+### Contratto dei preset crop
+
+I preset disponibili nell’editor e le regole numeriche dei profili sono definiti
+una sola volta nel package locale
+`packages/photo-crop-contract`. Backend e frontend dipendono dallo stesso
+package: non duplicare chiavi, label, rapporti, default o limiti in
+`photoDerivatives.js`, `cropEditor.js` o `PhotoCropModal.js`.
+
+I tre concetti restano intenzionalmente distinti:
+
+- `PHOTO_CROP_PRESETS` descrive cosa può modificare l’editor: chiave, label,
+  label compatta e rapporto;
+- `PHOTO_DERIVATIVE_VARIANTS` descrive gli asset prodotti;
+- `cropPresetKey` nella singola variante dichiara la relazione fra i due.
+
+Una variante senza `cropPresetKey` non viene ritagliata. Una variante con crop
+deve invece dichiarare `outputWidth`, `outputHeight` ed `encode`; il backend
+rifiuta all’avvio preset inesistenti e rapporti che non coincidono con le
+dimensioni Sharp. L’editor costruisce automaticamente selettori, label, rapporto
+e profilo iniziale dal catalogo condiviso. La preview attiva usa il crop live
+della full e non mantiene una seconda mappa manuale preset → ruolo asset.
+
+Per aggiungere un preset:
+
+1. aggiungere una definizione in `packages/photo-crop-contract/index.js`;
+2. soltanto se una derivata deve usarlo, impostare il suo `cropPresetKey` e le
+   dimensioni nel catalogo di `backend/src/services/photoDerivatives.js`.
+
+Non aggiornare manualmente normalizzatori, tab, label, pulsanti o salvataggio del
+frontend. Non ogni preset deve produrre una variante e non ogni variante deve
+avere un crop.
+
+Ogni write admin che riceve `cropProfiles` passa dallo stesso normalizzatore.
+L’aggiornamento generico dei metadata tratta `settings` come patch: conserva le
+altre impostazioni e i preset storici già salvati; se la patch non contiene
+`cropProfiles`, il crop esistente non viene normalizzato né riscritto.
+
+Per rinominare un preset non cambiare semplicemente la chiave: aggiungere la
+nuova chiave, migrare esplicitamente i metadata che devono assumerne la nuova
+semantica, spostare le varianti e solo dopo rimuovere la vecchia definizione.
+Per rimuoverlo, eliminare prima ogni `cropPresetKey` che lo usa. I profili salvati
+con chiavi non più presenti vengono conservati senza normalizzazione durante un
+round-trip dell’editor, ma sono ignorati da Sharp: questo evita perdita o
+reinterpretazione silenziosa dei dati storici e lascia la migrazione come scelta
+esplicita.
 
 Il vecchio snapshot JSON non è una seconda source of truth. Lo snapshot
 canonico conserva l'inventario attivo esplicito in `assets`; l’adapter non

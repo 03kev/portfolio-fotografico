@@ -360,6 +360,36 @@
   opacity: 0;
 }
 
+.crop-modal-image-loading-backdrop.is-error {
+  opacity: 1;
+  background: linear-gradient(180deg, rgba(7, 10, 18, 0.28) 0%, rgba(7, 10, 18, 0.58) 100%);
+}
+
+.crop-modal-image-error {
+  max-width: 280px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 18px;
+  color: rgba(255, 255, 255, 0.9);
+  text-align: center;
+}
+
+.crop-modal-image-error svg {
+  color: rgba(214, 179, 106, 0.94);
+}
+
+.crop-modal-image-error strong {
+  font-size: 0.9rem;
+}
+
+.crop-modal-image-error span {
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
 .crop-modal-image-loading-spinner {
   width: 38px;
   height: 38px;

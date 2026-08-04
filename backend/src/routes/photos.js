@@ -6,10 +6,11 @@ const {
     getUploadObject
 } = require('../services/r2Storage');
 const {
-    buildDefaultCropProfiles,
     generatePhotoDerivatives,
     getCropProfilesFromSettings,
     materializePhotoAssets,
+    mergePhotoSettingsForStorage,
+    normalizeCropProfilesForStorage,
     PHOTO_ASSET_REPLACEMENT_GROUPS,
     normalizeMediaGeneration,
     normalizePrivateSourcePathForPhotoId
@@ -173,7 +174,9 @@ async function regeneratePhotoMedia({
             throw error;
         }
 
-        const effectiveSettings = settings ?? currentPhoto.settings;
+        const effectiveSettings = settings === undefined
+            ? currentPhoto.settings
+            : mergePhotoSettingsForStorage(currentPhoto.settings, settings);
         const cropProfiles = getCropProfilesFromSettings(effectiveSettings);
         const derivatives = await generatePhotoDerivatives(sourceBuffer, cropProfiles);
         const nextAssets = materializePhotoAssets(photoId, generation, derivatives.assets);
@@ -192,7 +195,7 @@ async function regeneratePhotoMedia({
             photoId,
             operationId,
             {
-                ...(settings === undefined ? {} : { settings }),
+                ...(settings === undefined ? {} : { settings: effectiveSettings }),
                 resolution: derivatives.resolution,
                 mediaGeneration: generation,
                 updatedAt: Date.now(),
@@ -601,11 +604,15 @@ router.post('/:id/crop', requireDurableMediaLifecycle, async (req, res) => {
             error.code = 'CROP_SETTINGS_REQUIRED';
             throw error;
         }
+        const normalizedSettings = {
+            ...sanitized.settings,
+            cropProfiles: normalizeCropProfilesForStorage(sanitized.settings)
+        };
         const updatedPhoto = await regeneratePhotoMedia({
             photoId,
             expectedVersion,
             kind: 'crop',
-            settings: sanitized.settings
+            settings: normalizedSettings
         });
         if (!updatedPhoto) {
             return res.status(404).json({
@@ -639,6 +646,20 @@ router.put('/:id', async (req, res) => {
             ...sanitized,
             updatedAt: Date.now(),
         };
+        if (sanitized.settings !== undefined) {
+            const currentPhoto = await portfolioRepository.photos.findById(photoId);
+            if (!currentPhoto) {
+                return res.status(404).json({
+                    success: false,
+                    code: 'PHOTO_NOT_FOUND',
+                    message: 'Foto non trovata'
+                });
+            }
+            changes.settings = mergePhotoSettingsForStorage(
+                currentPhoto.settings,
+                sanitized.settings
+            );
+        }
         if (lat !== undefined) {
             const parsedLat = parseCoordinate(lat, 'Latitudine');
             if (parsedLat !== null) changes.lat = parsedLat;

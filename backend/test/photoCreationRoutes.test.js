@@ -49,3 +49,55 @@ test('JSON mode exposes the transactional upload requirement over HTTP', async (
         assert.equal(body.code, 'TRANSACTIONAL_PHOTO_CREATION_REQUIRED');
     });
 });
+
+test('photo finalization normalizes current presets without dropping historical ones', async () => {
+    let finalizedPayload = null;
+    const service = {
+        finalize: async (payload) => {
+            finalizedPayload = payload;
+            return {
+                replayed: false,
+                photo: {
+                    id: payload.photoId,
+                    title: payload.photoDraft.title,
+                    settings: payload.photoDraft.settings,
+                    assets: []
+                }
+            };
+        }
+    };
+    const historicalProfile = {
+        x: 0.123456,
+        y: 0.654321,
+        scale: 3.75,
+        note: 'legacy'
+    };
+
+    await withServer(() => service, async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/photos`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                uploadIntentId: '10000000-0000-4000-8000-000000000001',
+                photoId: 101,
+                sourcePath: '/private/source/photo-creation-intents/10000000-0000-4000-8000-000000000001/source.jpg',
+                title: 'Foto crop',
+                settings: {
+                    cropProfiles: {
+                        r43: { x: 0.2, y: 0.7, scale: 1.25 },
+                        retiredPreset: historicalProfile
+                    }
+                }
+            })
+        });
+
+        assert.equal(response.status, 201);
+    });
+
+    assert.deepEqual(finalizedPayload.photoDraft.settings.cropProfiles, {
+        retiredPreset: historicalProfile,
+        r43: { x: 0.2, y: 0.7, scale: 1.25 },
+        r11: { x: 0.5, y: 0.5, scale: 1 },
+        social: { x: 0.5, y: 0.5, scale: 1 }
+    });
+});
