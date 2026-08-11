@@ -1,7 +1,7 @@
 const { sanitizeSeriesContent } = require('../utils/inputSanitizers');
+const { getSeriesBlockDefinition } = require('@portfolio/series-content-contract');
 
-const DEFAULT_PHOTO_BLOCK_WIDTH = 16;
-const DEFAULT_PHOTO_BLOCK_HEIGHT = 22;
+const DEFAULT_PHOTO_LAYOUT = getSeriesBlockDefinition('photo').defaultLayout;
 const DEFAULT_PHOTO_BLOCK_GAP = 1;
 
 function compactWhitespace(value) {
@@ -59,10 +59,10 @@ function buildDefaultSeriesContent(photoIds) {
         type: 'photo',
         content: photoId,
         layout: {
-            x: 0,
-            y: index * (DEFAULT_PHOTO_BLOCK_HEIGHT + DEFAULT_PHOTO_BLOCK_GAP),
-            w: DEFAULT_PHOTO_BLOCK_WIDTH,
-            h: DEFAULT_PHOTO_BLOCK_HEIGHT,
+            x: DEFAULT_PHOTO_LAYOUT.x,
+            y: index * (DEFAULT_PHOTO_LAYOUT.h + DEFAULT_PHOTO_BLOCK_GAP),
+            w: DEFAULT_PHOTO_LAYOUT.w,
+            h: DEFAULT_PHOTO_LAYOUT.h,
             unit: 'grid'
         },
         showTitle: true,
@@ -71,32 +71,12 @@ function buildDefaultSeriesContent(photoIds) {
 }
 
 function normalizeSeriesContent(value, photoIds) {
-    const allowedPhotoIds = new Set(photoIds);
     const content = sanitizeSeriesContent(value)
-        .map((block) => {
-            if (block.type === 'photo') {
-                return allowedPhotoIds.has(block.content) ? block : null;
-            }
-
-            if (block.type === 'photos') {
-                const seen = new Set();
-                const items = block.content
-                    .filter((item) => allowedPhotoIds.has(item.id) && !seen.has(item.id))
-                    .map((item) => {
-                        seen.add(item.id);
-                        return item;
-                    })
-                    .sort(compareByVisualPosition);
-                return items.length > 0 ? { ...block, content: items } : null;
-            }
-
-            if (block.type === 'text') {
-                return compactWhitespace(block.content) ? block : null;
-            }
-
-            return null;
-        })
-        .filter(Boolean)
+        .map((block) => (
+            block.type === 'photos'
+                ? { ...block, content: [...block.content].sort(compareByVisualPosition) }
+                : block
+        ))
         .sort(compareByVisualPosition);
 
     return content.length > 0 ? content : buildDefaultSeriesContent(photoIds);
@@ -133,7 +113,9 @@ function normalizeSeriesRecord(record = {}) {
 }
 
 function normalizeSeriesCollection(records) {
-    return Array.isArray(records) ? records.map(normalizeSeriesRecord) : [];
+    return Array.isArray(records)
+        ? records.map((record) => normalizeSeriesRecord(record))
+        : [];
 }
 
 function assertUniqueSeriesIdentity(records, candidate, excludedId = null) {

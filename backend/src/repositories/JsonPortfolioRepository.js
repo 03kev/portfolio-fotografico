@@ -4,6 +4,7 @@ const {
     toLegacyStoragePhoto
 } = require('../services/photoRecord');
 const {
+    findSeriesContentPhotoIdsOutsideMembership,
     removePhotoReferencesFromSeriesRecord
 } = require('../services/seriesPhotoReferences');
 const {
@@ -13,7 +14,11 @@ const {
     normalizeSeriesRecord,
     normalizeSeriesTitleKey
 } = require('../services/seriesRecord');
-const { MediaMutationConflictError, RepositoryConflictError } = require('./errors');
+const {
+    MediaMutationConflictError,
+    ReferenceIntegrityError,
+    RepositoryConflictError
+} = require('./errors');
 
 const PHOTOS_METADATA_FILE = 'photos.json';
 const SERIES_METADATA_FILE = 'series.json';
@@ -21,6 +26,16 @@ const SERIES_METADATA_FILE = 'series.json';
 function normalizePhotoId(value) {
     const photoId = Number(value);
     return Number.isSafeInteger(photoId) && photoId > 0 ? photoId : null;
+}
+
+function assertContentReferencesMembership(series) {
+    const invalidIds = findSeriesContentPhotoIdsOutsideMembership(series);
+    if (invalidIds.length > 0) {
+        throw new ReferenceIntegrityError(
+            'Il contenuto della serie riferisce foto che non appartengono alla serie.',
+            { photoIds: invalidIds }
+        );
+    }
 }
 
 class JsonPhotoRepository {
@@ -192,6 +207,7 @@ class JsonSeriesRepository {
     async create(seriesRecord, _options = {}) {
         const allSeries = await this.list();
         const newSeries = normalizeSeriesRecord(seriesRecord);
+        assertContentReferencesMembership(newSeries);
         assertUniqueSeriesIdentity(allSeries, newSeries);
 
         allSeries.push(newSeries);
@@ -222,6 +238,7 @@ class JsonSeriesRepository {
             updatedAt: new Date().toISOString()
         }).toJSON());
 
+        assertContentReferencesMembership(updatedSeries);
         assertUniqueSeriesIdentity(allSeries, updatedSeries, seriesId);
         allSeries[index] = updatedSeries;
         const persistedSeries = await this.#writeAll(allSeries);
@@ -292,6 +309,11 @@ class JsonSeriesRepository {
             };
         }
 
+        // A normal runtime mutation must never double as a metadata migration.
+        // Validation happens before touching the raw snapshot so legacy shapes
+        // fail closed and the file remains byte-for-byte untouched.
+        normalizeSeriesCollection(records);
+
         let modifiedCount = 0;
         const nextSeries = records.map((record) => {
             const result = removePhotoReferencesFromSeriesRecord(record, normalizedPhotoId);
@@ -342,6 +364,10 @@ class JsonPortfolioRepository {
     }
 
     async deletePhotoWithReferences(photoId, options = {}) {
+        // Fail before the first write if the transitional snapshot is not
+        // canonical. Runtime deletion must never become an implicit migration
+        // or leave a dangling legacy series after deleting the photo first.
+        await this.series.list();
         const deletedPhoto = await this.photos.deleteById(photoId, options);
         if (!deletedPhoto) return null;
 

@@ -1,10 +1,25 @@
-const GRID_COLUMNS = 24;
+import {
+  SERIES_TEXT_ALIGNMENTS,
+  SERIES_TEXT_FONTS,
+  SERIES_TEXT_SIZES,
+  assertSeriesBlockTypeCoverage,
+  normalizeBlockType,
+  normalizeSeriesBlockLayout,
+  normalizeSeriesGroupItemLayout,
+  normalizeSeriesTextOption
+} from '@portfolio/series-content-contract';
 
-const DEFAULT_LAYOUTS = Object.freeze({
-  text: Object.freeze({ x: 0, w: 14, h: 5 }),
-  photo: Object.freeze({ x: 0, w: 16, h: 22 }),
-  photos: Object.freeze({ x: 0, w: GRID_COLUMNS, h: 24 })
-});
+assertSeriesBlockTypeCoverage(
+  ['text', 'photo', 'photos'],
+  'seriesEditorModel'
+);
+
+const seriesContentError = (message, field, details = {}) => {
+  const error = new TypeError(message);
+  error.code = 'VALIDATION_ERROR';
+  error.details = { field, ...details };
+  return error;
+};
 
 export const normalizeSeriesPhotoId = (value) => {
   const parsed = Number(value);
@@ -20,18 +35,6 @@ export const normalizeSeriesPhotoIds = (values) => {
     result.push(id);
     return result;
   }, []);
-};
-
-const normalizeLayout = (layout, type, y = 0) => {
-  const defaults = DEFAULT_LAYOUTS[type] || DEFAULT_LAYOUTS.text;
-  const source = layout && typeof layout === 'object' ? layout : {};
-  return {
-    x: Number.isFinite(Number(source.x)) ? Number(source.x) : defaults.x,
-    y: Number.isFinite(Number(source.y)) ? Number(source.y) : y,
-    w: Number.isFinite(Number(source.w)) ? Number(source.w) : defaults.w,
-    h: Number.isFinite(Number(source.h)) ? Number(source.h) : defaults.h,
-    unit: 'grid'
-  };
 };
 
 const nextBlockY = (content) => (
@@ -50,8 +53,8 @@ export const createSeriesEditorBlock = ({
   y = 0
 }) => {
   const blockId = id || `block-${Date.now().toString(36)}`;
-  const safeType = ['text', 'photo', 'photos'].includes(type) ? type : 'text';
-  const layout = normalizeLayout(null, safeType, y);
+  const safeType = normalizeBlockType(type);
+  const layout = normalizeSeriesBlockLayout(null, safeType, { fallbackY: y });
 
   if (safeType === 'photo') {
     return {
@@ -73,6 +76,13 @@ export const createSeriesEditorBlock = ({
     };
   }
 
+  if (safeType !== 'text') {
+    throw seriesContentError(
+      `Creazione editor non implementata per il blocco "${safeType}".`,
+      'content.type'
+    );
+  }
+
   return {
     id: blockId,
     type: 'text',
@@ -88,34 +98,80 @@ export const createSeriesEditorBlock = ({
   };
 };
 
-const normalizeGroupItems = (items, allowedPhotoIds) => {
+const normalizeGroupItems = (items, allowedPhotoIds, parentLayout, blockIndex) => {
+  if (!Array.isArray(items)) {
+    throw seriesContentError(
+      'Il blocco photos deve contenere un array.',
+      `content[${blockIndex}].content`
+    );
+  }
   const seen = new Set();
-  return (Array.isArray(items) ? items : []).reduce((result, item) => {
-    const id = normalizeSeriesPhotoId(
-      item && typeof item === 'object' ? item.id ?? item.photoId ?? item.content : item
-    );
-    if (!id || !allowedPhotoIds.has(id) || seen.has(id)) return result;
+  return items.reduce((result, item, itemIndex) => {
+    const field = `content[${blockIndex}].content[${itemIndex}]`;
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw seriesContentError(
+        'Ogni elemento di un gruppo photos deve avere la forma { id, layout? }.',
+        field
+      );
+    }
+    const id = normalizeSeriesPhotoId(item.id);
+    if (!id) {
+      throw seriesContentError('ID foto non valido nel gruppo.', `${field}.id`);
+    }
+    if (!allowedPhotoIds.has(id)) {
+      throw seriesContentError(
+        'Il gruppo riferisce una foto che non appartiene alla serie.',
+        `${field}.id`,
+        { photoId: id }
+      );
+    }
+    if (seen.has(id)) {
+      throw seriesContentError(
+        'La stessa foto non può comparire due volte nello stesso gruppo.',
+        `${field}.id`,
+        { photoId: id }
+      );
+    }
     seen.add(id);
-    result.push(
-      item && typeof item === 'object'
-        ? { ...item, id }
-        : { id }
-    );
+    result.push({
+      ...item,
+      id,
+      ...(item.layout
+        ? { layout: normalizeSeriesGroupItemLayout(item.layout, parentLayout) }
+        : {})
+    });
     return result;
   }, []);
 };
 
 export const normalizeSeriesEditorContent = (content, photoIds) => {
+  if (content === undefined || content === null) return [];
+  if (!Array.isArray(content)) {
+    throw seriesContentError('Il contenuto della serie deve essere un array.', 'content');
+  }
   const allowedPhotoIds = new Set(normalizeSeriesPhotoIds(photoIds));
-  return (Array.isArray(content) ? content : []).reduce((result, block, index) => {
-    if (!block || typeof block !== 'object') return result;
-    const type = block.type === 'image' ? 'photo' : block.type;
+  return content.reduce((result, block, index) => {
+    if (!block || typeof block !== 'object' || Array.isArray(block)) {
+      throw seriesContentError('Ogni blocco serie deve essere un oggetto.', `content[${index}]`);
+    }
+    const type = normalizeBlockType(block.type, { field: `content[${index}].type` });
     const id = String(block.id || `block-${index}`);
-    const layout = normalizeLayout(block.layout, type, nextBlockY(result));
+    const layout = normalizeSeriesBlockLayout(block.layout, type, {
+      fallbackY: nextBlockY(result)
+    });
 
     if (type === 'photo') {
       const photoId = normalizeSeriesPhotoId(block.content);
-      if (!photoId || !allowedPhotoIds.has(photoId)) return result;
+      if (!photoId) {
+        throw seriesContentError('Il blocco photo non contiene un ID valido.', `content[${index}].content`);
+      }
+      if (!allowedPhotoIds.has(photoId)) {
+        throw seriesContentError(
+          'Il blocco photo riferisce una foto che non appartiene alla serie.',
+          `content[${index}].content`,
+          { photoId }
+        );
+      }
       result.push({
         ...block,
         id,
@@ -133,20 +189,44 @@ export const normalizeSeriesEditorContent = (content, photoIds) => {
         ...block,
         id,
         type,
-        content: normalizeGroupItems(block.content, allowedPhotoIds),
+        content: normalizeGroupItems(block.content, allowedPhotoIds, layout, index),
         layout
       });
       return result;
     }
 
     if (type === 'text') {
+      if (typeof block.content !== 'string') {
+        throw seriesContentError(
+          'Il contenuto di un blocco text deve essere una stringa.',
+          `content[${index}].content`
+        );
+      }
       result.push({
         ...createSeriesEditorBlock({ type: 'text', id, y: layout.y }),
         ...block,
         id,
         type,
-        content: String(block.content || ''),
-        layout
+        content: block.content,
+        layout,
+        textAlign: normalizeSeriesTextOption(
+          block.textAlign,
+          SERIES_TEXT_ALIGNMENTS,
+          'left',
+          `content[${index}].textAlign`
+        ),
+        textSize: normalizeSeriesTextOption(
+          block.textSize,
+          SERIES_TEXT_SIZES,
+          'base',
+          `content[${index}].textSize`
+        ),
+        textFont: normalizeSeriesTextOption(
+          block.textFont,
+          SERIES_TEXT_FONTS,
+          'inter',
+          `content[${index}].textFont`
+        )
       });
     }
     return result;
@@ -156,11 +236,12 @@ export const normalizeSeriesEditorContent = (content, photoIds) => {
 export const removePhotoFromSeriesContent = (content, photoId) => {
   const targetId = normalizeSeriesPhotoId(photoId);
   if (!targetId) return Array.isArray(content) ? content : [];
-  return (Array.isArray(content) ? content : []).reduce((result, block) => {
-    if (block?.type === 'photo' && normalizeSeriesPhotoId(block.content) === targetId) {
+  return (Array.isArray(content) ? content : []).reduce((result, block, index) => {
+    const type = normalizeBlockType(block?.type, { field: `content[${index}].type` });
+    if (type === 'photo' && normalizeSeriesPhotoId(block.content) === targetId) {
       return result;
     }
-    if (block?.type === 'photos') {
+    if (type === 'photos') {
       result.push({
         ...block,
         content: (Array.isArray(block.content) ? block.content : []).filter((item) => (
@@ -178,7 +259,11 @@ export const removePhotoFromSeriesContent = (content, photoId) => {
 
 export const togglePhotoInSeriesGroup = (block, photoId) => {
   const targetId = normalizeSeriesPhotoId(photoId);
-  if (!targetId || block?.type !== 'photos') return block;
+  if (!targetId) return block;
+  const type = normalizeBlockType(block?.type);
+  if (type !== 'photos') {
+    throw seriesContentError('Il blocco selezionato non è un gruppo photos.', 'content.type');
+  }
   const items = Array.isArray(block.content) ? block.content : [];
   const isSelected = items.some((item) => (
     normalizeSeriesPhotoId(item && typeof item === 'object' ? item.id : item) === targetId
@@ -194,18 +279,23 @@ export const togglePhotoInSeriesGroup = (block, photoId) => {
 };
 
 export const getSeriesBlockPhotoIds = (block) => {
-  if (block?.type === 'photo') {
+  const type = normalizeBlockType(block?.type);
+  if (type === 'photo') {
     const id = normalizeSeriesPhotoId(block.content);
     return id ? [id] : [];
   }
-  if (block?.type === 'photos') {
+  if (type === 'photos') {
     return normalizeSeriesPhotoIds(
       (Array.isArray(block.content) ? block.content : []).map((item) => (
         item && typeof item === 'object' ? item.id : item
       ))
     );
   }
-  return [];
+  if (type === 'text') return [];
+  throw seriesContentError(
+    `Riferimenti foto non implementati per il blocco "${type}".`,
+    'content.type'
+  );
 };
 
 export const appendMissingSeriesPhotoBlocks = (content, photoIds, createId) => {

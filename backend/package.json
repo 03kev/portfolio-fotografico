@@ -15,6 +15,7 @@
   "dependencies": {
     "@portfolio/photo-crop-contract": "file:../packages/photo-crop-contract",
     "@portfolio/photo-upload-contract": "file:../packages/photo-upload-contract",
+    "@portfolio/series-content-contract": "file:../packages/series-content-contract",
     "@aws-sdk/client-s3": "^3.862.0",
     "@aws-sdk/s3-request-presigner": "^3.862.0",
     "cors": "^2.8.5",

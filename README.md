@@ -586,8 +586,46 @@ cutover. L’ULID rende ogni set di file immutabile.
 
 ### Schema canonico delle serie
 
-L’adapter JSON normalizza `data/series.json` sia in lettura sia prima di ogni
-scrittura. Il repository Postgres applica le stesse invarianti in transazione:
+Il contratto condiviso vive in `packages/series-content-contract`. È la source
+of truth per tipi di blocco, griglia, limiti strutturali, layout predefiniti e
+opzioni testuali. Backend, editor e renderer dipendono dallo stesso catalogo.
+I tipi canonici sono `text`, `photo` e `photos`: un tipo sconosciuto genera un
+errore esplicito e non viene mai reinterpretato come testo.
+
+Il contratto distingue tre decisioni diverse:
+
+- `defaultLayout` è il fallback canonico usato dal wizard e dalla
+  normalizzazione quando manca un layout;
+- `canvasDefaultLayout` conserva le dimensioni visuali con cui il canvas crea
+  nuovi blocchi (`text` 15×9, `photo` 15×22, `photos` 16×18);
+- `minimumLayout` ed `editorMinimumLayout` separano i limiti persistibili dai
+  minimi ergonomici del resize desktop.
+
+I layout già salvati non vengono ingranditi durante un round-trip e i due
+editor possono mantenere intenzionalmente esigenze visuali diverse senza
+duplicare numeri nei componenti.
+
+L’adapter JSON runtime accetta esclusivamente lo schema canonico e fallisce
+senza scrivere se incontra alias o campi legacy. Non esegue migrazioni durante
+letture, update o cleanup. La compatibilità storica vive soltanto nello
+strumento esplicito `backend/scripts/import-metadata-postgres.js`, che analizza
+e segnala le conversioni prima dell’import:
+
+- `image` viene migrato esplicitamente a `photo`;
+- gli elementi scalari dei vecchi gruppi vengono migrati a `{ id }`;
+- `order` e `gridVersion` vengono rimossi perché non canonici.
+
+Prima di usare uno snapshot storico eseguire sempre
+`node scripts/import-metadata-postgres.js --from-r2 --dry-run`: non deve essere
+aperto dal repository JSON corrente per “aggiustarlo” implicitamente. Il
+dry-run R2 del 2026-08-11 non ha rilevato forme legacy nelle serie correnti. Il
+codice temporaneo di conversione potrà essere rimosso quando import Postgres e
+verifica post-import degli snapshot R2 saranno conclusi; l’intero adapter JSON
+va rimosso dopo il cutover Postgres e la scadenza della finestra di rollback.
+
+Le normali API admin, Postgres e il frontend accettano esclusivamente il formato
+canonico. Il repository Postgres applica inoltre le invarianti relazionali in
+transazione:
 
 - titoli e slug devono essere unici anche tra le bozze
 - `photos` contiene ID numerici unici
@@ -597,6 +635,21 @@ scrittura. Il repository Postgres applica le stesse invarianti in transazione:
 - tutti i layout usano `unit: "grid"` su una griglia da 24 colonne
 - i riferimenti foto nei blocchi devono appartenere alla serie
 - se una serie contiene foto ma `content` e' vuoto, vengono creati blocchi foto espliciti
+
+Per aggiungere un tipo di blocco:
+
+1. aggiungere la definizione in `packages/series-content-contract/index.js`;
+2. implementare intenzionalmente contenuto, controlli e azioni in
+   `SeriesEditor` e nell’editor layout di `SeriesDetail`;
+3. implementare entrambi i renderer desktop e responsive;
+4. estendere sanitizer, riferimenti foto e test di round-trip.
+
+I consumer dichiarano la copertura dei tipi: finché editor e renderer non sono
+aggiornati, l’aggiunta al contratto fa fallire esplicitamente test/build anziché
+produrre un fallback distruttivo. Una rinomina o rimozione non è una semplice
+modifica al catalogo: richiede prima una migration dei contenuti persistiti. Non
+aggiungere alias alle API correnti; gli alias appartengono soltanto alla
+migration legacy.
 
 La griglia salvata descrive la composizione artistica desktop e non viene
 ricalcolata in base alla finestra. Nella vista pubblica, fino a 1024 px, i

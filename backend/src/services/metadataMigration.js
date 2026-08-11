@@ -1,4 +1,5 @@
 const crypto = require('node:crypto');
+const { normalizeBlockType } = require('@portfolio/series-content-contract');
 const { toRuntimePhoto } = require('./photoRecord');
 const {
     normalizePublishedPhotoAssetInventory
@@ -11,6 +12,50 @@ const {
 
 function isObject(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+// Temporary import-only compatibility boundary. Runtime repositories and APIs
+// accept canonical series content exclusively; historical aliases and fields
+// are converted here before canonical validation.
+function migrateLegacySeriesContent(content) {
+    if (!Array.isArray(content)) return content;
+
+    return content.map((block) => {
+        if (!isObject(block)) return block;
+
+        const migrated = {
+            ...block,
+            type: block.type === 'image' ? 'photo' : block.type
+        };
+        delete migrated.order;
+        if (isObject(migrated.layout)) {
+            migrated.layout = { ...migrated.layout };
+            delete migrated.layout.gridVersion;
+        }
+
+        if (migrated.type === 'photos' && Array.isArray(migrated.content)) {
+            const seen = new Set();
+            migrated.content = migrated.content.reduce((items, item) => {
+                const source = isObject(item) ? item : { id: item };
+                const id = source.id ?? source.photoId ?? source.content;
+                const numeric = numericId(id);
+                if (numeric && seen.has(numeric)) return items;
+                if (numeric) seen.add(numeric);
+
+                const migratedItem = { ...source, id };
+                delete migratedItem.photoId;
+                delete migratedItem.content;
+                if (isObject(migratedItem.layout)) {
+                    migratedItem.layout = { ...migratedItem.layout };
+                    delete migratedItem.layout.gridVersion;
+                }
+                items.push(migratedItem);
+                return items;
+            }, []);
+        }
+
+        return migrated;
+    });
 }
 
 function numericId(value) {
@@ -84,7 +129,25 @@ function inspectContentReferences(rawSeries, photoIds, membership, report) {
             ));
         }
 
-        const type = block.type === 'image' ? 'photo' : block.type;
+        let type;
+        try {
+            type = normalizeBlockType(
+                block.type === 'image' ? 'photo' : block.type,
+                { field: `series[${rawSeries.id}].content[${blockIndex}].type` }
+            );
+        } catch (error) {
+            report.errors.push(issue(
+                'UNKNOWN_SERIES_BLOCK_TYPE',
+                error.message,
+                {
+                    seriesId: String(rawSeries.id),
+                    blockId: block.id,
+                    blockIndex,
+                    value: block.type
+                }
+            ));
+            return;
+        }
         if (type === 'photo') {
             const id = numericId(block.content);
             if (!id) {
@@ -379,7 +442,23 @@ function analyzeMetadataSnapshot({ photos, series }) {
         }
 
         inspectContentReferences(record, photoIds, membership, report);
-        const normalized = normalizeSeriesRecord(record);
+        let normalized;
+        try {
+            normalized = normalizeSeriesRecord({
+                ...record,
+                content: migrateLegacySeriesContent(record.content)
+            });
+        } catch (error) {
+            report.errors.push(issue(
+                'INVALID_SERIES_CONTENT',
+                error.message || 'Il contenuto della serie non è valido.',
+                {
+                    seriesId: String(id),
+                    ...(error?.details ? { details: error.details } : {})
+                }
+            ));
+            return;
+        }
         report.counts.contentPhotoReferences += new Set(
             normalized.content.flatMap((block) => {
                 if (block.type === 'photo') return [block.content];
@@ -742,5 +821,6 @@ async function verifyImportedSnapshot(pool, snapshot, {
 module.exports = {
     analyzeMetadataSnapshot,
     importMetadataSnapshot,
+    migrateLegacySeriesContent,
     verifyImportedSnapshot
 };

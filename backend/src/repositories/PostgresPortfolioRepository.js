@@ -5,6 +5,10 @@ const {
     normalizeSeriesTitleKey
 } = require('../services/seriesRecord');
 const {
+    extractSeriesContentPhotoIds,
+    findSeriesContentPhotoIdsOutsideMembership
+} = require('../services/seriesPhotoReferences');
+const {
     DEFAULT_STALE_WRITER_GRACE_MS,
     PostgresMediaCleanupRepository
 } = require('./PostgresMediaCleanupRepository');
@@ -297,33 +301,8 @@ async function insertPhotoRow(queryable, photo, {
     return mapPhotoRow(result.rows[0]);
 }
 
-function extractContentPhotoIds(content) {
-    const ids = [];
-    if (!Array.isArray(content)) return ids;
-
-    for (const block of content) {
-        if (block?.type === 'photo') {
-            const id = Number(block.content);
-            if (Number.isSafeInteger(id) && id > 0) ids.push(id);
-        } else if (block?.type === 'photos' && Array.isArray(block.content)) {
-            for (const item of block.content) {
-                const id = Number(
-                    item && typeof item === 'object'
-                        ? item.id ?? item.photoId ?? item.content
-                        : item
-                );
-                if (Number.isSafeInteger(id) && id > 0) ids.push(id);
-            }
-        }
-    }
-
-    return [...new Set(ids)];
-}
-
 function assertContentReferencesMembership(series) {
-    const membership = new Set(series.photos);
-    const invalidIds = extractContentPhotoIds(series.content)
-        .filter((photoId) => !membership.has(photoId));
+    const invalidIds = findSeriesContentPhotoIdsOutsideMembership(series);
     if (invalidIds.length > 0) {
         throw new ReferenceIntegrityError(
             'Il contenuto della serie riferisce foto che non appartengono alla serie.',
@@ -1975,7 +1954,7 @@ class PostgresPortfolioRepository {
 
 module.exports = {
     PostgresPortfolioRepository,
-    extractContentPhotoIds,
+    extractContentPhotoIds: extractSeriesContentPhotoIds,
     mapPhotoRow,
     mapSeriesRow,
     translatePostgresError,

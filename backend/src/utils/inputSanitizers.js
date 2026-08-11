@@ -1,4 +1,21 @@
 const { parseNumericIdOrThrow } = require('./ids');
+const {
+    SERIES_CONTENT_MAX_BLOCKS,
+    SERIES_PHOTO_GROUP_MAX_ITEMS,
+    SERIES_TEXT_ALIGNMENTS,
+    SERIES_TEXT_FONTS,
+    SERIES_TEXT_SIZES,
+    assertSeriesBlockTypeCoverage,
+    normalizeBlockType,
+    normalizeSeriesBlockLayout,
+    normalizeSeriesGroupItemLayout,
+    normalizeSeriesTextOption
+} = require('@portfolio/series-content-contract');
+
+assertSeriesBlockTypeCoverage(
+    ['text', 'photo', 'photos'],
+    'Backend series content sanitizer'
+);
 
 function isPlainObject(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -83,41 +100,6 @@ function parseBooleanLike(value) {
         if (normalized === 'false') return false;
     }
     return Boolean(value);
-}
-
-function toSafeNumber(value, fallback = 0) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function clampNumber(value, min, max, fallback = min) {
-    const parsed = toSafeNumber(value, fallback);
-    return Math.max(min, Math.min(max, parsed));
-}
-
-function sanitizeLayout(layout, { maxCols = 24, maxRows = 5500, minW = 1, minH = 1 } = {}) {
-    if (!isPlainObject(layout)) {
-        return {
-            x: 0,
-            y: 0,
-            w: minW,
-            h: minH,
-            unit: 'grid'
-        };
-    }
-
-    const w = Math.round(clampNumber(layout.w, minW, maxCols, minW));
-    const h = Math.round(clampNumber(layout.h, minH, maxRows, minH));
-    const maxX = Math.max(0, maxCols - w);
-    const maxY = Math.max(0, maxRows - h);
-
-    return {
-        x: Math.round(clampNumber(layout.x, 0, maxX, 0)),
-        y: Math.round(clampNumber(layout.y, 0, maxY, 0)),
-        w,
-        h,
-        unit: 'grid'
-    };
 }
 
 function normalizePhotoId(value) {
@@ -221,89 +203,172 @@ function sanitizePhotoPayload(body = {}, { partial = false } = {}) {
     return output;
 }
 
+function rejectLegacySeriesContentFields(block, fieldPrefix) {
+    if (Object.hasOwn(block, 'order')) {
+        throw validationError(
+            'Il campo legacy order non è ammesso nel formato canonico.',
+            `${fieldPrefix}.order`,
+            { reason: 'LEGACY_SERIES_CONTENT_NOT_ALLOWED' }
+        );
+    }
+    if (isPlainObject(block.layout) && Object.hasOwn(block.layout, 'gridVersion')) {
+        throw validationError(
+            'Il campo legacy gridVersion non è ammesso nel formato canonico.',
+            `${fieldPrefix}.layout.gridVersion`,
+            { reason: 'LEGACY_SERIES_CONTENT_NOT_ALLOWED' }
+        );
+    }
+}
+
 function sanitizeSeriesContent(value) {
-    if (!Array.isArray(value)) return [];
-    const maxBlocks = 200;
-    return value.slice(0, maxBlocks).map((block, index) => {
+    if (value === undefined || value === null) return [];
+    if (!Array.isArray(value)) {
+        throw validationError('content deve essere un array di blocchi.', 'content');
+    }
+    if (value.length > SERIES_CONTENT_MAX_BLOCKS) {
+        throw validationError(
+            `La serie può contenere al massimo ${SERIES_CONTENT_MAX_BLOCKS} blocchi.`,
+            'content',
+            { maximumItems: SERIES_CONTENT_MAX_BLOCKS }
+        );
+    }
+
+    return value.map((block, index) => {
+        const fieldPrefix = `content[${index}]`;
         if (!isPlainObject(block)) {
-            return { id: `block-${index}`, type: 'text', content: '', layout: sanitizeLayout(null) };
+            throw validationError('Ogni blocco serie deve essere un oggetto.', fieldPrefix);
         }
 
-        const rawType = sanitizeString(block.type, {
-            maxLength: 24,
-            fallback: 'text',
-            fieldName: 'content.type'
-        }).toLowerCase();
-        const type = rawType === 'image' ? 'photo' : rawType;
-        const safeType = ['text', 'photo', 'photos'].includes(type) ? type : 'text';
-        const safeLayout = sanitizeLayout(block.layout);
-        const safeId = block.id !== undefined && block.id !== null
-            ? sanitizeString(block.id, { maxLength: 120, fallback: `block-${index}`, fieldName: 'content.id' })
+        const type = normalizeBlockType(block.type, {
+            field: `${fieldPrefix}.type`
+        });
+        rejectLegacySeriesContentFields(block, fieldPrefix);
+        const layout = normalizeSeriesBlockLayout(block.layout, type);
+        const id = block.id !== undefined && block.id !== null
+            ? sanitizeString(block.id, {
+                maxLength: 120,
+                fallback: `block-${index}`,
+                fieldName: `${fieldPrefix}.id`
+            })
             : `block-${index}`;
 
-        if (safeType === 'photo') {
+        if (type === 'photo') {
             const photoId = normalizePhotoId(block.content);
+            if (!photoId) {
+                throw validationError(
+                    'Il blocco photo deve contenere un ID foto valido.',
+                    `${fieldPrefix}.content`
+                );
+            }
             return {
-                id: safeId,
-                type: 'photo',
+                id,
+                type,
                 content: photoId,
-                layout: safeLayout,
-                showTitle: parseBooleanLike(block.showTitle),
+                layout,
+                showTitle: block.showTitle === undefined ? true : parseBooleanLike(block.showTitle),
                 showLightbox: block.showLightbox === undefined ? true : parseBooleanLike(block.showLightbox)
             };
         }
 
-        if (safeType === 'photos') {
-            const arr = Array.isArray(block.content) ? block.content : [];
-            const content = arr
-                .slice(0, 300)
-                .map((item, itemIndex) => {
-                    if (isPlainObject(item)) {
-                        const id = normalizePhotoId(item.id ?? item.photoId ?? item.content);
-                        if (!id) return null;
-                        return {
-                            id,
-                            layout: sanitizeLayout(item.layout, {
-                                maxCols: Math.max(4, safeLayout.w),
-                                maxRows: Math.max(1, safeLayout.h),
-                                minW: 1,
-                                minH: 1
-                            })
-                        };
-                    }
+        if (type === 'photos') {
+            if (!Array.isArray(block.content)) {
+                throw validationError(
+                    'Il blocco photos deve contenere un array.',
+                    `${fieldPrefix}.content`
+                );
+            }
+            if (block.content.length > SERIES_PHOTO_GROUP_MAX_ITEMS) {
+                throw validationError(
+                    `Un gruppo può contenere al massimo ${SERIES_PHOTO_GROUP_MAX_ITEMS} foto.`,
+                    `${fieldPrefix}.content`,
+                    { maximumItems: SERIES_PHOTO_GROUP_MAX_ITEMS }
+                );
+            }
 
-                    const id = normalizePhotoId(item);
-                    if (!id) return null;
-                    return { id };
-                })
-                .filter(Boolean);
+            const seen = new Set();
+            const content = [];
+            block.content.forEach((item, itemIndex) => {
+                const itemField = `${fieldPrefix}.content[${itemIndex}]`;
+                if (!isPlainObject(item)) {
+                    throw validationError(
+                        'Ogni elemento di un gruppo photos deve avere la forma { id, layout? }.',
+                        itemField
+                    );
+                }
+                const photoId = normalizePhotoId(
+                    item.id
+                );
+                if (!photoId) {
+                    throw validationError(
+                        'L’elemento del gruppo non contiene un ID foto valido.',
+                        `${itemField}.id`
+                    );
+                }
+                if (seen.has(photoId)) {
+                    throw validationError(
+                        'La stessa foto non può comparire due volte nello stesso gruppo.',
+                        `${itemField}.id`,
+                        { photoId }
+                    );
+                }
+                seen.add(photoId);
+                if (isPlainObject(item.layout) && Object.hasOwn(item.layout, 'gridVersion')) {
+                    throw validationError(
+                        'Il campo legacy gridVersion non è ammesso nel formato canonico.',
+                        `${itemField}.layout.gridVersion`,
+                        { reason: 'LEGACY_SERIES_CONTENT_NOT_ALLOWED' }
+                    );
+                }
+                content.push({
+                    id: photoId,
+                    ...(isPlainObject(item) && item.layout
+                        ? { layout: normalizeSeriesGroupItemLayout(item.layout, layout) }
+                        : {})
+                });
+            });
 
-            return {
-                id: safeId,
-                type: 'photos',
-                content,
-                layout: safeLayout
-            };
+            return { id, type, content, layout };
+        }
+
+        if (typeof block.content !== 'string') {
+            throw validationError(
+                'Il contenuto di un blocco text deve essere una stringa.',
+                `${fieldPrefix}.content`
+            );
         }
 
         return {
-            id: safeId,
-            type: 'text',
-            content: sanitizeString(block.content, { maxLength: 8000, fallback: '', fieldName: 'content.text' }),
-            layout: sanitizeLayout(block.layout, { minW: 2, minH: 2 }),
-            textAlign: ['left', 'center', 'right', 'justify', 'justify-center', 'justify-right'].includes(String(block.textAlign || '').toLowerCase())
-                ? String(block.textAlign).toLowerCase()
-                : 'left',
-            textSize: sanitizeOptionalString(block.textSize, { maxLength: 20, fieldName: 'textSize' }) || 'base',
+            id,
+            type,
+            content: sanitizeString(block.content, {
+                maxLength: 8000,
+                fallback: '',
+                fieldName: `${fieldPrefix}.content`
+            }),
+            layout,
+            textAlign: normalizeSeriesTextOption(
+                block.textAlign,
+                SERIES_TEXT_ALIGNMENTS,
+                'left',
+                `${fieldPrefix}.textAlign`
+            ),
+            textSize: normalizeSeriesTextOption(
+                block.textSize,
+                SERIES_TEXT_SIZES,
+                'base',
+                `${fieldPrefix}.textSize`
+            ),
             textBold: parseBooleanLike(block.textBold),
             textItalic: parseBooleanLike(block.textItalic),
             textUnderline: parseBooleanLike(block.textUnderline),
             textMono: parseBooleanLike(block.textMono),
-            textFont: sanitizeOptionalString(block.textFont, { maxLength: 40, fieldName: 'textFont' }) || 'inter'
+            textFont: normalizeSeriesTextOption(
+                block.textFont,
+                SERIES_TEXT_FONTS,
+                'inter',
+                `${fieldPrefix}.textFont`
+            )
         };
-    }).filter((block) => {
-        if (block.type === 'photo') return Boolean(block.content);
-        return true;
     });
 }
 

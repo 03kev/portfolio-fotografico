@@ -12,6 +12,12 @@ function createMemoryMetadataStorage() {
         },
         async writeMetadataFile(filename, value) {
             files.set(filename, structuredClone(value));
+        },
+        seed(filename, value) {
+            files.set(filename, structuredClone(value));
+        },
+        snapshot(filename) {
+            return structuredClone(files.get(filename));
         }
     };
 }
@@ -110,6 +116,72 @@ test('series identity uniqueness includes drafts in the temporary adapter', asyn
         })),
         (error) => error.code === 'SERIES_TITLE_CONFLICT' && error.status === 409
     );
+});
+
+test('series content outside membership is rejected instead of silently removed', async () => {
+    await assert.rejects(
+        () => repository.series.create(buildSeries(1, {
+            photos: [101],
+            content: [{
+                id: 'outside-membership',
+                type: 'photo',
+                content: 202,
+                layout: { x: 0, y: 0, w: 16, h: 22, unit: 'grid' }
+            }]
+        })),
+        (error) => (
+            error.code === 'REFERENCE_INTEGRITY_CONFLICT'
+            && error.details?.photoIds?.[0] === 202
+        )
+    );
+    assert.deepEqual(await repository.series.list(), []);
+});
+
+test('ordinary JSON reads and writes reject legacy content without migrating the snapshot', async () => {
+    const canonical = buildSeries(1, {
+        title: 'Canonica',
+        slug: 'canonica',
+        photos: [101],
+        content: [{
+            id: 'canonical-photo',
+            type: 'photo',
+            content: 101,
+            layout: { x: 0, y: 0, w: 16, h: 22, unit: 'grid' }
+        }]
+    });
+    const legacy = buildSeries(2, {
+        title: 'Legacy',
+        slug: 'legacy',
+        photos: [202],
+        content: [{
+            id: 'legacy-image',
+            type: 'image',
+            content: 202,
+            layout: { x: 0, y: 0, w: 16, h: 22, gridVersion: 2 }
+        }]
+    });
+    const original = [canonical, legacy];
+    metadataStorage.seed('series.json', original);
+
+    await assert.rejects(
+        () => repository.series.list(),
+        (error) => error.details?.reason === 'UNKNOWN_SERIES_BLOCK_TYPE'
+    );
+    await assert.rejects(
+        () => repository.series.updateById(1, { description: 'Non deve essere scritto' }),
+        (error) => error.details?.reason === 'UNKNOWN_SERIES_BLOCK_TYPE'
+    );
+    await assert.rejects(
+        () => repository.series.removePhotoReferences(101),
+        (error) => error.details?.reason === 'UNKNOWN_SERIES_BLOCK_TYPE'
+    );
+    await repository.photos.create(buildPhoto(101));
+    await assert.rejects(
+        () => repository.deletePhotoWithReferences(101),
+        (error) => error.details?.reason === 'UNKNOWN_SERIES_BLOCK_TYPE'
+    );
+    assert.equal((await repository.photos.findById(101)).id, 101);
+    assert.deepEqual(metadataStorage.snapshot('series.json'), original);
 });
 
 test('deletePhotoWithReferences represents the future atomic domain operation', async () => {

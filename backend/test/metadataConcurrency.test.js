@@ -449,7 +449,7 @@ test('JSON mode fails closed before media replacement or photo deletion without 
     assert.deepEqual(storedSeries[0].photos, [PHOTO_ID]);
 });
 
-test('[known dangling references] cleanup does not remove canonical photo and photo-group blocks', async () => {
+test('JSON cleanup removes canonical single-photo and photo-group references', async () => {
     await seedState({
         series: [buildSeries('1', [101, 202], {
             id: '1',
@@ -492,6 +492,6 @@ test('[known dangling references] cleanup does not remove canonical photo and ph
     assert.equal(cleanupResult.modified, true);
     assert.deepEqual(storedSeries.photos, [202]);
     assert.equal(storedSeries.coverImage, 202);
-    assert.equal(singlePhotoBlock.content, 101);
-    assert.deepEqual(groupBlock.content.map((item) => item.id), [101, 202]);
+    assert.equal(singlePhotoBlock, undefined);
+    assert.deepEqual(groupBlock.content.map((item) => item.id), [202]);
 });

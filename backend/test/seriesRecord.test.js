@@ -6,7 +6,7 @@ const {
     normalizeSeriesRecord
 } = require('../src/services/seriesRecord');
 
-test('normalizeSeriesRecord produces canonical grid content', () => {
+test('normalizeSeriesRecord round-trips canonical grid content', () => {
     const normalized = normalizeSeriesRecord({
         id: '1767314051494',
         title: '  Serie   Prova  ',
@@ -18,14 +18,12 @@ test('normalizeSeriesRecord produces canonical grid content', () => {
             {
                 id: 'later-photo',
                 type: 'photo',
-                order: 9,
                 content: 20,
                 layout: { x: 3.4, y: 10.2, w: 8.2, h: 12.1, unit: 'grid' }
             },
             {
                 id: 'intro',
                 type: 'text',
-                order: 3,
                 content: 'Introduzione',
                 layout: { x: 0, y: 0, w: 12, h: 4, unit: 'grid' },
                 textAlign: 'justify-center'
@@ -46,10 +44,34 @@ test('normalizeSeriesRecord produces canonical grid content', () => {
     assert.equal(normalized.slug, 'serie-prova');
     assert.deepEqual(normalized.photos, [10, 20, 30]);
     assert.equal(normalized.coverImage, null);
-    assert.deepEqual(normalized.content.map((block) => block.id), ['intro', 'later-photo']);
+    assert.deepEqual(
+        normalized.content.map((block) => block.id),
+        ['intro', 'later-photo', 'invalid-photo']
+    );
     assert.equal(normalized.content[0].textAlign, 'justify-center');
     assert.equal(normalized.content[1].layout.unit, 'grid');
-    assert.equal('order' in normalized.content[1], false);
+    assert.equal(normalized.content[2].content, 999);
+});
+
+test('normalizeSeriesRecord rejects unknown types instead of converting content to text', () => {
+    assert.throws(
+        () => normalizeSeriesRecord({
+            id: '1',
+            title: 'Serie',
+            description: 'Descrizione',
+            photos: [],
+            content: [{
+                id: 'video-1',
+                type: 'video',
+                content: { url: 'video.mp4', caption: 'Non deve essere perso' }
+            }]
+        }),
+        (error) => (
+            error.code === 'VALIDATION_ERROR'
+            && error.details?.reason === 'UNKNOWN_SERIES_BLOCK_TYPE'
+            && error.details?.value === 'video'
+        )
+    );
 });
 
 test('normalizeSeriesRecord materializes default blocks for empty content', () => {

@@ -134,6 +134,11 @@ test('identifies legacy block forms but produces deterministic normalized output
                     unit: 'grid',
                     gridVersion: 2
                 }
+            }, {
+                id: 'legacy-image',
+                type: 'image',
+                content: 101,
+                layout: { x: 0, y: 12, w: 16, h: 22, unit: 'grid' }
             }]
         })]
     };
@@ -144,10 +149,39 @@ test('identifies legacy block forms but produces deterministic normalized output
 
     assert.deepEqual(first.errors, []);
     assert.equal(warningCodes.has('LEGACY_SCALAR_GROUP_ITEM'), true);
+    assert.equal(warningCodes.has('LEGACY_IMAGE_BLOCK'), true);
     assert.equal(warningCodes.has('LEGACY_BLOCK_ORDER'), true);
     assert.equal(warningCodes.has('LEGACY_GRID_VERSION'), true);
     assert.equal(first.checksum, second.checksum);
     assert.deepEqual(first.normalized, second.normalized);
+});
+
+test('rejects unknown block types without converting or losing their payload', () => {
+    const originalPayload = { url: 'video.mp4', caption: 'Contenuto editoriale' };
+    const report = analyzeMetadataSnapshot({
+        photos: [photo(101)],
+        series: [series(1, [101], {
+            content: [{
+                id: 'future-block',
+                type: 'video',
+                content: originalPayload,
+                layout: { x: 0, y: 0, w: 12, h: 12, unit: 'grid' }
+            }]
+        })]
+    });
+
+    assert.equal(
+        report.errors.some((entry) => (
+            entry.code === 'UNKNOWN_SERIES_BLOCK_TYPE'
+            && entry.value === 'video'
+        )),
+        true
+    );
+    assert.equal(report.normalized.series.length, 0);
+    assert.deepEqual(
+        report.normalized.series.flatMap((record) => record.content),
+        []
+    );
 });
 
 test('rejects an unreconciled historical snapshot instead of materializing the current catalog', () => {

@@ -806,6 +806,31 @@ integrationTest('foreign keys reject a series membership to a missing photo', as
     );
 });
 
+integrationTest('content outside membership is rejected without rewriting the stored series', async () => {
+    await repository.photos.create(buildPhoto(101));
+    await repository.photos.create(buildPhoto(202));
+    const created = await repository.series.create(buildSeries(1001, [101]));
+
+    await assert.rejects(
+        () => repository.series.updateById(1001, {
+            content: [{
+                id: 'outside-membership',
+                type: 'photo',
+                content: 202,
+                layout: { x: 0, y: 0, w: 16, h: 22, unit: 'grid' }
+            }]
+        }, { expectedVersion: created.version }),
+        (error) => (
+            error.code === 'REFERENCE_INTEGRITY_CONFLICT'
+            && error.details?.photoIds?.includes(202)
+        )
+    );
+
+    const stored = await repository.series.findByIdentifier('1001');
+    assert.equal(stored.version, created.version);
+    assert.deepEqual(extractContentPhotoIds(stored.content), [101]);
+});
+
 integrationTest('an error after reference cleanup rolls the whole photo deletion back', async () => {
     await repository.photos.create(buildPhoto(101));
     await repository.series.create(buildSeries(1001, [101]));

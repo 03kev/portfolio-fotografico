@@ -5,6 +5,7 @@
   "dependencies": {
     "@portfolio/photo-crop-contract": "file:../packages/photo-crop-contract",
     "@portfolio/photo-upload-contract": "file:../packages/photo-upload-contract",
+    "@portfolio/series-content-contract": "file:../packages/series-content-contract",
     "axios": "^1.1.3",
     "exifr": "^7.1.3",
     "framer-motion": "^7.10.3",

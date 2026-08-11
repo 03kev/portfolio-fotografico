@@ -1,6 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  SERIES_BLOCK_DEFINITIONS,
+  assertSeriesBlockTypeCoverage,
+  getSeriesBlockDefinition
+} from '@portfolio/series-content-contract';
+import {
   ArrowDown,
   ArrowLeft,
   ArrowRight,
@@ -39,6 +44,7 @@ import {
   removePhotoFromSeriesContent,
   togglePhotoInSeriesGroup
 } from '../utils/seriesEditorModel';
+import { renderSeriesBlockByType } from '../utils/seriesBlockRenderer';
 import './PhotoUpload.css';
 import './SeriesEditor.css';
 
@@ -59,6 +65,17 @@ const STEPS = Object.freeze([
     description: 'Costruisci la sequenza narrativa; il layout preciso si rifinisce dopo il salvataggio.'
   }
 ]);
+
+const SERIES_BLOCK_ICONS = Object.freeze({
+  text: FileText,
+  photo: ImageIcon,
+  photos: Images
+});
+
+assertSeriesBlockTypeCoverage(
+  Object.keys(SERIES_BLOCK_ICONS),
+  'SeriesEditor: icone e azioni'
+);
 
 const makeBlockId = (type = 'block') => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -650,8 +667,8 @@ const SeriesEditor = ({ series, onClose }) => {
   );
 
   const renderBlockEditor = (block, index) => {
-    if (block.type === 'text') {
-      return (
+    return renderSeriesBlockByType(block, {
+      text: () => (
         <div className="series-block-body">
           <textarea
             value={block.content}
@@ -662,11 +679,9 @@ const SeriesEditor = ({ series, onClose }) => {
             placeholder="Scrivi il testo del paragrafo…"
           />
         </div>
-      );
-    }
+      ),
 
-    if (block.type === 'photo') {
-      return (
+      photo: () => (
         <div className="series-block-body">
           {selectedPhotos.length > 0 ? renderPhotoGrid({
             sourcePhotos: selectedPhotos,
@@ -701,28 +716,30 @@ const SeriesEditor = ({ series, onClose }) => {
             </label>
           </div>
         </div>
-      );
-    }
+      ),
 
-    const groupIds = getSeriesBlockPhotoIds(block);
-    return (
-      <div className="series-block-body">
-        {selectedPhotos.length > 0 ? renderPhotoGrid({
-          sourcePhotos: selectedPhotos,
-          selectedIds: groupIds,
-          onToggle: (photoId) => updateContentBlock(
-            index,
-            (current) => togglePhotoInSeriesGroup(current, photoId)
-          ),
-          compact: true
-        }) : (
-          <div className="series-inline-hint">Seleziona prima almeno una foto.</div>
-        )}
-        <span className="series-inline-hint">
-          {groupIds.length} foto nel gruppo
-        </span>
-      </div>
-    );
+      photos: () => {
+        const groupIds = getSeriesBlockPhotoIds(block);
+        return (
+          <div className="series-block-body">
+            {selectedPhotos.length > 0 ? renderPhotoGrid({
+              sourcePhotos: selectedPhotos,
+              selectedIds: groupIds,
+              onToggle: (photoId) => updateContentBlock(
+                index,
+                (current) => togglePhotoInSeriesGroup(current, photoId)
+              ),
+              compact: true
+            }) : (
+              <div className="series-inline-hint">Seleziona prima almeno una foto.</div>
+            )}
+            <span className="series-inline-hint">
+              {groupIds.length} foto nel gruppo
+            </span>
+          </div>
+        );
+      }
+    }, 'SeriesEditor: editor blocchi');
   };
 
   const renderStructureStep = () => (
@@ -750,26 +767,20 @@ const SeriesEditor = ({ series, onClose }) => {
 
       <div className="series-block-palette" aria-label="Aggiungi un blocco">
         <span className="series-block-palette-label">Aggiungi blocco</span>
-        <button type="button" onClick={() => addContentBlock('text')}>
-          <FileText size={17} />
-          Testo
-        </button>
-        <button
-          type="button"
-          onClick={() => addContentBlock('photo')}
-          disabled={formData.photos.length === 0}
-        >
-          <ImageIcon size={17} />
-          Foto
-        </button>
-        <button
-          type="button"
-          onClick={() => addContentBlock('photos')}
-          disabled={formData.photos.length === 0}
-        >
-          <Images size={17} />
-          Gruppo
-        </button>
+        {SERIES_BLOCK_DEFINITIONS.map((definition) => {
+          const Icon = SERIES_BLOCK_ICONS[definition.type];
+          return (
+            <button
+              key={definition.type}
+              type="button"
+              onClick={() => addContentBlock(definition.type)}
+              disabled={definition.contentKind !== 'text' && formData.photos.length === 0}
+            >
+              <Icon size={17} />
+              {definition.editorLabel}
+            </button>
+          );
+        })}
       </div>
 
       {formData.content.length > 0 ? (
@@ -777,6 +788,7 @@ const SeriesEditor = ({ series, onClose }) => {
           {formData.content.map((block, index) => {
             const blockId = block.id || `series-block-${index}`;
             const isExpanded = expandedBlockId === blockId;
+            const blockDefinition = getSeriesBlockDefinition(block.type);
             return (
               <article
                 className={`series-content-block${isExpanded ? ' expanded' : ''}`}
@@ -801,11 +813,7 @@ const SeriesEditor = ({ series, onClose }) => {
                       <span>{index + 1}</span>
                       <div>
                         <strong>
-                          {block.type === 'text'
-                            ? 'Testo'
-                            : block.type === 'photo'
-                              ? 'Foto singola'
-                              : 'Gruppo di foto'}
+                          {blockDefinition.label}
                         </strong>
                         <small>
                           {block.type === 'text'
