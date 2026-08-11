@@ -623,6 +623,24 @@ codice temporaneo di conversione potrà essere rimosso quando import Postgres e
 verifica post-import degli snapshot R2 saranno conclusi; l’intero adapter JSON
 va rimosso dopo il cutover Postgres e la scadenza della finestra di rollback.
 
+### Checklist bloccante prima del cutover Postgres
+
+- [ ] Riconciliare i **47 inventari media espliciti mancanti** rilevati nello
+  snapshot R2 corrente. Non ricostruirli dal catalogo delle derivate: ogni asset
+  deve essere confermato rispetto agli oggetti realmente presenti in R2.
+- [ ] Da `backend/`, eseguire `npm run metadata:preflight-cutover` contro lo
+  snapshot finale.
+- [ ] Verificare nel report `counts.missingAssetInventories: 0`, `errors: []` e
+  il messaggio finale `missingAssetInventories=0, errors=0`.
+- [ ] Ripetere lo stesso preflight immediatamente prima dell’import staging
+  finale e prima di cambiare Production a `METADATA_BACKEND=postgres`.
+
+L’import reale richiama la medesima asserzione nel service e fallisce prima di
+aprire una connessione o transazione se il conteggio non è zero. Questo gate non
+viene eseguito da build, avvio locale o sviluppo ordinario. Il completamento del
+punto richiede una futura riconciliazione esplicita degli oggetti R2; questa
+modifica registra e blocca il rischio, ma non inventa né ripara gli inventari.
+
 Le normali API admin, Postgres e il frontend accettano esclusivamente il formato
 canonico. Il repository Postgres applica inoltre le invarianti relazionali in
 transazione:

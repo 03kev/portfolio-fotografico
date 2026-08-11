@@ -67,6 +67,29 @@ function issue(code, message, context = {}) {
     return { code, message, ...context };
 }
 
+function assertMetadataCutoverReady(report) {
+    const missingAssetInventories = Number(report?.counts?.missingAssetInventories || 0);
+    if (missingAssetInventories > 0) {
+        const error = new Error(
+            'Preflight cutover fallito: '
+            + `${missingAssetInventories} foto non hanno un inventario asset esplicito. `
+            + 'Riconciliare gli oggetti R2 e ripetere la verifica prima di import o cutover.'
+        );
+        error.code = 'MISSING_ASSET_INVENTORIES_PREFLIGHT';
+        error.details = { missingAssetInventories };
+        throw error;
+    }
+
+    if (Array.isArray(report?.errors) && report.errors.length > 0) {
+        const error = new Error(
+            `Preflight cutover fallito: ${report.errors.length} errori di metadata ancora presenti.`
+        );
+        error.code = 'METADATA_CUTOVER_PREFLIGHT_FAILED';
+        error.details = { errorCount: report.errors.length };
+        throw error;
+    }
+}
+
 function normalizeObjectNamespace(value) {
     return String(value || '').trim().replace(/^\/+|\/+$/g, '');
 }
@@ -269,7 +292,8 @@ function analyzeMetadataSnapshot({ photos, series }) {
             series: Array.isArray(series) ? series.length : 0,
             memberships: 0,
             contentPhotoReferences: 0,
-            assets: 0
+            assets: 0,
+            missingAssetInventories: 0
         },
         normalized: {
             photos: [],
@@ -302,6 +326,7 @@ function analyzeMetadataSnapshot({ photos, series }) {
         }
         photoIds.add(id);
         if (!Array.isArray(record.assets)) {
+            report.counts.missingAssetInventories += 1;
             report.errors.push(issue(
                 'MISSING_EXPLICIT_ASSET_INVENTORY',
                 'La foto non contiene l’inventario canonico degli asset attivi.',
@@ -483,13 +508,16 @@ async function importMetadataSnapshot(pool, snapshot, {
     objectNamespace = ''
 } = {}) {
     const report = analyzeMetadataSnapshot(snapshot);
-    if (report.errors.length > 0 || dryRun) {
+    if (dryRun) {
         return {
             imported: false,
             dryRun,
             report
         };
     }
+    // Keep the final staging/production import fail-closed even when callers
+    // invoke the service directly instead of using the CLI wrapper.
+    assertMetadataCutoverReady(report);
 
     const client = await pool.connect();
     try {
@@ -820,6 +848,7 @@ async function verifyImportedSnapshot(pool, snapshot, {
 
 module.exports = {
     analyzeMetadataSnapshot,
+    assertMetadataCutoverReady,
     importMetadataSnapshot,
     migrateLegacySeriesContent,
     verifyImportedSnapshot

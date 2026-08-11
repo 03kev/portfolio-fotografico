@@ -3,6 +3,7 @@ const path = require('node:path');
 const dotenv = require('dotenv');
 const {
     analyzeMetadataSnapshot,
+    assertMetadataCutoverReady,
     importMetadataSnapshot,
     verifyImportedSnapshot
 } = require('../src/services/metadataMigration');
@@ -16,12 +17,14 @@ function parseArguments(argv) {
     const options = {
         dryRun: false,
         verifyOnly: false,
+        cutoverPreflight: false,
         fromR2: false
     };
     for (let index = 0; index < argv.length; index += 1) {
         const argument = argv[index];
         if (argument === '--dry-run') options.dryRun = true;
         else if (argument === '--verify-only') options.verifyOnly = true;
+        else if (argument === '--cutover-preflight') options.cutoverPreflight = true;
         else if (argument === '--from-r2') options.fromR2 = true;
         else if (argument === '--photos') options.photosPath = argv[++index];
         else if (argument === '--series') options.seriesPath = argv[++index];
@@ -30,7 +33,8 @@ function parseArguments(argv) {
     const hasFilePair = Boolean(options.photosPath && options.seriesPath);
     if (!options.fromR2 && !hasFilePair) {
         throw new Error(
-            'Uso: (--from-r2 | --photos <photos.json> --series <series.json>) [--dry-run | --verify-only]'
+            'Uso: (--from-r2 | --photos <photos.json> --series <series.json>) '
+            + '[--dry-run | --verify-only | --cutover-preflight]'
         );
     }
     if (options.fromR2 && (options.photosPath || options.seriesPath)) {
@@ -38,6 +42,16 @@ function parseArguments(argv) {
     }
     if (!options.fromR2 && !hasFilePair) {
         throw new Error('--photos e --series devono essere specificati insieme.');
+    }
+    const executionModes = [
+        options.dryRun,
+        options.verifyOnly,
+        options.cutoverPreflight
+    ].filter(Boolean).length;
+    if (executionModes > 1) {
+        throw new Error(
+            '--dry-run, --verify-only e --cutover-preflight sono modalità alternative.'
+        );
     }
     return options;
 }
@@ -77,6 +91,11 @@ async function main() {
     const snapshot = await readSnapshot(options);
     const report = analyzeMetadataSnapshot(snapshot);
     printReport(report);
+    if (options.cutoverPreflight) {
+        assertMetadataCutoverReady(report);
+        console.log('[cutover-preflight] pronto: missingAssetInventories=0, errors=0');
+        return;
+    }
     if (report.errors.length > 0) {
         process.exitCode = 1;
         return;

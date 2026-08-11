@@ -253,6 +253,35 @@ cleanup-only and operation-owned assets are never valid snapshot entries.
 
 Before cutover, verify at minimum:
 
+### Blocking metadata inventory preflight
+
+The current R2 snapshot contains **47 photos without an explicit asset
+inventory**. This is a known cutover blocker, not something the import may infer
+from the current derivative catalog. Reconciliation is intentionally outside
+the current change.
+
+Run the mandatory read-only preflight from `backend/` against the final R2
+snapshot:
+
+```bash
+npm run metadata:preflight-cutover
+```
+
+The command must finish successfully with both:
+
+```text
+missingAssetInventories=0
+errors=0
+```
+
+The final staging import uses the same assertion inside
+`importMetadataSnapshot`, so invoking the service directly cannot bypass it.
+Do not switch Production to `METADATA_BACKEND=postgres` until this preflight has
+passed immediately before cutover. Ordinary development, builds and exploratory
+workflows do not invoke this cutover command automatically;
+`metadata:validate` remains diagnostic and still exits unsuccessfully when the
+snapshot contains validation errors.
+
 ```sql
 -- Every published photo has one active source and one active full asset.
 SELECT p.id

@@ -1,6 +1,10 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const { analyzeMetadataSnapshot } = require('../src/services/metadataMigration');
+const {
+    analyzeMetadataSnapshot,
+    assertMetadataCutoverReady,
+    importMetadataSnapshot
+} = require('../src/services/metadataMigration');
 const { toStoragePhoto } = require('../src/services/photoRecord');
 
 const MEDIA_GENERATION = '01JGFJJZ00XR5RF7YH2J5PVWBX';
@@ -200,6 +204,48 @@ test('rejects an unreconciled historical snapshot instead of materializing the c
     );
     assert.deepEqual(report.normalized.photos, []);
     assert.equal(report.counts.assets, 0);
+    assert.equal(report.counts.missingAssetInventories, 1);
+    assert.throws(
+        () => assertMetadataCutoverReady(report),
+        (error) => (
+            error.code === 'MISSING_ASSET_INVENTORIES_PREFLIGHT'
+            && error.details?.missingAssetInventories === 1
+        )
+    );
+});
+
+test('cutover preflight requires zero missing inventories and zero metadata errors', () => {
+    const readyReport = analyzeMetadataSnapshot({ photos: [photo(304)], series: [] });
+
+    assert.equal(readyReport.counts.missingAssetInventories, 0);
+    assert.doesNotThrow(() => assertMetadataCutoverReady(readyReport));
+
+    assert.throws(
+        () => assertMetadataCutoverReady({
+            counts: { missingAssetInventories: 0 },
+            errors: [{ code: 'OTHER_METADATA_ERROR' }]
+        }),
+        (error) => error.code === 'METADATA_CUTOVER_PREFLIGHT_FAILED'
+    );
+});
+
+test('a final import cannot bypass the missing-inventory preflight', async () => {
+    let poolUsed = false;
+    const pool = {
+        async connect() {
+            poolUsed = true;
+            throw new Error('Il database non deve essere raggiunto.');
+        }
+    };
+
+    await assert.rejects(
+        () => importMetadataSnapshot(pool, {
+            photos: [{ ...photo(305), assets: undefined }],
+            series: []
+        }),
+        (error) => error.code === 'MISSING_ASSET_INVENTORIES_PREFLIGHT'
+    );
+    assert.equal(poolUsed, false);
 });
 
 test('keeps only explicitly inventoried historical assets when the current catalog has more roles', () => {
