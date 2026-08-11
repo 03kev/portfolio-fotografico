@@ -49,6 +49,7 @@ backend/storage/*
 # Temporary files
 tmp/
 temp/
+.local/
 
 # Textures
 frontend/public/textures/*10k*

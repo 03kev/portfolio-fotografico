@@ -631,6 +631,10 @@ va rimosso dopo il cutover Postgres e la scadenza della finestra di rollback.
 - [ ] Riconciliare i **47 inventari media espliciti mancanti** rilevati nello
   snapshot R2 corrente. Non ricostruirli dal catalogo delle derivate: ogni asset
   deve essere confermato rispetto agli oggetti realmente presenti in R2.
+- [ ] Generare e revisionare report, backup e proposta con
+  `npm run metadata:reconcile-media -- --output-dir <directory>` da `backend/`.
+  La procedura completa, inclusa l’approvazione tramite checksum senza scritture
+  R2, è documentata in `backend/docs/media-inventory-reconciliation.md`.
 - [ ] Da `backend/`, eseguire `npm run metadata:preflight-cutover` contro lo
   snapshot finale.
 - [ ] Verificare nel report `counts.missingAssetInventories: 0`, `errors: []` e
