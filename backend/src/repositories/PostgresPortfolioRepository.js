@@ -30,15 +30,23 @@ const {
     RepositoryConflictError,
     VersionConflictError
 } = require('./errors');
+const {
+    PHOTO_TAG_MAX_ITEMS,
+    definePhotoMetadataConsumer
+} = require('@portfolio/photo-metadata-contract');
+const {
+    normalizePhotoMetadataForPersistence
+} = require('../contracts/photoMetadataPersistence');
 
 const RETRYABLE_TRANSACTION_CODES = new Set(['40001', '40P01']);
+const nullableNumber = (value) => (value === null ? null : Number(value));
 const PHOTO_PATCH_COLUMNS = Object.freeze({
     title: ['title', (value) => String(value)],
     description: ['description', (value) => String(value)],
     date: ['date_taken', (value) => String(value)],
     location: ['location_name', (value) => String(value)],
-    lat: ['latitude', Number],
-    lng: ['longitude', Number],
+    lat: ['latitude', nullableNumber],
+    lng: ['longitude', nullableNumber],
     camera: ['camera', (value) => String(value)],
     lens: ['lens', (value) => String(value)],
     resolution: ['resolution', (value) => String(value)],
@@ -47,6 +55,28 @@ const PHOTO_PATCH_COLUMNS = Object.freeze({
     updatedAt: ['updated_at_ms', Number],
     derivativesVersion: ['derivatives_version', Number],
     mediaGeneration: ['media_generation', (value) => String(value || '') || null]
+});
+
+const PHOTO_METADATA_POSTGRES_COVERAGE = definePhotoMetadataConsumer({
+    id: 'backend.postgres-persistence',
+    consumer: 'Postgres photo metadata persistence',
+    handled: [
+        'id', 'title', 'description', 'date', 'location', 'lat', 'lng',
+        'camera', 'lens', 'resolution', 'settings', 'tags', 'createdAt',
+        'updatedAt', 'version', 'derivativesVersion', 'mediaGeneration', 'assets'
+    ],
+    excluded: {}
+});
+
+const PHOTO_METADATA_AUDIT_COVERAGE = definePhotoMetadataConsumer({
+    id: 'backend.audit-history',
+    consumer: 'Admin photo audit snapshots',
+    handled: [
+        'id', 'title', 'description', 'date', 'location', 'lat', 'lng',
+        'camera', 'lens', 'resolution', 'settings', 'tags', 'createdAt',
+        'updatedAt', 'version', 'derivativesVersion', 'mediaGeneration', 'assets'
+    ],
+    excluded: {}
 });
 
 function normalizePositiveId(value, fieldName) {
@@ -74,8 +104,8 @@ function mapPhotoRow(row, assets = []) {
         description: row.description,
         date: row.date_taken,
         location: row.location_name,
-        lat: Number(row.latitude),
-        lng: Number(row.longitude),
+        lat: row.latitude === null ? null : Number(row.latitude),
+        lng: row.longitude === null ? null : Number(row.longitude),
         camera: row.camera,
         lens: row.lens,
         resolution: row.resolution,
@@ -256,7 +286,8 @@ async function insertPhotoRow(queryable, photo, {
     creationIntentId = null,
     createdAt = null
 } = {}) {
-    const photoId = normalizePositiveId(photo?.id, 'photoId');
+    const normalizedPhoto = normalizePhotoMetadataForPersistence(photo);
+    const photoId = normalizePositiveId(normalizedPhoto?.id, 'photoId');
     const result = await queryable.query(
         `INSERT INTO photos (
             id, title, description, date_taken, location_name,
@@ -280,21 +311,21 @@ async function insertPhotoRow(queryable, photo, {
          RETURNING *`,
         [
             photoId,
-            photo.title,
-            photo.description || '',
-            photo.date || '',
-            photo.location,
-            Number(photo.lat),
-            Number(photo.lng),
-            photo.camera || '',
-            photo.lens || '',
-            photo.resolution || '',
-            JSON.stringify(photo.settings || {}),
-            photo.tags || [],
-            Number(photo.updatedAt) || 0,
-            Number(photo.derivativesVersion) || photoId,
-            createdAt || photo.createdAt || null,
-            photo.mediaGeneration || null,
+            normalizedPhoto.title,
+            normalizedPhoto.description,
+            normalizedPhoto.date,
+            normalizedPhoto.location,
+            nullableNumber(normalizedPhoto.lat),
+            nullableNumber(normalizedPhoto.lng),
+            normalizedPhoto.camera,
+            normalizedPhoto.lens,
+            normalizedPhoto.resolution || '',
+            JSON.stringify(normalizedPhoto.settings),
+            normalizedPhoto.tags,
+            Number(normalizedPhoto.updatedAt) || 0,
+            Number(normalizedPhoto.derivativesVersion) || photoId,
+            createdAt || normalizedPhoto.createdAt || null,
+            normalizedPhoto.mediaGeneration || null,
             creationIntentId
         ]
     );
@@ -406,15 +437,20 @@ function translatePostgresError(error) {
                 minimum: -180,
                 maximum: 180
             },
+            photos_coordinate_pair_check: {
+                message: 'Latitudine e longitudine devono essere entrambe presenti o entrambe mancanti.',
+                field: 'coordinates',
+                rule: 'pair'
+            },
             photos_settings_check: {
                 message: 'Le impostazioni della foto devono essere un oggetto valido.',
                 field: 'settings',
                 rule: 'object'
             },
             photos_tags_check: {
-                message: 'Una foto può avere al massimo 20 tag.',
+                message: `Una foto può avere al massimo ${PHOTO_TAG_MAX_ITEMS} tag.`,
                 field: 'tags',
-                maximumItems: 20
+                maximumItems: PHOTO_TAG_MAX_ITEMS
             },
             photos_updated_at_ms_check: {
                 message: 'La data di aggiornamento della foto non è valida.',
@@ -727,12 +763,13 @@ class PostgresPhotoRepository {
     async updateById(id, changes, options = {}) {
         const photoId = normalizePositiveId(id, 'photoId');
         const expectedVersion = normalizeExpectedVersion(options.expectedVersion);
+        const normalizedChanges = normalizePhotoMetadataForPersistence(changes, { partial: true });
         const assignments = [];
         const values = [photoId];
 
         for (const [field, [column, convert]] of Object.entries(PHOTO_PATCH_COLUMNS)) {
-            if (changes[field] === undefined) continue;
-            values.push(convert(changes[field]));
+            if (normalizedChanges[field] === undefined) continue;
+            values.push(convert(normalizedChanges[field]));
             assignments.push(`${column} = $${values.length}`);
         }
         if (assignments.length === 0) return this.findById(photoId);
@@ -921,11 +958,12 @@ class PostgresPhotoRepository {
                 throw new VersionConflictError('photo', photoId, expectedVersion, current.version);
             }
 
+            const normalizedChanges = normalizePhotoMetadataForPersistence(changes, { partial: true });
             const assignments = [];
             const values = [photoId];
             for (const [field, [column, convert]] of Object.entries(PHOTO_PATCH_COLUMNS)) {
-                if (changes[field] === undefined) continue;
-                values.push(convert(changes[field]));
+                if (normalizedChanges[field] === undefined) continue;
+                values.push(convert(normalizedChanges[field]));
                 assignments.push(`${column} = $${values.length}`);
             }
             assignments.push(
@@ -1953,6 +1991,8 @@ class PostgresPortfolioRepository {
 }
 
 module.exports = {
+    PHOTO_METADATA_AUDIT_COVERAGE,
+    PHOTO_METADATA_POSTGRES_COVERAGE,
     PostgresPortfolioRepository,
     extractContentPhotoIds: extractSeriesContentPhotoIds,
     mapPhotoRow,

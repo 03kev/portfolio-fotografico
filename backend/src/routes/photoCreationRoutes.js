@@ -6,13 +6,13 @@ const {
     normalizeCropProfilesForStorage
 } = require('../services/photoDerivatives');
 const {
-    parseCoordinate,
     presentPhoto,
     sendRouteError
 } = require('./photos.helpers');
 const {
     validateDeclaredPhotoUpload
 } = require('../services/photoUploadPolicy');
+require('../contracts/photoMetadataOperations');
 
 function normalizeUploadIntentId(value) {
     const normalized = String(value || '').trim().toLowerCase();
@@ -106,10 +106,7 @@ function createPhotoCreationRouter({ getPhotoCreationService }) {
 
     router.post('/', async (req, res) => {
         try {
-            const { lat, lng } = req.body;
             const sanitized = sanitizePhotoPayload(req.body, { partial: false });
-            const parsedLat = parseCoordinate(lat, 'Latitudine');
-            const parsedLng = parseCoordinate(lng, 'Longitudine');
             const photoId = parseNumericIdOrThrow(req.body?.photoId, 'photoId');
             const uploadIntentId = normalizeUploadIntentId(req.body?.uploadIntentId);
             const normalizedSettings = {
@@ -125,8 +122,8 @@ function createPhotoCreationRouter({ getPhotoCreationService }) {
                 photoDraft: {
                     title: sanitized.title,
                     location: sanitized.location,
-                    lat: parsedLat ?? 0,
-                    lng: parsedLng ?? 0,
+                    lat: sanitized.lat,
+                    lng: sanitized.lng,
                     description: sanitized.description,
                     date: sanitized.date,
                     camera: sanitized.camera,

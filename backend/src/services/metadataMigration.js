@@ -1,6 +1,8 @@
 const crypto = require('node:crypto');
+const { isDeepStrictEqual } = require('node:util');
 const { normalizeBlockType } = require('@portfolio/series-content-contract');
 const { toRuntimePhoto } = require('./photoRecord');
+const { sanitizePhotoPayload } = require('../utils/inputSanitizers');
 const {
     normalizePublishedPhotoAssetInventory
 } = require('./photoAssetLifecycle');
@@ -355,6 +357,28 @@ function analyzeMetadataSnapshot({ photos, series }) {
             ));
             return;
         }
+        try {
+            const validatedMetadata = sanitizePhotoPayload({
+                title: photo.title,
+                description: photo.description,
+                date: photo.date,
+                location: photo.location,
+                lat: photo.lat,
+                lng: photo.lng,
+                camera: photo.camera,
+                lens: photo.lens,
+                settings: photo.settings,
+                tags: photo.tags
+            });
+            photo = { ...photo, ...validatedMetadata };
+        } catch (error) {
+            report.errors.push(issue(
+                'INVALID_PHOTO_METADATA',
+                error?.message || 'I metadata della foto non sono validi.',
+                { photoId: id, details: error?.details || null }
+            ));
+            return;
+        }
         if (!photo.assets.some((asset) => asset.role === 'source')) {
             report.warnings.push(issue(
                 'MISSING_SOURCE_ASSET_INVENTORY',
@@ -548,10 +572,12 @@ async function importMetadataSnapshot(pool, snapshot, {
                 `INSERT INTO photos (
                     id, title, description, date_taken, location_name,
                     latitude, longitude, camera, lens, resolution, settings,
-                    tags, updated_at_ms, derivatives_version, created_at, media_generation
+                    tags, updated_at_ms, derivatives_version, created_at, media_generation,
+                    version
                  ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb,
-                    $12, $13, $14, CURRENT_TIMESTAMP, $15
+                    $12, $13, $14, COALESCE($15::timestamptz, CURRENT_TIMESTAMP), $16,
+                    COALESCE($17, 1)
                  )`,
                 [
                     photo.id,
@@ -568,7 +594,11 @@ async function importMetadataSnapshot(pool, snapshot, {
                     photo.tags,
                     photo.updatedAt,
                     photo.derivativesVersion,
-                    photo.mediaGeneration || null
+                    photo.createdAt || null,
+                    photo.mediaGeneration || null,
+                    Number.isSafeInteger(photo.version) && photo.version > 0
+                        ? photo.version
+                        : null
                 ]
             );
 
@@ -752,13 +782,21 @@ async function verifyImportedSnapshot(pool, snapshot, {
     }
 
     const storedPhotoGenerations = await pool.query(
-        'SELECT id, media_generation FROM photos ORDER BY id'
+        `SELECT id, title, description, date_taken, location_name,
+                latitude, longitude, camera, lens, resolution, settings, tags,
+                updated_at_ms, derivatives_version, media_generation,
+                created_at, version
+         FROM photos
+         ORDER BY id`
     );
     const expectedGenerationByPhoto = new Map(
         report.normalized.photos.map((photo) => [Number(photo.id), photo.mediaGeneration])
     );
     for (const row of storedPhotoGenerations.rows) {
         const photoId = Number(row.id);
+        const expectedPhoto = report.normalized.photos.find(
+            (photo) => Number(photo.id) === photoId
+        );
         const expectedGeneration = expectedGenerationByPhoto.get(photoId);
         if (row.media_generation !== expectedGeneration) {
             errors.push(issue(
@@ -771,6 +809,64 @@ async function verifyImportedSnapshot(pool, snapshot, {
                 }
             ));
             continue;
+        }
+        const expectedMetadata = {
+            title: expectedPhoto.title,
+            description: expectedPhoto.description,
+            date: expectedPhoto.date,
+            location: expectedPhoto.location,
+            lat: expectedPhoto.lat,
+            lng: expectedPhoto.lng,
+            camera: expectedPhoto.camera,
+            lens: expectedPhoto.lens,
+            resolution: expectedPhoto.resolution,
+            settings: expectedPhoto.settings,
+            tags: expectedPhoto.tags,
+            updatedAt: expectedPhoto.updatedAt,
+            derivativesVersion: expectedPhoto.derivativesVersion
+        };
+        const actualMetadata = {
+            title: row.title,
+            description: row.description,
+            date: row.date_taken,
+            location: row.location_name,
+            lat: row.latitude === null ? null : Number(row.latitude),
+            lng: row.longitude === null ? null : Number(row.longitude),
+            camera: row.camera,
+            lens: row.lens,
+            resolution: row.resolution,
+            settings: row.settings || {},
+            tags: row.tags || [],
+            updatedAt: Number(row.updated_at_ms),
+            derivativesVersion: Number(row.derivatives_version)
+        };
+        if (!isDeepStrictEqual(actualMetadata, expectedMetadata)) {
+            errors.push(issue(
+                'PHOTO_METADATA_MISMATCH',
+                'I metadata della foto importata non coincidono con lo snapshot.',
+                { photoId, expected: expectedMetadata, actual: actualMetadata }
+            ));
+        }
+        if (
+            expectedPhoto.createdAt
+            && new Date(row.created_at).toISOString() !== new Date(expectedPhoto.createdAt).toISOString()
+        ) {
+            errors.push(issue(
+                'PHOTO_CREATED_AT_MISMATCH',
+                'createdAt della foto importata non coincide con lo snapshot.',
+                { photoId, expected: expectedPhoto.createdAt, actual: row.created_at }
+            ));
+        }
+        if (
+            Number.isSafeInteger(expectedPhoto.version)
+            && expectedPhoto.version > 0
+            && Number(row.version) !== expectedPhoto.version
+        ) {
+            errors.push(issue(
+                'PHOTO_VERSION_MISMATCH',
+                'La versione della foto importata non coincide con lo snapshot.',
+                { photoId, expected: expectedPhoto.version, actual: Number(row.version) }
+            ));
         }
         try {
             normalizePublishedPhotoAssetInventory(

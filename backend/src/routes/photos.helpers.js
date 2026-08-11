@@ -17,8 +17,31 @@ const {
     sendApiError,
     toApiErrorResponse
 } = require('../utils/apiErrors');
+const {
+    assertPhotoPublicProjection,
+    definePhotoMetadataConsumer,
+    normalizePhotoSettings,
+    normalizePhotoTags,
+    projectPublicPhotoMetadata
+} = require('@portfolio/photo-metadata-contract');
 
 const PUBLIC_ASSET_CACHE_CONTROL = DEFAULTS.publicAssetCacheControl;
+const PHOTO_API_PUBLIC_FIELDS = Object.freeze([
+    'id', 'title', 'description', 'date', 'location', 'lat', 'lng',
+    'camera', 'lens', 'resolution', 'settings', 'tags', 'createdAt',
+    'updatedAt', 'version', 'derivativesVersion', 'mediaGeneration', 'assets'
+]);
+
+assertPhotoPublicProjection(PHOTO_API_PUBLIC_FIELDS, {
+    projectionName: 'Photo API response'
+});
+
+const PHOTO_METADATA_API_COVERAGE = definePhotoMetadataConsumer({
+    id: 'backend.api-serialization',
+    consumer: 'Backend photo API serialization',
+    handled: PHOTO_API_PUBLIC_FIELDS,
+    excluded: {}
+});
 
 function getPhotoAsset(photo, role, scope = null) {
     return (Array.isArray(photo?.assets) ? photo.assets : []).find((asset) => (
@@ -27,8 +50,9 @@ function getPhotoAsset(photo, role, scope = null) {
 }
 
 function presentPhoto(photo) {
+    const normalizedPhoto = normalizePhotoForApiList(photo);
     const publicAssets = Object.fromEntries(
-        (Array.isArray(photo?.assets) ? photo.assets : [])
+        (Array.isArray(normalizedPhoto?.assets) ? normalizedPhoto.assets : [])
             .filter((asset) => asset.scope === 'public')
             .map((asset) => {
                 const path = normalizeUploadsPath(asset.path);
@@ -40,13 +64,11 @@ function presentPhoto(photo) {
                 }];
             })
     );
-    const {
-        sourcePath,
-        sourceContentType,
-        mobileImage,
-        assets,
-        ...publicPhoto
-    } = photo;
+    const publicPhoto = projectPublicPhotoMetadata(
+        normalizedPhoto,
+        PHOTO_API_PUBLIC_FIELDS,
+        { projectionName: 'Photo API response' }
+    );
 
     return {
         ...publicPhoto,
@@ -55,58 +77,18 @@ function presentPhoto(photo) {
 }
 
 function normalizePhotoForApiList(photo) {
-    let settings = {};
-    if (typeof photo.settings === 'string') {
-        try {
-            settings = JSON.parse(photo.settings);
-        } catch {
-            settings = {};
-        }
-    } else {
-        settings = photo.settings || {};
-    }
-
-    let tags = [];
-    if (typeof photo.tags === 'string') {
-        try {
-            tags = JSON.parse(photo.tags);
-        } catch {
-            tags = [];
-        }
-    } else {
-        tags = Array.isArray(photo.tags) ? photo.tags : [];
-    }
-
     const derivativesVersion = Number.isFinite(Number(photo.derivativesVersion))
         ? Number(photo.derivativesVersion)
         : (Number.isFinite(Number(photo.id)) ? Number(photo.id) : 0);
 
     return {
         ...photo,
-        title: photo.title || 'Foto senza titolo',
-        location: photo.location || 'Posizione sconosciuta',
-        description: photo.description || '',
-        camera: photo.camera || '',
-        lens: photo.lens || '',
-        lat: photo.lat || 0,
-        lng: photo.lng || 0,
+        lat: photo.lat ?? null,
+        lng: photo.lng ?? null,
         derivativesVersion,
-        settings,
-        tags
+        settings: normalizePhotoSettings(photo.settings ?? {}),
+        tags: normalizePhotoTags(photo.tags ?? [])
     };
-}
-
-function parseCoordinate(value, fieldName) {
-    if (value === undefined || value === null || value === '') return null;
-
-    const parsed = Number.parseFloat(String(value));
-    if (!Number.isFinite(parsed)) {
-        const error = new Error(`${fieldName} non valido`);
-        error.status = 400;
-        error.code = 'INVALID_COORDINATE';
-        throw error;
-    }
-    return parsed;
 }
 
 const toRouteErrorResponse = toApiErrorResponse;
@@ -173,8 +155,9 @@ async function readPrivatePhotoUploadSourceObject(privatePath) {
 }
 
 module.exports = {
+    PHOTO_API_PUBLIC_FIELDS,
+    PHOTO_METADATA_API_COVERAGE,
     normalizePhotoForApiList,
-    parseCoordinate,
     presentPhoto,
     readPrivatePhotoUploadSourceObject,
     readPrivateSourceBuffer,

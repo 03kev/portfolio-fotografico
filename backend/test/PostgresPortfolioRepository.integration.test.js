@@ -24,6 +24,9 @@ const {
     importMetadataSnapshot,
     verifyImportedSnapshot
 } = require('../src/services/metadataMigration');
+const { sanitizePhotoPayload } = require('../src/utils/inputSanitizers');
+const { presentPhoto } = require('../src/routes/photos.helpers');
+const { mergePhotoSettingsForStorage } = require('../src/services/photoDerivatives');
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -257,6 +260,88 @@ integrationTest('snapshot import persists only the explicit historical asset inv
         alteredVerification.errors.some((entry) => entry.code === 'ASSET_INVENTORY_MISMATCH'),
         true
     );
+});
+
+integrationTest('photo metadata round-trip survives import, API serialization and partial edit', async () => {
+    const photoId = 8_100_009;
+    const generation = MEDIA_GENERATIONS.b;
+    const createdAt = '2026-07-10T08:30:00.000Z';
+    const snapshot = {
+        photos: [{
+            id: photoId,
+            title: 'Equatore e meridiano',
+            description: '',
+            date: '',
+            location: '',
+            lat: 0,
+            lng: 0,
+            camera: '',
+            lens: '',
+            resolution: '2400x1600',
+            settings: {
+                aperture: 'f/8',
+                vendorExif: { preserved: true },
+                cropProfiles: { r43: { x: 0.5, y: 0.5, scale: 1 } }
+            },
+            tags: ['zero'],
+            createdAt,
+            updatedAt: 123,
+            version: 4,
+            derivativesVersion: 123,
+            mediaGeneration: generation,
+            assets: materializePhotoAssets(photoId, generation, [{
+                role: 'full',
+                replacementGroup: PHOTO_ASSET_REPLACEMENT_GROUPS.DERIVATIVES,
+                scope: 'public',
+                fileName: 'full.webp',
+                contentType: 'image/webp'
+            }])
+        }],
+        series: []
+    };
+
+    await importMetadataSnapshot(scopedPool, snapshot, {
+        objectNamespace: 'preview/metadata-roundtrip'
+    });
+    const imported = await repository.photos.findById(photoId);
+    const apiBefore = presentPhoto(imported);
+    assert.equal(apiBefore.lat, 0);
+    assert.equal(apiBefore.lng, 0);
+    assert.equal(apiBefore.createdAt, createdAt);
+    assert.equal(apiBefore.version, 4);
+    assert.deepEqual(apiBefore.settings.vendorExif, { preserved: true });
+
+    const patch = sanitizePhotoPayload({
+        description: 'Descrizione aggiunta',
+        settings: { iso: '100' }
+    }, { partial: true });
+    const updated = await repository.photos.updateById(photoId, {
+        ...patch,
+        settings: mergePhotoSettingsForStorage(imported.settings, patch.settings),
+        updatedAt: 124
+    }, {
+        expectedVersion: imported.version,
+        auditOperation: 'photo.metadata-update'
+    });
+    const apiAfter = presentPhoto(updated);
+    assert.equal(apiAfter.description, 'Descrizione aggiunta');
+    assert.equal(apiAfter.lat, 0);
+    assert.equal(apiAfter.lng, 0);
+    assert.equal(apiAfter.settings.iso, '100');
+    assert.equal(apiAfter.settings.aperture, 'f/8');
+    assert.deepEqual(apiAfter.settings.vendorExif, { preserved: true });
+
+    const audit = await scopedPool.query(
+        `SELECT operation, before_state, after_state
+         FROM admin_audit_events
+         WHERE entity_type = 'photo' AND entity_id = $1
+         ORDER BY id DESC
+         LIMIT 1`,
+        [String(photoId)]
+    );
+    assert.equal(audit.rows[0].operation, 'photo.metadata-update');
+    assert.equal(audit.rows[0].before_state.settings.aperture, 'f/8');
+    assert.equal(audit.rows[0].after_state.settings.iso, '100');
 });
 
 integrationTest('photos.create preserves the independently validated generation of each active asset', async () => {

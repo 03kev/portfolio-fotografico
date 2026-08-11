@@ -19,6 +19,9 @@ const {
     ReferenceIntegrityError,
     RepositoryConflictError
 } = require('./errors');
+const {
+    normalizePhotoMetadataForPersistence
+} = require('../contracts/photoMetadataPersistence');
 
 const PHOTOS_METADATA_FILE = 'photos.json';
 const SERIES_METADATA_FILE = 'series.json';
@@ -70,7 +73,7 @@ class JsonPhotoRepository {
         }
 
         const createdPhoto = {
-            ...photo,
+            ...normalizePhotoMetadataForPersistence(photo),
             id: photoId
         };
         photos.unshift(createdPhoto);
@@ -88,7 +91,7 @@ class JsonPhotoRepository {
 
         const updatedPhoto = {
             ...photos[index],
-            ...changes,
+            ...normalizePhotoMetadataForPersistence(changes, { partial: true }),
             id: photos[index].id
         };
         photos[index] = updatedPhoto;

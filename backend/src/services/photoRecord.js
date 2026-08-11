@@ -3,6 +3,33 @@ const {
     normalizePublishedPhotoAssetInventory,
     PHOTO_ASSET_REPLACEMENT_GROUPS
 } = require('./photoAssetLifecycle');
+const {
+    definePhotoMetadataConsumer,
+    normalizePhotoSettings,
+    normalizePhotoTags
+} = require('@portfolio/photo-metadata-contract');
+
+const PHOTO_METADATA_JSON_COVERAGE = definePhotoMetadataConsumer({
+    id: 'backend.json-snapshot',
+    consumer: 'Canonical and transitional JSON photo records',
+    handled: [
+        'id', 'title', 'description', 'date', 'location', 'lat', 'lng',
+        'camera', 'lens', 'resolution', 'settings', 'tags', 'createdAt',
+        'updatedAt', 'version', 'derivativesVersion', 'mediaGeneration', 'assets'
+    ],
+    excluded: {}
+});
+
+const PHOTO_METADATA_IMPORT_EXPORT_COVERAGE = definePhotoMetadataConsumer({
+    id: 'backend.import-export',
+    consumer: 'Photo metadata import and export',
+    handled: [
+        'id', 'title', 'description', 'date', 'location', 'lat', 'lng',
+        'camera', 'lens', 'resolution', 'settings', 'tags', 'createdAt',
+        'updatedAt', 'version', 'derivativesVersion', 'mediaGeneration', 'assets'
+    ],
+    excluded: {}
+});
 
 function isPlainObject(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -23,17 +50,14 @@ function toTrimmedString(value, fallback = '') {
     return normalized || fallback;
 }
 
-function toFiniteNumberOr(value, fallback = 0) {
+function toFiniteNumberOr(value, fallback = null) {
+    if (value === undefined || value === null || value === '') return fallback;
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function normalizeTags(value) {
-    const parsed = parseJsonIfString(value, []);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-        .map((tag) => toTrimmedString(tag))
-        .filter(Boolean);
+    return normalizePhotoTags(value ?? []);
 }
 
 function pickFirstNonEmpty(...values) {
@@ -45,11 +69,9 @@ function pickFirstNonEmpty(...values) {
 }
 
 function normalizeSettings(settingsValue, exif = {}, cropProfiles = null) {
-    const settings = isPlainObject(parseJsonIfString(settingsValue, {}))
-        ? parseJsonIfString(settingsValue, {})
-        : {};
+    const settings = normalizePhotoSettings(settingsValue ?? {});
 
-    const nextSettings = {};
+    const nextSettings = { ...settings };
     const aperture = pickFirstNonEmpty(exif.aperture, settings.aperture);
     const shutter = pickFirstNonEmpty(exif.shutter, settings.shutter);
     const iso = pickFirstNonEmpty(exif.iso, settings.iso);
@@ -93,6 +115,7 @@ function toRuntimePhotoInternal(record, { legacy = false } = {}) {
     if (!isPlainObject(record)) return record;
 
     const locationObject = isPlainObject(record.location) ? record.location : {};
+    const flatLocation = typeof record.location === 'string' ? record.location : '';
     const exifObject = isPlainObject(record.exif) ? record.exif : {};
     const sourceObject = isPlainObject(record.source) ? record.source : {};
     const compositionObject = isPlainObject(record.composition) ? record.composition : {};
@@ -112,16 +135,16 @@ function toRuntimePhotoInternal(record, { legacy = false } = {}) {
 
     const runtimePhoto = {
         id: photoId,
-        title: toTrimmedString(record.title, 'Foto senza titolo'),
+        title: toTrimmedString(record.title),
         description: toTrimmedString(record.description),
         date: toTrimmedString(record.date),
-        location: pickFirstNonEmpty(locationObject.name, locationObject.label, 'Posizione sconosciuta'),
-        lat: toFiniteNumberOr(locationObject.lat, 0),
-        lng: toFiniteNumberOr(locationObject.lng, 0),
-        camera: pickFirstNonEmpty(exifObject.camera),
-        lens: pickFirstNonEmpty(exifObject.lens),
-        resolution: pickFirstNonEmpty(exifObject.resolution),
-        settings: normalizeSettings({}, exifObject, cropProfiles),
+        location: pickFirstNonEmpty(flatLocation, locationObject.name, locationObject.label),
+        lat: toFiniteNumberOr(record.lat ?? locationObject.lat, null),
+        lng: toFiniteNumberOr(record.lng ?? locationObject.lng, null),
+        camera: pickFirstNonEmpty(record.camera, exifObject.camera),
+        lens: pickFirstNonEmpty(record.lens, exifObject.lens),
+        resolution: pickFirstNonEmpty(record.resolution, exifObject.resolution),
+        settings: normalizeSettings(record.settings, exifObject, cropProfiles),
         tags: normalizeTags(record.tags),
         sourcePath,
         sourceContentType: sourceAsset?.contentType
@@ -137,6 +160,13 @@ function toRuntimePhotoInternal(record, { legacy = false } = {}) {
         mediaGeneration,
         assets
     };
+
+    if (record.createdAt !== undefined && record.createdAt !== null) {
+        runtimePhoto.createdAt = String(record.createdAt);
+    }
+    if (record.version !== undefined && record.version !== null) {
+        runtimePhoto.version = Number(record.version);
+    }
 
     return runtimePhoto;
 }
@@ -198,12 +228,12 @@ function toStoragePhotoInternal(runtimePhoto, { legacy = false } = {}) {
     }));
     const photo = {
         id: photoId,
-        title: toTrimmedString(runtimePhoto.title, 'Foto senza titolo'),
+        title: toTrimmedString(runtimePhoto.title),
         description: toTrimmedString(runtimePhoto.description),
         date: toTrimmedString(runtimePhoto.date),
-        location: toTrimmedString(runtimePhoto.location, 'Posizione sconosciuta'),
-        lat: toFiniteNumberOr(runtimePhoto.lat, 0),
-        lng: toFiniteNumberOr(runtimePhoto.lng, 0),
+        location: toTrimmedString(runtimePhoto.location),
+        lat: toFiniteNumberOr(runtimePhoto.lat, null),
+        lng: toFiniteNumberOr(runtimePhoto.lng, null),
         camera: toTrimmedString(runtimePhoto.camera),
         lens: toTrimmedString(runtimePhoto.lens),
         resolution: toTrimmedString(runtimePhoto.resolution),
@@ -219,6 +249,13 @@ function toStoragePhotoInternal(runtimePhoto, { legacy = false } = {}) {
         assets: storageAssets
     };
 
+    if (runtimePhoto.createdAt !== undefined && runtimePhoto.createdAt !== null) {
+        photo.createdAt = String(runtimePhoto.createdAt);
+    }
+    if (runtimePhoto.version !== undefined && runtimePhoto.version !== null) {
+        photo.version = Number(runtimePhoto.version);
+    }
+
     const cropProfiles = isPlainObject(photo.settings?.cropProfiles) ? photo.settings.cropProfiles : null;
     const exif = compactObject({
         camera: toTrimmedString(photo.camera),
@@ -230,6 +267,14 @@ function toStoragePhotoInternal(runtimePhoto, { legacy = false } = {}) {
         focal: toTrimmedString(photo.settings?.focal)
     });
 
+    if (!legacy) {
+        return {
+            ...photo,
+            settings: normalizePhotoSettings(photo.settings),
+            tags: normalizePhotoTags(photo.tags)
+        };
+    }
+
     return {
         id: photo.id,
         title: photo.title,
@@ -237,11 +282,12 @@ function toStoragePhotoInternal(runtimePhoto, { legacy = false } = {}) {
         date: photo.date,
         location: {
             name: photo.location,
-            lat: toFiniteNumberOr(photo.lat, 0),
-            lng: toFiniteNumberOr(photo.lng, 0)
+            lat: toFiniteNumberOr(photo.lat, null),
+            lng: toFiniteNumberOr(photo.lng, null)
         },
         ...(Object.keys(exif).length ? { exif } : {}),
         ...(cropProfiles ? { composition: { cropProfiles } } : {}),
+        settings: normalizePhotoSettings(photo.settings),
         tags: normalizeTags(photo.tags),
         ...(photo.assets.length ? { assets: photo.assets } : {}),
         ...(legacy && !photo.assets.length && toTrimmedString(runtimePhoto.sourcePath)
@@ -260,7 +306,9 @@ function toStoragePhotoInternal(runtimePhoto, { legacy = false } = {}) {
         derivativesVersion: Number.isFinite(Number(photo.derivativesVersion))
             ? Number(photo.derivativesVersion)
             : Date.now(),
-        ...(photo.mediaGeneration ? { mediaGeneration: photo.mediaGeneration } : {})
+        ...(photo.mediaGeneration ? { mediaGeneration: photo.mediaGeneration } : {}),
+        ...(photo.createdAt ? { createdAt: photo.createdAt } : {}),
+        ...(Number.isFinite(photo.version) ? { version: photo.version } : {})
     };
 }
 
@@ -273,6 +321,8 @@ function toLegacyStoragePhoto(runtimePhoto) {
 }
 
 module.exports = {
+    PHOTO_METADATA_IMPORT_EXPORT_COVERAGE,
+    PHOTO_METADATA_JSON_COVERAGE,
     toLegacyRuntimePhoto,
     toLegacyStoragePhoto,
     toRuntimePhoto,

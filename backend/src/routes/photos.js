@@ -31,8 +31,6 @@ const {
 const { createPhotoCreationRouter } = require('./photoCreationRoutes');
 const {
     getPhotoAsset,
-    normalizePhotoForApiList,
-    parseCoordinate,
     presentPhoto,
     readPrivatePhotoUploadSourceObject,
     readPrivateSourceBuffer,
@@ -290,9 +288,7 @@ router.use(createPhotoCreationRouter({
 router.get('/', async (req, res) => {
     try {
         const rawPhotos = await portfolioRepository.photos.list();
-        const photos = rawPhotos
-            .map((photo) => normalizePhotoForApiList(photo))
-            .map((photo) => presentPhoto(photo));
+        const photos = rawPhotos.map((photo) => presentPhoto(photo));
         
         res.json({
             success: true,
@@ -544,7 +540,6 @@ router.put('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const photoId = parseNumericIdOrThrow(id, 'ID foto');
-        const { lat, lng } = req.body;
         const sanitized = sanitizePhotoPayload(req.body, { partial: true });
         
         const changes = {
@@ -565,19 +560,13 @@ router.put('/:id', async (req, res) => {
                 sanitized.settings
             );
         }
-        if (lat !== undefined) {
-            const parsedLat = parseCoordinate(lat, 'Latitudine');
-            if (parsedLat !== null) changes.lat = parsedLat;
-        }
-        if (lng !== undefined) {
-            const parsedLng = parseCoordinate(lng, 'Longitudine');
-            if (parsedLng !== null) changes.lng = parsedLng;
-        }
-
         const updatedPhoto = await portfolioRepository.photos.updateById(
             photoId,
             changes,
-            { expectedVersion: requireExpectedVersion(req) }
+            {
+                expectedVersion: requireExpectedVersion(req),
+                auditOperation: 'photo.metadata-update'
+            }
         );
         if (!updatedPhoto) {
             return res.status(404).json({

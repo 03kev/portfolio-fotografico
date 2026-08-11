@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
+    "@portfolio/photo-metadata-contract": "file:../packages/photo-metadata-contract",
     "@portfolio/photo-crop-contract": "file:../packages/photo-crop-contract",
     "@portfolio/photo-upload-contract": "file:../packages/photo-upload-contract",
     "@portfolio/series-content-contract": "file:../packages/series-content-contract",

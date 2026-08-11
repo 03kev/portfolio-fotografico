@@ -8,6 +8,9 @@ import Gallery from '../components/Gallery';
 import useSeo from '../seo/useSeo';
 import { usePhotos } from '../contexts/PhotoContext';
 import { toAbsoluteImageUrl, toAbsoluteSiteUrl } from '../utils/siteUrl';
+import { PHOTO_METADATA_PUBLIC_SEO_COVERAGE } from '../utils/photoMetadataModel';
+
+void PHOTO_METADATA_PUBLIC_SEO_COVERAGE;
 
 function buildPhotoDescription(photo) {
   if (!photo) {

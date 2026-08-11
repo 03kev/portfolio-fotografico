@@ -1,7 +1,13 @@
 import React from 'react';
 import { ChevronDown, ChevronUp, Globe, Loader2, MapPin } from 'lucide-react';
+import { getPhotoFieldLimits } from '../../utils/photoMetadataModel';
 
 const COORDINATE_STEP = 0.0001;
+const titleLimits = getPhotoFieldLimits('title');
+const descriptionLimits = getPhotoFieldLimits('description');
+const locationLimits = getPhotoFieldLimits('location');
+const latitudeLimits = getPhotoFieldLimits('lat');
+const longitudeLimits = getPhotoFieldLimits('lng');
 
 const InfoLocationStep = ({
   formData,
@@ -22,8 +28,8 @@ const InfoLocationStep = ({
       <input
         type="text"
         required
-        minLength={3}
-        maxLength={120}
+        minLength={titleLimits.minLength}
+        maxLength={titleLimits.maxLength}
         value={formData.title}
         onChange={(e) => handleInputChange('title', e.target.value)}
         placeholder="Es: Tramonto in Toscana"
@@ -34,6 +40,7 @@ const InfoLocationStep = ({
       <label>Descrizione</label>
       <textarea
         rows="3"
+        maxLength={descriptionLimits.maxLength}
         value={formData.description}
         onChange={(e) => handleInputChange('description', e.target.value)}
         placeholder="Racconta la storia..."
@@ -45,6 +52,7 @@ const InfoLocationStep = ({
       <div className="location-input-group">
         <input
           type="text"
+          maxLength={locationLimits.maxLength}
           value={formData.location}
           onChange={(e) => handleInputChange('location', e.target.value)}
           placeholder="Es: Val d'Orcia, Toscana"
@@ -75,6 +83,8 @@ const InfoLocationStep = ({
             <input
               type="number"
               step="any"
+              min={latitudeLimits.minimum}
+              max={latitudeLimits.maximum}
               value={formData.lat}
               onChange={(e) => handleInputChange('lat', e.target.value)}
             />
@@ -106,6 +116,8 @@ const InfoLocationStep = ({
             <input
               type="number"
               step="any"
+              min={longitudeLimits.minimum}
+              max={longitudeLimits.maximum}
               value={formData.lng}
               onChange={(e) => handleInputChange('lng', e.target.value)}
             />

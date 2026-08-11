@@ -10,6 +10,7 @@ const {
 } = require('./photoDerivatives');
 const { validateDeclaredPhotoUpload, validateUploadedPhotoSourceObject } = require('./photoUploadPolicy');
 const { createMediaGeneration } = require('../utils/mediaGeneration');
+require('../contracts/photoMetadataOperations');
 
 function createServiceError(message, status, code) {
     const error = new Error(message);

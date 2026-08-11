@@ -1,5 +1,14 @@
 import React from 'react';
 import { FolderOpen, Loader2 } from 'lucide-react';
+import {
+  PHOTO_TAG_MAX_ITEMS,
+  getPhotoFieldLimits
+} from '../../utils/photoMetadataModel';
+
+const dateLimits = getPhotoFieldLimits('date');
+const cameraLimits = getPhotoFieldLimits('camera');
+const lensLimits = getPhotoFieldLimits('lens');
+const tagLimits = getPhotoFieldLimits('tags');
 
 const DetailsStep = ({
   formData,
@@ -45,6 +54,7 @@ const DetailsStep = ({
       <label>Data</label>
       <input
         type="date"
+        maxLength={dateLimits.maxLength}
         value={formData.date}
         onChange={(e) => handleInputChange('date', e.target.value)}
       />
@@ -53,6 +63,7 @@ const DetailsStep = ({
       <label>Fotocamera</label>
       <input
         type="text"
+        maxLength={cameraLimits.maxLength}
         value={formData.camera}
         placeholder="Es: Canon EOS R5"
         onChange={(e) => handleInputChange('camera', e.target.value)}
@@ -62,6 +73,7 @@ const DetailsStep = ({
       <label>Obiettivo</label>
       <input
         type="text"
+        maxLength={lensLimits.maxLength}
         value={formData.lens}
         placeholder="Es: RF 24-70mm f/2.8L IS"
         onChange={(e) => handleInputChange('lens', e.target.value)}
@@ -112,15 +124,23 @@ const DetailsStep = ({
         <input
           ref={tagInputRef}
           type="text"
+          maxLength={tagLimits.itemMaxLength}
           value={tagInput}
           placeholder="Aggiungi tag e premi Invio"
           onChange={(e) => setTagInput(e.target.value)}
           onKeyPress={handleTagKeyPress}
         />
-        <button type="button" onClick={() => addTag(tagInput)} disabled={!tagInput.trim()}>
+        <button
+          type="button"
+          onClick={() => addTag(tagInput)}
+          disabled={!tagInput.trim() || formData.tags.length >= PHOTO_TAG_MAX_ITEMS}
+        >
           +
         </button>
       </div>
+      <small className="tags-limit">
+        {formData.tags.length}/{PHOTO_TAG_MAX_ITEMS} tag
+      </small>
       {formData.tags.length > 0 && (
         <div className="tags-list">
           {formData.tags.map((tag, idx) => (

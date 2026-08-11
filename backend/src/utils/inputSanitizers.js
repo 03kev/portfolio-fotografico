@@ -1,5 +1,13 @@
 const { parseNumericIdOrThrow } = require('./ids');
 const {
+    PHOTO_READ_ONLY_FIELD_KEYS,
+    definePhotoMetadataConsumer,
+    getPhotoMetadataField,
+    normalizePhotoCoordinate,
+    normalizePhotoSettings,
+    normalizePhotoTags
+} = require('@portfolio/photo-metadata-contract');
+const {
     SERIES_CONTENT_MAX_BLOCKS,
     SERIES_PHOTO_GROUP_MAX_ITEMS,
     SERIES_TEXT_ALIGNMENTS,
@@ -17,6 +25,25 @@ assertSeriesBlockTypeCoverage(
     'Backend series content sanitizer'
 );
 
+const PHOTO_METADATA_VALIDATION_COVERAGE = definePhotoMetadataConsumer({
+    id: 'backend.validation',
+    consumer: 'Backend photo metadata validation',
+    handled: [
+        'title', 'description', 'date', 'location', 'lat', 'lng',
+        'camera', 'lens', 'settings', 'tags'
+    ],
+    excluded: {
+        id: 'Identità validata dal database o dall’intent di creazione.',
+        resolution: 'Campo derivato validato dal lifecycle Sharp.',
+        createdAt: 'Timestamp assegnato e validato dal database.',
+        updatedAt: 'Timestamp assegnato dal service.',
+        version: 'Versione gestita dal repository Postgres.',
+        derivativesVersion: 'Versione gestita dal lifecycle media.',
+        mediaGeneration: 'Generazione validata dal lifecycle media.',
+        assets: 'Inventario validato dal registro asset.'
+    }
+});
+
 function isPlainObject(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -30,15 +57,6 @@ function validationError(message, field, details = undefined) {
         ...(details || {})
     };
     return error;
-}
-
-function parseJsonIfString(value, fallback) {
-    if (typeof value !== 'string') return value;
-    try {
-        return JSON.parse(value);
-    } catch {
-        return fallback;
-    }
 }
 
 function sanitizeString(value, {
@@ -92,6 +110,18 @@ function sanitizeOptionalString(value, {
     return normalized;
 }
 
+function sanitizePhotoString(value, options = {}) {
+    if (value !== undefined && typeof value !== 'string') {
+        const fieldName = options.fieldName || 'field';
+        throw validationError(
+            `${fieldName} deve essere una stringa.`,
+            fieldName,
+            { reason: 'INVALID_STRING_TYPE' }
+        );
+    }
+    return sanitizeOptionalString(value, options);
+}
+
 function parseBooleanLike(value) {
     if (typeof value === 'boolean') return value;
     if (typeof value === 'string') {
@@ -110,94 +140,106 @@ function normalizePhotoId(value) {
     }
 }
 
-function sanitizeTags(value) {
-    const parsed = parseJsonIfString(value, []);
-    if (!Array.isArray(parsed)) return [];
-
-    const seen = new Set();
-    const tags = [];
-
-    for (const item of parsed) {
-        const tag = sanitizeString(item, { maxLength: 40, fallback: '', fieldName: 'Tag' });
-        if (!tag) continue;
-        const key = tag.toLowerCase();
-        if (seen.has(key)) continue;
-        seen.add(key);
-        tags.push(tag);
-        if (tags.length >= 20) break;
-    }
-
-    return tags;
-}
-
-function sanitizeSettings(value) {
-    const parsed = parseJsonIfString(value, {});
-    if (!isPlainObject(parsed)) return {};
-    return parsed;
-}
-
 function sanitizePhotoPayload(body = {}, { partial = false } = {}) {
     const output = {};
 
+    for (const field of PHOTO_READ_ONLY_FIELD_KEYS) {
+        if (Object.hasOwn(body, field)) {
+            throw validationError(
+                `${field} è un campo read-only e non può essere modificato direttamente.`,
+                field,
+                { reason: 'READ_ONLY_PHOTO_METADATA_FIELD' }
+            );
+        }
+    }
+
     if (!partial || body.title !== undefined) {
-        let value = partial
-            ? sanitizeOptionalString(body.title, {
-                minLength: 3,
-                maxLength: 120,
-                fieldName: 'title'
-            })
-            : sanitizeString(body.title, {
-                minLength: 3,
-                maxLength: 120,
-                fallback: 'Foto senza titolo',
-                fieldName: 'title'
+        const limits = getPhotoMetadataField('title').limits;
+        const value = sanitizePhotoString(body.title, {
+            ...limits,
+            fieldName: 'title'
+        });
+        if (value === undefined || value === '') {
+            throw validationError('title è obbligatorio.', 'title', {
+                minimumLength: limits.minLength
             });
-        if (partial && value === '') value = undefined;
-        if (value !== undefined) output.title = value;
+        }
+        output.title = value;
     }
 
     if (!partial || body.location !== undefined) {
-        let value = partial
-            ? sanitizeOptionalString(body.location, { maxLength: 160, fieldName: 'location' })
-            : sanitizeString(body.location, { maxLength: 160, fallback: 'Posizione sconosciuta', fieldName: 'location' });
-        if (partial && value === '') value = undefined;
-        if (value !== undefined) output.location = value;
+        const value = sanitizePhotoString(body.location, {
+            ...getPhotoMetadataField('location').limits,
+            fieldName: 'location'
+        });
+        output.location = value ?? '';
     }
 
     if (!partial || body.description !== undefined) {
-        const value = partial
-            ? sanitizeOptionalString(body.description, { maxLength: 4000, fieldName: 'description' })
-            : sanitizeString(body.description, { maxLength: 4000, fallback: '', fieldName: 'description' });
-        if (value !== undefined) output.description = value;
+        const value = sanitizePhotoString(body.description, {
+            ...getPhotoMetadataField('description').limits,
+            fieldName: 'description'
+        });
+        output.description = value ?? '';
     }
 
     if (!partial || body.camera !== undefined) {
-        const value = partial
-            ? sanitizeOptionalString(body.camera, { maxLength: 120, fieldName: 'camera' })
-            : sanitizeString(body.camera, { maxLength: 120, fallback: '', fieldName: 'camera' });
-        if (value !== undefined) output.camera = value;
+        const value = sanitizePhotoString(body.camera, {
+            ...getPhotoMetadataField('camera').limits,
+            fieldName: 'camera'
+        });
+        output.camera = value ?? '';
     }
 
     if (!partial || body.lens !== undefined) {
-        const value = partial
-            ? sanitizeOptionalString(body.lens, { maxLength: 120, fieldName: 'lens' })
-            : sanitizeString(body.lens, { maxLength: 120, fallback: '', fieldName: 'lens' });
-        if (value !== undefined) output.lens = value;
+        const value = sanitizePhotoString(body.lens, {
+            ...getPhotoMetadataField('lens').limits,
+            fieldName: 'lens'
+        });
+        output.lens = value ?? '';
     }
 
     if (!partial || body.date !== undefined) {
-        const value = partial
-            ? sanitizeOptionalString(body.date, { maxLength: 40, fieldName: 'date' })
-            : sanitizeString(body.date, { maxLength: 40, fallback: new Date().toISOString(), fieldName: 'date' });
-        if (value !== undefined) output.date = value;
+        const value = sanitizePhotoString(body.date, {
+            ...getPhotoMetadataField('date').limits,
+            fieldName: 'date'
+        });
+        output.date = value ?? '';
     }
 
     if (!partial || body.tags !== undefined) {
-        output.tags = sanitizeTags(body.tags);
+        output.tags = normalizePhotoTags(
+            body.tags === undefined && !partial ? [] : body.tags
+        );
     }
 
     if (!partial || body.settings !== undefined) {
-        output.settings = sanitizeSettings(body.settings);
+        output.settings = normalizePhotoSettings(
+            body.settings === undefined && !partial ? {} : body.settings
+        );
+    }
+
+    const hasLat = Object.hasOwn(body, 'lat');
+    const hasLng = Object.hasOwn(body, 'lng');
+    if (!partial || hasLat || hasLng) {
+        if (partial && hasLat !== hasLng) {
+            throw validationError(
+                'Latitudine e longitudine devono essere modificate insieme.',
+                hasLat ? 'lng' : 'lat',
+                { reason: 'INCOMPLETE_COORDINATE_PAIR' }
+            );
+        }
+        const lat = normalizePhotoCoordinate(hasLat ? body.lat : null, 'lat');
+        const lng = normalizePhotoCoordinate(hasLng ? body.lng : null, 'lng');
+        if ((lat === null) !== (lng === null)) {
+            throw validationError(
+                'Latitudine e longitudine devono essere entrambe valorizzate o entrambe mancanti.',
+                'coordinates',
+                { reason: 'INCOMPLETE_COORDINATE_PAIR' }
+            );
+        }
+        output.lat = lat;
+        output.lng = lng;
     }
 
     return output;
@@ -446,6 +488,7 @@ function sanitizeSeriesPayload(body = {}, { partial = false } = {}) {
 }
 
 module.exports = {
+    PHOTO_METADATA_VALIDATION_COVERAGE,
     sanitizePhotoPayload,
     sanitizeSeriesContent,
     sanitizeSeriesPayload

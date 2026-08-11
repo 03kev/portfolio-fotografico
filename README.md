@@ -8,6 +8,9 @@ Portfolio fotografico full-stack con:
 - Cloudflare R2 per gli asset immagine
 - source originali in bucket privata
 
+Il contratto e la matrice dei metadata fotografici sono documentati in
+[`docs/photo-metadata-contract.md`](docs/photo-metadata-contract.md).
+
 Il progetto usa Neon e R2 in tutti gli ambienti, incluso lo sviluppo locale. Non
 esiste più un fallback su storage locale.
 

@@ -15,6 +15,11 @@ import {
 } from '../utils/photoMetadata';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { usePhotoUploadWizard } from '../hooks/usePhotoUploadWizard';
+import {
+    addPhotoTag,
+    buildPhotoMetadataFormState,
+    getPhotoFieldLimits
+} from '../utils/photoMetadataModel';
 import MapSelector from './MapSelector';
 import PhotoUploadShell from './photoUpload/PhotoUploadShell';
 import UploadStep from './photoUpload/UploadStep';
@@ -23,6 +28,7 @@ import DetailsStep from './photoUpload/DetailsStep';
 import './PhotoUpload.css';
 
 const METADATA_FILE_ACCEPT = 'image/*,.nef,.nrw,.cr2,.cr3,.arw,.dng,.rw2,.orf,.raf,.pef,.srw,.raw,.tif,.tiff';
+const titleLimits = getPhotoFieldLimits('title');
 
 const CREATE_UPLOAD_STEP_LABELS = {
     sign: 'preparazione caricamento',
@@ -63,19 +69,6 @@ const buildCreateUploadErrorMessage = (error, step = 'create') => {
     return buildOperationErrorMessage(error, stepLabel);
 };
 
-const getPhotoSettings = (photo) => {
-    if (!photo) return {};
-    if (typeof photo.settings === 'string') {
-        try {
-            const parsed = JSON.parse(photo.settings);
-            return parsed && typeof parsed === 'object' ? parsed : {};
-        } catch {
-            return {};
-        }
-    }
-    return photo.settings && typeof photo.settings === 'object' ? photo.settings : {};
-};
-
 const getSteps = (isEditMode) => (
     isEditMode
         ? [
@@ -96,41 +89,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
     const initialStep = steps[0].id;
 
     const [formData, setFormData] = useState(() => {
-        if (isEditMode) {
-            const settings = {
-                aperture: '',
-                shutter: '',
-                iso: '',
-                focal: '',
-                ...getPhotoSettings(photoToEdit)
-            };
-
-            return {
-                title: photoToEdit.title || '',
-                description: photoToEdit.description || '',
-                date: photoToEdit.date || new Date().toISOString().split('T')[0],
-                location: photoToEdit.location || '',
-                lat: photoToEdit.lat || '',
-                lng: photoToEdit.lng || '',
-                camera: photoToEdit.camera || '',
-                lens: photoToEdit.lens || '',
-                settings,
-                tags: Array.isArray(photoToEdit.tags) ? photoToEdit.tags : []
-            };
-        }
-
-        return {
-            title: '',
-            description: '',
-            date: new Date().toISOString().split('T')[0],
-            location: '',
-            lat: '',
-            lng: '',
-            camera: '',
-            lens: '',
-            settings: { aperture: '', shutter: '', iso: '', focal: '' },
-            tags: []
-        };
+        return buildPhotoMetadataFormState(isEditMode ? photoToEdit : null);
     });
     const [selectedFile, setSelectedFile] = useState(null);
     const [preview, setPreview] = useState(null);
@@ -351,15 +310,16 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
     }, [error]);
 
     const addTag = useCallback((tag) => {
-        const newTag = tag.trim();
-        if (newTag) {
-            setFormData((prev) => (
-                prev.tags.includes(newTag)
-                    ? prev
-                    : { ...prev, tags: [...prev.tags, newTag] }
-            ));
+        try {
+            setFormData((prev) => ({
+                ...prev,
+                tags: addPhotoTag(prev.tags, tag)
+            }));
+            setTagInput('');
+            setError('');
+        } catch (tagError) {
+            setError(tagError.message);
         }
-        setTagInput('');
     }, []);
 
     const removeTag = useCallback((tagToRemove) => {
@@ -395,8 +355,12 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             setError('Il Titolo è obbligatorio');
             return;
         }
-        if (normalizedTitle.length < 3) {
-            setError('Il titolo deve contenere almeno 3 caratteri');
+        if (normalizedTitle.length < titleLimits.minLength) {
+            setError(`Il titolo deve contenere almeno ${titleLimits.minLength} caratteri`);
+            return;
+        }
+        if (normalizedTitle.length > titleLimits.maxLength) {
+            setError(`Il titolo può contenere al massimo ${titleLimits.maxLength} caratteri`);
             return;
         }
 
