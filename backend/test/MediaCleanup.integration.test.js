@@ -178,6 +178,7 @@ function createExecutor({
     runtimeNamespace = namespace,
     deletePublicObject,
     deletePrivateObject,
+    now,
     retryBaseMs = 1,
     leaseTtlMs = 60_000
 } = {}) {
@@ -190,6 +191,7 @@ function createExecutor({
         deletePrivateObject: deletePrivateObject || (async (logicalPath) => {
             deletedPrivate.push(logicalPath);
         }),
+        ...(now ? { now } : {}),
         retryBaseMs,
         retryMaxMs: 10,
         leaseTtlMs
@@ -202,6 +204,30 @@ async function cleanupRows() {
             'SELECT * FROM media_cleanup_jobs ORDER BY id'
         )
     ).rows;
+}
+
+async function drainCleanupJobs(expectedSucceeded, {
+    executor = createExecutor(),
+    limit = Math.max(10, expectedSucceeded),
+    timeBudgetMs
+} = {}) {
+    const summaries = [];
+    let succeeded = 0;
+
+    for (let batch = 0; batch < expectedSucceeded + 1 && succeeded < expectedSucceeded; batch += 1) {
+        const summary = await executor.runBatch({
+            limit,
+            ...(timeBudgetMs === undefined ? {} : { timeBudgetMs })
+        });
+        summaries.push(summary);
+        succeeded += summary.succeeded;
+        assert.equal(summary.failed, 0);
+        assert.equal(summary.retried, 0);
+        if (summary.claimed === 0 && summary.cancelled === 0 && summary.deferred === 0) break;
+    }
+
+    assert.equal(succeeded, expectedSucceeded);
+    return { succeeded, summaries };
 }
 
 before(async () => {
@@ -481,7 +507,7 @@ integrationTest('an active winner remains protected even after an exhausted work
     assert.equal(stored.last_error_code, 'ACTIVE_GENERATION_PROTECTED');
 });
 
-integrationTest('photo deletion and its six cleanup jobs commit or roll back together', async () => {
+integrationTest('photo deletion atomically enqueues six jobs recoverable across budgeted batches', async () => {
     const photoId = 9_000_003;
     const photo = await repository.photos.create(photoRecord(photoId));
     const deletion = await repository.deletePhotoWithReferences(photoId, {
@@ -491,10 +517,42 @@ integrationTest('photo deletion and its six cleanup jobs commit or roll back tog
     assert.equal(await repository.photos.findById(photoId), null);
     assert.equal((await cleanupRows()).length, 6);
 
-    const cleanup = await createExecutor().runBatch({ limit: 10 });
-    assert.equal(cleanup.succeeded, 6);
+    let now = 1_000;
+    const budgetedExecutor = createExecutor({
+        now: () => now,
+        deletePublicObject: async (logicalPath) => {
+            deletedPublic.push(logicalPath);
+            now += 300;
+        },
+        deletePrivateObject: async (logicalPath) => {
+            deletedPrivate.push(logicalPath);
+            now += 300;
+        }
+    });
+    const firstBatch = await budgetedExecutor.runBatch({
+        limit: 10,
+        timeBudgetMs: 700
+    });
+    assert.equal(firstBatch.succeeded, 2);
+    assert.equal(firstBatch.timeBudgetReached, true);
+    assert.deepEqual(
+        (await cleanupRows()).reduce((counts, row) => ({
+            ...counts,
+            [row.status]: (counts[row.status] || 0) + 1
+        }), {}),
+        { succeeded: 2, pending: 4 }
+    );
+
+    const remaining = await drainCleanupJobs(4, {
+        executor: budgetedExecutor,
+        limit: 10,
+        timeBudgetMs: 700
+    });
+    assert.equal(remaining.summaries.length, 2);
+    assert.equal((await cleanupRows()).every((row) => row.status === 'succeeded'), true);
     assert.equal(deletedPublic.length, 5);
     assert.equal(deletedPrivate.length, 1);
+    assert.equal(new Set([...deletedPublic, ...deletedPrivate]).size, 6);
 
     await scopedPool.query(
         `CREATE FUNCTION reject_cleanup_test_delete()
@@ -567,9 +625,7 @@ integrationTest('abort cleans only the losing media-operation generation', async
          )`,
         [operationId]
     );
-    const cleanup = await createExecutor().runBatch({ limit: 10 });
-
-    assert.equal(cleanup.succeeded, 5);
+    await drainCleanupJobs(5);
     assert.equal(deletedPublic.length, 5);
     assert.equal(
         deletedPublic.every((logicalPath) => logicalPath.includes(`/${generations[1]}/`)),
@@ -669,8 +725,7 @@ integrationTest('an expired media operation is cleaned and can no longer publish
         [operationId]
     );
 
-    const cleanup = await createExecutor().runBatch({ limit: 10 });
-    assert.equal(cleanup.succeeded, 5);
+    await drainCleanupJobs(5);
     await assert.rejects(
         repository.photos.completeMediaMutation(
             photoId,
@@ -762,8 +817,7 @@ integrationTest('successful source replacement protects the winner and deletes t
         6
     );
 
-    const cleanup = await createExecutor().runBatch({ limit: 20 });
-    assert.equal(cleanup.succeeded, 6);
+    await drainCleanupJobs(6, { limit: 20 });
     assert.equal(updated.mediaGeneration, generations[1]);
     assert.equal(
         [...deletedPublic, ...deletedPrivate]
@@ -824,8 +878,7 @@ integrationTest('publishing fewer derivative variants retires removed roles with
         ['full', 'mobile', 'social', 'thumbnail-1x1', 'thumbnail-4x3']
     );
 
-    const cleanup = await createExecutor().runBatch({ limit: 10 });
-    assert.equal(cleanup.succeeded, 5);
+    await drainCleanupJobs(5);
     assert.equal(deletedPublic.length, 5);
     assert.equal(deletedPrivate.length, 0);
     assert.equal(
@@ -903,7 +956,7 @@ integrationTest('catalog rename flows through production, registry, API and clea
         true
     );
 
-    await createExecutor().runBatch({ limit: 10 });
+    await drainCleanupJobs(5);
     assert.equal(
         deletedPublic.some((logicalPath) => logicalPath.endsWith('/social.jpg')),
         true
@@ -948,12 +1001,14 @@ integrationTest('catalog rename flows through production, registry, API and clea
     );
 
     assert.equal(presentPhoto(reducedPhoto).assets['social-card'], undefined);
-    const secondCleanup = await createExecutor({
-        deletePublicObject: async (logicalPath) => {
-            deletedPublic.push(logicalPath);
-            writtenAssets.delete(logicalPath);
-        }
-    }).runBatch({ limit: 10 });
+    const secondCleanup = await drainCleanupJobs(2, {
+        executor: createExecutor({
+            deletePublicObject: async (logicalPath) => {
+                deletedPublic.push(logicalPath);
+                writtenAssets.delete(logicalPath);
+            }
+        })
+    });
     assert.equal(secondCleanup.succeeded, 2);
     assert.equal(
         deletedPublic.some((logicalPath) => logicalPath.endsWith('/social-card.webp')),
@@ -1000,8 +1055,7 @@ integrationTest('failed photo creation cleans its lease generation but keeps val
          )`,
         [leaseId]
     );
-    const cleanup = await createExecutor().runBatch({ limit: 10 });
-    assert.equal(cleanup.succeeded, 6);
+    await drainCleanupJobs(6);
     assert.equal(deletedPublic.length, 5);
     assert.equal(deletedPrivate.length, 1);
     assert.equal(deletedPrivate.includes(sourcePath), false);
@@ -1059,8 +1113,7 @@ integrationTest('an expired photo-creation lease generation is reclaimed without
         [leaseId]
     );
 
-    const cleanup = await createExecutor().runBatch({ limit: 10 });
-    assert.equal(cleanup.succeeded, 6);
+    await drainCleanupJobs(6);
     assert.equal(deletedPrivate.includes(sourcePath), false);
     assert.equal(
         (

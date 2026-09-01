@@ -400,6 +400,13 @@ eseguiti dopo le operazioni admin hanno invece un budget di 1,5 secondi. Non
 viene ridotto globalmente `maxDuration` di `api/index.js`, perché la stessa
 funzione Express serve anche upload e altre API.
 
+Un batch non promette di svuotare l’intera coda: ogni job completato resta
+`succeeded`, mentre quelli non ancora reclamati restano `pending`. Le esecuzioni
+successive riprendono la coda senza duplicare le cancellazioni già completate.
+La velocità dipende anche dalla latenza Postgres, perché claim e completion sono
+transazioni separate per ciascun asset; il budget resta quindi un confine di
+lavoro, non un requisito “tutti i job nello stesso batch”.
+
 ### Rewrites rilevanti
 
 In `vercel.json`:
