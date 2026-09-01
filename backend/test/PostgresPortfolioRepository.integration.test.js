@@ -262,6 +262,36 @@ integrationTest('snapshot import persists only the explicit historical asset inv
     );
 });
 
+integrationTest('imported photos form a deterministic version-one acquisition baseline', async () => {
+    const baselineIds = [8_100_104, 8_100_106, 8_100_105];
+    await importMetadataSnapshot(scopedPool, {
+        photos: baselineIds.map((photoId) => buildPhoto(photoId)),
+        series: []
+    });
+
+    const baselineRows = await scopedPool.query(
+        `SELECT id, created_at, version
+         FROM photos
+         ORDER BY id DESC`
+    );
+    assert.equal(new Set(
+        baselineRows.rows.map((row) => new Date(row.created_at).toISOString())
+    ).size, 1);
+    assert.equal(baselineRows.rows.every((row) => Number(row.version) === 1), true);
+
+    const baselineCreatedAt = new Date(baselineRows.rows[0].created_at);
+    const laterPhotoId = 8_100_107;
+    await repository.photos.create(buildPhoto(laterPhotoId, {
+        createdAt: new Date(baselineCreatedAt.getTime() + 1_000).toISOString()
+    }));
+
+    const ordered = await repository.photos.list();
+    assert.deepEqual(
+        ordered.map((photo) => photo.id),
+        [laterPhotoId, ...baselineIds.sort((left, right) => right - left)]
+    );
+});
+
 integrationTest('photo metadata round-trip survives import, API serialization and partial edit', async () => {
     const photoId = 8_100_009;
     const generation = MEDIA_GENERATIONS.b;

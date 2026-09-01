@@ -16,7 +16,7 @@ export const PHOTO_METADATA_ADMIN_COVERAGE = definePhotoMetadataConsumer({
   excluded: {
     id: 'Identità read-only assegnata dal backend.',
     resolution: 'Risoluzione derivata da Sharp e non modificabile dal form.',
-    createdAt: 'Timestamp read-only assegnato dal database.',
+    createdAt: 'Creazione read-only del record Postgres; non è la data dello scatto.',
     updatedAt: 'Timestamp read-only assegnato dal service.',
     version: 'Versione letta dal client API ma non modificabile nel form.',
     derivativesVersion: 'Versione tecnica gestita dal lifecycle media.',

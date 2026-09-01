@@ -47,6 +47,7 @@ const FIELD_LABELS = Object.freeze({
   resolution: 'Risoluzione',
   settings: 'Impostazioni',
   tags: 'Tag',
+  createdAt: 'Creazione record Postgres',
   sourcePath: 'Sorgente',
   sourceContentType: 'Formato sorgente',
   mobileImage: 'Variante mobile',

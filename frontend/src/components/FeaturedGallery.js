@@ -79,12 +79,7 @@ export default function FeaturedGallery({ limit = 18 }) {
   const { photos, actions } = usePhotos();
 
   const items = React.useMemo(() => {
-    // Most recent first: if there is a createdAt field use it, otherwise keep the current order
-    const sorted = [...photos];
-    if (sorted.length && sorted[0] && (sorted[0].createdAt || sorted[0].created_at)) {
-      sorted.sort((a, b) => new Date(b.createdAt || b.created_at) - new Date(a.createdAt || a.created_at));
-    }
-    return sorted.slice(0, limit);
+    return photos.slice(0, limit);
   }, [photos, limit]);
 
   const variants = {

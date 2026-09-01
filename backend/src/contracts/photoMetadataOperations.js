@@ -9,7 +9,7 @@ const PHOTO_METADATA_CREATE_PATCH_COVERAGE = definePhotoMetadataConsumer({
     ],
     excluded: {
         resolution: 'Derivato da Sharp durante la pubblicazione delle derivate.',
-        createdAt: 'Assegnato dal database o dall’intent di creazione.',
+        createdAt: 'Creazione del record Postgres, assegnata dal database o dall’intent.',
         updatedAt: 'Assegnato dal service al momento della mutazione.',
         version: 'Incrementato dal repository Postgres.',
         derivativesVersion: 'Gestito dal lifecycle media.',
@@ -34,7 +34,7 @@ const PHOTO_METADATA_MEDIA_REPLACEMENT_COVERAGE = definePhotoMetadataConsumer({
         lens: 'Metadata editoriale o EXIF preservato dalla sostituzione del source.',
         settings: 'Crop ed EXIF esistenti sono letti ma non reinterpretati dal replace-source.',
         tags: 'Metadata editoriale preservato dalla sostituzione del source.',
-        createdAt: 'Timestamp originario immutabile.',
+        createdAt: 'Creazione immutabile del record Postgres.',
         version: 'Incrementato dal repository Postgres.'
     }
 });

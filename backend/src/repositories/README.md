@@ -75,7 +75,16 @@ The intent receives its numeric `photoId` from PostgreSQL when it is first
 inserted. Preparation replay returns the same allocation. The allocator
 resynchronizes against both imported photos and existing intents, so legacy
 numeric IDs remain valid without depending on millisecond timestamps. The
-photo `created_at` comes from the database timestamp of that intent.
+photo `created_at` comes from the database timestamp of that intent. It is the
+creation time of the Postgres record, not the date the photograph was taken and
+not an authoritative pre-migration upload date. `date_taken` remains the
+photographic/editorial date.
+
+Historical imports without `createdAt` receive the transaction timestamp of the
+import and `version = 1`. They therefore form one deterministic concurrency and
+ordering baseline. Photo lists use `created_at DESC, id DESC`: later records are
+placed before the imported baseline, while preserved numeric IDs provide a
+stable secondary order for baseline rows sharing the same timestamp.
 
 `deletePhotoWithReferences` is one repository operation because deleting a photo
 and removing every series reference must become one database transaction. The

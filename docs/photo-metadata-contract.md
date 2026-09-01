@@ -42,7 +42,7 @@ prodotte da sanitizer, mapping Postgres, proiezione API e form state.
 | `resolution` | Sharp | stringa vuota, max 120 | no | aggiornata col media lifecycle | audit e modal |
 | `settings` | Misto | oggetto, max 65536 caratteri JSON | parziale | JSONB e snapshot intero | audit e modal tecnico |
 | `tags` | Editoriale | array, max 20 × 40 | sì | `TEXT[]`, API e snapshot | audit, modal e SEO |
-| `createdAt` | Database/intent | nullable nei vecchi snapshot | no | `created_at`, API | audit; non è data scatto |
+| `createdAt` | Database/intent | non-null in Postgres; può mancare prima dell'import | no | `created_at`, API | creazione record; non è data scatto né upload storico |
 | `updatedAt` | Clock del service | mai null nel DB | no | `updated_at_ms`, API | audit amministrativo |
 | `version` | Database | positivo | no | optimistic concurrency, API | audit tecnico |
 | `derivativesVersion` | Media lifecycle | positivo | no | DB e API | cache/versionamento asset |
@@ -67,7 +67,18 @@ migrazione e vanno eliminate con l’adapter dopo il cutover.
 
 Per uno snapshot storico privo di `createdAt`, l’import assegna esplicitamente
 il timestamp dell’import: non viene derivato dall’ID e non viene confuso con la
-data dello scatto. Gli export successivi lo preservano.
+data dello scatto. Le foto importate partono da `version = 1`; `createdAt` e
+versione costituiscono la baseline iniziale del sistema Postgres. Gli export
+successivi preservano entrambi i valori.
+
+`createdAt` non ricostruisce una data storica di caricamento precedente alla
+migrazione. L’archivio ordina le acquisizioni per `created_at DESC, id DESC`:
+il timestamp porta le nuove foto davanti alla baseline, mentre l’ID numerico
+preservato rende deterministico l’ordine delle righe importate che condividono
+il timestamp della transazione. La home preserva l’ordine canonico già prodotto
+dal repository e restituito dall’API, senza applicare un secondo ordinamento.
+Il campo fotografico mostrato nel modal e pubblicato nei metadata SEO resta
+`date`.
 
 ### Confini di enforcement
 
