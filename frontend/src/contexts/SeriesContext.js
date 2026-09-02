@@ -1,5 +1,15 @@
 import React, { createContext, useContext, useReducer, useEffect, useCallback, useRef } from 'react';
 import { seriesService } from '../utils/api';
+import {
+    buildOperationErrorMessage,
+    isAmbiguousMutationError,
+    isConcurrencyError
+} from '../utils/operationErrors';
+import {
+    entityMatchesPatch,
+    findEntityById,
+    includesEntityId
+} from '../utils/mutationReconciliation';
 
 const SeriesContext = createContext();
 
@@ -40,12 +50,21 @@ function seriesReducer(state, action) {
             };
         
         case ACTIONS.SET_SERIES:
+        {
+            const nextSeries = Array.isArray(action.payload) ? action.payload : [];
+            const refreshedCurrent = state.currentSeries
+                ? nextSeries.find(
+                    (item) => String(item.id) === String(state.currentSeries.id)
+                ) || state.currentSeries
+                : null;
             return {
                 ...state,
-                series: action.payload,
+                series: nextSeries,
+                currentSeries: refreshedCurrent,
                 loading: false,
                 error: null
             };
+        }
         
         case ACTIONS.SET_ERROR:
             return {
@@ -102,6 +121,29 @@ export function SeriesProvider({ children }) {
     const [state, dispatch] = useReducer(seriesReducer, initialState);
     const includeUnpublishedRef = useRef(false);
     const fetchRequestIdRef = useRef(0);
+    const stateRef = useRef(state);
+    stateRef.current = state;
+
+    const findCurrentSeries = useCallback((id) => (
+        stateRef.current.series.find((item) => String(item.id) === String(id))
+        || (
+            String(stateRef.current.currentSeries?.id) === String(id)
+                ? stateRef.current.currentSeries
+                : null
+        )
+    ), []);
+
+    const refreshAfterConflict = useCallback(async () => {
+        try {
+            const response = await seriesService.getAll(includeUnpublishedRef.current);
+            const refreshedSeries = unwrapApiData(response, []);
+            dispatch({ type: ACTIONS.SET_SERIES, payload: refreshedSeries });
+            return refreshedSeries;
+        } catch (refreshError) {
+            console.error('Errore nel refresh delle serie dopo un conflitto:', refreshError);
+            return null;
+        }
+    }, []);
 
     const fetchSeries = useCallback(async (includeUnpublished = includeUnpublishedRef.current) => {
         const requestedScope = Boolean(includeUnpublished);
@@ -117,7 +159,10 @@ export function SeriesProvider({ children }) {
         } catch (error) {
             if (requestId !== fetchRequestIdRef.current) return;
             console.error('Errore nel caricamento delle serie:', error);
-            dispatch({ type: ACTIONS.SET_ERROR, payload: error.message || 'Errore nel caricamento delle serie' });
+            dispatch({
+                type: ACTIONS.SET_ERROR,
+                payload: buildOperationErrorMessage(error, 'caricamento serie')
+            });
         }
     }, []);
     
@@ -150,7 +195,10 @@ export function SeriesProvider({ children }) {
             return seriesItem;
         } catch (error) {
             console.error('Errore nel caricamento della serie:', error);
-            dispatch({ type: ACTIONS.SET_ERROR, payload: error.message || 'Serie non trovata' });
+            dispatch({
+                type: ACTIONS.SET_ERROR,
+                payload: buildOperationErrorMessage(error, 'caricamento serie')
+            });
             throw error;
         }
     }, []);
@@ -168,55 +216,115 @@ export function SeriesProvider({ children }) {
             return createdSeries;
         } catch (error) {
             console.error('Errore nella creazione della serie:', error);
+            if (isAmbiguousMutationError(error)) {
+                const refreshedSeries = await refreshAfterConflict();
+                const requestedTitle = String(seriesData?.title || '').trim().toLocaleLowerCase('it');
+                const createdSeries = Array.isArray(refreshedSeries)
+                    ? refreshedSeries.find((item) => (
+                        requestedTitle
+                        && String(item?.title || '').trim().toLocaleLowerCase('it') === requestedTitle
+                    ))
+                    : null;
+                if (createdSeries) return createdSeries;
+                if (!Array.isArray(refreshedSeries)) error.outcomeUnknown = true;
+            }
             throw error;
         }
-    }, []);
+    }, [refreshAfterConflict]);
 
-    const updateSeries = useCallback(async (id, seriesData) => {
+    const updateSeries = useCallback(async (id, seriesData, options = {}) => {
         try {
-            const response = await seriesService.update(id, seriesData);
+            const current = findCurrentSeries(id);
+            const expectedVersion = options.expectedVersion ?? current?.version;
+            const response = await seriesService.update(id, seriesData, expectedVersion);
             const updatedSeries = unwrapApiData(response, null);
             dispatch({ type: ACTIONS.UPDATE_SERIES, payload: updatedSeries });
             return updatedSeries;
         } catch (error) {
             console.error('Errore nell\'aggiornamento della serie:', error);
+            if (isAmbiguousMutationError(error)) {
+                const refreshedSeries = await refreshAfterConflict();
+                const refreshed = findEntityById(refreshedSeries, id);
+                if (refreshed && entityMatchesPatch(refreshed, seriesData)) {
+                    return refreshed;
+                }
+                if (!Array.isArray(refreshedSeries)) error.outcomeUnknown = true;
+            } else if (isConcurrencyError(error)) {
+                await refreshAfterConflict();
+            }
             throw error;
         }
-    }, []);
+    }, [findCurrentSeries, refreshAfterConflict]);
 
     const deleteSeries = useCallback(async (id) => {
         try {
-            await seriesService.delete(id);
+            const current = findCurrentSeries(id);
+            await seriesService.delete(id, current?.version);
             dispatch({ type: ACTIONS.DELETE_SERIES, payload: id });
         } catch (error) {
             console.error('Errore nell\'eliminazione della serie:', error);
+            if (isAmbiguousMutationError(error)) {
+                const refreshedSeries = await refreshAfterConflict();
+                const seriesStillExists = Array.isArray(refreshedSeries)
+                    && refreshedSeries.some((item) => String(item.id) === String(id));
+                if (Array.isArray(refreshedSeries) && !seriesStillExists) {
+                    return;
+                }
+                if (!Array.isArray(refreshedSeries)) {
+                    error.outcomeUnknown = true;
+                }
+            } else if (isConcurrencyError(error)) {
+                await refreshAfterConflict();
+            }
             throw error;
         }
-    }, []);
+    }, [findCurrentSeries, refreshAfterConflict]);
 
     const addPhotoToSeries = useCallback(async (seriesId, photoId) => {
         try {
-            const response = await seriesService.addPhoto(seriesId, photoId);
+            const current = findCurrentSeries(seriesId);
+            const response = await seriesService.addPhoto(seriesId, photoId, current?.version);
             const updatedSeries = unwrapApiData(response, null);
             dispatch({ type: ACTIONS.UPDATE_SERIES, payload: updatedSeries });
             return updatedSeries;
         } catch (error) {
             console.error('Errore nell\'aggiunta della foto:', error);
+            if (isAmbiguousMutationError(error)) {
+                const refreshedSeries = await refreshAfterConflict();
+                const refreshed = findEntityById(refreshedSeries, seriesId);
+                if (refreshed && includesEntityId(refreshed.photos, photoId)) {
+                    return refreshed;
+                }
+                if (!Array.isArray(refreshedSeries)) error.outcomeUnknown = true;
+            } else if (isConcurrencyError(error)) {
+                await refreshAfterConflict();
+            }
             throw error;
         }
-    }, []);
+    }, [findCurrentSeries, refreshAfterConflict]);
 
     const removePhotoFromSeries = useCallback(async (seriesId, photoId) => {
         try {
-            const response = await seriesService.removePhoto(seriesId, photoId);
+            const current = findCurrentSeries(seriesId);
+            const response = await seriesService.removePhoto(seriesId, photoId, current?.version);
             const updatedSeries = unwrapApiData(response, null);
             dispatch({ type: ACTIONS.UPDATE_SERIES, payload: updatedSeries });
             return updatedSeries;
         } catch (error) {
             console.error('Errore nella rimozione della foto:', error);
+            if (isAmbiguousMutationError(error)) {
+                const refreshedSeries = await refreshAfterConflict();
+                const refreshed = findEntityById(refreshedSeries, seriesId);
+                if (refreshed && !includesEntityId(refreshed.photos, photoId)) {
+                    return refreshed;
+                }
+                if (!Array.isArray(refreshedSeries)) error.outcomeUnknown = true;
+            } else if (isConcurrencyError(error)) {
+                await refreshAfterConflict();
+            }
             throw error;
         }
-    }, []);
+    }, [findCurrentSeries, refreshAfterConflict]);
 
     const setEditMode = useCallback((enabled) => {
         dispatch({ type: ACTIONS.SET_EDIT_MODE, payload: enabled });

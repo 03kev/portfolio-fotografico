@@ -4,19 +4,22 @@ Portfolio fotografico full-stack con:
 
 - frontend React SPA
 - backend Express condiviso tra locale e Vercel
-- storage Cloudflare R2 per immagini e metadati
+- PostgreSQL/Neon per i metadati transazionali
+- Cloudflare R2 per gli asset immagine
 - source originali in bucket privata
 
-Il progetto e' pensato per usare R2 in tutti gli ambienti, incluso lo sviluppo locale. Non esiste piu' un fallback su storage locale.
+Il contratto e la matrice dei metadata fotografici sono documentati in
+[`docs/photo-metadata-contract.md`](docs/photo-metadata-contract.md).
+
+Il progetto usa Neon e R2 in tutti gli ambienti, incluso lo sviluppo locale. Non
+esiste più un fallback su storage locale.
 
 ## Quick Start
 
 Requisiti:
 
-- Node.js 18+ consigliato
-- npm 8+
-
-Nota: il root `package.json` consente ancora `node >=16`, ma il target pratico consigliato e' Node 18+.
+- Node.js 20+
+- npm 10+
 
 1. Installa le dipendenze:
 
@@ -50,8 +53,11 @@ Servizi locali:
 - `backend/`: API Express, logica immagini, auth admin, SEO runtime, accesso R2
 - `api/index.js`: entrypoint Vercel che monta il backend Express
 - `vercel.json`: rewrites SPA/API/SEO e header statici
+- Neon/PostgreSQL:
+  - metadati foto e serie
+  - integrità referenziale, concorrenza e audit admin
 - Cloudflare R2:
-  - bucket pubblica per derivate e metadati JSON
+  - bucket pubblica per le derivate
   - bucket privata per source full-res
 
 Flusso immagini:
@@ -60,7 +66,7 @@ Flusso immagini:
 2. il browser carica la source direttamente nella bucket privata
 3. il backend crea il record foto
 4. il backend genera le derivate pubbliche partendo sempre dalla source privata
-5. il frontend legge URL pubblici derivati a runtime da `photo.id`
+5. il frontend legge URL pubblici derivati da `photo.id` e dal relativo ULID
 
 ## Struttura progetto
 
@@ -82,10 +88,12 @@ Flusso immagini:
 │   │   ├── routes/
 │   │   ├── services/
 │   │   └── utils/
+│   └── test/
 ├── frontend/
 │   ├── branding/
 │   ├── public/
 │   └── src/
+│       ├── __tests__/
 │       ├── components/
 │       ├── components/photoUpload/
 │       ├── contexts/
@@ -113,6 +121,13 @@ PORT=5001
 NODE_ENV=development
 SITE_URL=http://localhost:3000
 
+# Metadata
+METADATA_BACKEND=postgres
+METADATA_WRITES_ENABLED=true
+DATABASE_URL=postgresql://...-pooler.../neondb?sslmode=require
+DATABASE_URL_UNPOOLED=postgresql://.../neondb?sslmode=require
+TEST_DATABASE_URL=postgresql://...branch-test.../neondb?sslmode=require
+
 # CORS
 CORS_ORIGINS=http://localhost:3000,http://localhost:3001
 
@@ -120,6 +135,7 @@ CORS_ORIGINS=http://localhost:3000,http://localhost:3001
 API_WRITE_TOKEN_HASH=scrypt$16384$8$1$...
 API_WRITE_TOKEN=
 API_SESSION_SECRET=replace_with_long_random_secret
+CRON_SECRET=replace_with_another_random_secret
 API_SESSION_COOKIE_NAME=
 API_SESSION_TTL_MS=604800000
 API_AUTH_RATE_LIMIT_WINDOW_MS=600000
@@ -133,24 +149,29 @@ R2_BUCKET=portfolio-images
 R2_PRIVATE_BUCKET=portfolio-images-private
 R2_PUBLIC_URL=https://uploads.yourdomain.com
 R2_ENDPOINT=
+R2_OBJECT_PREFIX=
 R2_METADATA_PREFIX=data
-
-# Cloudflare cache purge (opzionale)
-CLOUDFLARE_ZONE_ID=
-CLOUDFLARE_API_TOKEN=
 ```
 
 Note importanti:
 
 - `SITE_URL` e' obbligatoria in tutti gli ambienti.
 - `PORT` e `CORS_ORIGINS` sono obbligatorie in sviluppo locale.
+- `DATABASE_URL` è la connessione pooled di runtime.
+- `DATABASE_URL_UNPOOLED` è usata da migration e import.
+- `TEST_DATABASE_URL` deve puntare a un branch Neon isolato.
 - Il backend e' R2-only in tutti gli ambienti.
 - In produzione sono obbligatorie:
   - `API_WRITE_TOKEN_HASH`
   - `API_SESSION_SECRET`
 - `API_WRITE_TOKEN` e' solo fallback locale.
 - `R2_PRIVATE_BUCKET` e' fortemente consigliata: la source full-res parte sempre da li'.
-- Se configuri `CLOUDFLARE_ZONE_ID` e `CLOUDFLARE_API_TOKEN`, il backend esegue purge automatico su create / replace-source / regenerate / delete.
+- `R2_OBJECT_PREFIX` isola fisicamente gli asset scritti e ripuliti da una Preview.
+  Prima di ogni deploy scrivibile, il valore normalizzato della Preview deve
+  essere non vuoto e diverso da quello configurato in Production.
+- Con `METADATA_WRITES_ENABLED=false` una Preview non può eseguire manualmente
+  il cleanup; per abilitarlo servono Postgres, write abilitate e un
+  `R2_OBJECT_PREFIX` non vuoto.
 
 Generazione hash token admin:
 
@@ -185,7 +206,7 @@ Configurazione consigliata:
   - bucket pubblica
   - contiene:
     - derivate pubbliche (`/uploads/...`)
-    - metadati JSON (`/data/photos.json`, `/data/series.json`)
+    - snapshot JSON soltanto durante la transizione dal vecchio adapter
 - `R2_PRIVATE_BUCKET`
   - bucket privata
   - contiene le source originali full-res (`/private/source/...`)
@@ -203,12 +224,20 @@ Esempio:
 R2_PUBLIC_URL=https://uploads.kevinmuka.dev
 ```
 
-Il backend deriva i path pubblici in modo fisso da `photo.id`, usando questi prefissi:
+Ogni set pubblico è identificato da un ULID e resta immutabile:
 
-- immagine principale: `/uploads/photo_<id>.webp`
-- thumbnail 4:3: `/uploads/thumbnails/4x3/photo_<id>.webp`
-- thumbnail 1:1: `/uploads/thumbnails/1x1/photo_<id>.webp`
-- social: `/uploads/social/photo_<id>.jpg`
+- immagine principale: `/uploads/photos/<id>/<ulid>/full.webp`
+- variante mobile: `/uploads/photos/<id>/<ulid>/mobile.webp`
+- thumbnail 4:3: `/uploads/photos/<id>/<ulid>/thumbnail-4x3.webp`
+- thumbnail 1:1: `/uploads/photos/<id>/<ulid>/thumbnail-1x1.webp`
+- social: `/uploads/photos/<id>/<ulid>/social.jpg`
+
+La source privata usa un ULID di revisione indipendente:
+
+- `/private/source/photos/<id>/<source-ulid>/source.<estensione>`
+
+Crop e rigenerazione creano un nuovo set pubblico senza duplicare la source.
+Il reupload crea invece una nuova revisione source e un nuovo set pubblico.
 
 La bucket privata non deve avere un dominio pubblico.
 
@@ -245,33 +274,48 @@ Se usi un dominio preview dedicato, aggiungilo esplicitamente.
 
 ### 4. Cache e indicizzazione sul dominio pubblico
 
-Le derivate pubbliche usano URL stabili. Il backend fa overwrite sugli stessi path e aggiorna `derivativesVersion` per il cache busting lato app.
+I path ULID non vengono sovrascritti e possono usare:
 
-Per questo:
-
-- non usare `immutable` sugli asset immagine pubblici
-- se possibile, configura `X-Robots-Tag: noindex, noimageindex` su:
-  - `/uploads/thumbnails/*`
-  - `/uploads/social/*`
-
-Questo evita che thumbnail e social image finiscano indicizzate come asset separati.
-
-### 5. Purge cache Cloudflare opzionale ma utile
-
-Se vuoi invalidazione immediata dopo overwrite delle immagini:
-
-```env
-CLOUDFLARE_ZONE_ID=...
-CLOUDFLARE_API_TOKEN=...
+```text
+Cache-Control: public, max-age=31536000, immutable
 ```
 
-Il backend fara' purge sugli asset pubblici quando necessario.
+Non è necessario eseguire purge Cloudflare quando cambia una foto: la
+transazione Postgres rende visibile un nuovo URL.
+
+Sul dominio R2 pubblico usa una policy fail-closed: soltanto l'asset canonico
+generato `photos/<id>/<ulid>/full.webp` resta image-indexable; ogni altro oggetto
+riceve `X-Robots-Tag: noindex, noimageindex`. In una Cloudflare Response Header
+Transform Rule, per il dominio attuale, la condizione può essere espressa come:
+
+```text
+http.host eq "uploads.kevinmuka.dev"
+and not (
+  http.request.uri.path contains "/photos/"
+  and ends_with(http.request.uri.path, "/full.webp")
+)
+```
+
+Questa regola copre automaticamente thumbnail, social, future preview e la root
+del dominio senza mantenere una lista di filename e funziona anche con un
+namespace R2 anteposto al path. La full image viene scoperta tramite la pagina
+canonica `/photo/:id`; aggiungere un'altra eccezione indicizzabile è una
+decisione SEO esplicita, non il default di una nuova variante.
+
+### 5. Registro asset e migrazione metadata
+
+Postgres registra ogni oggetto R2 in `photo_assets`; i path non vengono più
+ricostruiti da una lista di varianti nelle route. La migration `008` importa i
+path correnti e quelli già presenti nella coda di cleanup. Per ownership,
+lifecycle, riconciliazione e procedura di aggiunta di una variante consulta
+[`backend/src/repositories/README.md`](backend/src/repositories/README.md).
 
 ## Modalita admin
 
 Route principali:
 
 - login/admin UI: `https://tuodominio/admin`
+- storico modifiche: `https://tuodominio/admin/history`
 - logout rapido: `https://tuodominio/admin/logout`
 
 Le write API richiedono sessione admin valida. In sviluppo, se non configuri credenziali admin, il backend segnala la cosa e le write possono restare aperte: non e' un setup consigliato, ma e' previsto come fallback locale.
@@ -301,7 +345,12 @@ Vercel usa:
 - `SITE_URL`
 - `API_WRITE_TOKEN_HASH`
 - `API_SESSION_SECRET`
+- `CRON_SECRET`
 - `CORS_ORIGINS`
+- `METADATA_BACKEND=postgres`
+- `METADATA_WRITES_ENABLED`
+- `DATABASE_URL`
+- `DATABASE_URL_UNPOOLED`
 - `R2_ACCOUNT_ID`
 - `R2_ACCESS_KEY_ID`
 - `R2_SECRET_ACCESS_KEY`
@@ -310,9 +359,8 @@ Vercel usa:
 - `R2_PUBLIC_URL`
 - opzionali:
   - `R2_ENDPOINT`
+  - `R2_OBJECT_PREFIX`
   - `R2_METADATA_PREFIX`
-  - `CLOUDFLARE_ZONE_ID`
-  - `CLOUDFLARE_API_TOKEN`
   - `API_SESSION_TTL_MS`
   - `API_AUTH_RATE_LIMIT_*`
 - frontend:
@@ -326,6 +374,38 @@ Non necessari su Vercel:
 - `NODE_ENV`
 
 Ogni modifica env richiede redeploy.
+
+`CRON_SECRET` protegge `GET /api/internal/media-cleanup/run`. Vercel lo invia
+automaticamente come Bearer token al cron giornaliero definito in
+`vercel.json`. In Preview, dove i cron non vengono eseguiti, il cleanup viene
+tentato dopo le operazioni admin e può essere avviato manualmente con una
+sessione admin tramite `POST /api/internal/media-cleanup/run`, purché
+`METADATA_WRITES_ENABLED=true` e `R2_OBJECT_PREFIX` sia configurato.
+
+Prima di distribuire una Preview con scritture abilitate, confrontare nelle
+Environment Variables di Vercel i due valori di `R2_OBJECT_PREFIX` dopo aver
+rimosso slash iniziali/finali e spazi:
+
+- Preview: deve essere non vuoto;
+- Preview e Production: devono essere diversi;
+- il namespace scelto deve appartenere esclusivamente a quella Preview.
+
+Il backend può validare il primo requisito, ma non può confrontare
+automaticamente due environment Vercel separati senza duplicare la
+configurazione Production nella Preview. Questo confronto resta quindi un gate
+operativo obbligatorio prima del deploy.
+
+Il batch cron/manuale smette di reclamare job dopo 8 secondi; i piccoli batch
+eseguiti dopo le operazioni admin hanno invece un budget di 1,5 secondi. Non
+viene ridotto globalmente `maxDuration` di `api/index.js`, perché la stessa
+funzione Express serve anche upload e altre API.
+
+Un batch non promette di svuotare l’intera coda: ogni job completato resta
+`succeeded`, mentre quelli non ancora reclamati restano `pending`. Le esecuzioni
+successive riprendono la coda senza duplicare le cancellazioni già completate.
+La velocità dipende anche dalla latenza Postgres, perché claim e completion sono
+transazioni separate per ciascun asset; il budget resta quindi un confine di
+lavoro, non un requisito “tutti i job nello stesso batch”.
 
 ### Rewrites rilevanti
 
@@ -341,16 +421,25 @@ La sitemap include automaticamente tutte le foto e le serie pubblicate con il
 relativo `lastmod`. Le serie sono esposte come pagine hub prima delle singole
 foto; le bozze non compaiono né nella sitemap né nelle pagine SEO server-side.
 
-## Dati su R2
+## Adapter JSON transitorio
 
-I metadati vengono salvati in R2 sotto `R2_METADATA_PREFIX` (default: `data`):
+PostgreSQL è lo storage autorevole quando `METADATA_BACKEND=postgres`.
+L’adapter JSON R2 è mantenuto temporaneamente per migrazione e rollback e verrà
+rimosso dopo il cutover verificato. I suoi snapshot si trovano sotto
+`R2_METADATA_PREFIX` (default: `data`):
+
+Il nuovo upload admin non è disponibile con `METADATA_BACKEND=json`: la
+creazione idempotente richiede Postgres e restituisce
+`TRANSACTIONAL_PHOTO_CREATION_REQUIRED`. Per provare upload e finalizzazione in
+locale bisogna quindi usare esplicitamente `METADATA_BACKEND=postgres`.
 
 - `data/photos.json`
 - `data/series.json`
 
-### Schema canonico storage di una foto
+### Schema canonico dello snapshot foto
 
-Il backend salva su R2 uno schema canonico annidato. A runtime, l'API lo normalizza in un formato piu' semplice per il frontend.
+L’adapter transitorio salva uno schema annidato e lo normalizza nel formato
+runtime consumato dal frontend.
 
 Esempio storage:
 
@@ -376,35 +465,199 @@ Esempio storage:
   },
   "composition": {
     "cropProfiles": {
-      "r43": {},
-      "r11": {},
-      "social": {}
+      "r43": { "x": 0.5, "y": 0.5, "scale": 1 },
+      "r11": { "x": 0.5, "y": 0.5, "scale": 1 },
+      "social": { "x": 0.5, "y": 0.5, "scale": 1 }
     }
   },
   "tags": ["Alpe di Siusi"],
-  "source": {
-    "path": "/private/source/photo_1772709771525.jpeg",
-    "contentType": "image/jpeg"
-  },
+  "assets": [
+    {
+      "role": "full",
+      "replacementGroup": "derivatives",
+      "scope": "public",
+      "path": "/uploads/photos/1772709771525/01KYMPAMCGZG34TT5JX1BCBB9K/full.webp",
+      "contentType": "image/webp",
+      "generation": "01KYMPAMCGZG34TT5JX1BCBB9K"
+    },
+    {
+      "role": "source",
+      "replacementGroup": "source",
+      "scope": "private",
+      "path": "/private/source/photos/1772709771525/01KYMPAMCGZG34TT5JX1BCBB9K/source.jpeg",
+      "contentType": "image/jpeg",
+      "generation": "01KYMPAMCGZG34TT5JX1BCBB9K"
+    }
+  ],
+  "mediaGeneration": "01KYMPAMCGZG34TT5JX1BCBB9K",
   "derivativesVersion": 1772709835199
 }
 ```
 
-### Cosa viene derivato a runtime
+### Cosa viene esposto a runtime
 
-Nel JSON di storage non vengono salvati i path pubblici finali come campi canonici. L'API li costruisce a runtime a partire da `photo.id`:
+Postgres usa `photo_assets` come source of truth per path, ruolo, scope e
+content type. L’API restituisce le varianti pubbliche dinamicamente in
+`photo.assets`, indicizzate per ruolo; per esempio `full`, `mobile`,
+`thumbnail-4x3`, `thumbnail-1x1` e `social`. Il source privato non viene esposto.
 
-- `image`
-- `thumbnail43`
-- `thumbnail11`
-- `socialImage`
-- `url`
+### Contratto dei preset crop
 
-Questo evita ridondanza e rende stabile il naming pubblico.
+I preset disponibili nell’editor e le regole numeriche dei profili sono definiti
+una sola volta nel package locale
+`packages/photo-crop-contract`. Backend e frontend dipendono dallo stesso
+package: non duplicare chiavi, label, rapporti, default o limiti in
+`photoDerivatives.js`, `cropEditor.js` o `PhotoCropModal.js`.
+
+I tre concetti restano intenzionalmente distinti:
+
+- `PHOTO_CROP_PRESETS` descrive cosa può modificare l’editor: chiave, label,
+  label compatta e rapporto;
+- `PHOTO_DERIVATIVE_VARIANTS` descrive gli asset prodotti;
+- `cropPresetKey` nella singola variante dichiara la relazione fra i due.
+
+Una variante senza `cropPresetKey` non viene ritagliata. Una variante con crop
+deve invece dichiarare `outputWidth`, `outputHeight` ed `encode`; il backend
+rifiuta all’avvio preset inesistenti e rapporti che non coincidono con le
+dimensioni Sharp. L’editor costruisce automaticamente selettori, label, rapporto
+e profilo iniziale dal catalogo condiviso. La preview attiva usa il crop live
+della full e non mantiene una seconda mappa manuale preset → ruolo asset.
+
+Per aggiungere un preset:
+
+1. aggiungere una definizione in `packages/photo-crop-contract/index.js`;
+2. soltanto se una derivata deve usarlo, impostare il suo `cropPresetKey` e le
+   dimensioni nel catalogo di `backend/src/services/photoDerivatives.js`.
+
+Non aggiornare manualmente normalizzatori, tab, label, pulsanti o salvataggio del
+frontend. Non ogni preset deve produrre una variante e non ogni variante deve
+avere un crop.
+
+Ogni write admin che riceve `cropProfiles` passa dallo stesso normalizzatore.
+L’aggiornamento generico dei metadata tratta `settings` come patch: conserva le
+altre impostazioni e i preset storici già salvati; se la patch non contiene
+`cropProfiles`, il crop esistente non viene normalizzato né riscritto.
+
+Per rinominare un preset non cambiare semplicemente la chiave: aggiungere la
+nuova chiave, migrare esplicitamente i metadata che devono assumerne la nuova
+semantica, spostare le varianti e solo dopo rimuovere la vecchia definizione.
+Per rimuoverlo, eliminare prima ogni `cropPresetKey` che lo usa. I profili salvati
+con chiavi non più presenti vengono conservati senza normalizzazione durante un
+round-trip dell’editor, ma sono ignorati da Sharp: questo evita perdita o
+reinterpretazione silenziosa dei dati storici e lascia la migrazione come scelta
+esplicita.
+
+### Contratto degli upload fotografici
+
+Formati source, alias MIME, estensioni, limite, attributo `accept` e testo
+mostrato nell'admin sono definiti una sola volta in
+`packages/photo-upload-contract`. Il contratto corrente accetta JPEG, PNG e
+WebP fino al limite dichiarato dallo stesso contratto; `image/jpg` e' un alias
+intenzionale di `image/jpeg`, mentre
+il path usa sempre l'estensione canonica `jpg`.
+
+Il frontend usa questo contratto soltanto per feedback immediato e file picker.
+Il backend resta l'autorita': prima firma soltanto una dichiarazione conforme,
+poi, durante la finalizzazione, controlla sull'oggetto R2:
+
+- `Content-Length` prima di accumulare lo stream e byte realmente letti;
+- `Content-Type` registrato rispetto alla prenotazione;
+- formato riconosciuto da Sharp rispetto al MIME canonico;
+- dimensioni decodificate valide.
+
+Upload iniziale e replace-source passano dallo stesso validatore. Il source di
+un replace e' confrontato con l'asset `planned` appartenente all'operazione
+Postgres, non con un MIME reinviato dal client. Nessuna derivata viene scritta o
+attivata se questi controlli falliscono.
+
+Per aggiungere o rimuovere un formato, o cambiare il limite, modificare soltanto
+`packages/photo-upload-contract/index.js`. Non aggiornare manualmente route,
+`accept`, validatori frontend, messaggi o normalizzazione delle estensioni. Una
+nuova voce deve dichiarare anche il nome formato restituito da Sharp: il fatto
+che un browser assegni un MIME non rende automaticamente il decoder compatibile.
+
+La prenotazione Postgres registra asset e cleanup job prima di esporre la signed
+URL. Un PUT R2 interrotto, ambiguo o successivamente rifiutato resta quindi
+tracciato: lo staging della creazione e' eliminabile dopo la scadenza
+dell'intent, mentre un replace fallito conserva il job dell'operazione media.
+Il client puo' ritentare lo stesso creation intent e sovrascrivere il medesimo
+staging prima della finalizzazione; la pubblicazione resta idempotente.
+
+Il vecchio snapshot JSON non è una seconda source of truth. Lo snapshot
+canonico conserva l'inventario attivo esplicito in `assets`; l’adapter non
+ricostruisce ruoli dal catalogo corrente o dal solo `mediaGeneration`. Uno
+snapshot legacy privo di inventario deve essere riconciliato con gli oggetti R2
+prima del cutover: una variante candidata viene registrata soltanto dopo averne
+verificato l’esistenza. L’import rifiuta snapshot senza inventario o senza
+`full`, anziché importarli in uno stato implicitamente non pubblicabile.
+`source.path` e `mobileImage` restano confinati nell’adapter esplicitamente
+legacy del repository JSON e saranno rimossi insieme a quell’adapter dopo il
+cutover. L’ULID rende ogni set di file immutabile.
 
 ### Schema canonico delle serie
 
-Il backend normalizza `data/series.json` sia in lettura sia prima di ogni scrittura:
+Il contratto condiviso vive in `packages/series-content-contract`. È la source
+of truth per tipi di blocco, griglia, limiti strutturali, layout predefiniti e
+opzioni testuali. Backend, editor e renderer dipendono dallo stesso catalogo.
+I tipi canonici sono `text`, `photo` e `photos`: un tipo sconosciuto genera un
+errore esplicito e non viene mai reinterpretato come testo.
+
+Il contratto distingue tre decisioni diverse:
+
+- `defaultLayout` è il fallback canonico usato dal wizard e dalla
+  normalizzazione quando manca un layout;
+- `canvasDefaultLayout` conserva le dimensioni visuali con cui il canvas crea
+  nuovi blocchi (`text` 15×9, `photo` 15×22, `photos` 16×18);
+- `minimumLayout` ed `editorMinimumLayout` separano i limiti persistibili dai
+  minimi ergonomici del resize desktop.
+
+I layout già salvati non vengono ingranditi durante un round-trip e i due
+editor possono mantenere intenzionalmente esigenze visuali diverse senza
+duplicare numeri nei componenti.
+
+L’adapter JSON runtime accetta esclusivamente lo schema canonico e fallisce
+senza scrivere se incontra alias o campi legacy. Non esegue migrazioni durante
+letture, update o cleanup. La compatibilità storica vive soltanto nello
+strumento esplicito `backend/scripts/import-metadata-postgres.js`, che analizza
+e segnala le conversioni prima dell’import:
+
+- `image` viene migrato esplicitamente a `photo`;
+- gli elementi scalari dei vecchi gruppi vengono migrati a `{ id }`;
+- `order` e `gridVersion` vengono rimossi perché non canonici.
+
+Prima di usare uno snapshot storico eseguire sempre
+`node scripts/import-metadata-postgres.js --from-r2 --dry-run`: non deve essere
+aperto dal repository JSON corrente per “aggiustarlo” implicitamente. Il
+dry-run R2 del 2026-08-11 non ha rilevato forme legacy nelle serie correnti. Il
+codice temporaneo di conversione potrà essere rimosso quando import Postgres e
+verifica post-import degli snapshot R2 saranno conclusi; l’intero adapter JSON
+va rimosso dopo il cutover Postgres e la scadenza della finestra di rollback.
+
+### Checklist bloccante prima del cutover Postgres
+
+- [ ] Riconciliare i **47 inventari media espliciti mancanti** rilevati nello
+  snapshot R2 corrente. Non ricostruirli dal catalogo delle derivate: ogni asset
+  deve essere confermato rispetto agli oggetti realmente presenti in R2.
+- [ ] Generare e revisionare report, backup e proposta con
+  `npm run metadata:reconcile-media -- --output-dir <directory>` da `backend/`.
+  La procedura completa, inclusa l’approvazione tramite checksum senza scritture
+  R2, è documentata in `backend/docs/media-inventory-reconciliation.md`.
+- [ ] Da `backend/`, eseguire `npm run metadata:preflight-cutover` contro lo
+  snapshot finale.
+- [ ] Verificare nel report `counts.missingAssetInventories: 0`, `errors: []` e
+  il messaggio finale `missingAssetInventories=0, errors=0`.
+- [ ] Ripetere lo stesso preflight immediatamente prima dell’import staging
+  finale e prima di cambiare Production a `METADATA_BACKEND=postgres`.
+
+L’import reale richiama la medesima asserzione nel service e fallisce prima di
+aprire una connessione o transazione se il conteggio non è zero. Questo gate non
+viene eseguito da build, avvio locale o sviluppo ordinario. Il completamento del
+punto richiede una futura riconciliazione esplicita degli oggetti R2; questa
+modifica registra e blocca il rischio, ma non inventa né ripara gli inventari.
+
+Le normali API admin, Postgres e il frontend accettano esclusivamente il formato
+canonico. Il repository Postgres applica inoltre le invarianti relazionali in
+transazione:
 
 - titoli e slug devono essere unici anche tra le bozze
 - `photos` contiene ID numerici unici
@@ -414,6 +667,21 @@ Il backend normalizza `data/series.json` sia in lettura sia prima di ogni scritt
 - tutti i layout usano `unit: "grid"` su una griglia da 24 colonne
 - i riferimenti foto nei blocchi devono appartenere alla serie
 - se una serie contiene foto ma `content` e' vuoto, vengono creati blocchi foto espliciti
+
+Per aggiungere un tipo di blocco:
+
+1. aggiungere la definizione in `packages/series-content-contract/index.js`;
+2. implementare intenzionalmente contenuto, controlli e azioni in
+   `SeriesEditor` e nell’editor layout di `SeriesDetail`;
+3. implementare entrambi i renderer desktop e responsive;
+4. estendere sanitizer, riferimenti foto e test di round-trip.
+
+I consumer dichiarano la copertura dei tipi: finché editor e renderer non sono
+aggiornati, l’aggiunta al contratto fa fallire esplicitamente test/build anziché
+produrre un fallback distruttivo. Una rinomina o rimozione non è una semplice
+modifica al catalogo: richiede prima una migration dei contenuti persistiti. Non
+aggiungere alias alle API correnti; gli alias appartengono soltanto alla
+migration legacy.
 
 La griglia salvata descrive la composizione artistica desktop e non viene
 ricalcolata in base alla finestra. Nella vista pubblica, fino a 1024 px, i
@@ -528,9 +796,9 @@ curl -fsS "https://kevinmuka.dev/api/series?all=false" | head
 
 5. Asset R2:
 
-- verifica almeno una `image`
-- verifica almeno una `thumbnail43`
-- verifica almeno una `socialImage`
+- verifica almeno un asset `full`
+- verifica almeno un asset `thumbnail-4x3`
+- verifica almeno un asset `social`
 - controlla assenza di `403/404`
 
 ## Troubleshooting rapido

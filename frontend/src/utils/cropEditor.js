@@ -1,11 +1,16 @@
-export const CROP_PRESETS = [
-  { key: 'r43', label: 'Archivio 4:3', ratio: '4 / 3' },
-  { key: 'r11', label: 'Home 1:1', ratio: '1 / 1' },
-  { key: 'social', label: 'Social 1200x630', ratio: '1200 / 630' }
-];
+import cropContract from '@portfolio/photo-crop-contract';
 
-export const DEFAULT_CROP_PROFILE = { x: 0.5, y: 0.5, scale: 1 };
-export const CROP_MAX_SCALE = 5;
+const {
+  CROP_PROFILE_LIMITS,
+  DEFAULT_CROP_PROFILE: SHARED_DEFAULT_CROP_PROFILE,
+  PHOTO_CROP_PRESETS,
+  normalizeCropProfile: normalizeSharedCropProfile,
+  normalizeCropProfiles: normalizeSharedCropProfiles
+} = cropContract;
+
+export const CROP_PRESETS = PHOTO_CROP_PRESETS;
+export const DEFAULT_CROP_PROFILE = SHARED_DEFAULT_CROP_PROFILE;
+export const CROP_MAX_SCALE = CROP_PROFILE_LIMITS.scale.max;
 export const CROP_MIN_SIZE_PX = 56;
 export const CROP_HANDLES = ['nw', 'ne', 'sw', 'se'];
 
@@ -22,32 +27,21 @@ export const parseAspectRatio = (ratio) => {
   return width / height;
 };
 
-export const getPresetRatioValue = (presetKey) => {
-  const preset = CROP_PRESETS.find((item) => item.key === presetKey);
+export const getPresetRatioValue = (presetKey, presets = CROP_PRESETS) => {
+  const preset = presets.find((item) => item.key === presetKey);
   return parseAspectRatio(preset?.ratio || '4 / 3');
 };
 
-export const normalizeCropProfile = (value) => {
-  if (!value || typeof value !== 'object') return { ...DEFAULT_CROP_PROFILE };
-  const x = Number(value.x);
-  const y = Number(value.y);
-  const scale = Number(value.scale);
+export const normalizeCropProfile = (value) => normalizeSharedCropProfile(value);
 
-  return {
-    x: Number.isFinite(x) ? clamp01(x) : DEFAULT_CROP_PROFILE.x,
-    y: Number.isFinite(y) ? clamp01(y) : DEFAULT_CROP_PROFILE.y,
-    scale: Number.isFinite(scale) ? clampScale(scale) : DEFAULT_CROP_PROFILE.scale
-  };
-};
-
-export const normalizeCropProfiles = (value) => {
-  const raw = value && typeof value === 'object' ? value : {};
-  return {
-    r43: normalizeCropProfile(raw.r43),
-    r11: normalizeCropProfile(raw.r11),
-    social: normalizeCropProfile(raw.social)
-  };
-};
+export const normalizeCropProfiles = (
+  value,
+  presets = CROP_PRESETS
+) => normalizeSharedCropProfiles(value, {
+  presets,
+  includeDefaults: true,
+  preserveUnknown: true
+});
 
 export const getBaseCropSize = (sourceWidth, sourceHeight, targetRatio) => {
   const srcW = Math.max(1, Number(sourceWidth) || 1);

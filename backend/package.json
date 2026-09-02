@@ -6,10 +6,19 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "node --test src/services/seriesRecord.test.js",
+    "test": "node --test test/*.test.js",
+    "db:migrate": "node scripts/migrate-postgres.js",
+    "metadata:validate": "node scripts/import-metadata-postgres.js --dry-run",
+    "metadata:preflight-cutover": "node scripts/import-metadata-postgres.js --from-r2 --cutover-preflight",
+    "metadata:reconcile-media": "node scripts/reconcile-media-inventory.js --from-r2",
+    "metadata:import": "node scripts/import-metadata-postgres.js",
     "token:hash": "node scripts/hash-write-token.js"
   },
   "dependencies": {
+    "@portfolio/photo-metadata-contract": "file:../packages/photo-metadata-contract",
+    "@portfolio/photo-crop-contract": "file:../packages/photo-crop-contract",
+    "@portfolio/photo-upload-contract": "file:../packages/photo-upload-contract",
+    "@portfolio/series-content-contract": "file:../packages/series-content-contract",
     "@aws-sdk/client-s3": "^3.862.0",
     "@aws-sdk/s3-request-presigner": "^3.862.0",
     "cors": "^2.8.5",
@@ -17,8 +26,9 @@
     "express": "^4.18.2",
     "express-rate-limit": "^6.6.0",
     "helmet": "^6.0.0",
-    "multer": "^1.4.5-lts.1",
-    "sharp": "^0.32.6"
+    "pg": "^8.16.3",
+    "sharp": "^0.32.6",
+    "ulid": "3.0.2"
   },
   "devDependencies": {
     "nodemon": "^2.0.20"
@@ -30,5 +40,9 @@
     "express"
   ],
   "author": "Kevin",
-  "license": "MIT"
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
 }

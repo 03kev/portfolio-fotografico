@@ -1,6 +1,17 @@
 import React from 'react';
 import styled from 'styled-components';
-import { resolveVersionedPhotoAssetUrl } from '../../utils/imageUrl';
+import {
+  SERIES_GRID_COLUMNS,
+  assertSeriesBlockTypeCoverage,
+  normalizeBlockType
+} from '@portfolio/series-content-contract';
+import { resolvePhotoAssetUrl } from '../../utils/imageUrl';
+import { renderSeriesBlockByType } from '../../utils/seriesBlockRenderer';
+
+assertSeriesBlockTypeCoverage(
+  ['text', 'photo', 'photos'],
+  'ResponsiveSeriesContent'
+);
 
 const Flow = styled.div`
   display: flex;
@@ -147,12 +158,18 @@ const GroupImage = styled(ResponsiveImage)`
 `;
 
 function getBlockFlowStyle(block) {
+  normalizeBlockType(block?.type);
   const layout = block?.layout || {};
-  const span = Math.max(1, Math.min(24, Number(layout.w) || 24));
+  const span = Math.max(1, Math.min(
+    SERIES_GRID_COLUMNS,
+    Number(layout.w) || SERIES_GRID_COLUMNS
+  ));
   const minimum = block?.type === 'text' ? 55 : block?.type === 'photos' ? 100 : 45;
-  const width = Math.min(100, Math.max(minimum, (span / 24) * 100));
-  const originalOffset = (Math.max(0, Number(layout.x) || 0) / 24) * 100;
-  const originalWidth = (span / 24) * 100;
+  const width = Math.min(100, Math.max(minimum, (span / SERIES_GRID_COLUMNS) * 100));
+  const originalOffset = (
+    Math.max(0, Number(layout.x) || 0) / SERIES_GRID_COLUMNS
+  ) * 100;
+  const originalWidth = (span / SERIES_GRID_COLUMNS) * 100;
   const originalCenter = originalOffset + originalWidth / 2;
   const requestedOffset = originalCenter - width / 2;
   const offset = Math.max(0, Math.min(requestedOffset, 100 - width));
@@ -192,10 +209,10 @@ function getTextPresentation(block, textSizeMap, textFontMap) {
 }
 
 function ResponsivePicture({ photo }) {
-  const mobileSrc = photo?.mobileImage
-    ? resolveVersionedPhotoAssetUrl(photo, 'mobileImage')
+  const mobileSrc = photo?.assets?.mobile?.url
+    ? resolvePhotoAssetUrl(photo, 'mobile')
     : '';
-  const fullSrc = resolveVersionedPhotoAssetUrl(photo, 'image');
+  const fullSrc = resolvePhotoAssetUrl(photo, 'full');
 
   return (
     <Picture>
@@ -234,7 +251,8 @@ export default function ResponsiveSeriesContent({
   return (
     <Flow>
       {blocks.map((block) => {
-        if (block.type === 'text') {
+        return renderSeriesBlockByType(block, {
+          text: () => {
           const presentation = getTextPresentation(block, textSizeMap, textFontMap);
           return (
             <FlowBlock key={block.id} style={getBlockFlowStyle(block)}>
@@ -254,9 +272,9 @@ export default function ResponsiveSeriesContent({
               </Narrative>
             </FlowBlock>
           );
-        }
+          },
 
-        if (block.type === 'photo') {
+          photo: () => {
           const photo = photosById.get(String(block.content));
           if (!photo) return null;
           const canOpen = block.showLightbox !== false && typeof onPhotoClick === 'function';
@@ -282,9 +300,9 @@ export default function ResponsiveSeriesContent({
               </Figure>
             </FlowBlock>
           );
-        }
+          },
 
-        if (block.type === 'photos') {
+          photos: () => {
           const groupCols = Math.max(1, Number(block?.layout?.w) || 1);
           const groupItems = [...(block.content || [])].sort((a, b) => {
             const yDelta = Number(a?.layout?.y || 0) - Number(b?.layout?.y || 0);
@@ -309,14 +327,14 @@ export default function ResponsiveSeriesContent({
                         aria-label={photo.title ? `Apri ${photo.title}` : 'Apri fotografia'}
                       >
                         <Picture>
-                          {photo.mobileImage && (
+                          {photo.assets?.mobile?.url && (
                             <source
                               media="(max-width: 1024px)"
-                              srcSet={resolveVersionedPhotoAssetUrl(photo, 'mobileImage')}
+                              srcSet={resolvePhotoAssetUrl(photo, 'mobile')}
                             />
                           )}
                           <GroupImage
-                            src={resolveVersionedPhotoAssetUrl(photo, 'image')}
+                            src={resolvePhotoAssetUrl(photo, 'full')}
                             alt={photo.title || 'Fotografia'}
                             loading="lazy"
                             decoding="async"
@@ -330,9 +348,8 @@ export default function ResponsiveSeriesContent({
               </PhotoGroup>
             </FlowBlock>
           );
-        }
-
-        return null;
+          }
+        }, 'ResponsiveSeriesContent: renderer responsive');
       })}
     </Flow>
   );

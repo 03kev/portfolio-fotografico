@@ -9,17 +9,15 @@ export function resolveAssetUrl(value, fallback = LOCAL_IMAGE_FALLBACK) {
   return `${IMAGES_BASE_URL}${src}`;
 }
 
-export function resolveVersionedAssetUrl(value, version, fallback = LOCAL_IMAGE_FALLBACK) {
-  const src = String(value || '').trim();
-  const base = resolveAssetUrl(value, fallback);
-  if (!src || !version) return base;
-  return `${base}${base.includes('?') ? '&' : '?'}v=${encodeURIComponent(String(version))}`;
+export function getPhotoAsset(photo, role) {
+  const asset = photo?.assets?.[role];
+  return asset && typeof asset === 'object' ? asset : null;
 }
 
-export function getPhotoAssetVersion(photo) {
-  return photo?.derivativesVersion || photo?.id || '';
+export function hasPhotoAsset(photo, role) {
+  return Boolean(getPhotoAsset(photo, role)?.url);
 }
 
-export function resolveVersionedPhotoAssetUrl(photo, assetKey, fallback = LOCAL_IMAGE_FALLBACK) {
-  return resolveVersionedAssetUrl(photo?.[assetKey], getPhotoAssetVersion(photo), fallback);
+export function resolvePhotoAssetUrl(photo, role, fallback = LOCAL_IMAGE_FALLBACK) {
+  return resolveAssetUrl(getPhotoAsset(photo, role)?.url, fallback);
 }

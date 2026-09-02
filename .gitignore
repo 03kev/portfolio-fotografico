@@ -49,6 +49,7 @@ backend/storage/*
 # Temporary files
 tmp/
 temp/
+.local/
 
 # Textures
 frontend/public/textures/*10k*
@@ -60,3 +61,4 @@ frontend/public/textures/*32k*
 
 # Local notes
 TODO.md
+.vercel

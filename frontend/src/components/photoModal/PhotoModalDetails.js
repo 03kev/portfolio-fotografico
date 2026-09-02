@@ -4,6 +4,9 @@ import { motion } from 'framer-motion'
 import { Check, Download, MapPin, Share2 } from 'lucide-react'
 import { toAbsoluteSiteUrl } from '../../utils/siteUrl'
 import { viewportBreakpoints } from '../../styles/responsive'
+import { PHOTO_METADATA_PUBLIC_DETAILS_COVERAGE } from '../../utils/photoMetadataModel'
+
+void PHOTO_METADATA_PUBLIC_DETAILS_COVERAGE
 
 const HeaderIntro = styled.div`
     max-width: 100%;
@@ -418,13 +421,15 @@ const PhotoModalDetails = ({
                     {photo.title}
                 </PhotoTitle>
 
-                <PhotoLocation
-                    {...getAnimationProps(withMotion, 0.2)}
-                    onClick={handleLocationClick}
-                >
-                    <MapPin size={16} />
-                    {photo.location}
-                </PhotoLocation>
+                {photo.location && (
+                    <PhotoLocation
+                        {...getAnimationProps(withMotion, 0.2)}
+                        onClick={handleLocationClick}
+                    >
+                        <MapPin size={16} />
+                        {photo.location}
+                    </PhotoLocation>
+                )}
             </HeaderIntro>
 
             {photo.description && (

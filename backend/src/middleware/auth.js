@@ -209,7 +209,8 @@ function requireWriteAuth(req, res, next) {
         if (isProduction()) {
             return res.status(503).json({
                 success: false,
-                message: 'Configurazione auth mancante: API_WRITE_TOKEN_HASH non impostata.'
+                code: 'AUTH_NOT_CONFIGURED',
+                message: 'Autenticazione admin non configurata sul server.'
             });
         }
 
@@ -219,7 +220,31 @@ function requireWriteAuth(req, res, next) {
     if (!isAuthenticatedRequest(req)) {
         return res.status(401).json({
             success: false,
+            code: 'AUTH_REQUIRED',
             message: 'Non autorizzato'
+        });
+    }
+
+    return next();
+}
+
+function requireConcealedAdminAuth(req, res, next) {
+    if (!canAccessAdminData(req)) {
+        return res.status(404).json({
+            success: false,
+            message: 'Endpoint non trovato'
+        });
+    }
+
+    return next();
+}
+
+function requireMetadataWritesEnabled(_req, res, next) {
+    if (!env.metadataWritesEnabled) {
+        return res.status(503).json({
+            success: false,
+            code: 'METADATA_READ_ONLY',
+            message: 'Le modifiche ai contenuti sono temporaneamente disabilitate.'
         });
     }
 
@@ -231,7 +256,11 @@ function protectWriteMethods(req, res, next) {
         return next();
     }
 
-    return requireWriteAuth(req, res, next);
+    return requireMetadataWritesEnabled(
+        req,
+        res,
+        () => requireWriteAuth(req, res, next)
+    );
 }
 
 module.exports = {
@@ -241,5 +270,8 @@ module.exports = {
     isAuthenticatedRequest,
     isWriteTokenValid,
     protectWriteMethods,
+    requireConcealedAdminAuth,
+    requireMetadataWritesEnabled,
+    requireWriteAuth,
     setSessionCookie
 };

@@ -1,12 +1,25 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { AlertTriangle, Loader2, Save, Upload } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
-import exifr from 'exifr';
 import { usePhotos } from '../contexts/PhotoContext';
-import { signSourceUpload, uploadSourceToSignedUrl, uploadUtils } from '../utils/api';
-import { buildOperationErrorMessage } from '../utils/operationErrors';
+import { signSourceUpload, uploadSourceToSignedUrl } from '../utils/api';
+import { validateImageFile } from '../utils/photoUploadPolicy';
+import {
+    buildOperationErrorMessage,
+    isAmbiguousMutationError
+} from '../utils/operationErrors';
+import { buildPhotoOperationStatus } from '../utils/photoOperationStatus';
+import {
+    readPhotoMetadata,
+    reverseGeocodeCoordinates
+} from '../utils/photoMetadata';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { usePhotoUploadWizard } from '../hooks/usePhotoUploadWizard';
+import {
+    addPhotoTag,
+    buildPhotoMetadataFormState,
+    getPhotoFieldLimits
+} from '../utils/photoMetadataModel';
 import MapSelector from './MapSelector';
 import PhotoUploadShell from './photoUpload/PhotoUploadShell';
 import UploadStep from './photoUpload/UploadStep';
@@ -15,10 +28,11 @@ import DetailsStep from './photoUpload/DetailsStep';
 import './PhotoUpload.css';
 
 const METADATA_FILE_ACCEPT = 'image/*,.nef,.nrw,.cr2,.cr3,.arw,.dng,.rw2,.orf,.raf,.pef,.srw,.raw,.tif,.tiff';
+const titleLimits = getPhotoFieldLimits('title');
 
 const CREATE_UPLOAD_STEP_LABELS = {
-    sign: 'firma URL upload',
-    upload: 'upload file su R2',
+    sign: 'preparazione caricamento',
+    upload: 'caricamento originale',
     create: 'creazione foto'
 };
 
@@ -30,22 +44,29 @@ const STEP_DESCRIPTIONS = {
 
 const getCreateUploadStepLabel = (step = 'create') => CREATE_UPLOAD_STEP_LABELS[step] || 'creazione foto';
 
+const createUploadIntentId = () => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+    if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+        const bytes = crypto.getRandomValues(new Uint8Array(16));
+        bytes[6] = (bytes[6] & 0x0f) | 0x40;
+        bytes[8] = (bytes[8] & 0x3f) | 0x80;
+        const hex = [...bytes].map((value) => value.toString(16).padStart(2, '0'));
+        return [
+            hex.slice(0, 4).join(''),
+            hex.slice(4, 6).join(''),
+            hex.slice(6, 8).join(''),
+            hex.slice(8, 10).join(''),
+            hex.slice(10).join('')
+        ].join('-');
+    }
+    throw new Error('Il browser non supporta la generazione sicura della chiave di upload.');
+};
+
 const buildCreateUploadErrorMessage = (error, step = 'create') => {
     const stepLabel = getCreateUploadStepLabel(step);
     return buildOperationErrorMessage(error, stepLabel);
-};
-
-const getPhotoSettings = (photo) => {
-    if (!photo) return {};
-    if (typeof photo.settings === 'string') {
-        try {
-            const parsed = JSON.parse(photo.settings);
-            return parsed && typeof parsed === 'object' ? parsed : {};
-        } catch {
-            return {};
-        }
-    }
-    return photo.settings && typeof photo.settings === 'object' ? photo.settings : {};
 };
 
 const getSteps = (isEditMode) => (
@@ -68,41 +89,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
     const initialStep = steps[0].id;
 
     const [formData, setFormData] = useState(() => {
-        if (isEditMode) {
-            const settings = {
-                aperture: '',
-                shutter: '',
-                iso: '',
-                focal: '',
-                ...getPhotoSettings(photoToEdit)
-            };
-
-            return {
-                title: photoToEdit.title || '',
-                description: photoToEdit.description || '',
-                date: photoToEdit.date || new Date().toISOString().split('T')[0],
-                location: photoToEdit.location || '',
-                lat: photoToEdit.lat || '',
-                lng: photoToEdit.lng || '',
-                camera: photoToEdit.camera || '',
-                lens: photoToEdit.lens || '',
-                settings,
-                tags: Array.isArray(photoToEdit.tags) ? photoToEdit.tags : []
-            };
-        }
-
-        return {
-            title: '',
-            description: '',
-            date: new Date().toISOString().split('T')[0],
-            location: '',
-            lat: '',
-            lng: '',
-            camera: '',
-            lens: '',
-            settings: { aperture: '', shutter: '', iso: '', focal: '' },
-            tags: []
-        };
+        return buildPhotoMetadataFormState(isEditMode ? photoToEdit : null);
     });
     const [selectedFile, setSelectedFile] = useState(null);
     const [preview, setPreview] = useState(null);
@@ -118,6 +105,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
     const fileInputRef = useRef(null);
     const metadataFileInputRef = useRef(null);
     const tagInputRef = useRef(null);
+    const metadataExtractionRef = useRef({ id: 0, controller: null });
     const hasActivePhotoOp = useMemo(
         () => Object.values(photoOpsByPhotoId || {}).some((entry) => Boolean(entry?.active)),
         [photoOpsByPhotoId]
@@ -131,23 +119,25 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         };
     }, []);
 
+    useEffect(() => () => {
+        metadataExtractionRef.current.controller?.abort();
+        metadataExtractionRef.current.id += 1;
+    }, []);
+
     const extractImageMetadata = useCallback(async (file, sourceLabel = 'file selezionato') => {
+        metadataExtractionRef.current.controller?.abort();
+        const extractionId = metadataExtractionRef.current.id + 1;
+        const controller = new AbortController();
+        metadataExtractionRef.current = { id: extractionId, controller };
+        const isCurrentExtraction = () => (
+            metadataExtractionRef.current.id === extractionId
+            && !controller.signal.aborted
+        );
+
         try {
-            const exifData = await exifr.parse(file, [
-                'Model',
-                'Make',
-                'LensModel',
-                'FNumber',
-                'ExposureTime',
-                'ISO',
-                'FocalLength',
-                'DateTimeOriginal',
-                'GPSLatitude',
-                'GPSLongitude',
-                'GPSLatitudeRef',
-                'GPSLongitudeRef'
-            ]);
-            if (!exifData || Object.keys(exifData).length === 0) {
+            const metadata = await readPhotoMetadata(file);
+            if (!isCurrentExtraction()) return false;
+            if (!metadata.hasMetadata) {
                 setMetadataStatus({
                     type: 'warning',
                     message: `Nessun metadato rilevato in ${sourceLabel}.`
@@ -155,81 +145,58 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                 return false;
             }
 
-            const cameraModel = exifData.Make && exifData.Model
-                ? `${exifData.Make} ${exifData.Model}`.trim()
-                : exifData.Model || '';
-            const lensModel = exifData.LensModel || '';
-
-            let photoDate = '';
-            if (exifData.DateTimeOriginal) {
-                const d = new Date(exifData.DateTimeOriginal);
-                if (!Number.isNaN(d.getTime())) {
-                    photoDate = d.toISOString().split('T')[0];
-                }
-            }
-
-            const aperture = exifData.FNumber ? `f/${exifData.FNumber}` : '';
-            let shutter = '';
-            if (exifData.ExposureTime) {
-                shutter = exifData.ExposureTime.toString();
-                if (exifData.ExposureTime < 1 && exifData.ExposureTime > 0) {
-                    const inv = Math.round(1 / exifData.ExposureTime);
-                    shutter = `1/${inv}s`;
-                } else if (exifData.ExposureTime >= 1) {
-                    shutter = `${exifData.ExposureTime}s`;
-                }
-            }
-            const iso = exifData.ISO ? exifData.ISO.toString() : '';
-            const focal = exifData.FocalLength ? `${exifData.FocalLength}mm` : '';
-
+            const extractedLocation = metadata.location || (
+                metadata.coordinates
+                    ? `${metadata.coordinates.latitude.toFixed(4)}, ${metadata.coordinates.longitude.toFixed(4)}`
+                    : ''
+            );
             setFormData((prev) => ({
                 ...prev,
-                date: photoDate || prev.date,
-                camera: cameraModel,
-                lens: lensModel,
+                date: metadata.date || prev.date,
+                camera: metadata.camera || prev.camera,
+                lens: metadata.lens || prev.lens,
+                location: extractedLocation || prev.location,
+                ...(metadata.coordinates ? {
+                    lat: metadata.coordinates.latitude.toFixed(6),
+                    lng: metadata.coordinates.longitude.toFixed(6)
+                } : {}),
                 settings: {
                     ...(prev.settings || {}),
-                    aperture,
-                    shutter,
-                    iso,
-                    focal
+                    ...Object.fromEntries(
+                        Object.entries(metadata.settings).filter(([, value]) => Boolean(value))
+                    )
                 }
             }));
 
-            const gps = await exifr.gps(file);
-            if (gps && gps.latitude && gps.longitude) {
+            if (metadata.coordinates) {
                 try {
-                    const res = await fetch(
-                        `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${gps.latitude}&longitude=${gps.longitude}&localityLanguage=it`
+                    const location = await reverseGeocodeCoordinates(
+                        metadata.coordinates.latitude,
+                        metadata.coordinates.longitude,
+                        { signal: controller.signal }
                     );
-                    const data = await res.json();
+                    if (!isCurrentExtraction()) return false;
                     setFormData((prev) => ({
                         ...prev,
-                        lat: gps.latitude.toFixed(6).toString(),
-                        lng: gps.longitude.toFixed(6).toString(),
-                        location:
-                            data.locality ||
-                            data.city ||
-                            data.principalSubdivision ||
-                            data.countryName ||
-                            `${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)}`
+                        location: !prev.location || prev.location === extractedLocation
+                            ? location
+                            : prev.location
                     }));
-                } catch {
-                    setFormData((prev) => ({
-                        ...prev,
-                        lat: gps.latitude.toFixed(6).toString(),
-                        lng: gps.longitude.toFixed(6).toString(),
-                        location: `${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)}`
-                    }));
+                } catch (geocodeError) {
+                    if (geocodeError?.name === 'AbortError' || !isCurrentExtraction()) {
+                        return false;
+                    }
                 }
             }
 
+            if (!isCurrentExtraction()) return false;
             setMetadataStatus({
                 type: 'success',
                 message: `Metadati estratti da ${sourceLabel}.`
             });
             return true;
         } catch (err) {
+            if (err?.name === 'AbortError' || !isCurrentExtraction()) return false;
             console.warn('Estrazione metadati EXIF fallita:', err);
             setMetadataStatus({
                 type: 'warning',
@@ -244,7 +211,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         if (!file) return;
 
         try {
-            uploadUtils.validateImageFile(file);
+            validateImageFile(file);
             setSelectedFile(file);
             setError('');
 
@@ -284,20 +251,12 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             async (position) => {
                 const { latitude, longitude } = position.coords;
                 try {
-                    const res = await fetch(
-                        `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=it`
-                    );
-                    const data = await res.json();
+                    const location = await reverseGeocodeCoordinates(latitude, longitude);
                     setFormData((prev) => ({
                         ...prev,
                         lat: latitude.toFixed(6).toString(),
                         lng: longitude.toFixed(6).toString(),
-                        location:
-                            data.locality ||
-                            data.city ||
-                            data.principalSubdivision ||
-                            data.countryName ||
-                            `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`
+                        location
                     }));
                 } catch {
                     setFormData((prev) => ({
@@ -351,15 +310,16 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
     }, [error]);
 
     const addTag = useCallback((tag) => {
-        const newTag = tag.trim();
-        if (newTag) {
-            setFormData((prev) => (
-                prev.tags.includes(newTag)
-                    ? prev
-                    : { ...prev, tags: [...prev.tags, newTag] }
-            ));
+        try {
+            setFormData((prev) => ({
+                ...prev,
+                tags: addPhotoTag(prev.tags, tag)
+            }));
+            setTagInput('');
+            setError('');
+        } catch (tagError) {
+            setError(tagError.message);
         }
-        setTagInput('');
     }, []);
 
     const removeTag = useCallback((tagToRemove) => {
@@ -390,8 +350,17 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             setError('Nessuna immagine selezionata');
             return;
         }
-        if (!formData.title.trim()) {
+        const normalizedTitle = formData.title.trim();
+        if (!normalizedTitle) {
             setError('Il Titolo è obbligatorio');
+            return;
+        }
+        if (normalizedTitle.length < titleLimits.minLength) {
+            setError(`Il titolo deve contenere almeno ${titleLimits.minLength} caratteri`);
+            return;
+        }
+        if (normalizedTitle.length > titleLimits.maxLength) {
+            setError(`Il titolo può contenere al massimo ${titleLimits.maxLength} caratteri`);
             return;
         }
 
@@ -404,17 +373,14 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
 
             if (!targetPhotoId) {
                 const errorMessage = 'ID foto non valido per aggiornamento.';
-                if (onUploadError) onUploadError({ message: errorMessage });
+                if (onUploadError) onUploadError({ userMessage: errorMessage });
                 return;
             }
 
-            actions.setPhotoOpStatus(targetPhotoId, {
-                active: true,
-                type: 'edit',
-                percent: 18,
-                label: 'Salvataggio dettagli',
-                step: 'update'
-            });
+            actions.setPhotoOpStatus(
+                targetPhotoId,
+                buildPhotoOperationStatus('edit', 'save')
+            );
 
             if (onClose) {
                 onClose();
@@ -428,11 +394,10 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                 };
 
                 const result = await actions.updatePhotoInBackground(photoToEdit.id, updateData);
-                actions.setPhotoOpStatus(targetPhotoId, {
-                    percent: 100,
-                    label: 'Dettagli aggiornati',
-                    step: 'done'
-                });
+                actions.setPhotoOpStatus(
+                    targetPhotoId,
+                    buildPhotoOperationStatus('edit', 'done')
+                );
                 if (onUploadSuccess) onUploadSuccess(result);
 
                 setTimeout(() => {
@@ -442,7 +407,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                 console.error('Errore upload foto:', err);
                 const errorMessage = buildOperationErrorMessage(err, 'aggiornamento foto');
                 actions.clearPhotoOpStatus(targetPhotoId);
-                if (onUploadError) onUploadError({ ...err, message: errorMessage });
+                if (onUploadError) onUploadError({ ...err, userMessage: errorMessage });
             }
             return;
         }
@@ -460,8 +425,8 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             tags: Array.isArray(formData.tags) ? [...formData.tags] : []
         };
         const pendingPreviewUrl = preview || '';
-        const photoId = Date.now();
-        const pendingId = photoId;
+        const uploadIntentId = createUploadIntentId();
+        const pendingId = `pending:${uploadIntentId}`;
 
         actions.addPendingUpload({
             id: pendingId,
@@ -471,13 +436,10 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             tags: formDataSnapshot.tags,
             previewUrl: pendingPreviewUrl
         });
-        actions.setPhotoOpStatus(pendingId, {
-            active: true,
-            type: 'new-upload',
-            percent: 3,
-            label: 'Preparazione upload',
-            step: 'sign'
-        });
+        actions.setPhotoOpStatus(
+            pendingId,
+            buildPhotoOperationStatus('create', 'prepare')
+        );
 
         setLoading(true);
         if (onClose) {
@@ -487,6 +449,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         }
 
         let currentUploadStep = 'sign';
+        let finalizationPayload = null;
         let softTimer = null;
         const startSoftProgress = (from = 84, to = 95, intervalMs = 260) => {
             let current = Math.max(0, Math.min(100, from));
@@ -508,25 +471,24 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
 
         try {
             currentUploadStep = 'sign';
-            actions.setPhotoOpStatus(pendingId, {
-                percent: 8,
-                label: 'Firma URL upload',
-                step: 'sign'
-            });
+            actions.setPhotoOpStatus(
+                pendingId,
+                buildPhotoOperationStatus('create', 'sign')
+            );
             const signedData = await signSourceUpload({
-                uploadId: String(photoId),
+                uploadIntentId,
                 file: selectedFileSnapshot
             });
 
             currentUploadStep = 'upload';
-            actions.setPhotoOpStatus(pendingId, {
-                percent: 12,
-                label: 'Upload file su R2',
-                step: 'upload'
-            });
+            actions.setPhotoOpStatus(
+                pendingId,
+                buildPhotoOperationStatus('create', 'upload')
+            );
             await uploadSourceToSignedUrl({
                 uploadUrl: signedData.uploadUrl,
                 file: selectedFileSnapshot,
+                contentType: signedData.contentType,
                 onProgress: ({ ratio }) => {
                     const normalized = Math.max(0, Math.min(1, Number(ratio) || 0));
                     const mapped = Math.round(12 + normalized * 66);
@@ -535,44 +497,72 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             });
 
             currentUploadStep = 'create';
-            actions.setPhotoOpStatus(pendingId, {
-                percent: 84,
-                label: 'Creazione foto',
-                step: 'create'
-            });
+            actions.setPhotoOpStatus(
+                pendingId,
+                buildPhotoOperationStatus('create', 'process')
+            );
             startSoftProgress(84, 95);
 
-            const uploadData = {
+            finalizationPayload = {
                 ...formDataSnapshot,
-                photoId,
+                photoId: signedData.photoId,
+                uploadIntentId: signedData.uploadIntentId,
                 sourcePath: signedData.sourcePath,
-                sourceContentType: selectedFileSnapshot.type,
                 settings: nextSettings,
                 tags: formDataSnapshot.tags
             };
-            const result = await actions.createPhotoInBackground(uploadData);
+            const result = await actions.createPhotoInBackground(finalizationPayload);
             stopSoftProgress();
 
-            actions.setPhotoOpStatus(pendingId, {
-                percent: 100,
-                label: 'Foto caricata',
-                step: 'done'
-            });
+            actions.setPhotoOpStatus(
+                pendingId,
+                buildPhotoOperationStatus('create', 'done')
+            );
             actions.removePendingUpload(pendingId);
             setTimeout(() => {
                 actions.clearPhotoOpStatus(pendingId);
             }, 250);
             if (onUploadSuccess) onUploadSuccess(result);
-        } catch (err) {
+        } catch (caughtError) {
             stopSoftProgress();
-            console.error('Errore upload foto:', err);
+            let errorToReport = caughtError;
+            console.error('Errore upload foto:', caughtError);
             actions.removePendingUpload(pendingId);
             actions.clearPhotoOpStatus(pendingId);
-            const errorMessage = buildCreateUploadErrorMessage(err, currentUploadStep);
+            if (isAmbiguousMutationError(caughtError)) {
+                const refreshedPhotos = await actions.fetchPhotos({ force: true });
+                const createdPhoto = Array.isArray(refreshedPhotos)
+                    ? refreshedPhotos.find(
+                        (photo) => String(photo.id) === String(finalizationPayload?.photoId)
+                    )
+                    : null;
+                if (createdPhoto) {
+                    if (onUploadSuccess) onUploadSuccess(createdPhoto);
+                    return;
+                }
+                if (currentUploadStep === 'create' && finalizationPayload) {
+                    try {
+                        const replayedPhoto = await actions.createPhotoInBackground(
+                            finalizationPayload
+                        );
+                        if (onUploadSuccess) onUploadSuccess(replayedPhoto);
+                        return;
+                    } catch (replayError) {
+                        errorToReport = replayError;
+                    }
+                }
+                if (!Array.isArray(refreshedPhotos)) {
+                    errorToReport.outcomeUnknown = true;
+                }
+            }
+            const errorMessage = buildCreateUploadErrorMessage(
+                errorToReport,
+                currentUploadStep
+            );
             if (onUploadError) {
                 onUploadError({
-                    ...err,
-                    message: errorMessage
+                    ...errorToReport,
+                    userMessage: errorMessage
                 });
             }
         }
@@ -600,7 +590,8 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
         isFirstStep,
         isLastStep,
         actionsLayoutClass,
-        isNextDisabled
+        isNextDisabled,
+        isStepDisabled
     } = usePhotoUploadWizard({
         steps,
         initialStep,
@@ -639,7 +630,11 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
                             type="button"
                             className="upload-btn"
                             onClick={handleUpload}
-                            disabled={loading || (!selectedFile && !isEditMode)}
+                            disabled={
+                                loading
+                                || (!selectedFile && !isEditMode)
+                                || formData.title.trim().length < 3
+                            }
                         >
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                                 {loading ? <Loader2 size={16} /> : isEditMode ? <Save size={16} /> : <Upload size={16} />}
@@ -671,6 +666,7 @@ const PhotoUpload = ({ onUploadSuccess, onUploadError, onClose, photoToEdit }) =
             isClosing={isClosing}
             onInitClose={initClose}
             onStepSelect={selectStep}
+            isStepDisabled={isStepDisabled}
             onBackdropClick={() => !loading && initClose()}
             footer={footer}
         >

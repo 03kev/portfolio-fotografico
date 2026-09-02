@@ -1,5 +1,14 @@
-import React, { createContext, useContext, useReducer, useEffect, useMemo, useRef } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useMemo, useRef, useCallback } from 'react';
 import { photoService } from '../utils/api';
+import {
+    buildOperationErrorMessage,
+    isAmbiguousMutationError,
+    isConcurrencyError
+} from '../utils/operationErrors';
+import {
+    entityMatchesPatch,
+    findEntityById
+} from '../utils/mutationReconciliation';
 
 const PhotoContext = createContext();
 
@@ -281,6 +290,23 @@ export function PhotoProvider({ children }) {
     const [state, dispatch] = useReducer(photoReducer, initialState);
     const focusHandlerRef = useRef(null);
     const lastFetchTimeRef = useRef(0);
+    const stateRef = useRef(state);
+    stateRef.current = state;
+
+    const refreshPhotosAfterConflict = useCallback(async () => {
+        try {
+            const response = await photoService.getAll();
+            const photos = response.data?.data || response.data || [];
+            dispatch({
+                type: ACTIONS.SET_PHOTOS,
+                payload: photos
+            });
+            return photos;
+        } catch (refreshError) {
+            console.error('Error refreshing photos after a conflict:', refreshError);
+            return null;
+        }
+    }, []);
     
     // Actions
     const actions = useMemo(() => ({
@@ -300,9 +326,13 @@ export function PhotoProvider({ children }) {
                 const response = await photoService.getAll();
                 const photos = response.data?.data || response.data || [];
                 dispatch({ type: ACTIONS.SET_PHOTOS, payload: photos });
+                return photos;
             } catch (error) {
                 console.error('Error fetching photos:', error);
-                dispatch({ type: ACTIONS.SET_ERROR, payload: 'Errore nel caricamento delle foto' });
+                dispatch({
+                    type: ACTIONS.SET_ERROR,
+                    payload: buildOperationErrorMessage(error, 'caricamento foto')
+                });
             }
         },
         
@@ -351,10 +381,7 @@ export function PhotoProvider({ children }) {
         addPhoto: async (photoData) => {
             try {
                 dispatch({ type: ACTIONS.SET_LOADING, payload: true });
-                const isFormData = typeof FormData !== 'undefined' && photoData instanceof FormData;
-                const response = isFormData
-                    ? await photoService.upload(photoData)
-                    : await photoService.create(photoData);
+                const response = await photoService.create(photoData);
                 const newPhoto = response.data?.data || response.data;
 
                 dispatch({ type: ACTIONS.ADD_PHOTO, payload: newPhoto });
@@ -366,7 +393,10 @@ export function PhotoProvider({ children }) {
                 return newPhoto;
             } catch (error) {
                 console.error('Error adding photo:', error);
-                dispatch({ type: ACTIONS.SET_ERROR, payload: 'Errore durante il caricamento della foto' });
+                dispatch({
+                    type: ACTIONS.SET_ERROR,
+                    payload: buildOperationErrorMessage(error, 'caricamento foto')
+                });
                 throw error;
             }
         },
@@ -374,10 +404,7 @@ export function PhotoProvider({ children }) {
         // Create a photo without toggling global loading (for background flows)
         createPhotoInBackground: async (photoData) => {
             try {
-                const isFormData = typeof FormData !== 'undefined' && photoData instanceof FormData;
-                const response = isFormData
-                    ? await photoService.upload(photoData)
-                    : await photoService.create(photoData);
+                const response = await photoService.create(photoData);
                 const newPhoto = response.data?.data || response.data;
 
                 dispatch({ type: ACTIONS.ADD_PHOTO, payload: newPhoto });
@@ -394,7 +421,10 @@ export function PhotoProvider({ children }) {
         updatePhoto: async (photoId, photoData) => {
             try {
                 dispatch({ type: ACTIONS.SET_LOADING, payload: true });
-                const response = await photoService.update(photoId, photoData);
+                const current = stateRef.current.photos.find(
+                    (photo) => String(photo.id) === String(photoId)
+                );
+                const response = await photoService.update(photoId, photoData, current?.version);
                 const updatedPhoto = response.data?.data || response.data;
                 
                 dispatch({ type: ACTIONS.UPDATE_PHOTO, payload: updatedPhoto });
@@ -403,7 +433,20 @@ export function PhotoProvider({ children }) {
                 return updatedPhoto;
             } catch (error) {
                 console.error('Error updating photo:', error);
-                dispatch({ type: ACTIONS.SET_ERROR, payload: 'Errore durante l\'aggiornamento della foto' });
+                if (isAmbiguousMutationError(error)) {
+                    const refreshedPhotos = await refreshPhotosAfterConflict();
+                    const refreshedPhoto = findEntityById(refreshedPhotos, photoId);
+                    if (refreshedPhoto && entityMatchesPatch(refreshedPhoto, photoData)) {
+                        return refreshedPhoto;
+                    }
+                    if (!Array.isArray(refreshedPhotos)) error.outcomeUnknown = true;
+                } else if (isConcurrencyError(error)) {
+                    await refreshPhotosAfterConflict();
+                }
+                dispatch({
+                    type: ACTIONS.SET_ERROR,
+                    payload: buildOperationErrorMessage(error, 'aggiornamento foto')
+                });
                 throw error;
             }
         },
@@ -411,12 +454,25 @@ export function PhotoProvider({ children }) {
         // Update photo without toggling global loading (for modal/background flows)
         updatePhotoInBackground: async (photoId, photoData) => {
             try {
-                const response = await photoService.update(photoId, photoData);
+                const current = stateRef.current.photos.find(
+                    (photo) => String(photo.id) === String(photoId)
+                );
+                const response = await photoService.update(photoId, photoData, current?.version);
                 const updatedPhoto = response.data?.data || response.data;
                 dispatch({ type: ACTIONS.UPDATE_PHOTO, payload: updatedPhoto });
                 return updatedPhoto;
             } catch (error) {
                 console.error('Error updating photo in background:', error);
+                if (isAmbiguousMutationError(error)) {
+                    const refreshedPhotos = await refreshPhotosAfterConflict();
+                    const refreshedPhoto = findEntityById(refreshedPhotos, photoId);
+                    if (refreshedPhoto && entityMatchesPatch(refreshedPhoto, photoData)) {
+                        return refreshedPhoto;
+                    }
+                    if (!Array.isArray(refreshedPhotos)) error.outcomeUnknown = true;
+                } else if (isConcurrencyError(error)) {
+                    await refreshPhotosAfterConflict();
+                }
                 throw error;
             }
         },
@@ -430,13 +486,35 @@ export function PhotoProvider({ children }) {
         // Delete photo
         deletePhoto: async (photoId) => {
             try {
-                await photoService.delete(photoId);
+                const current = stateRef.current.photos.find(
+                    (photo) => String(photo.id) === String(photoId)
+                );
+                const response = await photoService.delete(photoId, current?.version);
                 dispatch({ type: ACTIONS.DELETE_PHOTO, payload: photoId });
                 
                 // Emetti evento per notificare altri contesti
                 window.dispatchEvent(new CustomEvent('photoDeleted', { detail: { photoId } }));
+                return response?.data?.data || response?.data || null;
             } catch (error) {
                 console.error('Error deleting photo:', error);
+                if (isAmbiguousMutationError(error)) {
+                    const refreshedPhotos = await refreshPhotosAfterConflict();
+                    const photoStillExists = Array.isArray(refreshedPhotos)
+                        && refreshedPhotos.some(
+                            (photo) => String(photo.id) === String(photoId)
+                        );
+                    if (Array.isArray(refreshedPhotos) && !photoStillExists) {
+                        window.dispatchEvent(new CustomEvent('photoDeleted', {
+                            detail: { photoId }
+                        }));
+                        return;
+                    }
+                    if (!Array.isArray(refreshedPhotos)) {
+                        error.outcomeUnknown = true;
+                    }
+                } else if (isConcurrencyError(error)) {
+                    await refreshPhotosAfterConflict();
+                }
                 throw error;
             }
         },
@@ -506,7 +584,7 @@ export function PhotoProvider({ children }) {
                 payload: id
             });
         }
-    }), []);
+    }), [refreshPhotosAfterConflict]);
     
     // Load photos on mount
     useEffect(() => {

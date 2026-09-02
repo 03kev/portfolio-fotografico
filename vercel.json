@@ -2,6 +2,20 @@
   "version": 2,
   "buildCommand": "CI=false npm run vercel-build",
   "outputDirectory": "frontend/build",
+  "git": {
+    "deploymentEnabled": {
+      "main": true,
+      "develop": true,
+      "feature/database": true,
+      "*": false
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/internal/media-cleanup/run",
+      "schedule": "17 3 * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/logo192.png",

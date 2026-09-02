@@ -7,7 +7,7 @@ import { Camera, FileText, Plus } from 'lucide-react';
 import { useSeries } from '../contexts/SeriesContext';
 import { usePhotos } from '../contexts/PhotoContext';
 import SeriesEditor from './SeriesEditor';
-import { resolveVersionedPhotoAssetUrl } from '../utils/imageUrl';
+import { resolvePhotoAssetUrl } from '../utils/imageUrl';
 import { viewportBreakpoints } from '../styles/responsive';
 
 const SectionRoot = styled(motion.section)`
@@ -371,9 +371,9 @@ export default function PhotoSeries({
                     whileTap={{ scale: 0.99 }}
                   >
                     <Cover>
-                      {cover?.thumbnail43 && (
+                      {cover?.assets?.['thumbnail-4x3']?.url && (
                         <CoverImage
-                          src={resolveVersionedPhotoAssetUrl(cover, 'thumbnail43')}
+                          src={resolvePhotoAssetUrl(cover, 'thumbnail-4x3')}
                           alt={s.title}
                           loading="lazy"
                         />
@@ -432,9 +432,9 @@ export default function PhotoSeries({
                         whileTap={{ scale: 0.99 }}
                       >
                         <Cover>
-                          {cover?.thumbnail43 && (
+                          {cover?.assets?.['thumbnail-4x3']?.url && (
                             <CoverImage
-                              src={resolveVersionedPhotoAssetUrl(cover, 'thumbnail43')}
+                              src={resolvePhotoAssetUrl(cover, 'thumbnail-4x3')}
                               alt={s.title}
                               loading="lazy"
                             />

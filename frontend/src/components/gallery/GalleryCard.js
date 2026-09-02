@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Crop, Edit3, Loader2, Trash2, Upload, X } from 'lucide-react';
 import { useTouchLongPressReveal } from '../../hooks';
 import { viewportBreakpoints } from '../../styles/responsive';
+import { getPhotoOperationProgress } from '../../utils/photoOperationStatus';
 
 const cardVariants = {
   hidden: { opacity: 0, scale: 0.98, y: 8 },
@@ -471,6 +472,7 @@ export const GalleryCard = React.memo(function GalleryCard({
   onCloseTouchAdmin
 }) {
   const isCardOpActive = Boolean(photoOpStatus?.active);
+  const operationProgress = getPhotoOperationProgress(photoOpStatus);
   const isPendingCard = Boolean(photo?.__pending);
   const canOpenCard = !isCardOpActive && !isPendingCard;
   const cardImageSrc = isPendingCard ? String(photo.previewUrl || '') : getThumbImageUrl(photo);
@@ -605,15 +607,25 @@ export const GalleryCard = React.memo(function GalleryCard({
           }}
         />
         {isCardOpActive && (
-          <ReuploadCardOverlay>
+          <ReuploadCardOverlay
+            aria-live="polite"
+            aria-busy={operationProgress.percent < 100}
+          >
             <ReuploadCardSpinner size={26} />
-            <span>{photoOpStatus?.label || 'Operazione in corso'}</span>
+            <span>{operationProgress.phaseLabel}</span>
             <ReuploadProgressMeta>
-              <span>{photoOpStatus?.type === 'source-reupload' || photoOpStatus?.type === 'new-upload' ? 'Stato upload' : 'Stato operazione'}</span>
-              <span>{Math.round(photoOpStatus?.percent || 0)}%</span>
+              <span>{operationProgress.progressLabel}</span>
+              <span>{Math.round(operationProgress.percent)}%</span>
             </ReuploadProgressMeta>
-            <ReuploadProgressTrack>
-              <ReuploadProgressFill $percent={Math.max(0, Math.min(100, photoOpStatus?.percent || 0))} />
+            <ReuploadProgressTrack
+              role="progressbar"
+              aria-label={operationProgress.operationLabel}
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow={Math.round(operationProgress.percent)}
+              aria-valuetext={operationProgress.ariaValueText}
+            >
+              <ReuploadProgressFill $percent={operationProgress.percent} />
             </ReuploadProgressTrack>
             {photoOpStatus?.type === 'source-reupload' && photoOpStatus?.step === 'upload' && (
               <ReuploadAbortButton

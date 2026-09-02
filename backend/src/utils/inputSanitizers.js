@@ -1,40 +1,125 @@
 const { parseNumericIdOrThrow } = require('./ids');
+const {
+    PHOTO_READ_ONLY_FIELD_KEYS,
+    definePhotoMetadataConsumer,
+    getPhotoMetadataField,
+    normalizePhotoCoordinate,
+    normalizePhotoSettings,
+    normalizePhotoTags
+} = require('@portfolio/photo-metadata-contract');
+const {
+    SERIES_CONTENT_MAX_BLOCKS,
+    SERIES_PHOTO_GROUP_MAX_ITEMS,
+    SERIES_TEXT_ALIGNMENTS,
+    SERIES_TEXT_FONTS,
+    SERIES_TEXT_SIZES,
+    assertSeriesBlockTypeCoverage,
+    normalizeBlockType,
+    normalizeSeriesBlockLayout,
+    normalizeSeriesGroupItemLayout,
+    normalizeSeriesTextOption
+} = require('@portfolio/series-content-contract');
+
+assertSeriesBlockTypeCoverage(
+    ['text', 'photo', 'photos'],
+    'Backend series content sanitizer'
+);
+
+const PHOTO_METADATA_VALIDATION_COVERAGE = definePhotoMetadataConsumer({
+    id: 'backend.validation',
+    consumer: 'Backend photo metadata validation',
+    handled: [
+        'title', 'description', 'date', 'location', 'lat', 'lng',
+        'camera', 'lens', 'settings', 'tags'
+    ],
+    excluded: {
+        id: 'Identità validata dal database o dall’intent di creazione.',
+        resolution: 'Campo derivato validato dal lifecycle Sharp.',
+        createdAt: 'Timestamp assegnato e validato dal database.',
+        updatedAt: 'Timestamp assegnato dal service.',
+        version: 'Versione gestita dal repository Postgres.',
+        derivativesVersion: 'Versione gestita dal lifecycle media.',
+        mediaGeneration: 'Generazione validata dal lifecycle media.',
+        assets: 'Inventario validato dal registro asset.'
+    }
+});
 
 function isPlainObject(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function parseJsonIfString(value, fallback) {
-    if (typeof value !== 'string') return value;
-    try {
-        return JSON.parse(value);
-    } catch {
-        return fallback;
-    }
+function validationError(message, field, details = undefined) {
+    const error = new Error(message);
+    error.status = 400;
+    error.code = 'VALIDATION_ERROR';
+    error.details = {
+        ...(field ? { field } : {}),
+        ...(details || {})
+    };
+    return error;
 }
 
-function sanitizeString(value, { maxLength, fallback = '', fieldName = 'field' } = {}) {
+function sanitizeString(value, {
+    minLength,
+    maxLength,
+    fallback = '',
+    fieldName = 'field'
+} = {}) {
     if (value === undefined || value === null) return fallback;
     const normalized = String(value).trim();
     if (!normalized) return fallback;
+    if (minLength && normalized.length < minLength) {
+        throw validationError(
+            `${fieldName} troppo corto (min ${minLength})`,
+            fieldName,
+            { minimumLength: minLength }
+        );
+    }
     if (maxLength && normalized.length > maxLength) {
-        const error = new Error(`${fieldName} troppo lungo (max ${maxLength})`);
-        error.status = 400;
-        throw error;
+        throw validationError(
+            `${fieldName} troppo lungo (max ${maxLength})`,
+            fieldName,
+            { maximumLength: maxLength }
+        );
     }
     return normalized;
 }
 
-function sanitizeOptionalString(value, { maxLength, fieldName = 'field' } = {}) {
+function sanitizeOptionalString(value, {
+    minLength,
+    maxLength,
+    fieldName = 'field'
+} = {}) {
     if (value === undefined || value === null) return undefined;
     const normalized = String(value).trim();
     if (!normalized) return '';
+    if (minLength && normalized.length < minLength) {
+        throw validationError(
+            `${fieldName} troppo corto (min ${minLength})`,
+            fieldName,
+            { minimumLength: minLength }
+        );
+    }
     if (maxLength && normalized.length > maxLength) {
-        const error = new Error(`${fieldName} troppo lungo (max ${maxLength})`);
-        error.status = 400;
-        throw error;
+        throw validationError(
+            `${fieldName} troppo lungo (max ${maxLength})`,
+            fieldName,
+            { maximumLength: maxLength }
+        );
     }
     return normalized;
+}
+
+function sanitizePhotoString(value, options = {}) {
+    if (value !== undefined && typeof value !== 'string') {
+        const fieldName = options.fieldName || 'field';
+        throw validationError(
+            `${fieldName} deve essere una stringa.`,
+            fieldName,
+            { reason: 'INVALID_STRING_TYPE' }
+        );
+    }
+    return sanitizeOptionalString(value, options);
 }
 
 function parseBooleanLike(value) {
@@ -47,41 +132,6 @@ function parseBooleanLike(value) {
     return Boolean(value);
 }
 
-function toSafeNumber(value, fallback = 0) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function clampNumber(value, min, max, fallback = min) {
-    const parsed = toSafeNumber(value, fallback);
-    return Math.max(min, Math.min(max, parsed));
-}
-
-function sanitizeLayout(layout, { maxCols = 24, maxRows = 5500, minW = 1, minH = 1 } = {}) {
-    if (!isPlainObject(layout)) {
-        return {
-            x: 0,
-            y: 0,
-            w: minW,
-            h: minH,
-            unit: 'grid'
-        };
-    }
-
-    const w = Math.round(clampNumber(layout.w, minW, maxCols, minW));
-    const h = Math.round(clampNumber(layout.h, minH, maxRows, minH));
-    const maxX = Math.max(0, maxCols - w);
-    const maxY = Math.max(0, maxRows - h);
-
-    return {
-        x: Math.round(clampNumber(layout.x, 0, maxX, 0)),
-        y: Math.round(clampNumber(layout.y, 0, maxY, 0)),
-        w,
-        h,
-        unit: 'grid'
-    };
-}
-
 function normalizePhotoId(value) {
     try {
         return parseNumericIdOrThrow(value, 'photoId');
@@ -90,173 +140,277 @@ function normalizePhotoId(value) {
     }
 }
 
-function sanitizeTags(value) {
-    const parsed = parseJsonIfString(value, []);
-    if (!Array.isArray(parsed)) return [];
-
-    const seen = new Set();
-    const tags = [];
-
-    for (const item of parsed) {
-        const tag = sanitizeString(item, { maxLength: 40, fallback: '', fieldName: 'Tag' });
-        if (!tag) continue;
-        const key = tag.toLowerCase();
-        if (seen.has(key)) continue;
-        seen.add(key);
-        tags.push(tag);
-        if (tags.length >= 20) break;
-    }
-
-    return tags;
-}
-
-function sanitizeSettings(value) {
-    const parsed = parseJsonIfString(value, {});
-    if (!isPlainObject(parsed)) return {};
-    return parsed;
-}
-
 function sanitizePhotoPayload(body = {}, { partial = false } = {}) {
     const output = {};
 
+    for (const field of PHOTO_READ_ONLY_FIELD_KEYS) {
+        if (Object.hasOwn(body, field)) {
+            throw validationError(
+                `${field} è un campo read-only e non può essere modificato direttamente.`,
+                field,
+                { reason: 'READ_ONLY_PHOTO_METADATA_FIELD' }
+            );
+        }
+    }
+
     if (!partial || body.title !== undefined) {
-        let value = partial
-            ? sanitizeOptionalString(body.title, { maxLength: 120, fieldName: 'title' })
-            : sanitizeString(body.title, { maxLength: 120, fallback: 'Foto senza titolo', fieldName: 'title' });
-        if (partial && value === '') value = undefined;
-        if (value !== undefined) output.title = value;
+        const limits = getPhotoMetadataField('title').limits;
+        const value = sanitizePhotoString(body.title, {
+            ...limits,
+            fieldName: 'title'
+        });
+        if (value === undefined || value === '') {
+            throw validationError('title è obbligatorio.', 'title', {
+                minimumLength: limits.minLength
+            });
+        }
+        output.title = value;
     }
 
     if (!partial || body.location !== undefined) {
-        let value = partial
-            ? sanitizeOptionalString(body.location, { maxLength: 160, fieldName: 'location' })
-            : sanitizeString(body.location, { maxLength: 160, fallback: 'Posizione sconosciuta', fieldName: 'location' });
-        if (partial && value === '') value = undefined;
-        if (value !== undefined) output.location = value;
+        const value = sanitizePhotoString(body.location, {
+            ...getPhotoMetadataField('location').limits,
+            fieldName: 'location'
+        });
+        output.location = value ?? '';
     }
 
     if (!partial || body.description !== undefined) {
-        const value = partial
-            ? sanitizeOptionalString(body.description, { maxLength: 4000, fieldName: 'description' })
-            : sanitizeString(body.description, { maxLength: 4000, fallback: '', fieldName: 'description' });
-        if (value !== undefined) output.description = value;
+        const value = sanitizePhotoString(body.description, {
+            ...getPhotoMetadataField('description').limits,
+            fieldName: 'description'
+        });
+        output.description = value ?? '';
     }
 
     if (!partial || body.camera !== undefined) {
-        const value = partial
-            ? sanitizeOptionalString(body.camera, { maxLength: 120, fieldName: 'camera' })
-            : sanitizeString(body.camera, { maxLength: 120, fallback: '', fieldName: 'camera' });
-        if (value !== undefined) output.camera = value;
+        const value = sanitizePhotoString(body.camera, {
+            ...getPhotoMetadataField('camera').limits,
+            fieldName: 'camera'
+        });
+        output.camera = value ?? '';
     }
 
     if (!partial || body.lens !== undefined) {
-        const value = partial
-            ? sanitizeOptionalString(body.lens, { maxLength: 120, fieldName: 'lens' })
-            : sanitizeString(body.lens, { maxLength: 120, fallback: '', fieldName: 'lens' });
-        if (value !== undefined) output.lens = value;
+        const value = sanitizePhotoString(body.lens, {
+            ...getPhotoMetadataField('lens').limits,
+            fieldName: 'lens'
+        });
+        output.lens = value ?? '';
     }
 
     if (!partial || body.date !== undefined) {
-        const value = partial
-            ? sanitizeOptionalString(body.date, { maxLength: 40, fieldName: 'date' })
-            : sanitizeString(body.date, { maxLength: 40, fallback: new Date().toISOString(), fieldName: 'date' });
-        if (value !== undefined) output.date = value;
+        const value = sanitizePhotoString(body.date, {
+            ...getPhotoMetadataField('date').limits,
+            fieldName: 'date'
+        });
+        output.date = value ?? '';
     }
 
     if (!partial || body.tags !== undefined) {
-        output.tags = sanitizeTags(body.tags);
+        output.tags = normalizePhotoTags(
+            body.tags === undefined && !partial ? [] : body.tags
+        );
     }
 
     if (!partial || body.settings !== undefined) {
-        output.settings = sanitizeSettings(body.settings);
+        output.settings = normalizePhotoSettings(
+            body.settings === undefined && !partial ? {} : body.settings
+        );
+    }
+
+    const hasLat = Object.hasOwn(body, 'lat');
+    const hasLng = Object.hasOwn(body, 'lng');
+    if (!partial || hasLat || hasLng) {
+        if (partial && hasLat !== hasLng) {
+            throw validationError(
+                'Latitudine e longitudine devono essere modificate insieme.',
+                hasLat ? 'lng' : 'lat',
+                { reason: 'INCOMPLETE_COORDINATE_PAIR' }
+            );
+        }
+        const lat = normalizePhotoCoordinate(hasLat ? body.lat : null, 'lat');
+        const lng = normalizePhotoCoordinate(hasLng ? body.lng : null, 'lng');
+        if ((lat === null) !== (lng === null)) {
+            throw validationError(
+                'Latitudine e longitudine devono essere entrambe valorizzate o entrambe mancanti.',
+                'coordinates',
+                { reason: 'INCOMPLETE_COORDINATE_PAIR' }
+            );
+        }
+        output.lat = lat;
+        output.lng = lng;
     }
 
     return output;
 }
 
+function rejectLegacySeriesContentFields(block, fieldPrefix) {
+    if (Object.hasOwn(block, 'order')) {
+        throw validationError(
+            'Il campo legacy order non è ammesso nel formato canonico.',
+            `${fieldPrefix}.order`,
+            { reason: 'LEGACY_SERIES_CONTENT_NOT_ALLOWED' }
+        );
+    }
+    if (isPlainObject(block.layout) && Object.hasOwn(block.layout, 'gridVersion')) {
+        throw validationError(
+            'Il campo legacy gridVersion non è ammesso nel formato canonico.',
+            `${fieldPrefix}.layout.gridVersion`,
+            { reason: 'LEGACY_SERIES_CONTENT_NOT_ALLOWED' }
+        );
+    }
+}
+
 function sanitizeSeriesContent(value) {
-    if (!Array.isArray(value)) return [];
-    const maxBlocks = 200;
-    return value.slice(0, maxBlocks).map((block, index) => {
+    if (value === undefined || value === null) return [];
+    if (!Array.isArray(value)) {
+        throw validationError('content deve essere un array di blocchi.', 'content');
+    }
+    if (value.length > SERIES_CONTENT_MAX_BLOCKS) {
+        throw validationError(
+            `La serie può contenere al massimo ${SERIES_CONTENT_MAX_BLOCKS} blocchi.`,
+            'content',
+            { maximumItems: SERIES_CONTENT_MAX_BLOCKS }
+        );
+    }
+
+    return value.map((block, index) => {
+        const fieldPrefix = `content[${index}]`;
         if (!isPlainObject(block)) {
-            return { id: `block-${index}`, type: 'text', content: '', layout: sanitizeLayout(null) };
+            throw validationError('Ogni blocco serie deve essere un oggetto.', fieldPrefix);
         }
 
-        const rawType = sanitizeString(block.type, {
-            maxLength: 24,
-            fallback: 'text',
-            fieldName: 'content.type'
-        }).toLowerCase();
-        const type = rawType === 'image' ? 'photo' : rawType;
-        const safeType = ['text', 'photo', 'photos'].includes(type) ? type : 'text';
-        const safeLayout = sanitizeLayout(block.layout);
-        const safeId = block.id !== undefined && block.id !== null
-            ? sanitizeString(block.id, { maxLength: 120, fallback: `block-${index}`, fieldName: 'content.id' })
+        const type = normalizeBlockType(block.type, {
+            field: `${fieldPrefix}.type`
+        });
+        rejectLegacySeriesContentFields(block, fieldPrefix);
+        const layout = normalizeSeriesBlockLayout(block.layout, type);
+        const id = block.id !== undefined && block.id !== null
+            ? sanitizeString(block.id, {
+                maxLength: 120,
+                fallback: `block-${index}`,
+                fieldName: `${fieldPrefix}.id`
+            })
             : `block-${index}`;
 
-        if (safeType === 'photo') {
+        if (type === 'photo') {
             const photoId = normalizePhotoId(block.content);
+            if (!photoId) {
+                throw validationError(
+                    'Il blocco photo deve contenere un ID foto valido.',
+                    `${fieldPrefix}.content`
+                );
+            }
             return {
-                id: safeId,
-                type: 'photo',
+                id,
+                type,
                 content: photoId,
-                layout: safeLayout,
-                showTitle: parseBooleanLike(block.showTitle),
+                layout,
+                showTitle: block.showTitle === undefined ? true : parseBooleanLike(block.showTitle),
                 showLightbox: block.showLightbox === undefined ? true : parseBooleanLike(block.showLightbox)
             };
         }
 
-        if (safeType === 'photos') {
-            const arr = Array.isArray(block.content) ? block.content : [];
-            const content = arr
-                .slice(0, 300)
-                .map((item, itemIndex) => {
-                    if (isPlainObject(item)) {
-                        const id = normalizePhotoId(item.id ?? item.photoId ?? item.content);
-                        if (!id) return null;
-                        return {
-                            id,
-                            layout: sanitizeLayout(item.layout, {
-                                maxCols: Math.max(4, safeLayout.w),
-                                maxRows: Math.max(1, safeLayout.h),
-                                minW: 1,
-                                minH: 1
-                            })
-                        };
-                    }
+        if (type === 'photos') {
+            if (!Array.isArray(block.content)) {
+                throw validationError(
+                    'Il blocco photos deve contenere un array.',
+                    `${fieldPrefix}.content`
+                );
+            }
+            if (block.content.length > SERIES_PHOTO_GROUP_MAX_ITEMS) {
+                throw validationError(
+                    `Un gruppo può contenere al massimo ${SERIES_PHOTO_GROUP_MAX_ITEMS} foto.`,
+                    `${fieldPrefix}.content`,
+                    { maximumItems: SERIES_PHOTO_GROUP_MAX_ITEMS }
+                );
+            }
 
-                    const id = normalizePhotoId(item);
-                    if (!id) return null;
-                    return { id };
-                })
-                .filter(Boolean);
+            const seen = new Set();
+            const content = [];
+            block.content.forEach((item, itemIndex) => {
+                const itemField = `${fieldPrefix}.content[${itemIndex}]`;
+                if (!isPlainObject(item)) {
+                    throw validationError(
+                        'Ogni elemento di un gruppo photos deve avere la forma { id, layout? }.',
+                        itemField
+                    );
+                }
+                const photoId = normalizePhotoId(
+                    item.id
+                );
+                if (!photoId) {
+                    throw validationError(
+                        'L’elemento del gruppo non contiene un ID foto valido.',
+                        `${itemField}.id`
+                    );
+                }
+                if (seen.has(photoId)) {
+                    throw validationError(
+                        'La stessa foto non può comparire due volte nello stesso gruppo.',
+                        `${itemField}.id`,
+                        { photoId }
+                    );
+                }
+                seen.add(photoId);
+                if (isPlainObject(item.layout) && Object.hasOwn(item.layout, 'gridVersion')) {
+                    throw validationError(
+                        'Il campo legacy gridVersion non è ammesso nel formato canonico.',
+                        `${itemField}.layout.gridVersion`,
+                        { reason: 'LEGACY_SERIES_CONTENT_NOT_ALLOWED' }
+                    );
+                }
+                content.push({
+                    id: photoId,
+                    ...(isPlainObject(item) && item.layout
+                        ? { layout: normalizeSeriesGroupItemLayout(item.layout, layout) }
+                        : {})
+                });
+            });
 
-            return {
-                id: safeId,
-                type: 'photos',
-                content,
-                layout: safeLayout
-            };
+            return { id, type, content, layout };
+        }
+
+        if (typeof block.content !== 'string') {
+            throw validationError(
+                'Il contenuto di un blocco text deve essere una stringa.',
+                `${fieldPrefix}.content`
+            );
         }
 
         return {
-            id: safeId,
-            type: 'text',
-            content: sanitizeString(block.content, { maxLength: 8000, fallback: '', fieldName: 'content.text' }),
-            layout: sanitizeLayout(block.layout, { minW: 2, minH: 2 }),
-            textAlign: ['left', 'center', 'right', 'justify', 'justify-center', 'justify-right'].includes(String(block.textAlign || '').toLowerCase())
-                ? String(block.textAlign).toLowerCase()
-                : 'left',
-            textSize: sanitizeOptionalString(block.textSize, { maxLength: 20, fieldName: 'textSize' }) || 'base',
+            id,
+            type,
+            content: sanitizeString(block.content, {
+                maxLength: 8000,
+                fallback: '',
+                fieldName: `${fieldPrefix}.content`
+            }),
+            layout,
+            textAlign: normalizeSeriesTextOption(
+                block.textAlign,
+                SERIES_TEXT_ALIGNMENTS,
+                'left',
+                `${fieldPrefix}.textAlign`
+            ),
+            textSize: normalizeSeriesTextOption(
+                block.textSize,
+                SERIES_TEXT_SIZES,
+                'base',
+                `${fieldPrefix}.textSize`
+            ),
             textBold: parseBooleanLike(block.textBold),
             textItalic: parseBooleanLike(block.textItalic),
             textUnderline: parseBooleanLike(block.textUnderline),
             textMono: parseBooleanLike(block.textMono),
-            textFont: sanitizeOptionalString(block.textFont, { maxLength: 40, fieldName: 'textFont' }) || 'inter'
+            textFont: normalizeSeriesTextOption(
+                block.textFont,
+                SERIES_TEXT_FONTS,
+                'inter',
+                `${fieldPrefix}.textFont`
+            )
         };
-    }).filter((block) => {
-        if (block.type === 'photo') return Boolean(block.content);
-        return true;
     });
 }
 
@@ -268,9 +422,7 @@ function sanitizeSeriesPayload(body = {}, { partial = false } = {}) {
             ? sanitizeOptionalString(body.title, { maxLength: 120, fieldName: 'title' })
             : sanitizeString(body.title, { maxLength: 120, fieldName: 'title' });
         if (partial && title === '') {
-            const error = new Error('title non puo` essere vuoto');
-            error.status = 400;
-            throw error;
+            throw validationError('Il titolo non può essere vuoto.', 'title');
         }
         if (title !== undefined) output.title = title;
     }
@@ -280,9 +432,7 @@ function sanitizeSeriesPayload(body = {}, { partial = false } = {}) {
             ? sanitizeOptionalString(body.description, { maxLength: 8000, fieldName: 'description' })
             : sanitizeString(body.description, { maxLength: 8000, fieldName: 'description' });
         if (partial && description === '') {
-            const error = new Error('description non puo` essere vuota');
-            error.status = 400;
-            throw error;
+            throw validationError('La descrizione non può essere vuota.', 'description');
         }
         if (description !== undefined) output.description = description;
     }
@@ -305,9 +455,10 @@ function sanitizeSeriesPayload(body = {}, { partial = false } = {}) {
 
     if (body.photos !== undefined) {
         if (!Array.isArray(body.photos)) {
-            const error = new Error('photos deve essere un array di ID numerici');
-            error.status = 400;
-            throw error;
+            throw validationError(
+                'photos deve essere un array di ID numerici',
+                'photos'
+            );
         }
         output.photos = body.photos.slice(0, 2000).map((id) => parseNumericIdOrThrow(id, 'photoId'));
     }
@@ -322,14 +473,14 @@ function sanitizeSeriesPayload(body = {}, { partial = false } = {}) {
 
     if (!partial) {
         if (!output.title || output.title.length < 3) {
-            const error = new Error('Il titolo deve essere di almeno 3 caratteri');
-            error.status = 400;
-            throw error;
+            throw validationError(
+                'Il titolo deve essere di almeno 3 caratteri',
+                'title',
+                { minimumLength: 3 }
+            );
         }
         if (!output.description) {
-            const error = new Error('description e` obbligatoria');
-            error.status = 400;
-            throw error;
+            throw validationError('La descrizione è obbligatoria.', 'description');
         }
     }
 
@@ -337,6 +488,7 @@ function sanitizeSeriesPayload(body = {}, { partial = false } = {}) {
 }
 
 module.exports = {
+    PHOTO_METADATA_VALIDATION_COVERAGE,
     sanitizePhotoPayload,
     sanitizeSeriesContent,
     sanitizeSeriesPayload

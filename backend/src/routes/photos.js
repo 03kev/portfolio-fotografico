@@ -1,71 +1,229 @@
 const express = require('express');
-const multer = require('multer');
+const crypto = require('crypto');
 const { pipeline } = require('stream/promises');
 const {
     createPrivateUploadPresignedPutUrl,
-    deletePrivateObject,
-    deleteUploadObject,
     getUploadObject
 } = require('../services/r2Storage');
 const {
-    buildPhotoAssetPaths,
-    buildDefaultCropProfiles,
     generatePhotoDerivatives,
     getCropProfilesFromSettings,
+    materializePhotoAssets,
+    mergePhotoSettingsForStorage,
+    normalizeCropProfilesForStorage,
     normalizePrivateSourcePathForPhotoId
 } = require('../services/photoDerivatives');
-const {
-    PRIVATE_SOURCE_PREFIX
-} = require('../config/assetPaths');
 const DEFAULTS = require('../config/defaults');
 const { parseNumericIdOrThrow } = require('../utils/ids');
+const { getExpectedVersion } = require('../utils/expectedVersion');
 const { sanitizePhotoPayload } = require('../utils/inputSanitizers');
 const { protectWriteMethods } = require('../middleware/auth');
-const { readPhotosDB, writePhotosDB } = require('./photos.db');
-const { cleanupPhotoReferencesInSeries } = require('../services/seriesPhotoCleanup');
 const {
-    buildUploadFilename,
-    describeDeleteError,
-    getImageExtensionFromMimeType,
-    isAllowedMimeType,
-    normalizePhotoForApiList,
-    parseAllowedUploadTypes,
-    parseCoordinate,
-    parseUploadSize,
+    createRequireDurableMediaLifecycle
+} = require('../middleware/repositoryCapabilities');
+const { portfolioRepository } = require('../repositories');
+const { createMediaGeneration } = require('../utils/mediaGeneration');
+const { PhotoCreationService } = require('../services/photoCreation');
+const { PhotoSourceReplacementService } = require('../services/photoSourceReplacement');
+const {
+    runMediaCleanupBestEffort
+} = require('../services/mediaCleanupRuntime');
+const { createPhotoCreationRouter } = require('./photoCreationRoutes');
+const {
+    getPhotoAsset,
     presentPhoto,
-    purgePublicAssetsBestEffort,
+    readPrivatePhotoUploadSourceObject,
     readPrivateSourceBuffer,
-    readPrivateSourceObject,
     sendRouteError,
-    withDefaultPhotoVariants,
     writePrivateObject,
     writePublicObject
 } = require('./photos.helpers');
-
 const router = express.Router();
 router.use(protectWriteMethods);
-const photoMutationLocks = new Map();
+const requireDurableMediaLifecycle = createRequireDurableMediaLifecycle(
+    portfolioRepository
+);
 
-function acquirePhotoMutationLock(photoId, operation) {
-    if (photoMutationLocks.has(photoId)) return null;
-    const token = Symbol(`${operation}:${photoId}:${Date.now()}`);
-    photoMutationLocks.set(photoId, {
-        token,
-        operation,
-        startedAtMs: Date.now()
+function createMediaIdentity() {
+    return {
+        operationId: crypto.randomUUID(),
+        generation: createMediaGeneration()
+    };
+}
+
+function normalizeUuidInput(value, { fieldName, errorCode }) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(normalized)) {
+        const error = new Error(`${fieldName} non valido.`);
+        error.status = 400;
+        error.code = errorCode;
+        throw error;
+    }
+    return normalized;
+}
+
+function normalizeMediaOperationId(value) {
+    return normalizeUuidInput(value, {
+        fieldName: 'operationId',
+        errorCode: 'INVALID_MEDIA_OPERATION_ID'
     });
-    return token;
 }
 
-function releasePhotoMutationLock(photoId, token) {
-    const active = photoMutationLocks.get(photoId);
-    if (!active) return;
-    if (active.token !== token) return;
-    photoMutationLocks.delete(photoId);
+function requireExpectedVersion(req) {
+    const expectedVersion = getExpectedVersion(req);
+    if (
+        expectedVersion === null
+        && portfolioRepository.capabilities.optimisticConcurrency
+    ) {
+        const error = new Error('Questa operazione richiede X-Expected-Version con la versione corrente.');
+        error.status = 428;
+        error.code = 'EXPECTED_VERSION_REQUIRED';
+        throw error;
+    }
+    return expectedVersion;
 }
 
-function getActivePhotoMutationLock(photoId) {
-    return photoMutationLocks.get(photoId) || null;
+async function writePhotoAssets(assets) {
+    const writes = await Promise.allSettled(
+        assets.map((asset) => (
+            asset.scope === 'private'
+                ? writePrivateObject(asset.path, asset.buffer, asset.contentType)
+                : writePublicObject(asset.path, asset.buffer, asset.contentType)
+        ))
+    );
+    const failed = writes.find((result) => result.status === 'rejected');
+    if (failed) throw failed.reason;
+}
+
+const photoCreationService = portfolioRepository.capabilities.distributedPhotoCreations
+    ? new PhotoCreationService({
+        repository: portfolioRepository,
+        createSignedUploadUrl: createPrivateUploadPresignedPutUrl,
+        readSourceObject: readPrivatePhotoUploadSourceObject,
+        generateDerivatives: generatePhotoDerivatives,
+        writeAssets: writePhotoAssets,
+        createMediaGeneration,
+        runCleanup: runMediaCleanupBestEffort
+    })
+    : null;
+
+const photoSourceReplacementService = portfolioRepository.capabilities.durableMediaCleanup
+    ? new PhotoSourceReplacementService({
+        repository: portfolioRepository,
+        createSignedUploadUrl: createPrivateUploadPresignedPutUrl,
+        readSourceObject: readPrivatePhotoUploadSourceObject,
+        generateDerivatives: generatePhotoDerivatives,
+        writeAssets: writePhotoAssets,
+        runCleanup: runMediaCleanupBestEffort,
+        createGeneration: createMediaGeneration
+    })
+    : null;
+
+function requirePhotoSourceReplacementService() {
+    if (photoSourceReplacementService) return photoSourceReplacementService;
+    const error = new Error('La sostituzione della source richiede METADATA_BACKEND=postgres.');
+    error.status = 503;
+    error.code = 'DURABLE_MEDIA_LIFECYCLE_REQUIRED';
+    throw error;
+}
+
+function requirePhotoCreationService() {
+    if (photoCreationService) return photoCreationService;
+    const error = new Error(
+        'La creazione di nuove foto richiede METADATA_BACKEND=postgres.'
+    );
+    error.status = 503;
+    error.code = 'TRANSACTIONAL_PHOTO_CREATION_REQUIRED';
+    throw error;
+}
+
+async function abortMediaMutationBestEffort(photoId, operationId) {
+    if (!photoId || !operationId) return;
+    try {
+        await portfolioRepository.photos.abortMediaMutation(photoId, operationId);
+        await runMediaCleanupBestEffort({ limit: 10 });
+    } catch (error) {
+        console.warn('[photo_media_abort_failed]', {
+            photoId,
+            operationId,
+            message: error?.message
+        });
+    }
+}
+
+async function regeneratePhotoMedia({
+    photoId,
+    expectedVersion,
+    kind,
+    settings
+}) {
+    const { operationId, generation } = createMediaIdentity();
+    const reservation = await portfolioRepository.photos.beginMediaMutation(photoId, {
+        operationId,
+        kind,
+        generation,
+        expectedVersion,
+        ttlMs: DEFAULTS.photoMediaMutationTtlMs
+    });
+    if (!reservation) return null;
+
+    const currentPhoto = reservation.photo;
+    let finalized = false;
+    try {
+        const sourceAsset = currentPhoto.assets?.find((asset) => asset.role === 'source');
+        const sourcePath = normalizePrivateSourcePathForPhotoId(sourceAsset?.path, photoId);
+        if (!sourcePath) {
+            const error = new Error('Source full-res non disponibile o non conforme al formato atteso.');
+            error.status = 400;
+            error.code = 'PHOTO_SOURCE_UNAVAILABLE';
+            throw error;
+        }
+        const sourceBuffer = await readPrivateSourceBuffer(sourcePath);
+        if (!sourceBuffer) {
+            const error = new Error('Source full-res non trovata nello storage.');
+            error.status = 404;
+            error.code = 'PHOTO_SOURCE_NOT_FOUND';
+            throw error;
+        }
+
+        const effectiveSettings = settings === undefined
+            ? currentPhoto.settings
+            : mergePhotoSettingsForStorage(currentPhoto.settings, settings);
+        const cropProfiles = getCropProfilesFromSettings(effectiveSettings);
+        const derivatives = await generatePhotoDerivatives(sourceBuffer, cropProfiles);
+        const nextAssets = materializePhotoAssets(photoId, generation, derivatives.assets);
+        await portfolioRepository.photos.registerMediaMutationAssets(
+            photoId,
+            operationId,
+            nextAssets
+        );
+        await writePhotoAssets(nextAssets);
+        await portfolioRepository.photos.markMediaMutationAssetsStored(
+            photoId,
+            operationId
+        );
+
+        const updatedPhoto = await portfolioRepository.photos.completeMediaMutation(
+            photoId,
+            operationId,
+            {
+                ...(settings === undefined ? {} : { settings: effectiveSettings }),
+                resolution: derivatives.resolution,
+                mediaGeneration: generation,
+                updatedAt: Date.now(),
+                derivativesVersion: Date.now()
+            },
+            { expectedVersion }
+        );
+        finalized = true;
+
+        await runMediaCleanupBestEffort({ limit: 10 });
+        return updatedPhoto;
+    } finally {
+        if (!finalized) {
+            await abortMediaMutationBestEffort(photoId, operationId);
+        }
+    }
 }
 
 function createPhotoOperationTimer(operation, photoId) {
@@ -122,34 +280,15 @@ function buildDownloadFilename(photo, contentType) {
     };
 }
 
-// Configurazione multer per upload immagini
-const storage = multer.memoryStorage();
-const uploadMaxSize = DEFAULTS.uploadMaxSize;
-const allowedUploadTypes = parseAllowedUploadTypes();
-const upload = multer({
-    storage,
-    limits: {
-        fileSize: uploadMaxSize
-    },
-    fileFilter: (req, file, cb) => {
-        if (isAllowedMimeType(file.mimetype, allowedUploadTypes)) {
-            cb(null, true);
-        } else {
-            const error = new Error(`Tipo file non consentito. Tipi ammessi: ${allowedUploadTypes.join(', ')}`);
-            error.status = 400;
-            error.code = 'INVALID_FILE_TYPE';
-            cb(error, false);
-        }
-    }
-});
+router.use(createPhotoCreationRouter({
+    getPhotoCreationService: requirePhotoCreationService
+}));
 
 // GET - Ottieni tutte le foto
 router.get('/', async (req, res) => {
     try {
-        const rawPhotos = await readPhotosDB();
-        const photos = rawPhotos
-            .map((photo) => normalizePhotoForApiList(photo))
-            .map((photo) => presentPhoto(photo));
+        const rawPhotos = await portfolioRepository.photos.list();
+        const photos = rawPhotos.map((photo) => presentPhoto(photo));
         
         res.json({
             success: true,
@@ -159,7 +298,8 @@ router.get('/', async (req, res) => {
     } catch (error) {
         console.error('Errore nel recupero foto:', error);
         return sendRouteError(res, error, {
-            fallbackMessage: 'Errore nel recupero delle foto'
+            fallbackMessage: 'Errore nel recupero delle foto',
+            fallbackCode: 'PHOTO_LIST_FAILED'
         });
     }
 });
@@ -168,20 +308,21 @@ router.get('/', async (req, res) => {
 router.get('/:id/download', async (req, res) => {
     try {
         const photoId = parseNumericIdOrThrow(req.params.id, 'ID foto');
-        const photos = await readPhotosDB();
-        const photo = photos.find((item) => Number(item.id) === photoId);
+        const photo = await portfolioRepository.photos.findById(photoId);
         if (!photo) {
             return res.status(404).json({
                 success: false,
+                code: 'PHOTO_NOT_FOUND',
                 message: 'Foto non trovata'
             });
         }
 
-        const publicPhoto = withDefaultPhotoVariants(photo);
-        const object = await getUploadObject(publicPhoto.image);
+        const fullAsset = getPhotoAsset(photo, 'full', 'public');
+        const object = fullAsset ? await getUploadObject(fullAsset.path) : null;
         if (!object?.stream) {
             return res.status(404).json({
                 success: false,
+                code: 'PHOTO_ASSET_NOT_FOUND',
                 message: 'File immagine non trovato'
             });
         }
@@ -199,7 +340,8 @@ router.get('/:id/download', async (req, res) => {
     } catch (error) {
         console.error('Errore download foto:', error);
         return sendRouteError(res, error, {
-            fallbackMessage: 'Errore durante il download della foto'
+            fallbackMessage: 'Errore durante il download della foto',
+            fallbackCode: 'PHOTO_DOWNLOAD_FAILED'
         });
     }
 });
@@ -209,12 +351,12 @@ router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const photoId = parseNumericIdOrThrow(id, 'ID foto');
-        const photos = await readPhotosDB();
-        const photo = photos.find((p) => Number(p.id) === photoId);
+        const photo = await portfolioRepository.photos.findById(photoId);
         
         if (!photo) {
             return res.status(404).json({
                 success: false,
+                code: 'PHOTO_NOT_FOUND',
                 message: 'Foto non trovata'
             });
         }
@@ -226,410 +368,170 @@ router.get('/:id', async (req, res) => {
     } catch (error) {
         console.error('Errore nel recupero foto:', error);
         return sendRouteError(res, error, {
-            fallbackMessage: 'Errore nel recupero della foto'
+            fallbackMessage: 'Errore nel recupero della foto',
+            fallbackCode: 'PHOTO_READ_FAILED'
         });
     }
 });
 
-// POST - Genera URL firmata per upload diretto su R2 (evita limiti body Vercel)
-router.post('/upload-url', async (req, res) => {
+// Prenota un reupload in modo distribuito prima di esporre una URL R2 firmata.
+router.post('/:id/source-upload-url', requireDurableMediaLifecycle, async (req, res) => {
     try {
-        const { uploadId, mimetype, contentType, fileSize, variant } = req.body || {};
-        const rawVariant = String(variant || 'source').trim().toLowerCase();
-        if (rawVariant !== 'source') {
-            return res.status(400).json({
-                success: false,
-                message: 'variant non valido: usare solo "source".'
-            });
-        }
-        const effectiveMimeType = String(mimetype || contentType || '').trim();
-        if (!effectiveMimeType || !isAllowedMimeType(effectiveMimeType, allowedUploadTypes)) {
-            return res.status(400).json({
-                success: false,
-                message: `Tipo file non consentito. Tipi ammessi: ${allowedUploadTypes.join(', ')}`
-            });
-        }
-
-        const parsedSize = parseUploadSize(fileSize);
-        if (parsedSize && parsedSize > uploadMaxSize) {
-            return res.status(400).json({
-                success: false,
-                message: `File troppo grande. Massimo ${uploadMaxSize} byte.`,
-                code: 'LIMIT_FILE_SIZE'
-            });
-        }
-
-        const uploadFilename = buildUploadFilename(effectiveMimeType, uploadId);
-        const uploadPath = `${PRIVATE_SOURCE_PREFIX}/${uploadFilename}`;
-        const signed = await createPrivateUploadPresignedPutUrl(uploadPath, {
+        const photoId = parseNumericIdOrThrow(req.params.id, 'ID foto');
+        const expectedVersion = requireExpectedVersion(req);
+        const effectiveMimeType = String(req.body?.mimetype || req.body?.contentType || '').trim();
+        const prepared = await requirePhotoSourceReplacementService().prepare({
+            photoId,
+            expectedVersion,
             contentType: effectiveMimeType,
-            cacheControl: 'private, no-store',
-            expiresInSeconds: DEFAULTS.r2SignedUploadUrlExpiresSeconds
+            fileSize: req.body?.fileSize
         });
-
+        if (!prepared) {
+            return res.status(404).json({
+                success: false,
+                code: 'PHOTO_NOT_FOUND',
+                message: 'Foto non trovata'
+            });
+        }
         return res.json({
             success: true,
-            data: {
-                uploadUrl: signed.uploadUrl,
-                sourcePath: signed.uploadPath,
-                expiresInSeconds: signed.expiresInSeconds
-            }
+            data: prepared
         });
     } catch (error) {
-        console.error('Errore generazione URL upload diretto:', error);
         return sendRouteError(res, error, {
-            fallbackMessage: 'Errore nella generazione URL upload'
+            fallbackMessage: 'Errore nella preparazione del reupload',
+            fallbackCode: 'PHOTO_REUPLOAD_PREPARE_FAILED'
         });
     }
 });
 
-// POST - Upload nuova foto
-router.post('/', upload.single('image'), async (req, res) => {
+router.delete(
+    '/:id/media-operations/:operationId',
+    requireDurableMediaLifecycle,
+    async (req, res) => {
+        try {
+            const photoId = parseNumericIdOrThrow(req.params.id, 'ID foto');
+            const operationId = normalizeMediaOperationId(req.params.operationId);
+            const { cleanup } = await requirePhotoSourceReplacementService().abort(
+                photoId,
+                operationId
+            );
+            return res.json({
+                success: true,
+                data: { cleanup }
+            });
+        } catch (error) {
+            return sendRouteError(res, error, {
+                fallbackMessage: 'Errore nell’annullamento dell’operazione media',
+                fallbackCode: 'PHOTO_MEDIA_ABORT_FAILED'
+            });
+        }
+    }
+);
+
+router.post('/:id/replace-source', requireDurableMediaLifecycle, async (req, res) => {
+    const timer = createPhotoOperationTimer('replace-source', req.params.id);
     try {
-        const { lat, lng } = req.body;
-        const sanitized = sanitizePhotoPayload(req.body, { partial: false });
-        const parsedLat = parseCoordinate(lat, 'Latitudine');
-        const parsedLng = parseCoordinate(lng, 'Longitudine');
-        const requestedPhotoId = Number.parseInt(String(req.body?.photoId || ''), 10);
-        const photoId = Number.isFinite(requestedPhotoId) && requestedPhotoId > 0
-            ? requestedPhotoId
-            : Date.now();
-        const sourceExtension = getImageExtensionFromMimeType(req.file?.mimetype || req.body?.sourceContentType);
-        const cropProfiles = getCropProfilesFromSettings(sanitized.settings) || buildDefaultCropProfiles();
+        const photoId = parseNumericIdOrThrow(req.params.id, 'ID foto');
+        const expectedVersion = requireExpectedVersion(req);
+        const operationId = normalizeMediaOperationId(req.body?.operationId);
+        const updatedPhoto = await requirePhotoSourceReplacementService().finalize({
+            photoId,
+            expectedVersion,
+            operationId,
+            mediaGeneration: req.body?.mediaGeneration,
+            sourcePath: req.body?.sourcePath,
+            onStage: (stage) => timer.mark(stage)
+        });
+        timer.flush('success', { derivativesVersion: updatedPhoto.derivativesVersion });
+        return res.json({
+            success: true,
+            message: 'Originale sostituito e varianti rigenerate.',
+            data: presentPhoto(updatedPhoto)
+        });
+    } catch (error) {
+        timer.flush('error', { code: error?.code || null, message: error?.message });
+        return sendRouteError(res, error, {
+            fallbackMessage: 'Errore durante il reupload della source privata',
+            fallbackCode: 'PHOTO_REUPLOAD_FAILED'
+        });
+    }
+});
+
+router.post(
+    '/:id/regenerate-derivatives',
+    requireDurableMediaLifecycle,
+    async (req, res) => {
+        try {
+            const photoId = parseNumericIdOrThrow(req.params.id, 'ID foto');
+            const expectedVersion = requireExpectedVersion(req);
+            const updatedPhoto = await regeneratePhotoMedia({
+                photoId,
+                expectedVersion,
+                kind: 'regenerate'
+            });
+            if (!updatedPhoto) {
+                return res.status(404).json({
+                    success: false,
+                    code: 'PHOTO_NOT_FOUND',
+                    message: 'Foto non trovata'
+                });
+            }
+            return res.json({
+                success: true,
+                message: 'Varianti rigenerate.',
+                data: presentPhoto(updatedPhoto)
+            });
+        } catch (error) {
+            return sendRouteError(res, error, {
+                fallbackMessage: 'Errore durante la rigenerazione derivate',
+                fallbackCode: 'PHOTO_REGENERATE_FAILED'
+            });
+        }
+    }
+);
+
+router.post('/:id/crop', requireDurableMediaLifecycle, async (req, res) => {
+    try {
+        const photoId = parseNumericIdOrThrow(req.params.id, 'ID foto');
+        const expectedVersion = requireExpectedVersion(req);
+        const sanitized = sanitizePhotoPayload(
+            { settings: req.body?.settings },
+            { partial: true }
+        );
+        if (sanitized.settings === undefined) {
+            const error = new Error('Impostazioni crop mancanti.');
+            error.status = 400;
+            error.code = 'CROP_SETTINGS_REQUIRED';
+            throw error;
+        }
         const normalizedSettings = {
-            ...(sanitized.settings && typeof sanitized.settings === 'object' ? sanitized.settings : {}),
-            cropProfiles
+            ...sanitized.settings,
+            cropProfiles: normalizeCropProfilesForStorage(sanitized.settings)
         };
-        const assets = buildPhotoAssetPaths(photoId, sourceExtension);
-        const photos = await readPhotosDB();
-
-        if (photos.some((item) => Number(item.id) === photoId)) {
-            return res.status(409).json({
-                success: false,
-                message: 'photoId già esistente, riprova con un nuovo upload.'
-            });
-        }
-
-        let sourcePath = '';
-        let sourceContentType = String(req.file?.mimetype || req.body?.sourceContentType || '').trim();
-        let sourceBuffer = null;
-        if (req.file) {
-            sourcePath = assets.sourcePath;
-            sourceBuffer = req.file.buffer;
-            await writePrivateObject(sourcePath, req.file.buffer, sourceContentType || 'application/octet-stream');
-        } else {
-            const providedSourcePath = normalizePrivateSourcePathForPhotoId(req.body?.sourcePath, photoId);
-            if (!providedSourcePath) {
-                return res.status(400).json({
-                    success: false,
-                    message: `sourcePath non valido: atteso ${PRIVATE_SOURCE_PREFIX}/photo_${photoId}.[ext]`
-                });
-            }
-
-            sourcePath = providedSourcePath;
-            const sourceObject = await readPrivateSourceObject(sourcePath);
-            if (!sourceObject) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'sourcePath non trovato: carica prima il file originale su /api/photos/upload-url'
-                });
-            }
-            sourceBuffer = sourceObject.buffer;
-            if (!sourceContentType && sourceObject.contentType) {
-                sourceContentType = sourceObject.contentType;
-            }
-
-        }
-
-        const derivatives = await generatePhotoDerivatives(sourceBuffer, cropProfiles);
-        await Promise.all([
-            writePublicObject(assets.imagePath, derivatives.image, 'image/webp'),
-            writePublicObject(assets.mobileImagePath, derivatives.mobileImage, 'image/webp'),
-            writePublicObject(assets.thumbnail43Path, derivatives.thumbnail43, 'image/webp'),
-            writePublicObject(assets.thumbnail11Path, derivatives.thumbnail11, 'image/webp'),
-            writePublicObject(assets.socialImagePath, derivatives.socialImage, 'image/jpeg')
-        ]);
-
-        // Crea oggetto foto con valori di default
-        const newPhoto = {
-            id: photoId,
-            title: sanitized.title,
-            location: sanitized.location,
-            lat: parsedLat ?? 0,
-            lng: parsedLng ?? 0,
-            sourcePath,
-            sourceContentType: sourceContentType || '',
-            mobileImage: true,
-            updatedAt: Date.now(),
-            derivativesVersion: Date.now(),
-            description: sanitized.description,
-            date: sanitized.date,
-            camera: sanitized.camera,
-            lens: sanitized.lens,
-            resolution: derivatives.resolution,
-            settings: normalizedSettings,
-            tags: sanitized.tags
-        };
-        
-        // Salva nel database JSON
-        photos.unshift(newPhoto); // Aggiungi all'inizio dell'array
-        await writePhotosDB(photos);
-
-        await purgePublicAssetsBestEffort(
-            [assets.imagePath, assets.mobileImagePath, assets.thumbnail43Path, assets.thumbnail11Path, assets.socialImagePath],
-            'photo_create'
-        );
-        
-        res.status(201).json({
-            success: true,
-            message: 'Foto caricata con successo',
-            data: presentPhoto(newPhoto)
+        const updatedPhoto = await regeneratePhotoMedia({
+            photoId,
+            expectedVersion,
+            kind: 'crop',
+            settings: normalizedSettings
         });
-        
-    } catch (error) {
-        console.error('Errore nell\'upload:', error);
-
-        if (error.code === 'LIMIT_FILE_SIZE') {
-            return res.status(400).json({
-                success: false,
-                message: `File troppo grande. Massimo ${uploadMaxSize} byte.`,
-                code: 'LIMIT_FILE_SIZE'
-            });
-        }
-
-        return sendRouteError(res, error, {
-            fallbackMessage: 'Errore nell\'upload della foto'
-        });
-    }
-});
-
-// POST - Reupload source privata esistente e rigenera derivate pubbliche (stessi path canonici)
-router.post('/:id/replace-source', async (req, res) => {
-    let photoId = null;
-    let lockToken = null;
-    let timer = null;
-    try {
-        const { id } = req.params;
-        photoId = parseNumericIdOrThrow(id, 'ID foto');
-        lockToken = acquirePhotoMutationLock(photoId, 'replace-source');
-        if (!lockToken) {
-            const activeLock = getActivePhotoMutationLock(photoId);
-            return res.status(409).json({
-                success: false,
-                code: 'PHOTO_MUTATION_IN_PROGRESS',
-                message: `Operazione già in corso su questa foto${activeLock?.operation ? ` (${activeLock.operation})` : ''}.`
-            });
-        }
-        timer = createPhotoOperationTimer('replace-source', photoId);
-
-        const photos = await readPhotosDB();
-        timer.mark('read_photos_db');
-        const photoIndex = photos.findIndex((p) => Number(p.id) === photoId);
-
-        if (photoIndex === -1) {
+        if (!updatedPhoto) {
             return res.status(404).json({
                 success: false,
+                code: 'PHOTO_NOT_FOUND',
                 message: 'Foto non trovata'
             });
         }
-
-        const nextSourcePath = normalizePrivateSourcePathForPhotoId(req.body?.sourcePath, photoId);
-        if (!nextSourcePath) {
-            return res.status(400).json({
-                success: false,
-                message: `sourcePath non valido: atteso ${PRIVATE_SOURCE_PREFIX}/photo_${photoId}.[ext]`
-            });
-        }
-
-        const sourceObject = await readPrivateSourceObject(nextSourcePath);
-        timer.mark('read_private_source');
-        if (!sourceObject) {
-            return res.status(404).json({
-                success: false,
-                message: 'Source privata non trovata nello storage.'
-            });
-        }
-
-        const currentPhoto = photos[photoIndex];
-        const publicAssets = withDefaultPhotoVariants(currentPhoto);
-        const mobileImagePath = buildPhotoAssetPaths(photoId).mobileImagePath;
-        const cropProfiles = getCropProfilesFromSettings(currentPhoto.settings);
-
-        const derivatives = await generatePhotoDerivatives(sourceObject.buffer, cropProfiles);
-        timer.mark('generate_derivatives');
-
-        await Promise.all([
-            writePublicObject(publicAssets.image, derivatives.image, 'image/webp'),
-            writePublicObject(mobileImagePath, derivatives.mobileImage, 'image/webp'),
-            writePublicObject(publicAssets.thumbnail43, derivatives.thumbnail43, 'image/webp'),
-            writePublicObject(publicAssets.thumbnail11, derivatives.thumbnail11, 'image/webp'),
-            writePublicObject(publicAssets.socialImage, derivatives.socialImage, 'image/jpeg')
-        ]);
-        timer.mark('write_public_derivatives');
-
-        const bodySourceContentType = String(req.body?.sourceContentType || '').trim();
-        const nextSourceContentType = sourceObject.contentType || bodySourceContentType || currentPhoto.sourceContentType || '';
-        const previousSourcePath = normalizePrivateSourcePathForPhotoId(currentPhoto.sourcePath, photoId);
-
-        const updatedPhoto = {
-            ...currentPhoto,
-            sourcePath: nextSourcePath,
-            sourceContentType: nextSourceContentType,
-            resolution: derivatives.resolution,
-            mobileImage: true,
-            updatedAt: Date.now(),
-            derivativesVersion: Date.now()
-        };
-
-        photos[photoIndex] = updatedPhoto;
-        await writePhotosDB(photos);
-        timer.mark('write_photo_metadata');
-
-        if (previousSourcePath && previousSourcePath !== nextSourcePath) {
-            try {
-                await deletePrivateObject(previousSourcePath);
-                timer.mark('delete_previous_private_source');
-            } catch (error) {
-                console.warn('[photo_replace_source_cleanup_failed]', {
-                    photoId,
-                    path: previousSourcePath,
-                    message: error?.message || 'Errore sconosciuto'
-                });
-            }
-        }
-
-        await purgePublicAssetsBestEffort(
-            [publicAssets.image, mobileImagePath, publicAssets.thumbnail43, publicAssets.thumbnail11, publicAssets.socialImage],
-            'photo_replace_source'
-        );
-        timer.mark('purge_public_cache');
-        timer.flush('success', {
-            derivativesVersion: updatedPhoto.derivativesVersion
-        });
-
         return res.json({
             success: true,
-            message: 'Source privata aggiornata e derivate rigenerate con successo',
+            message: 'Ritaglio applicato e varianti rigenerate.',
             data: presentPhoto(updatedPhoto)
         });
     } catch (error) {
-        timer?.flush('error', {
-            code: error?.code || null,
-            message: error?.message || 'Errore sconosciuto'
-        });
-        console.error('Errore replace source privata:', error);
         return sendRouteError(res, error, {
-            fallbackMessage: 'Errore durante il reupload della source privata'
+            fallbackMessage: 'Errore durante l’applicazione del crop',
+            fallbackCode: 'PHOTO_CROP_FAILED'
         });
-    } finally {
-        if (photoId && lockToken) {
-            releasePhotoMutationLock(photoId, lockToken);
-        }
-    }
-});
-
-// POST - Rigenera derivate da source full-res (stessi path, overwrite su R2)
-router.post('/:id/regenerate-derivatives', async (req, res) => {
-    let photoId = null;
-    let lockToken = null;
-    let timer = null;
-    try {
-        const { id } = req.params;
-        photoId = parseNumericIdOrThrow(id, 'ID foto');
-        lockToken = acquirePhotoMutationLock(photoId, 'regenerate-derivatives');
-        if (!lockToken) {
-            const activeLock = getActivePhotoMutationLock(photoId);
-            return res.status(409).json({
-                success: false,
-                code: 'PHOTO_MUTATION_IN_PROGRESS',
-                message: `Operazione già in corso su questa foto${activeLock?.operation ? ` (${activeLock.operation})` : ''}.`
-            });
-        }
-        timer = createPhotoOperationTimer('regenerate-derivatives', photoId);
-
-        const photos = await readPhotosDB();
-        timer.mark('read_photos_db');
-        const photoIndex = photos.findIndex((p) => Number(p.id) === photoId);
-
-        if (photoIndex === -1) {
-            return res.status(404).json({
-                success: false,
-                message: 'Foto non trovata'
-            });
-        }
-
-        const photo = photos[photoIndex];
-        const sourcePath = normalizePrivateSourcePathForPhotoId(photo.sourcePath, photoId);
-        if (!sourcePath) {
-            return res.status(400).json({
-                success: false,
-                message: 'Source full-res non disponibile o non conforme al formato atteso.'
-            });
-        }
-
-        const sourceBuffer = await readPrivateSourceBuffer(sourcePath);
-        timer.mark('read_private_source');
-        if (!sourceBuffer) {
-            return res.status(404).json({
-                success: false,
-                message: 'Source full-res non trovata nello storage.'
-            });
-        }
-
-        const publicAssets = withDefaultPhotoVariants(photo);
-        const mobileImagePath = buildPhotoAssetPaths(photoId).mobileImagePath;
-
-        const cropProfiles = getCropProfilesFromSettings(photo.settings);
-        const derivatives = await generatePhotoDerivatives(sourceBuffer, cropProfiles);
-        timer.mark('generate_derivatives');
-        await Promise.all([
-            writePublicObject(publicAssets.image, derivatives.image, 'image/webp'),
-            writePublicObject(mobileImagePath, derivatives.mobileImage, 'image/webp'),
-            writePublicObject(publicAssets.thumbnail43, derivatives.thumbnail43, 'image/webp'),
-            writePublicObject(publicAssets.thumbnail11, derivatives.thumbnail11, 'image/webp'),
-            writePublicObject(publicAssets.socialImage, derivatives.socialImage, 'image/jpeg')
-        ]);
-        timer.mark('write_public_derivatives');
-
-        const updatedPhoto = {
-            ...photo,
-            resolution: derivatives.resolution,
-            mobileImage: true,
-            updatedAt: Date.now(),
-            derivativesVersion: Date.now()
-        };
-
-        photos[photoIndex] = updatedPhoto;
-        await writePhotosDB(photos);
-        timer.mark('write_photo_metadata');
-
-        await purgePublicAssetsBestEffort(
-            [publicAssets.image, mobileImagePath, publicAssets.thumbnail43, publicAssets.thumbnail11, publicAssets.socialImage],
-            'photo_regenerate_derivatives'
-        );
-        timer.mark('purge_public_cache');
-        timer.flush('success', {
-            derivativesVersion: updatedPhoto.derivativesVersion
-        });
-
-        return res.json({
-            success: true,
-            message: 'Derivate rigenerate con successo',
-            data: presentPhoto(updatedPhoto)
-        });
-    } catch (error) {
-        timer?.flush('error', {
-            code: error?.code || null,
-            message: error?.message || 'Errore sconosciuto'
-        });
-        console.error('Errore rigenerazione derivate:', error);
-        return sendRouteError(res, error, {
-            fallbackMessage: 'Errore durante la rigenerazione derivate'
-        });
-    } finally {
-        if (photoId && lockToken) {
-            releasePhotoMutationLock(photoId, lockToken);
-        }
     }
 });
 
@@ -638,147 +540,91 @@ router.put('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const photoId = parseNumericIdOrThrow(id, 'ID foto');
-        const { lat, lng } = req.body;
         const sanitized = sanitizePhotoPayload(req.body, { partial: true });
         
-        const photos = await readPhotosDB();
-        const photoIndex = photos.findIndex((p) => Number(p.id) === photoId);
-        
-        if (photoIndex === -1) {
+        const changes = {
+            ...sanitized,
+            updatedAt: Date.now(),
+        };
+        if (sanitized.settings !== undefined) {
+            const currentPhoto = await portfolioRepository.photos.findById(photoId);
+            if (!currentPhoto) {
+                return res.status(404).json({
+                    success: false,
+                    code: 'PHOTO_NOT_FOUND',
+                    message: 'Foto non trovata'
+                });
+            }
+            changes.settings = mergePhotoSettingsForStorage(
+                currentPhoto.settings,
+                sanitized.settings
+            );
+        }
+        const updatedPhoto = await portfolioRepository.photos.updateById(
+            photoId,
+            changes,
+            {
+                expectedVersion: requireExpectedVersion(req),
+                auditOperation: 'photo.metadata-update'
+            }
+        );
+        if (!updatedPhoto) {
             return res.status(404).json({
                 success: false,
+                code: 'PHOTO_NOT_FOUND',
                 message: 'Foto non trovata'
             });
         }
         
-        // Aggiorna la foto con i nuovi dati
-        const nextLat = lat !== undefined ? parseCoordinate(lat, 'Latitudine') : photos[photoIndex].lat;
-        const nextLng = lng !== undefined ? parseCoordinate(lng, 'Longitudine') : photos[photoIndex].lng;
-
-        const updatedPhoto = {
-            ...photos[photoIndex],
-            ...sanitized,
-            lat: nextLat ?? photos[photoIndex].lat,
-            lng: nextLng ?? photos[photoIndex].lng,
-            updatedAt: Date.now(),
-        };
-        
-        photos[photoIndex] = updatedPhoto;
-        await writePhotosDB(photos);
-        
         res.json({
             success: true,
             data: presentPhoto(updatedPhoto),
-            message: 'Foto aggiornata con successo'
+            message: 'Dettagli della foto aggiornati.'
         });
     } catch (error) {
         console.error('Errore nell\'aggiornamento:', error);
         return sendRouteError(res, error, {
-            fallbackMessage: 'Errore nell\'aggiornamento della foto'
+            fallbackMessage: 'Errore nell\'aggiornamento della foto',
+            fallbackCode: 'PHOTO_UPDATE_FAILED'
         });
     }
 });
 
 // DELETE - Elimina foto
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireDurableMediaLifecycle, async (req, res) => {
     try {
         const { id } = req.params;
         const photoId = parseNumericIdOrThrow(id, 'ID foto');
-        const photos = await readPhotosDB();
-        const photoIndex = photos.findIndex((p) => Number(p.id) === photoId);
-        
-        if (photoIndex === -1) {
+        const deletion = await portfolioRepository.deletePhotoWithReferences(
+            photoId,
+            { expectedVersion: requireExpectedVersion(req) }
+        );
+        if (!deletion) {
             return res.status(404).json({
                 success: false,
+                code: 'PHOTO_NOT_FOUND',
                 message: 'Foto non trovata'
             });
         }
-        
-        // Rimuovi la foto dall'array
-        const deletedPhoto = photos.splice(photoIndex, 1)[0];
-        await writePhotosDB(photos);
-        
-        // Rimuovi l'ID della foto da tutte le serie
-        try {
-            await cleanupPhotoReferencesInSeries(photoId);
-        } catch (seriesError) {
-            console.warn('Errore nell\'aggiornamento delle serie:', seriesError);
+        if (deletion.referenceCleanupError) {
+            console.warn('Errore nell\'aggiornamento delle serie:', deletion.referenceCleanupError);
         }
         
-        const publicAssets = withDefaultPhotoVariants(deletedPhoto);
-        const publicPathsToDelete = [
-            publicAssets.image,
-            publicAssets.mobileImage,
-            publicAssets.thumbnail43,
-            publicAssets.thumbnail11,
-            publicAssets.socialImage
-        ].filter(Boolean);
-        const uniquePublicPaths = [...new Set(publicPathsToDelete)];
-
-        const deletedAssets = [];
-        const failedAssets = [];
-
-        for (const publicPath of uniquePublicPaths) {
-            try {
-                await deleteUploadObject(publicPath);
-                deletedAssets.push({ scope: 'public', path: publicPath });
-            } catch (error) {
-                const errorInfo = describeDeleteError(error);
-                failedAssets.push({ scope: 'public', path: publicPath, ...errorInfo });
-                console.warn('[photo_delete_asset_failed]', {
-                    photoId,
-                    scope: 'public',
-                    path: publicPath,
-                    ...errorInfo
-                });
-            }
-        }
-
-        const privateSourcePath = normalizePrivateSourcePathForPhotoId(deletedPhoto.sourcePath, photoId);
-        if (privateSourcePath) {
-            try {
-                await deletePrivateObject(privateSourcePath);
-                deletedAssets.push({ scope: 'private', path: privateSourcePath });
-            } catch (error) {
-                const errorInfo = describeDeleteError(error);
-                failedAssets.push({ scope: 'private', path: privateSourcePath, ...errorInfo });
-                console.warn('[photo_delete_asset_failed]', {
-                    photoId,
-                    scope: 'private',
-                    path: privateSourcePath,
-                    ...errorInfo
-                });
-            }
-        }
-
-        const deletedPublicPaths = deletedAssets
-            .filter((asset) => asset.scope === 'public')
-            .map((asset) => asset.path);
-
-        await purgePublicAssetsBestEffort(deletedPublicPaths, 'photo_delete');
-
-        if (failedAssets.length) {
-            console.warn('[photo_delete_partial_cleanup]', {
-                photoId,
-                failedCount: failedAssets.length,
-                failedAssets
-            });
-        }
+        const cleanup = await runMediaCleanupBestEffort({ limit: 10 });
         
         res.json({
             success: true,
-            message: failedAssets.length
-                ? 'Foto eliminata con successo (cleanup asset parziale)'
-                : 'Foto eliminata con successo',
+            message: 'Foto eliminata; pulizia dei file accodata.',
             data: {
-                deletedAssets,
-                failedAssets
+                cleanupQueued: true,
+                cleanup
             }
         });
     } catch (error) {
         console.error('Errore nell\'eliminazione:', error);
         return sendRouteError(res, error, {
-            fallbackMessage: 'Errore nell\'eliminazione della foto'
+            fallbackMessage: 'Errore nell\'eliminazione della foto',
+            fallbackCode: 'PHOTO_DELETE_FAILED'
         });
     }
 });

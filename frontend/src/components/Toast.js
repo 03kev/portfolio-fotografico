@@ -1,4 +1,12 @@
-import React, { useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, XCircle, AlertTriangle, Info } from 'lucide-react';
@@ -82,41 +90,75 @@ const CloseButton = styled.button`
   }
 `;
 
-// Hook per gestire le notifiche
-export const useToast = () => {
-  const [toasts, setToasts] = useState([]);
+export const TOAST_DURATIONS = Object.freeze({
+  success: 3600,
+  error: 6000,
+  warning: 6500,
+  info: 3600
+});
 
-  const addToast = (message, type = 'info', duration = 5000) => {
+const ToastContext = createContext(null);
+
+const useToastController = () => {
+  const [toasts, setToasts] = useState([]);
+  const timersRef = useRef(new Map());
+
+  const removeToast = useCallback((id) => {
+    const timer = timersRef.current.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      timersRef.current.delete(id);
+    }
+    setToasts(prev => prev.filter(toast => toast.id !== id));
+  }, []);
+
+  const addToast = useCallback((message, type = 'info', duration) => {
     const id = Date.now() + Math.random();
-    const toast = { id, message, type, duration };
+    const resolvedDuration = duration ?? TOAST_DURATIONS[type] ?? TOAST_DURATIONS.info;
+    const toast = { id, message, type, duration: resolvedDuration };
     
     setToasts(prev => [...prev, toast]);
 
-    // Auto-remove dopo la durata specificata
-    if (duration > 0) {
-      setTimeout(() => {
+    if (resolvedDuration > 0) {
+      const timer = setTimeout(() => {
+        timersRef.current.delete(id);
         removeToast(id);
-      }, duration);
+      }, resolvedDuration);
+      timersRef.current.set(id, timer);
     }
 
     return id;
-  };
+  }, [removeToast]);
 
-  const removeToast = (id) => {
-    setToasts(prev => prev.filter(toast => toast.id !== id));
-  };
-
-  const clearAll = () => {
+  const clearAll = useCallback(() => {
+    timersRef.current.forEach(clearTimeout);
+    timersRef.current.clear();
     setToasts([]);
-  };
+  }, []);
 
-  // Metodi di convenienza
-  const success = (message, duration) => addToast(message, 'success', duration);
-  const error = (message, duration) => addToast(message, 'error', duration);
-  const warning = (message, duration) => addToast(message, 'warning', duration);
-  const info = (message, duration) => addToast(message, 'info', duration);
+  useEffect(() => () => {
+    timersRef.current.forEach(clearTimeout);
+    timersRef.current.clear();
+  }, []);
 
-  return {
+  const success = useCallback(
+    (message, duration) => addToast(message, 'success', duration),
+    [addToast]
+  );
+  const error = useCallback(
+    (message, duration) => addToast(message, 'error', duration),
+    [addToast]
+  );
+  const warning = useCallback(
+    (message, duration) => addToast(message, 'warning', duration),
+    [addToast]
+  );
+  const info = useCallback(
+    (message, duration) => addToast(message, 'info', duration),
+    [addToast]
+  );
+
+  return useMemo(() => ({
     toasts,
     addToast,
     removeToast,
@@ -125,10 +167,9 @@ export const useToast = () => {
     error,
     warning,
     info
-  };
+  }), [addToast, clearAll, error, info, removeToast, success, toasts, warning]);
 };
 
-// Componente Toast
 const Toast = ({ toast, onClose }) => {
   const getIcon = (type) => {
     switch (type) {
@@ -144,6 +185,8 @@ const Toast = ({ toast, onClose }) => {
     <ToastItem
       layout
       type={toast.type}
+      role={toast.type === 'error' || toast.type === 'warning' ? 'alert' : 'status'}
+      aria-atomic="true"
       initial={{ opacity: 0, x: 300, scale: 0.8 }}
       animate={{ opacity: 1, x: 0, scale: 1 }}
       exit={{ opacity: 0, x: 220, scale: 0.9 }}
@@ -162,15 +205,14 @@ const Toast = ({ toast, onClose }) => {
       <CloseButton onClick={(e) => {
         e.stopPropagation();
         onClose(toast.id);
-      }}>
+      }} aria-label="Chiudi notifica">
         ×
       </CloseButton>
     </ToastItem>
   );
 };
 
-// Componente Container principale
-const ToastProvider = ({ toasts, onRemove }) => {
+const ToastViewport = ({ toasts, onRemove }) => {
   return (
     <ToastContainer>
       <AnimatePresence initial={false}>
@@ -186,27 +228,22 @@ const ToastProvider = ({ toasts, onRemove }) => {
   );
 };
 
-export default ToastProvider;
-
-// Esempio di utilizzo:
-/*
-const MyComponent = () => {
-  const toast = useToast();
-
-  const handleSuccess = () => {
-    toast.success('Foto caricata con successo!');
-  };
-
-  const handleError = () => {
-    toast.error('Errore durante il caricamento');
-  };
-
+const ToastProvider = ({ children }) => {
+  const controller = useToastController();
   return (
-    <div>
-      <button onClick={handleSuccess}>Successo</button>
-      <button onClick={handleError}>Errore</button>
-      <ToastProvider toasts={toast.toasts} onRemove={toast.removeToast} />
-    </div>
+    <ToastContext.Provider value={controller}>
+      {children}
+      <ToastViewport toasts={controller.toasts} onRemove={controller.removeToast} />
+    </ToastContext.Provider>
   );
 };
-*/
+
+export const useToast = () => {
+  const context = useContext(ToastContext);
+  if (!context) {
+    throw new Error('useToast deve essere usato all’interno di ToastProvider');
+  }
+  return context;
+};
+
+export default ToastProvider;

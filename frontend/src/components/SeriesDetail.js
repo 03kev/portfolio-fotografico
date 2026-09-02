@@ -1,5 +1,16 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
+import {
+  SERIES_BLOCK_DEFINITIONS,
+  SERIES_GRID_COLUMNS,
+  SERIES_TEXT_ALIGNMENTS,
+  SERIES_TEXT_FONTS,
+  SERIES_TEXT_SIZES,
+  assertSeriesBlockTypeCoverage,
+  assertSeriesOptionCoverage,
+  getSeriesBlockDefinition,
+  normalizeBlockType
+} from '@portfolio/series-content-contract';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertCircle, AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, ChevronLeft, Code, FileText, Image as ImageIcon, Images, Italic, LayoutGrid, Maximize2, PencilLine, RotateCcw, Save, Trash2, Type, Underline, X } from 'lucide-react';
@@ -11,11 +22,29 @@ import { usePhotos } from '../contexts/PhotoContext';
 import SeriesEditor from './SeriesEditor';
 import ResponsiveSeriesContent from './series/ResponsiveSeriesContent';
 import { useToast } from './Toast';
-import { resolveVersionedPhotoAssetUrl } from '../utils/imageUrl';
+import { resolvePhotoAssetUrl } from '../utils/imageUrl';
 import { toAbsoluteImageUrl, toAbsoluteSiteUrl } from '../utils/siteUrl';
 import useMediaQuery from '../hooks/useMediaQuery';
 import { viewportBreakpoints, viewportQueries } from '../styles/responsive';
 import useSeo from '../seo/useSeo';
+import { adminFeedback } from '../utils/adminFeedback';
+import { buildOperationErrorMessage } from '../utils/operationErrors';
+import { renderSeriesBlockByType } from '../utils/seriesBlockRenderer';
+import {
+  createSeriesCanvasBlock,
+  getSeriesCanvasDefaultLayout
+} from '../utils/seriesCanvasModel';
+
+const SERIES_DETAIL_BLOCK_ICONS = Object.freeze({
+  text: FileText,
+  photo: ImageIcon,
+  photos: Images
+});
+
+assertSeriesBlockTypeCoverage(
+  Object.keys(SERIES_DETAIL_BLOCK_ICONS),
+  'SeriesDetail: editor e renderer desktop'
+);
 
 const PageContainer = styled.div`
   min-height: 100vh;
@@ -187,8 +216,8 @@ const AdminBarButton = styled(motion.button)`
   }
 
   &:disabled {
-    opacity: 0.6;
     cursor: not-allowed;
+    opacity: 0.45;
   }
 
   @media (max-width: 520px) {
@@ -1053,16 +1082,16 @@ function SeriesDetail() {
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [gridRowsOverride, setGridRowsOverride] = useState(null);
+  const layoutBaseVersionRef = useRef(null);
   const CANVAS_MAX_WIDTH = 1200;
   const EDITOR_MIN_CANVAS_WIDTH = 960;
   const [canvasWidth, setCanvasWidth] = useState(CANVAS_MAX_WIDTH);
   const isCompactSeriesLayout = useMediaQuery(viewportQueries.down('large'));
-  const GRID_COLS = 24;
+  const GRID_COLS = SERIES_GRID_COLUMNS;
   const ROW_HEIGHT = 16;
   const GRID_GUTTER = 8;
   const BASE_GRID_ROWS = 24;
   const GRID_ROW_BUFFER = 6;
-  const TEXT_MIN_H_ROWS = 2;
   const TEXT_SIZE_MAP = {
     sm: 'var(--font-size-sm)',
     base: 'calc(var(--font-size-base) - 0.5px)',
@@ -1101,13 +1130,30 @@ function SeriesDetail() {
     { id: 'textUnderline', icon: Underline, label: 'Sottolineato' },
     { id: 'textMono', icon: Code, label: 'Monospace' },
   ];
+  assertSeriesOptionCoverage(
+    SERIES_TEXT_SIZES,
+    Object.keys(TEXT_SIZE_MAP),
+    'SeriesDetail: dimensioni testo'
+  );
+  assertSeriesOptionCoverage(
+    SERIES_TEXT_FONTS,
+    Object.keys(TEXT_FONT_MAP),
+    'SeriesDetail: font testo'
+  );
+  assertSeriesOptionCoverage(
+    SERIES_TEXT_ALIGNMENTS,
+    TEXT_ALIGN_OPTIONS.map((option) => option.id),
+    'SeriesDetail: allineamenti testo'
+  );
   const DEFAULT_GROUP_COLS = 6;
   const GROUP_MIN_W = 1;
   const GROUP_MIN_H = 1;
   const GROUP_DEFAULT_W = 2;
   const GROUP_DEFAULT_H = 2;
-  const MIN_W_COLS = 5;
-  const MIN_H_ROWS = 6;
+  const MIN_W_COLS = Math.min(
+    ...SERIES_BLOCK_DEFINITIONS.map((definition) => definition.editorMinimumLayout.w)
+  );
+  const MIN_H_ROWS = getSeriesBlockDefinition('photo').editorMinimumLayout.h;
   const COL_WIDTH = (canvasWidth - GRID_GUTTER * (GRID_COLS - 1)) / GRID_COLS;
   const GRID_STEP_X = COL_WIDTH + GRID_GUTTER;
   const GRID_STEP_Y = ROW_HEIGHT + GRID_GUTTER;
@@ -1138,7 +1184,7 @@ function SeriesDetail() {
     const images = seriesPhotos
       .slice(0, 120)
       .map((photo) => {
-        const full = toAbsoluteImageUrl(photo.image);
+        const full = toAbsoluteImageUrl(photo.assets?.full?.url);
         if (!full) return null;
         const imageData = {
           '@type': 'ImageObject',
@@ -1178,7 +1224,7 @@ function SeriesDetail() {
         ? `Serie fotografica "${currentSeries.title}" di Kevin Muka.`
         : 'Dettaglio serie fotografica di Kevin Muka.'),
     ogType: 'website',
-    image: seriesSeoCover ? toAbsoluteImageUrl(seriesSeoCover.socialImage) : '',
+    image: seriesSeoCover ? toAbsoluteImageUrl(seriesSeoCover.assets?.social?.url) : '',
     noindex: detailFetchState === 'error' || currentSeries?.published === false,
     structuredData: seriesStructuredData,
   });
@@ -1216,25 +1262,20 @@ function SeriesDetail() {
     }
   }, [currentSeries, photos]);
 
-  useEffect(() => {
-    if (!currentSeries) return;
+  useLayoutEffect(() => {
+    if (!currentSeries || layoutMode) return;
 
     const prepared = prepareContent(currentSeries.content || [], true);
     setDraftContent(prepared);
     // prepareContent intentionally follows the current canvas geometry; this
     // initialization runs only when the source series changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSeries]);
+  }, [currentSeries, layoutMode]);
 
   useEffect(() => {
-    if (!savedContentPreview || !currentSeries) return;
-
-    const serverContent = JSON.stringify(currentSeries.content || []);
-    const previewContent = JSON.stringify(savedContentPreview || []);
-    if (serverContent === previewContent) {
-      setSavedContentPreview(null);
-    }
-  }, [currentSeries, savedContentPreview]);
+    if (!savedContentPreview || isSavingLayout) return;
+    setSavedContentPreview(null);
+  }, [isSavingLayout, savedContentPreview]);
 
   useLayoutEffect(() => {
     const container = canvasFrameRef.current;
@@ -1307,7 +1348,7 @@ function SeriesDetail() {
 
   const clamp = (v, min, max) => Math.max(min, Math.min(v, max));
 
-  const getBlockMinRows = (type) => (type === 'text' ? TEXT_MIN_H_ROWS : MIN_H_ROWS);
+  const getBlockMinRows = (type) => getSeriesBlockDefinition(type).editorMinimumLayout.h;
 
   const createBlockId = () =>
     `block-${Math.random().toString(16).slice(2)}-${Date.now().toString(36)}`;
@@ -1319,9 +1360,8 @@ function SeriesDetail() {
   };
 
   const getDefaultGridSize = (type) => {
-    if (type === 'text') return { w: 15, h: 9 };
-    if (type === 'photo') return { w: 15, h: 22 };
-    return { w: 16, h: 18 };
+    const { w, h } = getSeriesCanvasDefaultLayout(type);
+    return { w, h };
   };
 
   const clampGridLayout = (layout, minRows = MIN_H_ROWS) => {
@@ -1337,6 +1377,7 @@ function SeriesDetail() {
     const nextContent = [];
 
     (content || []).forEach((block, index) => {
+      normalizeBlockType(block?.type, { field: `content[${index}].type` });
       const id = getBlockId(block, index, assignIds);
       const defaults = getDefaultGridSize(block.type);
       const baseLayout = block.layout;
@@ -1674,7 +1715,7 @@ function SeriesDetail() {
     if (!interactive) {
       return (
         <ThumbImage
-          src={resolveVersionedPhotoAssetUrl(photo, 'image')}
+          src={resolvePhotoAssetUrl(photo, 'full')}
           alt={photo.title}
           loading="lazy"
         />
@@ -1710,7 +1751,7 @@ function SeriesDetail() {
         title={photo.title || ''}
       >
         <ThumbImage
-          src={resolveVersionedPhotoAssetUrl(photo, 'image')}
+          src={resolvePhotoAssetUrl(photo, 'full')}
           alt={photo.title}
           loading="lazy"
         />
@@ -1729,16 +1770,18 @@ function SeriesDetail() {
     setIsSavingLayout(true);
 
     try {
-      await updateSeries(currentSeries.id, {
-        content: cleanContent,
-      });
-      toast.success('Layout serie salvato ✅');
+      await updateSeries(
+        currentSeries.id,
+        { content: cleanContent },
+        { expectedVersion: layoutBaseVersionRef.current ?? currentSeries.version }
+      );
+      toast.success(adminFeedback.seriesLayoutSaved());
     } catch (err) {
       // rollback in caso di errore
       setSavedContentPreview(null);
       setLayoutMode(true);
       setDraftContent(prepareContent(currentSeries.content || [], true));
-      toast.error(`Errore salvataggio layout: ${err?.message || 'unknown'}`);
+      toast.error(buildOperationErrorMessage(err, 'salvataggio layout serie'));
     } finally {
       setIsSavingLayout(false);
     }
@@ -1748,6 +1791,28 @@ function SeriesDetail() {
     if (!currentSeries) return;
     const prepared = prepareContent(currentSeries.content || [], true);
     setDraftContent(prepared);
+    layoutBaseVersionRef.current = currentSeries.version ?? null;
+  };
+
+  const handleOpenSeriesEditor = () => {
+    if (layoutMode || isSavingLayout) return;
+    setShowEditor(true);
+  };
+
+  const handleToggleLayoutMode = () => {
+    if (isSavingLayout) return;
+
+    if (layoutMode) {
+      setLayoutMode(false);
+      setSelectedId(null);
+      setQuickAddOpen(false);
+      return;
+    }
+
+    layoutBaseVersionRef.current = currentSeries?.version ?? null;
+    setSelectedId(null);
+    setQuickAddOpen(false);
+    setLayoutMode(true);
   };
 
   const getViewportInsertPoint = () => {
@@ -1882,8 +1947,10 @@ function SeriesDetail() {
   const addLayoutBlock = (type) => {
     if (!currentSeries) return;
 
+    const definition = getSeriesBlockDefinition(type);
+
     const seriesIds = Array.isArray(currentSeries.photos) ? currentSeries.photos : [];
-    if ((type === 'photo' || type === 'photos') && seriesIds.length === 0) {
+    if (definition.contentKind !== 'text' && seriesIds.length === 0) {
       toast.error('Aggiungi prima delle foto alla serie (in Seleziona Foto).');
       return;
     }
@@ -1901,30 +1968,12 @@ function SeriesDetail() {
         h: defaults.h,
       }, minRows);
 
-      const block = {
+      const block = createSeriesCanvasBlock({
         id,
         type,
-        content:
-          type === 'text'
-            ? ''
-            : type === 'photo'
-              ? seriesIds[0]
-              : [],
-        layout: findAvailablePosition(layout, prev, id),
-      };
-      if (type === 'text') {
-        block.textAlign = 'left';
-        block.textSize = 'base';
-        block.textBold = false;
-        block.textItalic = false;
-        block.textUnderline = false;
-        block.textMono = false;
-        block.textFont = 'inter';
-      }
-      if (type === 'photo') {
-        block.showTitle = true;
-        block.showLightbox = true;
-      }
+        photoIds: seriesIds,
+        layout: findAvailablePosition(layout, prev, id)
+      });
 
       const next = [...prev, block];
       setSelectedId(id);
@@ -2075,9 +2124,9 @@ function SeriesDetail() {
         <HeroSection>
           {coverPhoto && (
             <CoverImage
-              src={resolveVersionedPhotoAssetUrl(coverPhoto, 'image')}
-              $mobileSrc={coverPhoto.mobileImage
-                ? resolveVersionedPhotoAssetUrl(coverPhoto, 'mobileImage')
+              src={resolvePhotoAssetUrl(coverPhoto, 'full')}
+              $mobileSrc={coverPhoto.assets?.mobile?.url
+                ? resolvePhotoAssetUrl(coverPhoto, 'mobile')
                 : undefined}
               initial={{ scale: 1.2 }}
               animate={{ scale: 1 }}
@@ -2107,28 +2156,26 @@ function SeriesDetail() {
 
           {isAdmin && (
             <AdminBar>
-              <AdminBarButton
-                type="button"
-                onClick={() => setShowEditor(true)}
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-              >
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                  <PencilLine size={16} /> Modifica
-                </span>
-              </AdminBarButton>
+              {!layoutMode && (
+                <AdminBarButton
+                  type="button"
+                  onClick={handleOpenSeriesEditor}
+                  disabled={isSavingLayout}
+                  title={isSavingLayout ? 'Attendi il salvataggio del layout' : 'Modifica serie'}
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                    <PencilLine size={16} /> Modifica
+                  </span>
+                </AdminBarButton>
+              )}
 
               {!isCompactSeriesLayout && (
                 <AdminBarButton
                   type="button"
-                  onClick={() => {
-                    if (isSavingLayout) return;
-                    if (!layoutMode) {
-                      setSelectedId(null);
-                      setQuickAddOpen(false);
-                    }
-                    setLayoutMode(v => !v);
-                  }}
+                  onClick={handleToggleLayoutMode}
+                  disabled={isSavingLayout}
                   whileHover={{ scale: 1.03 }}
                   whileTap={{ scale: 0.97 }}
                 >
@@ -2194,15 +2241,21 @@ function SeriesDetail() {
                         exit={{ opacity: 0, y: 10 }}
                         transition={{ duration: 0.18 }}
                       >
-                        <FabItem type="button" onClick={() => addLayoutBlock('text')} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                          <FabIcon><FileText size={16} /></FabIcon> Testo
-                        </FabItem>
-                        <FabItem type="button" onClick={() => addLayoutBlock('photo')} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                          <FabIcon><ImageIcon size={16} /></FabIcon> Foto
-                        </FabItem>
-                        <FabItem type="button" onClick={() => addLayoutBlock('photos')} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                          <FabIcon><Images size={16} /></FabIcon> Gruppo
-                        </FabItem>
+                        {SERIES_BLOCK_DEFINITIONS.map((definition) => {
+                          const Icon = SERIES_DETAIL_BLOCK_ICONS[definition.type];
+                          return (
+                            <FabItem
+                              key={definition.type}
+                              type="button"
+                              onClick={() => addLayoutBlock(definition.type)}
+                              whileHover={{ scale: 1.02 }}
+                              whileTap={{ scale: 0.98 }}
+                            >
+                              <FabIcon><Icon size={16} /></FabIcon>
+                              {definition.editorLabel}
+                            </FabItem>
+                          );
+                        })}
                       </FabMenu>
                     )}
                   </AnimatePresence>
@@ -2346,7 +2399,7 @@ function SeriesDetail() {
                               title={p.title || ''}
                             >
                               <InspectorImg
-                                src={p.thumbnail43 ? resolveVersionedPhotoAssetUrl(p, 'thumbnail43') : '/photo-fallback.svg'}
+                                src={resolvePhotoAssetUrl(p, 'thumbnail-4x3')}
                                 alt={p.title}
                                 loading="lazy"
                               />
@@ -2426,8 +2479,8 @@ function SeriesDetail() {
                     {renderContent.map((block, index) => {
                       const isSelected = layoutMode && selectedIndex === index;
 
-                      const renderBlock = () => {
-                        if (block.type === 'text') {
+                      const renderBlock = () => renderSeriesBlockByType(block, {
+                        text: () => {
                           const textAlign = block.textAlign || 'left';
                           const isJustify = ['justify', 'justify-right', 'justify-center'].includes(textAlign);
                           const textAlignCss = isJustify ? 'justify' : textAlign;
@@ -2474,9 +2527,9 @@ function SeriesDetail() {
                               {block.content}
                             </SeriesText>
                           );
-                        }
+                        },
 
-                        if (block.type === 'photo') {
+                        photo: () => {
                           const photo = photos.find(p => p.id === block.content);
                           if (!photo) return null;
                           const canOpenLightbox = !layoutMode && block.showLightbox !== false;
@@ -2484,7 +2537,7 @@ function SeriesDetail() {
                             <PhotoFrame>
                               <PhotoMedia>
                                 <CanvasPhoto
-                                  src={resolveVersionedPhotoAssetUrl(photo, 'image')}
+                                  src={resolvePhotoAssetUrl(photo, 'full')}
                                   alt={photo.title}
                                   loading="lazy"
                                 />
@@ -2514,9 +2567,9 @@ function SeriesDetail() {
                               )}
                             </PhotoFrame>
                           );
-                        }
+                        },
 
-                        if (block.type === 'photos') {
+                        photos: () => {
                           const groupCols = getGroupCols(block.layout);
                           const groupRows = getGroupRows(block.layout);
                           const groupItems = prepareGroupItems(block.content || [], block.layout);
@@ -2592,9 +2645,7 @@ function SeriesDetail() {
                             </GroupGrid>
                           );
                         }
-
-                        return null;
-                      };
+                      }, 'SeriesDetail: renderer desktop');
 
                       return (
                         <DraggableBlock
@@ -2621,7 +2672,7 @@ function SeriesDetail() {
                               }}
                             >
                               <DragLabel>
-                                {block.type === 'text' ? 'Testo' : block.type === 'photo' ? 'Foto' : 'Gruppo foto'}
+                                {getSeriesBlockDefinition(block.type).label}
                               </DragLabel>
 
                               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -2744,7 +2795,7 @@ function SeriesDetail() {
               ✕
             </LightboxClose>
             <LightboxImage
-              src={resolveVersionedPhotoAssetUrl(lightboxPhoto, 'image')}
+              src={resolvePhotoAssetUrl(lightboxPhoto, 'full')}
               alt={lightboxPhoto.title}
               onClick={(e) => e.stopPropagation()}
             />

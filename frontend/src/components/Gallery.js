@@ -1,11 +1,17 @@
 import React, { Suspense, useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import styled from 'styled-components';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Loader2 } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Search } from 'lucide-react';
+import { PHOTO_UPLOAD_ACCEPT } from '@portfolio/photo-upload-contract';
 import { usePhotos } from '../contexts/PhotoContext';
-import { LOCAL_IMAGE_FALLBACK, resolveVersionedPhotoAssetUrl } from '../utils/imageUrl';
-import { photoService, signSourceUpload, uploadSourceToSignedUrl } from '../utils/api';
+import { LOCAL_IMAGE_FALLBACK, resolvePhotoAssetUrl } from '../utils/imageUrl';
+import {
+  photoService,
+  signExistingSourceUpload,
+  uploadSourceToSignedUrl
+} from '../utils/api';
+import { validateImageFile } from '../utils/photoUploadPolicy';
 import { useGalleryQueryState } from '../hooks/useGalleryQueryState';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import {
@@ -23,21 +29,22 @@ import {
 import {
   buildOperationErrorMessage
 } from '../utils/operationErrors';
+import { adminFeedback } from '../utils/adminFeedback';
+import { buildPhotoOperationStatus } from '../utils/photoOperationStatus';
 import { GalleryCard } from './gallery/GalleryCard';
 import { LazyPhotoCropModal, LazyPhotoUpload } from './lazyAdminComponents';
+import AdminConfirmDialog from './AdminConfirmDialog';
 
 const DEBOUNCE_DELAY_FILTER = 200;
-const SOURCE_REUPLOAD_ACCEPT = 'image/jpeg,image/jpg,image/png,image/webp';
-
 const REUPLOAD_STEP_LABELS = {
-  sign: 'firma URL upload',
-  upload: 'upload source su R2',
-  replace: 'rigenerazione derivate'
+  sign: 'preparazione sostituzione',
+  upload: 'caricamento del nuovo originale',
+  replace: 'rigenerazione varianti'
 };
 
 const CROP_STEP_LABELS = {
-  update: 'salvataggio crop',
-  regenerate: 'rigenerazione derivate'
+  update: 'salvataggio ritaglio',
+  regenerate: 'rigenerazione varianti'
 };
 
 const SKELETON_CARD_COUNT_WIDE = 9;
@@ -50,7 +57,7 @@ const LOAD_MORE_ROOT_MARGIN_WIDE = '700px 0px';
 const LOAD_MORE_ROOT_MARGIN_COMPACT = '350px 0px';
 
 const getThumbImageUrl = (photo) => {
-  return resolveVersionedPhotoAssetUrl(photo, 'thumbnail43');
+  return resolvePhotoAssetUrl(photo, 'thumbnail-4x3');
 };
 
 const getPhotoCardUrl = (photo) => `/photo/${encodeURIComponent(String(photo.id))}`;
@@ -208,9 +215,9 @@ const FilterContainer = styled(motion.div)`
 `;
 
 const FilterButton = styled(motion.button)`
-  background: ${props => props.active ? 'rgba(214, 179, 106, 0.14)' : 'rgba(255, 255, 255, 0.03)'};
-  color: ${props => props.active ? 'var(--color-text)' : 'var(--color-muted)'};
-  border: 1px solid ${props => props.active ? 'rgba(214, 179, 106, 0.45)' : 'rgba(255, 255, 255, 0.10)'};
+  background: ${props => props.$active ? 'rgba(214, 179, 106, 0.14)' : 'rgba(255, 255, 255, 0.03)'};
+  color: ${props => props.$active ? 'var(--color-text)' : 'var(--color-muted)'};
+  border: 1px solid ${props => props.$active ? 'rgba(214, 179, 106, 0.45)' : 'rgba(255, 255, 255, 0.10)'};
   padding: 8px 12px;
   border-radius: var(--border-radius-full);
   font-size: var(--font-size-sm);
@@ -355,94 +362,6 @@ const NoResults = styled(motion.div)`
     font-size: var(--font-size-base);
   }
 `;
-
-const DeleteModalBackdrop = styled(motion.div)`
-  position: fixed;
-  inset: 0;
-  background: rgba(4, 6, 12, 0.74);
-  backdrop-filter: blur(6px);
-  z-index: 1300;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-`;
-
-const DeleteModalCard = styled(motion.div)`
-  width: min(460px, 100%);
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: linear-gradient(180deg, rgba(12, 17, 28, 0.96), rgba(8, 12, 22, 0.98));
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
-  padding: 22px;
-`;
-
-const DeleteModalTitle = styled.h3`
-  margin: 0 0 8px 0;
-  font-size: 1.12rem;
-  color: var(--color-text);
-  font-weight: var(--font-weight-semibold);
-`;
-
-const DeleteModalText = styled.p`
-  margin: 0;
-  color: var(--color-muted);
-  line-height: 1.5;
-  font-size: var(--font-size-sm);
-`;
-
-const DeleteModalActions = styled.div`
-  margin-top: 18px;
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-`;
-
-const DeleteModalButton = styled.button`
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: var(--border-radius-lg);
-  padding: 9px 14px;
-  font-weight: var(--font-weight-semibold);
-  font-size: var(--font-size-sm);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  cursor: pointer;
-  transition: var(--transition-normal);
-  color: var(--color-text);
-  background: rgba(255, 255, 255, 0.04);
-
-  &:hover:enabled {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.24);
-  }
-
-  &:disabled {
-    cursor: not-allowed;
-    opacity: 0.65;
-  }
-`;
-
-const DeleteConfirmButton = styled(DeleteModalButton)`
-  background: rgba(214, 56, 56, 0.92);
-  border-color: rgba(255, 255, 255, 0.2);
-
-  &:hover:enabled {
-    background: rgba(194, 39, 39, 0.96);
-    border-color: rgba(255, 255, 255, 0.28);
-  }
-`;
-
-const DeleteInlineSpinner = styled(Loader2)`
-  animation: delete-photo-spin 0.9s linear infinite;
-
-  @keyframes delete-photo-spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-  }
-`;
-
 
 const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptions = false }) => {
   const { photos, filteredPhotos, loading, actions, modalOpen, photoOpsByPhotoId, pendingUploads } = usePhotos();
@@ -681,7 +600,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     setDeletingPhoto(true);
     try {
       await actions.deletePhoto(photoPendingDelete.id);
-      notify?.success?.(`Foto eliminata: "${photoPendingDelete.title || 'foto'}".`, 3200);
+      notify?.success?.(adminFeedback.photoDeleted(photoPendingDelete));
       setPhotoPendingDelete(null);
     } catch (error) {
       console.error('Errore nell\'eliminazione della foto:', error);
@@ -768,39 +687,35 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
 
     const targetPhotoId = targetPhoto.id;
     activeReuploadPhotoIdRef.current = targetPhotoId;
-    actions.setPhotoOpStatus(targetPhotoId, {
-      active: true,
-      type: 'source-reupload',
-      percent: 3,
-      label: 'Preparazione upload',
-      step: 'sign'
-    });
+    actions.setPhotoOpStatus(
+      targetPhotoId,
+      buildPhotoOperationStatus('replaceSource', 'prepare')
+    );
     let currentStep = 'sign';
+    let signedData = null;
     try {
-      notify?.info?.(`Caricamento source in corso per "${targetPhoto.title || 'foto'}"...`, 2500);
-
+      validateImageFile(file);
       currentStep = 'sign';
-      actions.setPhotoOpStatus(targetPhotoId, {
-        percent: 8,
-        label: 'Firma URL upload',
-        step: 'sign'
-      });
-      const signedData = await signSourceUpload({
-        uploadId: String(targetPhoto.id),
+      actions.setPhotoOpStatus(
+        targetPhotoId,
+        buildPhotoOperationStatus('replaceSource', 'sign')
+      );
+      signedData = await signExistingSourceUpload({
+        photo: targetPhoto,
         file
       });
 
       currentStep = 'upload';
-      actions.setPhotoOpStatus(targetPhotoId, {
-        percent: 12,
-        label: 'Upload source su R2',
-        step: 'upload'
-      });
+      actions.setPhotoOpStatus(
+        targetPhotoId,
+        buildPhotoOperationStatus('replaceSource', 'upload')
+      );
       const uploadAbortController = new AbortController();
       reuploadUploadAbortControllerRef.current = uploadAbortController;
       await uploadSourceToSignedUrl({
         uploadUrl: signedData.uploadUrl,
         file,
+        contentType: signedData.contentType,
         signal: uploadAbortController.signal,
         onProgress: ({ ratio }) => {
           const normalized = Math.max(0, Math.min(1, Number(ratio) || 0));
@@ -811,32 +726,44 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
       reuploadUploadAbortControllerRef.current = null;
 
       currentStep = 'replace';
-      actions.setPhotoOpStatus(targetPhotoId, {
-        label: 'Rigenerazione derivate',
-        percent: 74,
-        step: 'replace'
-      });
+      actions.setPhotoOpStatus(
+        targetPhotoId,
+        buildPhotoOperationStatus('replaceSource', 'process')
+      );
       startSoftProgress(targetPhotoId, 74, 95);
       const replaceResponse = await photoService.replaceSource(targetPhoto.id, {
         sourcePath: signedData.sourcePath,
-        sourceContentType: file.type,
-        replaceToken: signedData.replaceToken || ''
-      });
+        operationId: signedData.operationId,
+        mediaGeneration: signedData.mediaGeneration
+      }, targetPhoto.version);
       stopSoftProgress();
       const updatedPhoto = replaceResponse?.data?.data || replaceResponse?.data;
       actions.applyPhotoUpdate?.(updatedPhoto);
-      actions.setPhotoOpStatus(targetPhotoId, {
-        percent: 100,
-        label: 'Completato',
-        step: 'done'
-      });
-      notify?.success?.(`Source aggiornata: "${targetPhoto.title || 'foto'}".`, 3500);
+      actions.setPhotoOpStatus(
+        targetPhotoId,
+        buildPhotoOperationStatus('replaceSource', 'done')
+      );
+      notify?.success?.(adminFeedback.photoSourceReplaced(targetPhoto));
     } catch (error) {
       stopSoftProgress();
+      if (signedData?.operationId) {
+        try {
+          await photoService.abortMediaOperation(
+            targetPhoto.id,
+            signedData.operationId,
+            signedData.sourcePath
+          );
+        } catch (abortError) {
+          console.warn('Impossibile annullare la prenotazione media:', abortError);
+        }
+      }
       console.error('Errore reupload source privata:', error);
       if (error?.code === 'UPLOAD_ABORTED') {
-        notify?.info?.('Upload source annullato.', 3500);
+        notify?.info?.(adminFeedback.photoSourceUploadCancelled());
       } else {
+        if (error?.status === 409 || error?.status === 428) {
+          await actions.fetchPhotos({ force: true });
+        }
         const stepLabel = REUPLOAD_STEP_LABELS[currentStep] || 'operazione source';
         notify?.error?.(buildOperationErrorMessage(error, stepLabel), 6500);
       }
@@ -854,41 +781,40 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
     if (!photoId || !nextSettings) return;
 
     const title = photoTitle || 'foto';
-    actions.setPhotoOpStatus(photoId, {
-      active: true,
-      type: 'crop',
-      percent: 12,
-      label: 'Salvataggio crop',
-      step: 'update'
-    });
+    actions.setPhotoOpStatus(
+      photoId,
+      buildPhotoOperationStatus('crop', 'save')
+    );
 
-    let currentStep = 'update';
+    let currentStep = 'regenerate';
     try {
-      notify?.info?.(`Applicazione crop in corso per "${title}"...`, 2200);
-      await photoService.update(photoId, { settings: JSON.stringify(nextSettings) });
+      actions.setPhotoOpStatus(
+        photoId,
+        buildPhotoOperationStatus('crop', 'process')
+      );
+      startSoftProgress(photoId, 24, 95);
 
-      currentStep = 'regenerate';
-      actions.setPhotoOpStatus(photoId, {
-        percent: 38,
-        label: 'Rigenerazione derivate',
-        step: 'regenerate'
-      });
-      startSoftProgress(photoId, 38, 95);
-
-      const regenerateResponse = await photoService.regenerateDerivatives(photoId);
+      const currentPhoto = photos.find((photo) => String(photo.id) === String(photoId));
+      const regenerateResponse = await photoService.applyCrop(
+        photoId,
+        nextSettings,
+        currentPhoto?.version
+      );
       stopSoftProgress();
 
       const updatedPhoto = regenerateResponse?.data?.data || regenerateResponse?.data;
       actions.applyPhotoUpdate?.(updatedPhoto);
-      actions.setPhotoOpStatus(photoId, {
-        percent: 100,
-        label: 'Crop applicato',
-        step: 'done'
-      });
-      notify?.success?.(`Crop applicato: "${title}".`, 3200);
+      actions.setPhotoOpStatus(
+        photoId,
+        buildPhotoOperationStatus('crop', 'done')
+      );
+      notify?.success?.(adminFeedback.photoCropApplied({ title }));
     } catch (error) {
       stopSoftProgress();
       console.error('Errore applicazione crop:', error);
+      if (error?.status === 409 || error?.status === 428) {
+        await actions.fetchPhotos({ force: true });
+      }
       const stepLabel = CROP_STEP_LABELS[currentStep] || 'applicazione crop';
       notify?.error?.(buildOperationErrorMessage(error, stepLabel), 6000);
     } finally {
@@ -937,7 +863,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
         <input
           ref={sourceFileInputRef}
           type="file"
-          accept={SOURCE_REUPLOAD_ACCEPT}
+          accept={PHOTO_UPLOAD_ACCEPT}
           style={{ display: 'none' }}
           onChange={handleReuploadSourceSelected}
         />
@@ -987,7 +913,7 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
                       filterButtonRefs.current.delete(filter);
                     }
                   }}
-                  active={activeFilter === filter}
+                  $active={activeFilter === filter}
                   onClick={() => handleFilterButtonClick(filter)}
                   whileTap={{ scale: 0.98 }}
                 >
@@ -1054,10 +980,11 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
               onUploadSuccess={(updatedPhoto) => {
                 actions.applyPhotoUpdate?.(updatedPhoto);
                 setEditingPhoto(null);
+                notify?.success?.(adminFeedback.photoUpdated(updatedPhoto));
               }}
               onUploadError={(error) => {
                 notify?.error?.(
-                  error?.message || buildOperationErrorMessage(error, 'aggiornamento foto'),
+                  buildOperationErrorMessage(error, 'aggiornamento foto'),
                   6000
                 );
               }}
@@ -1077,55 +1004,16 @@ const Gallery = ({ headingLevel = 'h2', forcedPhotoId = null, hideCardDescriptio
           )}
         </Suspense>
 
-        <AnimatePresence>
-          {photoPendingDelete && (
-            <DeleteModalBackdrop
-              key="delete-modal-backdrop"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={handleCancelDelete}
-            >
-              <DeleteModalCard
-                key="delete-modal-card"
-                initial={{ opacity: 0, y: 10, scale: 0.98 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 8, scale: 0.98 }}
-                transition={{ duration: 0.2, ease: 'easeOut' }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <DeleteModalTitle>Elimina foto</DeleteModalTitle>
-                <DeleteModalText>
-                  Stai per eliminare <strong>{photoPendingDelete.title || 'questa foto'}</strong>.
-                  L&apos;operazione rimuove anche source privata e derivate pubbliche.
-                </DeleteModalText>
-                <DeleteModalActions>
-                  <DeleteModalButton
-                    type="button"
-                    onClick={handleCancelDelete}
-                    disabled={deletingPhoto}
-                  >
-                    Annulla
-                  </DeleteModalButton>
-                  <DeleteConfirmButton
-                    type="button"
-                    onClick={handleConfirmDelete}
-                    disabled={deletingPhoto}
-                  >
-                    {deletingPhoto ? (
-                      <>
-                        <DeleteInlineSpinner size={16} />
-                        Eliminazione...
-                      </>
-                    ) : (
-                      'Elimina'
-                    )}
-                  </DeleteConfirmButton>
-                </DeleteModalActions>
-              </DeleteModalCard>
-            </DeleteModalBackdrop>
-          )}
-        </AnimatePresence>
+        <AdminConfirmDialog
+          open={Boolean(photoPendingDelete)}
+          title="Elimina foto"
+          pending={deletingPhoto}
+          onCancel={handleCancelDelete}
+          onConfirm={handleConfirmDelete}
+        >
+          Stai per eliminare <strong>{photoPendingDelete?.title || 'questa foto'}</strong>.
+          L&apos;operazione rimuove anche source privata e derivate pubbliche.
+        </AdminConfirmDialog>
       </Container>
     </GallerySection>
   );

@@ -1,6 +1,10 @@
 const path = require('path');
 const dotenv = require('dotenv');
 const DEFAULTS = require('./defaults');
+const {
+    isValidR2ObjectPrefix,
+    normalizeR2ObjectPrefix
+} = require('../utils/r2ObjectNamespace');
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
@@ -33,9 +37,28 @@ function asCsvList(value) {
         .filter(Boolean);
 }
 
+const BOOLEAN_ENV_VALUES = new Map([
+    ['1', true],
+    ['true', true],
+    ['yes', true],
+    ['on', true],
+    ['0', false],
+    ['false', false],
+    ['no', false],
+    ['off', false]
+]);
+
+function asBoolean(value, fallback) {
+    const raw = asString(value).toLowerCase();
+    if (!raw) return fallback;
+    return BOOLEAN_ENV_VALUES.has(raw) ? BOOLEAN_ENV_VALUES.get(raw) : fallback;
+}
+
 const nodeEnv = asString(process.env.NODE_ENV, 'development');
 const isProduction = nodeEnv === 'production';
 const isDevelopment = nodeEnv !== 'production';
+const metadataWritesEnabledRaw = asString(process.env.METADATA_WRITES_ENABLED);
+const vercelEnv = asString(process.env.VERCEL_ENV).toLowerCase();
 
 const env = {
     nodeEnv,
@@ -43,14 +66,20 @@ const env = {
     isDevelopment,
     port: asOptionalPositiveInt(process.env.PORT),
     vercel: Boolean(process.env.VERCEL),
+    vercelEnv,
     vercelUrl: asString(process.env.VERCEL_URL),
     siteUrl: asString(process.env.SITE_URL),
+    metadataBackend: asString(process.env.METADATA_BACKEND, 'json').toLowerCase(),
+    metadataWritesEnabled: asBoolean(metadataWritesEnabledRaw, true),
+    databaseUrl: asString(process.env.DATABASE_URL),
+    databasePoolMax: asPositiveInt(process.env.DATABASE_POOL_MAX, 5),
 
     corsOrigins: asCsvList(process.env.CORS_ORIGINS),
 
     apiWriteToken: asString(process.env.API_WRITE_TOKEN),
     apiWriteTokenHash: asString(process.env.API_WRITE_TOKEN_HASH),
     apiSessionSecret: asString(process.env.API_SESSION_SECRET),
+    cronSecret: asString(process.env.CRON_SECRET),
     apiSessionCookieName: asString(process.env.API_SESSION_COOKIE_NAME),
     apiSessionTtlMs: asPositiveInt(process.env.API_SESSION_TTL_MS, DEFAULTS.apiSessionTtlMs),
     apiAuthRateLimitWindowMs: asPositiveInt(process.env.API_AUTH_RATE_LIMIT_WINDOW_MS, DEFAULTS.apiAuthRateLimitWindowMs),
@@ -63,10 +92,8 @@ const env = {
     r2PrivateBucket: asString(process.env.R2_PRIVATE_BUCKET),
     r2PublicUrl: asString(process.env.R2_PUBLIC_URL).replace(/\/+$/, ''),
     r2Endpoint: asString(process.env.R2_ENDPOINT),
-    r2MetadataPrefix: asString(process.env.R2_METADATA_PREFIX, DEFAULTS.r2MetadataPrefix).replace(/^\/+|\/+$/g, ''),
-
-    cloudflareZoneId: asString(process.env.CLOUDFLARE_ZONE_ID),
-    cloudflareApiToken: asString(process.env.CLOUDFLARE_API_TOKEN)
+    r2ObjectPrefix: normalizeR2ObjectPrefix(process.env.R2_OBJECT_PREFIX),
+    r2MetadataPrefix: asString(process.env.R2_METADATA_PREFIX, DEFAULTS.r2MetadataPrefix).replace(/^\/+|\/+$/g, '')
 };
 
 function validateEnv() {
@@ -79,6 +106,39 @@ function validateEnv() {
 
     if (!env.siteUrl) {
         errors.push('SITE_URL non impostata.');
+    }
+
+    if (!['json', 'postgres'].includes(env.metadataBackend)) {
+        errors.push('METADATA_BACKEND deve essere "json" oppure "postgres".');
+    }
+
+    if (
+        metadataWritesEnabledRaw
+        && !BOOLEAN_ENV_VALUES.has(metadataWritesEnabledRaw.toLowerCase())
+    ) {
+        errors.push(
+            'METADATA_WRITES_ENABLED deve essere true/false, 1/0, yes/no oppure on/off.'
+        );
+    }
+
+    if (!isValidR2ObjectPrefix(env.r2ObjectPrefix)) {
+        errors.push(
+            'R2_OBJECT_PREFIX può contenere solo segmenti alfanumerici, ".", "_" e "-".'
+        );
+    }
+
+    if (
+        env.vercelEnv === 'preview'
+        && env.metadataWritesEnabled
+        && !env.r2ObjectPrefix
+    ) {
+        errors.push(
+            'Le Preview con scritture abilitate richiedono R2_OBJECT_PREFIX per isolare gli asset.'
+        );
+    }
+
+    if (env.metadataBackend === 'postgres' && !env.databaseUrl) {
+        errors.push('DATABASE_URL non impostata per METADATA_BACKEND=postgres.');
     }
 
     if (env.isDevelopment && !env.corsOrigins.length) {
@@ -100,6 +160,11 @@ function validateEnv() {
         if (!env.apiSessionSecret) {
             errors.push('API_SESSION_SECRET non impostata in produzione.');
         }
+        if (env.metadataBackend === 'postgres' && !env.cronSecret) {
+            warnings.push(
+                'CRON_SECRET non impostato: il cleanup media resta durevole ma il cron Vercel non potrà eseguirlo.'
+            );
+        }
         if (!env.corsOrigins.length) {
             warnings.push('CORS_ORIGINS non impostata in produzione: verrà consentito solo VERCEL_URL.');
         }
@@ -111,18 +176,6 @@ function validateEnv() {
 
     if (env.isDevelopment && !env.apiWriteTokenHash && !env.apiWriteToken) {
         warnings.push('Nessuna credenziale admin configurata (API_WRITE_TOKEN_HASH / API_WRITE_TOKEN). In locale le write API saranno aperte.');
-    }
-
-    if (env.cloudflareZoneId && !env.cloudflareApiToken) {
-        warnings.push('CLOUDFLARE_ZONE_ID impostata ma CLOUDFLARE_API_TOKEN mancante: purge cache disattivata.');
-    }
-
-    if (env.cloudflareApiToken && !env.cloudflareZoneId) {
-        warnings.push('CLOUDFLARE_API_TOKEN impostata ma CLOUDFLARE_ZONE_ID mancante: purge cache disattivata.');
-    }
-
-    if ((env.cloudflareApiToken || env.cloudflareZoneId) && !env.r2PublicUrl) {
-        warnings.push('Cloudflare purge configurata ma R2_PUBLIC_URL mancante: impossibile costruire URL assoluti da purgare.');
     }
 
     if (env.isProduction && env.apiWriteToken) {

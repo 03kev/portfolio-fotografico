@@ -5,10 +5,9 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { LoaderCircle, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import { usePhotos } from '../contexts/PhotoContext';
 import {
-  getPhotoAssetVersion,
   LOCAL_IMAGE_FALLBACK,
-  resolveVersionedAssetUrl,
-  resolveVersionedPhotoAssetUrl
+  resolveAssetUrl,
+  resolvePhotoAssetUrl
 } from '../utils/imageUrl';
 import { markImageSourceLoaded } from '../utils/imageLoadCache';
 import { API_BASE_URL } from '../utils/constants';
@@ -28,8 +27,8 @@ import PhotoModalPager from './photoModal/PhotoModalPager';
 const prefetchedMobileImageSources = new Set();
 
 const getMobileImageSource = (photo) => {
-  if (!photo?.mobileImage) return '';
-  return resolveVersionedPhotoAssetUrl(photo, 'mobileImage', '');
+  if (!photo?.assets?.mobile?.url) return '';
+  return resolvePhotoAssetUrl(photo, 'mobile', '');
 };
 
 const canPrefetchMobileImages = () => {
@@ -374,10 +373,9 @@ const PhotoModal = () => {
     const [showFullResolution, setShowFullResolution] = useState(false);
     const [isQualitySwitching, setIsQualitySwitching] = useState(false);
     const selectedPhotoId = selectedPhoto?.id;
-    const version = getPhotoAssetVersion(selectedPhoto);
-    const fullImageSrc = resolveVersionedPhotoAssetUrl(selectedPhoto, 'image');
-    const mobileImageSrc = selectedPhoto?.mobileImage
-      ? resolveVersionedPhotoAssetUrl(selectedPhoto, 'mobileImage', '')
+    const fullImageSrc = resolvePhotoAssetUrl(selectedPhoto, 'full');
+    const mobileImageSrc = selectedPhoto?.assets?.mobile?.url
+      ? resolvePhotoAssetUrl(selectedPhoto, 'mobile', '')
       : '';
     const imageSrc = isNarrowViewport && mobileImageSrc && !showFullResolution && !useFullImageFallback
       ? mobileImageSrc
@@ -385,9 +383,10 @@ const PhotoModal = () => {
     const downloadSrc = selectedPhotoId
       ? `${API_BASE_URL}/photos/${encodeURIComponent(String(selectedPhotoId))}/download`
       : '';
-    const previewSrc = resolveVersionedAssetUrl(
-      selectedPhoto?.thumbnail43 || selectedPhoto?.thumbnail11 || '',
-      version,
+    const previewSrc = resolveAssetUrl(
+      selectedPhoto?.assets?.['thumbnail-4x3']?.url
+        || selectedPhoto?.assets?.['thumbnail-1x1']?.url
+        || '',
       ''
     );
     const { isLoaded: isFullImageLoaded, setIsLoaded: setIsFullImageLoaded, markLoaded: markFullImageLoaded } = useSharedImageLoadState(imageSrc, modalOpen && Boolean(selectedPhotoId));

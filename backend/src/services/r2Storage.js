@@ -3,6 +3,10 @@ const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { env } = require('../config/env');
 const DEFAULTS = require('../config/defaults');
 const { PRIVATE_PREFIX, PUBLIC_UPLOADS_PREFIX } = require('../config/assetPaths');
+const {
+    namespaceObjectKey,
+    stripObjectNamespace
+} = require('../utils/r2ObjectNamespace');
 
 let s3ClientInstance = null;
 let s3Commands = null;
@@ -68,6 +72,14 @@ function normalizePrivateObjectKey(key) {
     return normalized.replace(new RegExp(`^${privatePrefix}/+`), '');
 }
 
+function applyConfiguredObjectNamespace(key) {
+    return namespaceObjectKey(key, env.r2ObjectPrefix);
+}
+
+function stripConfiguredObjectNamespace(key) {
+    return stripObjectNamespace(key, env.r2ObjectPrefix);
+}
+
 function uploadPathToObjectKey(uploadPath) {
     const raw = String(uploadPath || '').trim();
 
@@ -76,13 +88,17 @@ function uploadPathToObjectKey(uploadPath) {
     if (raw.startsWith('http://') || raw.startsWith('https://')) {
         try {
             const parsed = new URL(raw);
-            return normalizeObjectKey(parsed.pathname);
+            return applyConfiguredObjectNamespace(
+                stripConfiguredObjectNamespace(normalizeObjectKey(parsed.pathname))
+            );
         } catch (error) {
             return null;
         }
     }
 
-    return normalizeObjectKey(raw.replace(/^\/+/, ''));
+    return applyConfiguredObjectNamespace(
+        stripConfiguredObjectNamespace(normalizeObjectKey(raw.replace(/^\/+/, '')))
+    );
 }
 
 function privatePathToObjectKey(privatePath) {
@@ -93,22 +109,26 @@ function privatePathToObjectKey(privatePath) {
     if (raw.startsWith('http://') || raw.startsWith('https://')) {
         try {
             const parsed = new URL(raw);
-            return normalizePrivateObjectKey(parsed.pathname);
+            return applyConfiguredObjectNamespace(
+                stripConfiguredObjectNamespace(normalizePrivateObjectKey(parsed.pathname))
+            );
         } catch (error) {
             return null;
         }
     }
 
-    return normalizePrivateObjectKey(raw.replace(/^\/+/, ''));
+    return applyConfiguredObjectNamespace(
+        stripConfiguredObjectNamespace(normalizePrivateObjectKey(raw.replace(/^\/+/, '')))
+    );
 }
 
 function objectKeyToUploadPath(objectKey) {
-    const key = normalizeObjectKey(objectKey);
+    const key = stripConfiguredObjectNamespace(normalizeObjectKey(objectKey));
     return `${PUBLIC_UPLOADS_PREFIX}/${key}`;
 }
 
 function objectKeyToPrivatePath(objectKey) {
-    const key = normalizePrivateObjectKey(objectKey);
+    const key = stripConfiguredObjectNamespace(normalizePrivateObjectKey(objectKey));
     return `${PRIVATE_PREFIX}/${key}`;
 }
 
@@ -262,7 +282,7 @@ async function createPrivateUploadPresignedPutUrl(privatePath, options = {}) {
     };
 }
 
-async function deleteUploadObject(uploadPath) {
+async function deleteUploadObject(uploadPath, { abortSignal } = {}) {
     if (!isR2Enabled()) {
         return;
     }
@@ -277,11 +297,12 @@ async function deleteUploadObject(uploadPath) {
         new DeleteObjectCommand({
             Bucket: env.r2Bucket,
             Key: key
-        })
+        }),
+        { abortSignal }
     );
 }
 
-async function deletePrivateObject(privatePath) {
+async function deletePrivateObject(privatePath, { abortSignal } = {}) {
     if (!isR2Enabled()) {
         return;
     }
@@ -296,7 +317,8 @@ async function deletePrivateObject(privatePath) {
         new DeleteObjectCommand({
             Bucket: getPrivateBucketName(),
             Key: key
-        })
+        }),
+        { abortSignal }
     );
 }
 
@@ -373,6 +395,42 @@ async function headUploadObject(uploadPath) {
     }
 }
 
+async function headPrivateObject(privatePath) {
+    if (!isR2Enabled()) {
+        return null;
+    }
+
+    const key = privatePathToObjectKey(privatePath);
+    if (!key) return null;
+
+    const client = getR2Client();
+    const { HeadObjectCommand } = s3Commands;
+
+    try {
+        const response = await client.send(
+            new HeadObjectCommand({
+                Bucket: getPrivateBucketName(),
+                Key: key
+            })
+        );
+
+        return {
+            key,
+            contentType: response.ContentType,
+            cacheControl: response.CacheControl,
+            contentLength: response.ContentLength,
+            etag: response.ETag,
+            lastModified: response.LastModified
+        };
+    } catch (error) {
+        const statusCode = error?.$metadata?.httpStatusCode;
+        if (statusCode === 404 || error?.name === 'NotFound' || error?.name === 'NoSuchKey' || error?.Code === 'NoSuchKey') {
+            return null;
+        }
+        throw error;
+    }
+}
+
 async function getPrivateObject(privatePath) {
     if (!isR2Enabled()) {
         return null;
@@ -417,9 +475,14 @@ module.exports = {
     deleteUploadObject,
     ensureR2Configured,
     getPrivateObject,
+    headPrivateObject,
     headUploadObject,
     getUploadObject,
     isR2Enabled,
+    objectKeyToPrivatePath,
+    objectKeyToUploadPath,
+    privatePathToObjectKey,
     putPrivateObject,
     putUploadObject,
+    uploadPathToObjectKey
 };

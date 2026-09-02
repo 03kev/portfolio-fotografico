@@ -1,5 +1,16 @@
 import axios from 'axios';
+import {
+  normalizePhotoUploadMimeType
+} from '@portfolio/photo-upload-contract';
 import { API_BASE_URL, NETWORK_TIMEOUTS } from './constants';
+import { isAmbiguousMutationError } from './operationErrors';
+
+export const ADMIN_SESSION_INVALIDATED_EVENT = 'admin-session-invalidated';
+
+export function notifyAdminSessionInvalidated() {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(ADMIN_SESSION_INVALIDATED_EVENT));
+}
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -17,7 +28,7 @@ function compactText(value, maxLength = 240) {
   return `${normalized.slice(0, maxLength - 3)}...`;
 }
 
-function normalizeApiError(error) {
+export function normalizeApiError(error) {
   const responseData = error?.response?.data;
   const status = Number(error?.response?.status || 0) || null;
   const base = responseData && typeof responseData === 'object' ? responseData : {};
@@ -35,6 +46,12 @@ function normalizeApiError(error) {
     || 'Si è verificato un errore imprevisto'
   );
   const details = base?.details || baseError?.details || null;
+  const retryAfterHeader = error?.response?.headers?.['retry-after'];
+  const retryAfter = retryAfterHeader === undefined
+    ? null
+    : compactText(retryAfterHeader, 40);
+  const method = compactText(error?.config?.method || '', 16).toUpperCase() || null;
+  const url = compactText(error?.config?.url || '', 240) || null;
 
   return {
     ...base,
@@ -42,7 +59,29 @@ function normalizeApiError(error) {
     code: base?.code || baseError?.code || error?.code || null,
     details,
     message,
+    method,
+    url,
+    retryAfter,
+    retryable: (
+      status === null
+      || status === 408
+      || status === 425
+      || status === 429
+      || status >= 500
+    ),
     isAxiosError: Boolean(error?.isAxiosError)
+  };
+}
+
+function withExpectedVersion(expectedVersion, config = {}) {
+  const version = Number(expectedVersion);
+  if (!Number.isSafeInteger(version) || version <= 0) return config;
+  return {
+    ...config,
+    headers: {
+      ...(config.headers || {}),
+      'X-Expected-Version': String(version)
+    }
   };
 }
 
@@ -52,9 +91,22 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
-    console.error('API Error:', error);
-
-    return Promise.reject(normalizeApiError(error));
+    const normalizedError = normalizeApiError(error);
+    if (!normalizedError.status || normalizedError.status >= 500) {
+      console.error('API request failed:', {
+        status: normalizedError.status,
+        code: normalizedError.code,
+        method: normalizedError.method,
+        url: normalizedError.url,
+        message: normalizedError.message
+      });
+    }
+    if (
+      normalizedError.code === 'AUTH_REQUIRED'
+    ) {
+      notifyAdminSessionInvalidated();
+    }
+    return Promise.reject(normalizedError);
   }
 );
 
@@ -69,37 +121,52 @@ export const photoService = {
   // Genera URL firmata per upload diretto su R2
   getUploadUrl: (payload) => api.post('/photos/upload-url', payload),
   
-  // Upload nuova foto
-  upload: (formData) => {
-    return api.post('/photos', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-  },
-
-  // Crea foto salvando solo metadata (file gia` caricato su R2)
+  // Finalizza una foto da una prenotazione e da una source già caricata su R2.
   create: (data) => api.post('/photos', data),
   
   // Aggiorna foto
-  update: (id, data) => api.put(`/photos/${id}`, data),
+  update: (id, data, expectedVersion) => api.put(
+    `/photos/${id}`,
+    data,
+    withExpectedVersion(expectedVersion)
+  ),
 
   // Rigenera derivate pubbliche da source full-res
-  regenerateDerivatives: (id) => api.post(
+  regenerateDerivatives: (id, expectedVersion) => api.post(
     `/photos/${id}/regenerate-derivatives`,
     {},
-    { timeout: NETWORK_TIMEOUTS.regenerateDerivativesMs }
+    withExpectedVersion(expectedVersion, { timeout: NETWORK_TIMEOUTS.regenerateDerivativesMs })
+  ),
+
+  applyCrop: (id, settings, expectedVersion) => api.post(
+    `/photos/${id}/crop`,
+    { settings },
+    withExpectedVersion(expectedVersion, { timeout: NETWORK_TIMEOUTS.regenerateDerivativesMs })
+  ),
+
+  getSourceUploadUrl: (id, payload, expectedVersion) => api.post(
+    `/photos/${id}/source-upload-url`,
+    payload,
+    withExpectedVersion(expectedVersion)
   ),
 
   // Sostituisce la source privata e rigenera tutte le derivate pubbliche
-  replaceSource: (id, data) => api.post(
+  replaceSource: (id, data, expectedVersion) => api.post(
     `/photos/${id}/replace-source`,
     data,
-    { timeout: NETWORK_TIMEOUTS.replaceSourceMs }
+    withExpectedVersion(expectedVersion, { timeout: NETWORK_TIMEOUTS.replaceSourceMs })
+  ),
+
+  abortMediaOperation: (id, operationId, sourcePath = '') => api.delete(
+    `/photos/${id}/media-operations/${encodeURIComponent(operationId)}`,
+    { data: { sourcePath } }
   ),
   
   // Elimina foto
-  delete: (id) => api.delete(`/photos/${id}`),
+  delete: (id, expectedVersion) => api.delete(
+    `/photos/${id}`,
+    withExpectedVersion(expectedVersion)
+  ),
   
   // Cerca foto
   search: (query) => api.get(`/photos/search?q=${encodeURIComponent(query)}`),
@@ -123,16 +190,30 @@ export const seriesService = {
   create: (data) => api.post('/series', data),
   
   // Aggiorna serie
-  update: (id, data) => api.put(`/series/${id}`, data),
+  update: (id, data, expectedVersion) => api.put(
+    `/series/${id}`,
+    data,
+    withExpectedVersion(expectedVersion)
+  ),
   
   // Elimina serie
-  delete: (id) => api.delete(`/series/${id}`),
+  delete: (id, expectedVersion) => api.delete(
+    `/series/${id}`,
+    withExpectedVersion(expectedVersion)
+  ),
   
   // Aggiungi foto a serie
-  addPhoto: (seriesId, photoId) => api.post(`/series/${seriesId}/photos/${photoId}`),
+  addPhoto: (seriesId, photoId, expectedVersion) => api.post(
+    `/series/${seriesId}/photos/${photoId}`,
+    {},
+    withExpectedVersion(expectedVersion)
+  ),
   
   // Rimuovi foto da serie
-  removePhoto: (seriesId, photoId) => api.delete(`/series/${seriesId}/photos/${photoId}`),
+  removePhoto: (seriesId, photoId, expectedVersion) => api.delete(
+    `/series/${seriesId}/photos/${photoId}`,
+    withExpectedVersion(expectedVersion)
+  ),
 };
 
 // Servizi per le statistiche (future implementazioni)
@@ -148,16 +229,49 @@ export const authService = {
   logout: () => api.delete('/auth/session'),
 };
 
-export async function signSourceUpload({ uploadId, file }) {
-  const response = await photoService.getUploadUrl({
-    uploadId: String(uploadId),
-    variant: 'source',
-    mimetype: file?.type,
-    fileSize: file?.size
-  });
+export const auditService = {
+  getEvents: ({
+    limit = 40,
+    beforeId,
+    entityType,
+    entityId,
+    operation
+  } = {}) => api.get('/audit', {
+    params: {
+      limit,
+      ...(beforeId ? { beforeId } : {}),
+      ...(entityType ? { entityType } : {}),
+      ...(entityId ? { entityId } : {}),
+      ...(operation ? { operation } : {})
+    }
+  }),
+  getById: (id) => api.get(`/audit/${id}`),
+};
+
+export async function signSourceUpload({ uploadIntentId, file }) {
+  const requestSignedUrl = () => photoService.getUploadUrl({
+      uploadIntentId,
+      variant: 'source',
+      mimetype: file?.type,
+      fileSize: file?.size
+    });
+  let response;
+  try {
+    response = await requestSignedUrl();
+  } catch (error) {
+    if (!isAmbiguousMutationError(error)) throw error;
+    response = await requestSignedUrl();
+  }
   const signedData = response?.data?.data || response?.data;
 
-  if (!signedData?.uploadUrl || !signedData?.sourcePath) {
+  if (
+    !signedData?.uploadIntentId
+    || !Number.isSafeInteger(Number(signedData?.photoId))
+    || Number(signedData.photoId) <= 0
+    || !signedData?.uploadUrl
+    || !signedData?.sourcePath
+    || !signedData?.contentType
+  ) {
     const error = new Error('URL di upload source non valida ricevuta dal server.');
     error.code = 'UPLOAD_SIGN_INVALID_RESPONSE';
     throw error;
@@ -166,9 +280,34 @@ export async function signSourceUpload({ uploadId, file }) {
   return signedData;
 }
 
+export async function signExistingSourceUpload({ photo, file }) {
+  const response = await photoService.getSourceUploadUrl(
+    photo.id,
+    {
+      mimetype: file?.type,
+      fileSize: file?.size
+    },
+    photo.version
+  );
+  const signedData = response?.data?.data || response?.data;
+  if (
+    !signedData?.uploadUrl
+    || !signedData?.sourcePath
+    || !signedData?.operationId
+    || !signedData?.mediaGeneration
+    || !signedData?.contentType
+  ) {
+    const error = new Error('Prenotazione upload source non valida ricevuta dal server.');
+    error.code = 'UPLOAD_SIGN_INVALID_RESPONSE';
+    throw error;
+  }
+  return signedData;
+}
+
 export async function uploadSourceToSignedUrl({
   uploadUrl,
   file,
+  contentType,
   timeoutMs = NETWORK_TIMEOUTS.signedUploadMs,
   onProgress,
   signal
@@ -227,7 +366,10 @@ export async function uploadSourceToSignedUrl({
     xhr.timeout = timeoutMs;
 
     try {
-      xhr.setRequestHeader('Content-Type', file?.type || 'application/octet-stream');
+      xhr.setRequestHeader(
+        'Content-Type',
+        normalizePhotoUploadMimeType(contentType || file?.type) || 'application/octet-stream'
+      );
       xhr.setRequestHeader('Cache-Control', 'private, no-store');
     } catch {
       // Non blocchiamo l'upload se il browser rifiuta un header non essenziale.
@@ -307,25 +449,6 @@ export async function uploadSourceToSignedUrl({
     xhr.send(file);
   });
 }
-
-// Utility functions
-export const uploadUtils = {
-  // Valida file immagine
-  validateImageFile: (file) => {
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    const maxSize = 50 * 1024 * 1024; // 50MB
-    
-    if (!allowedTypes.includes(file.type)) {
-      throw new Error('Tipo di file non supportato. Usa JPG, PNG o WebP.');
-    }
-    
-    if (file.size > maxSize) {
-      throw new Error('File troppo grande. Massimo 50MB.');
-    }
-    
-    return true;
-  }
-};
 
 // Error handling utilities
 export const errorUtils = {

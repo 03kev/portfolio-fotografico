@@ -3,7 +3,7 @@ import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { usePhotos } from '../contexts/PhotoContext';
-import { resolveVersionedPhotoAssetUrl } from '../utils/imageUrl';
+import { resolvePhotoAssetUrl } from '../utils/imageUrl';
 import { viewportBreakpoints } from '../styles/responsive';
 
 const Grid = styled(motion.div)`
@@ -79,12 +79,7 @@ export default function FeaturedGallery({ limit = 18 }) {
   const { photos, actions } = usePhotos();
 
   const items = React.useMemo(() => {
-    // Most recent first: if there is a createdAt field use it, otherwise keep the current order
-    const sorted = [...photos];
-    if (sorted.length && sorted[0] && (sorted[0].createdAt || sorted[0].created_at)) {
-      sorted.sort((a, b) => new Date(b.createdAt || b.created_at) - new Date(a.createdAt || a.created_at));
-    }
-    return sorted.slice(0, limit);
+    return photos.slice(0, limit);
   }, [photos, limit]);
 
   const variants = {
@@ -114,7 +109,7 @@ export default function FeaturedGallery({ limit = 18 }) {
             aria-label={p.title || 'Apri foto'}
           >
             <Img 
-              src={resolveVersionedPhotoAssetUrl(p, 'thumbnail11')}
+              src={resolvePhotoAssetUrl(p, 'thumbnail-1x1')}
               alt={p.title || 'Foto'} 
               loading="lazy" 
             />

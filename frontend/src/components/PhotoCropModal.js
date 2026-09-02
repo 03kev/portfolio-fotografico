@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Check, Crop as CropIcon, RotateCcw, X } from 'lucide-react';
-import { getPhotoAssetVersion, resolveVersionedAssetUrl } from '../utils/imageUrl';
+import { Check, Crop as CropIcon, ImageOff, RotateCcw, X } from 'lucide-react';
+import { resolvePhotoAssetUrl } from '../utils/imageUrl';
 import {
   CROP_HANDLES,
   CROP_MAX_SCALE,
@@ -23,6 +23,8 @@ import { useSharedImageLoadState } from '../hooks/useSharedImageLoadState';
 import { useAdaptiveHeaderPill } from '../hooks/useAdaptiveHeaderPill';
 import './PhotoCropModal.css';
 
+const DEFAULT_CROP_PRESET_KEY = CROP_PRESETS[0]?.key || '';
+
 const getPhotoSettings = (photo) => {
   if (!photo) return {};
 
@@ -39,39 +41,32 @@ const getPhotoSettings = (photo) => {
 };
 
 const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
-  const [activePreset, setActivePreset] = useState('r43');
+  const [activePreset, setActivePreset] = useState(DEFAULT_CROP_PRESET_KEY);
   const [cropProfiles, setCropProfiles] = useState(() => normalizeCropProfiles());
   const [initialCropProfiles, setInitialCropProfiles] = useState(() => normalizeCropProfiles());
   const [cropViewport, setCropViewport] = useState(null);
   const [transientRect, setTransientRect] = useState(null);
   const [isInteracting, setIsInteracting] = useState(false);
+  const [hasFullImageError, setHasFullImageError] = useState(false);
 
   const workspaceRef = useRef(null);
   const imageRef = useRef(null);
   const pointerStateRef = useRef(null);
   const refreshRafRef = useRef(null);
 
-  const imageVersion = getPhotoAssetVersion(photo);
   const cropImageSrc = useMemo(
-    () => resolveVersionedAssetUrl(photo?.image, imageVersion),
-    [imageVersion, photo]
+    () => resolvePhotoAssetUrl(photo, 'full'),
+    [photo]
   );
   const { isLoaded: isFullImageLoaded, setIsLoaded: setIsFullImageLoaded, markLoaded: markFullImageLoaded } = useSharedImageLoadState(cropImageSrc, isOpen && Boolean(photo?.id));
 
   const workspacePreviewSrc = useMemo(() => {
-    const previewCandidate = photo?.thumbnail43 || photo?.thumbnail11 || photo?.socialImage || '';
-    return previewCandidate ? resolveVersionedAssetUrl(previewCandidate, imageVersion, '') : '';
-  }, [imageVersion, photo]);
+    return resolvePhotoAssetUrl(photo, 'thumbnail-4x3', '')
+      || resolvePhotoAssetUrl(photo, 'thumbnail-1x1', '')
+      || resolvePhotoAssetUrl(photo, 'social', '');
+  }, [photo]);
 
-  const activePresetPreviewSrc = useMemo(() => {
-    const previewCandidate = activePreset === 'r11'
-      ? (photo?.thumbnail11 || photo?.thumbnail43 || photo?.socialImage || '')
-      : activePreset === 'social'
-        ? (photo?.socialImage || photo?.thumbnail43 || photo?.thumbnail11 || '')
-        : (photo?.thumbnail43 || photo?.thumbnail11 || photo?.socialImage || '');
-
-    return previewCandidate ? resolveVersionedAssetUrl(previewCandidate, imageVersion, '') : '';
-  }, [activePreset, imageVersion, photo]);
+  const activePresetPreviewSrc = workspacePreviewSrc;
 
   const activePresetConfig = useMemo(
     () => CROP_PRESETS.find((preset) => preset.key === activePreset) || CROP_PRESETS[0],
@@ -82,16 +77,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
   const activeRatio = getPresetRatioValue(activePreset);
 
   const getPresetShortLabel = useCallback((presetKey) => {
-    switch (presetKey) {
-      case 'r43':
-        return '4:3';
-      case 'r11':
-        return '1:1';
-      case 'social':
-        return '1200×630';
-      default:
-        return '';
-    }
+    return CROP_PRESETS.find((preset) => preset.key === presetKey)?.shortLabel || '';
   }, []);
 
   const {
@@ -169,12 +155,13 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
 
     const settings = getPhotoSettings(photo);
     const normalizedProfiles = normalizeCropProfiles(settings.cropProfiles);
-    setActivePreset('r43');
+    setActivePreset(DEFAULT_CROP_PRESET_KEY);
     setCropProfiles(normalizedProfiles);
     setInitialCropProfiles(normalizedProfiles);
     setCropViewport(null);
     setTransientRect(null);
     setIsInteracting(false);
+    setHasFullImageError(false);
     pointerStateRef.current = null;
   }, [isOpen, photo]);
 
@@ -363,13 +350,14 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
   }, [saveRectToProfile]);
 
   const handleResetPreset = () => {
+    if (!cropViewport || hasFullImageError) return;
     const sourceProfile = initialCropProfiles?.[activePreset] || DEFAULT_CROP_PROFILE;
     setCropProfiles((prev) => ({ ...prev, [activePreset]: { ...sourceProfile } }));
     setTransientRect(null);
   };
 
   const handleApply = () => {
-    if (!photo?.id) return;
+    if (!photo?.id || !cropViewport || hasFullImageError) return;
     const existingSettings = getPhotoSettings(photo);
     const nextSettings = {
       ...existingSettings,
@@ -480,7 +468,7 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
               </button>
             ))}
           </div>
-          <button type="button" className="crop-modal-reset" onClick={handleResetPreset}>
+          <button type="button" className="crop-modal-reset" onClick={handleResetPreset} disabled={!cropViewport || hasFullImageError}>
             <RotateCcw size={14} />
             Ripristina preset
           </button>
@@ -500,8 +488,20 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
                         aria-hidden="true"
                       />
                     ) : null}
-                    <div className={`crop-modal-image-loading-backdrop ${isFullImageLoaded ? 'is-loaded' : ''}`}>
-                      <div className="crop-modal-image-loading-spinner" />
+                    <div
+                      className={`crop-modal-image-loading-backdrop ${isFullImageLoaded ? 'is-loaded' : ''} ${hasFullImageError ? 'is-error' : ''}`}
+                      role={hasFullImageError ? 'status' : undefined}
+                      aria-live={hasFullImageError ? 'polite' : undefined}
+                    >
+                      {hasFullImageError ? (
+                        <div className="crop-modal-image-error">
+                          <ImageOff size={28} />
+                          <strong>Full non disponibile</strong>
+                          <span>Chiudi il modal e riprova più tardi.</span>
+                        </div>
+                      ) : (
+                        <div className="crop-modal-image-loading-spinner" />
+                      )}
                     </div>
                     <img
                       ref={imageRef}
@@ -510,11 +510,15 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
                       alt={`Crop ${photo.title || 'foto'}`}
                       draggable="false"
                       onLoad={() => {
+                        setHasFullImageError(false);
                         markFullImageLoaded();
                         refreshViewport();
                       }}
                       onError={() => {
-                        setIsFullImageLoaded(true);
+                        setHasFullImageError(true);
+                        setIsFullImageLoaded(false);
+                        setCropViewport(null);
+                        setTransientRect(null);
                       }}
                     />
 
@@ -577,14 +581,14 @@ const PhotoCropModal = ({ photo, isOpen, onClose, onApply }) => {
 
         <footer className="crop-modal-actions">
           <div className="crop-modal-actions-buttons">
-            <button type="button" className="crop-modal-btn secondary crop-modal-btn-reset-mobile" onClick={handleResetPreset}>
+            <button type="button" className="crop-modal-btn secondary crop-modal-btn-reset-mobile" onClick={handleResetPreset} disabled={!cropViewport || hasFullImageError}>
               <RotateCcw size={15} />
               Ripristina
             </button>
             <button type="button" className="crop-modal-btn secondary" onClick={() => onClose?.()}>
               Annulla
             </button>
-            <button type="button" className="crop-modal-btn primary" onClick={handleApply}>
+            <button type="button" className="crop-modal-btn primary" onClick={handleApply} disabled={!cropViewport || hasFullImageError}>
               <Check size={16} />
               Applica
             </button>

@@ -8,6 +8,9 @@ import Gallery from '../components/Gallery';
 import useSeo from '../seo/useSeo';
 import { usePhotos } from '../contexts/PhotoContext';
 import { toAbsoluteImageUrl, toAbsoluteSiteUrl } from '../utils/siteUrl';
+import { PHOTO_METADATA_PUBLIC_SEO_COVERAGE } from '../utils/photoMetadataModel';
+
+void PHOTO_METADATA_PUBLIC_SEO_COVERAGE;
 
 function buildPhotoDescription(photo) {
   if (!photo) {
@@ -86,7 +89,7 @@ export default function PhotoPage() {
 
   const rightsUrl = toAbsoluteSiteUrl('/rights');
   const acquireLicensePage = toAbsoluteSiteUrl('/contact');
-  const seoImage = photo ? toAbsoluteImageUrl(photo.socialImage) : '';
+  const seoImage = photo ? toAbsoluteImageUrl(photo.assets?.social?.url) : '';
   const keywords = React.useMemo(
     () => (Array.isArray(photo?.tags) ? photo.tags.filter(Boolean) : []),
     [photo]
@@ -102,7 +105,7 @@ export default function PhotoPage() {
       '@id': imageObjectId,
       name: photo.title || 'Fotografia',
       description: buildPhotoDescription(photo),
-      contentUrl: toAbsoluteImageUrl(photo.image),
+      contentUrl: toAbsoluteImageUrl(photo.assets?.full?.url),
       url: canonicalUrl,
       creator: { '@type': 'Person', name: 'Kevin Muka' },
       creditText: 'Kevin Muka',

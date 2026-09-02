@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import { Globe2, MapPin, Minus, Pause, Play, Plus } from 'lucide-react';
+import { useInView } from 'react-intersection-observer';
 import { usePhotos } from '../contexts/PhotoContext';
 import { viewportBreakpoints } from '../styles/responsive';
 import { 
@@ -21,8 +22,12 @@ import {
     buildGridClusters,
     buildProximityClusters
 } from '../utils/WorldMapClustering';
+import {
+    PHOTO_METADATA_PUBLIC_MAP_COVERAGE,
+    hasPhotoCoordinates
+} from '../utils/photoMetadataModel';
 
-import { useInView } from 'react-intersection-observer';
+void PHOTO_METADATA_PUBLIC_MAP_COVERAGE;
 
 // ────────────────────────────────────────────────────────────────────────────
 // Configuration constants
@@ -530,8 +535,8 @@ const WorldMap = ({ headingLevel = 'h2' }) => {
     }, [setAutoRotate]);
     
     // Memoizza le foto valide
-    const validPhotos = useMemo(() => 
-        photos.filter(p => p && p.location && p.lat && p.lng),
+    const validPhotos = useMemo(() =>
+        photos.filter(hasPhotoCoordinates),
     [photos]
 );
 

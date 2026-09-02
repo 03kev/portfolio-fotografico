@@ -8,14 +8,17 @@ import GalleryModal from '../components/GalleryModal';
 import ToastProvider, { useToast } from '../components/Toast';
 import { LazyAdminTokenModal, LazyPhotoUpload } from '../components/lazyAdminComponents';
 import useAdminMode from '../hooks/useAdminMode';
-import { authService } from '../utils/api';
+import { ADMIN_SESSION_INVALIDATED_EVENT, authService } from '../utils/api';
+import { adminFeedback } from '../utils/adminFeedback';
+import { buildOperationErrorMessage } from '../utils/operationErrors';
 
-export default function SiteLayout() {
+function SiteLayoutContent() {
   const location = useLocation();
   const isAdminMode = useAdminMode();
   const toast = useToast();
   const [showUpload, setShowUpload] = useState(false);
   const [apiTokenConfigured, setApiTokenConfigured] = useState(false);
+  const [authSessionResolved, setAuthSessionResolved] = useState(false);
   const [authFeedback, setAuthFeedback] = useState('idle');
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authModalLoading, setAuthModalLoading] = useState(false);
@@ -45,13 +48,13 @@ export default function SiteLayout() {
     });
   }, [location.key, location.pathname, location.search, location.hash]);
 
-  const handleUploadSuccess = () => {
+  const handleUploadSuccess = (photo) => {
     setShowUpload(false);
-    toast.success('Foto caricata con successo.');
+    toast.success(adminFeedback.photoCreated(photo));
   };
 
   const handleUploadError = (error) => {
-    toast.error(error?.message || 'Caricamento non riuscito.');
+    toast.error(buildOperationErrorMessage(error, 'caricamento foto'));
   };
 
   useEffect(() => {
@@ -62,10 +65,12 @@ export default function SiteLayout() {
       .then((response) => {
         if (!mounted) return;
         setApiTokenConfigured(Boolean(response?.data?.authenticated));
+        setAuthSessionResolved(true);
       })
       .catch(() => {
         if (!mounted) return;
         setApiTokenConfigured(false);
+        setAuthSessionResolved(true);
       });
 
     return () => {
@@ -80,6 +85,18 @@ export default function SiteLayout() {
   }, [canEdit, showUpload]);
 
   useEffect(() => {
+    const handleInvalidatedSession = () => {
+      setApiTokenConfigured(false);
+      setShowUpload(false);
+      setAuthFeedback('error');
+    };
+    window.addEventListener(ADMIN_SESSION_INVALIDATED_EVENT, handleInvalidatedSession);
+    return () => {
+      window.removeEventListener(ADMIN_SESSION_INVALIDATED_EVENT, handleInvalidatedSession);
+    };
+  }, []);
+
+  useEffect(() => {
     if (authFeedback === 'idle') return;
     const timer = setTimeout(() => setAuthFeedback('idle'), 1400);
     return () => clearTimeout(timer);
@@ -91,10 +108,10 @@ export default function SiteLayout() {
         await authService.logout();
         setApiTokenConfigured(false);
         setAuthFeedback('idle');
-        toast.info('Sessione admin disattivata.');
+        toast.info(adminFeedback.sessionEnded());
       } catch (error) {
-        setApiTokenConfigured(false);
         setAuthFeedback('idle');
+        toast.error(buildOperationErrorMessage(error, 'chiusura sessione admin'));
       }
       return;
     }
@@ -123,11 +140,11 @@ export default function SiteLayout() {
       setApiTokenConfigured(true);
       setAuthFeedback('success');
       setShowAuthModal(false);
-      toast.success('Sessione admin attiva.');
+      toast.success(adminFeedback.sessionStarted());
     } catch (error) {
       setApiTokenConfigured(false);
       setAuthFeedback('error');
-      setAuthModalError('Token non valido o sessione non autorizzata.');
+      setAuthModalError(buildOperationErrorMessage(error, 'accesso admin'));
     } finally {
       setAuthModalLoading(false);
     }
@@ -148,6 +165,7 @@ export default function SiteLayout() {
           context={{
             isAdmin: canEdit,
             isAdminMode,
+            isAdminSessionPending: !authSessionResolved,
             notify: {
               success: toast.success,
               error: toast.error,
@@ -185,7 +203,14 @@ export default function SiteLayout() {
         </Suspense>
       )}
 
-      <ToastProvider toasts={toast.toasts} onRemove={toast.removeToast} />
     </>
+  );
+}
+
+export default function SiteLayout() {
+  return (
+    <ToastProvider>
+      <SiteLayoutContent />
+    </ToastProvider>
   );
 }

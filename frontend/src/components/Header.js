@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
-import { Camera, KeyRound } from 'lucide-react';
+import { Camera, History, KeyRound } from 'lucide-react';
 import { Link, NavLink } from 'react-router-dom';
 import { useHeaderDesktopLayoutMode, useMediaQuery } from '../hooks';
 import {
@@ -344,6 +344,26 @@ const TokenButton = styled(motion.button)`
   }
 `;
 
+const HistoryLink = styled(NavLink)`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--border-radius-full);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--color-text);
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+
+  &:hover,
+  &.active {
+    transform: translateY(-1px);
+    border-color: rgba(214, 179, 106, 0.55);
+    background: rgba(214, 179, 106, 0.12);
+  }
+`;
+
 const Header = ({
   onOpenUpload,
   isAdmin = false,
@@ -433,6 +453,16 @@ const Header = ({
             </NavLinks>
 
             <Right $compactTouchNav={useCompactTouchNav} $denseDesktop={compactBrand}>
+              {isAdmin && hasAuthToken && (
+                <HistoryLink
+                  to="/admin/history"
+                  title="Storico modifiche"
+                  aria-label="Apri lo storico delle modifiche"
+                >
+                  <History size={16} />
+                </HistoryLink>
+              )}
+
               {isAdmin && onConfigureAuth && (
                 <TokenButton
                   type="button"
@@ -505,6 +535,11 @@ const Header = ({
           <DesktopNavMeasure aria-hidden="true" $compactTouchNav={useCompactTouchNav} ref={rightFullMeasureRef}>
             <li>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: '12px' }}>
+                {isAdmin && hasAuthToken && (
+                  <HistoryLink to="/admin/history" aria-hidden="true">
+                    <History size={16} />
+                  </HistoryLink>
+                )}
                 {isAdmin && onConfigureAuth && (
                   <TokenButton type="button" aria-hidden="true">
                     <KeyRound size={16} />
@@ -523,6 +558,11 @@ const Header = ({
           <DesktopNavMeasure aria-hidden="true" $compactTouchNav={useCompactTouchNav} ref={rightCompactMeasureRef}>
             <li>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
+                {isAdmin && hasAuthToken && (
+                  <HistoryLink to="/admin/history" aria-hidden="true">
+                    <History size={16} />
+                  </HistoryLink>
+                )}
                 {isAdmin && onConfigureAuth && (
                   <TokenButton type="button" aria-hidden="true">
                     <KeyRound size={16} />
