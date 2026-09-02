@@ -1,7 +1,7 @@
 /**
  * Script branding frontend.
  * Applica un profilo icone per canale (web/pwa/ios), aggiorna branding/config.json
- * e rigenera gli asset in /public (favicon, logo app, maskable, apple-touch-icon).
+ * e rigenera gli asset in /public (favicon, search favicon, logo app, maskable, apple-touch-icon).
  *
  * Uso:
  *   npm run branding -- <profilo|preset> [--web <profilo>] [--pwa <profilo>] [--ios <profilo>]
@@ -22,6 +22,8 @@ const configPath = path.join(brandingDir, 'config.json');
 const publicDir = path.join(frontendDir, 'public');
 const MASKABLE_SCALE = 0.8;
 const DEFAULT_MASKABLE_BACKGROUND = '#0B1017';
+const SEARCH_FAVICON_SIZE = 96;
+const SEARCH_FAVICON_ICON_SCALE = 0.92;
 const RSVG_SUPERSAMPLE = 2;
 const HAS_RSVG = hasCommand('rsvg-convert', ['--version']);
 const DEFAULT_PRESETS = {
@@ -83,6 +85,13 @@ runMagick([
   path.join(publicDir, 'favicon.ico'),
 ]);
 
+createSearchFavicon({
+  input: webSvg,
+  output: path.join(publicDir, 'favicon-96.png'),
+  size: SEARCH_FAVICON_SIZE,
+  background: maskableBackground,
+});
+
 createAppIcon({
   input: pwaSvg,
   output: path.join(publicDir, 'logo192.png'),
@@ -117,6 +126,7 @@ createAppIcon({
 
 console.log('Branding applied');
 console.log(`  web favicon: ${nextConfig.web}`);
+console.log(`  search png:   favicon-96.png`);
 console.log(`  pwa icons:   ${nextConfig.pwa}`);
 console.log(`  ios icon:    ${nextConfig.ios}`);
 console.log(`  maskable bg: ${maskableBackground}`);
@@ -269,6 +279,74 @@ function createAppIcon({ input, output, size }) {
     input,
     '-resize',
     `${size}x${size}`,
+    output,
+  ]);
+}
+
+function createSearchFavicon({ input, output, size, background }) {
+  const iconSize = Math.round(size * SEARCH_FAVICON_ICON_SCALE);
+
+  if (HAS_RSVG) {
+    const tempHighRes = createTempPath('rsvg-search-favicon-hi');
+    const tempIcon = createTempPath('rsvg-search-favicon-icon');
+    const pngBytes = execFileSync('rsvg-convert', [
+      '--width',
+      `${iconSize * RSVG_SUPERSAMPLE}`,
+      '--height',
+      `${iconSize * RSVG_SUPERSAMPLE}`,
+      input,
+    ]);
+    fs.writeFileSync(tempHighRes, pngBytes);
+
+    runMagick([
+      '-background',
+      'none',
+      tempHighRes,
+      '-filter',
+      'Lanczos',
+      '-resize',
+      `${iconSize}x${iconSize}`,
+      tempIcon,
+    ]);
+
+    runMagick([
+      '-background',
+      background,
+      tempIcon,
+      '-gravity',
+      'center',
+      '-extent',
+      `${size}x${size}`,
+      '-alpha',
+      'remove',
+      '-alpha',
+      'off',
+      '-depth',
+      '8',
+      output,
+    ]);
+
+    fs.rmSync(tempHighRes, { force: true });
+    fs.rmSync(tempIcon, { force: true });
+    return;
+  }
+
+  runMagick([
+    '-background',
+    background,
+    input,
+    '-resize',
+    `${iconSize}x${iconSize}`,
+    '-gravity',
+    'center',
+    '-extent',
+    `${size}x${size}`,
+    '-alpha',
+    'remove',
+    '-alpha',
+    'off',
+    '-depth',
+    '8',
     output,
   ]);
 }

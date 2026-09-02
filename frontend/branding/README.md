@@ -9,7 +9,7 @@ This folder stores source icon sets and the active channel mapping.
 
 Each profile contains:
 
-- `web.svg`: source for `public/favicon.svg` and `public/favicon.ico`
+- `web.svg`: source for `public/favicon.svg`, `public/favicon.ico`, and `public/favicon-96.png`
 - `app.svg`: source for PWA and iOS icons
 
 ## Config
