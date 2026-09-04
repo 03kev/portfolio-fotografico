@@ -428,6 +428,15 @@ L’adapter JSON R2 è mantenuto temporaneamente per migrazione e rollback e ver
 rimosso dopo il cutover verificato. I suoi snapshot si trovano sotto
 `R2_METADATA_PREFIX` (default: `data`):
 
+L’export operativo Postgres → JSON per un eventuale rollback dei metadata è
+documentato in
+[`backend/docs/postgres-metadata-rollback-export.md`](backend/docs/postgres-metadata-rollback-export.md).
+È un export offline coordinato con R2, non un backup completo del sistema.
+Il rollback supportato ripristina inizialmente i metadata JSON in modalità
+read-only; il flag locale dello script non prova il freeze del deployment, che
+va verificato separatamente tramite configurazione e risposta reale
+`503 METADATA_READ_ONLY`.
+
 Il nuovo upload admin non è disponibile con `METADATA_BACKEND=json`: la
 creazione idempotente richiede Postgres e restituisce
 `TRANSACTIONAL_PHOTO_CREATION_REQUIRED`. Per provare upload e finalizzazione in

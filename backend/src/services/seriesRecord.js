@@ -87,6 +87,15 @@ function normalizeIsoDate(value, fallback) {
     return Number.isFinite(parsed) ? new Date(parsed).toISOString() : fallback;
 }
 
+function normalizeOptionalVersion(value) {
+    if (value === undefined || value === null || value === '') return null;
+    const parsed = Number(value);
+    if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+        throw new TypeError('La versione della serie deve essere un intero positivo.');
+    }
+    return parsed;
+}
+
 function normalizeSeriesRecord(record = {}) {
     const id = compactWhitespace(record.id);
     const title = compactWhitespace(record.title);
@@ -98,7 +107,7 @@ function normalizeSeriesRecord(record = {}) {
         : new Date(0).toISOString();
     const createdAt = normalizeIsoDate(record.createdAt, createdFallback);
 
-    return {
+    const normalized = {
         id,
         title,
         slug: createSeriesSlug(record.slug || title),
@@ -110,6 +119,9 @@ function normalizeSeriesRecord(record = {}) {
         createdAt,
         updatedAt: normalizeIsoDate(record.updatedAt, createdAt)
     };
+    const version = normalizeOptionalVersion(record.version);
+    if (version !== null) normalized.version = version;
+    return normalized;
 }
 
 function normalizeSeriesCollection(records) {

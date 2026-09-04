@@ -11,6 +11,7 @@
     "metadata:validate": "node scripts/import-metadata-postgres.js --dry-run",
     "metadata:preflight-cutover": "node scripts/import-metadata-postgres.js --from-r2 --cutover-preflight",
     "metadata:reconcile-media": "node scripts/reconcile-media-inventory.js --from-r2",
+    "metadata:export-rollback": "node scripts/export-metadata-postgres.js",
     "metadata:import": "node scripts/import-metadata-postgres.js",
     "token:hash": "node scripts/hash-write-token.js"
   },

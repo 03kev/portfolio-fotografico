@@ -646,8 +646,9 @@ async function importMetadataSnapshot(pool, snapshot, {
             await client.query(
                 `INSERT INTO series (
                     id, title, title_key, slug, description, cover_photo_id,
-                    content, published, created_at, updated_at
-                 ) VALUES ($1, $2, $3, $4, $5, NULL, $6::jsonb, $7, $8, $9)`,
+                    content, published, created_at, updated_at, version
+                 ) VALUES ($1, $2, $3, $4, $5, NULL, $6::jsonb, $7, $8, $9,
+                    COALESCE($10, 1))`,
                 [
                     item.id,
                     item.title,
@@ -657,7 +658,10 @@ async function importMetadataSnapshot(pool, snapshot, {
                     JSON.stringify(item.content),
                     item.published,
                     item.createdAt,
-                    item.updatedAt
+                    item.updatedAt,
+                    Number.isSafeInteger(item.version) && item.version > 0
+                        ? item.version
+                        : null
                 ]
             );
             for (let position = 0; position < item.photos.length; position += 1) {
@@ -896,13 +900,45 @@ async function verifyImportedSnapshot(pool, snapshot, {
     }
 
     const storedSeries = await pool.query(
-        `SELECT s.id, s.content, array_agg(sp.photo_id ORDER BY sp.position)
+        `SELECT s.id, s.title, s.slug, s.description, s.cover_photo_id,
+                s.content, s.published, s.created_at, s.updated_at, s.version,
+                array_agg(sp.photo_id ORDER BY sp.position)
             FILTER (WHERE sp.photo_id IS NOT NULL) AS photo_ids
          FROM series s
          LEFT JOIN series_photos sp ON sp.series_id = s.id
-         GROUP BY s.id, s.content`
+         GROUP BY s.id
+         ORDER BY s.id`
     );
     for (const row of storedSeries.rows) {
+        const expectedSeries = report.normalized.series.find(
+            (item) => String(item.id) === String(row.id)
+        );
+        const actualSeries = {
+            id: String(row.id),
+            title: row.title,
+            slug: row.slug,
+            description: row.description,
+            coverImage: row.cover_photo_id === null ? null : Number(row.cover_photo_id),
+            photos: (row.photo_ids || []).map(Number),
+            content: row.content || [],
+            published: row.published,
+            createdAt: new Date(row.created_at).toISOString(),
+            updatedAt: new Date(row.updated_at).toISOString(),
+            ...(Number.isSafeInteger(expectedSeries?.version)
+                ? { version: Number(row.version) }
+                : {})
+        };
+        if (!expectedSeries || !isDeepStrictEqual(actualSeries, expectedSeries)) {
+            errors.push(issue(
+                'SERIES_METADATA_MISMATCH',
+                'La serie importata non coincide con lo snapshot canonico.',
+                {
+                    seriesId: String(row.id),
+                    expected: expectedSeries || null,
+                    actual: actualSeries
+                }
+            ));
+        }
         const membership = new Set((row.photo_ids || []).map(Number));
         const referenced = [];
         for (const block of row.content || []) {

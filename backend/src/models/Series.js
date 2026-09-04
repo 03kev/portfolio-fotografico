@@ -12,7 +12,8 @@ class Series {
         content,
         published,
         createdAt,
-        updatedAt
+        updatedAt,
+        version
     }) {
         this.id = id;
         this.title = title;
@@ -24,6 +25,7 @@ class Series {
         this.published = published !== undefined ? published : false;
         this.createdAt = createdAt || new Date().toISOString();
         this.updatedAt = updatedAt || new Date().toISOString();
+        if (version !== undefined && version !== null) this.version = version;
     }
 
     // Validazione
@@ -64,7 +66,7 @@ class Series {
     }
 
     toJSON() {
-        return {
+        const serialized = {
             id: this.id,
             title: this.title,
             slug: this.slug,
@@ -76,6 +78,10 @@ class Series {
             createdAt: this.createdAt,
             updatedAt: this.updatedAt
         };
+        if (this.version !== undefined && this.version !== null) {
+            serialized.version = this.version;
+        }
+        return serialized;
     }
 }
 
